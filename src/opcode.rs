@@ -302,7 +302,7 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
 
     while let Some((_, _, loc)) = jump_ip_stack.pop() {
         let diag = Diagnostic::error()
-            .with_message("unclosed `if`")
+            .with_message("unclosed `if`, `else`, or `while-do` block")
             .with_labels(vec![Label::primary(loc.file_id, loc.range())]);
         diags.push(diag);
     }
