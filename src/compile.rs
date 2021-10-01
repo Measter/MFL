@@ -67,7 +67,8 @@ pub(crate) fn compile_program(
             }
 
             OpCode::Push(v) => {
-                writeln!(&mut out_file, "    push {}", v)?;
+                writeln!(&mut out_file, "    mov rax {}", v)?;
+                writeln!(&mut out_file, "    push rax")?;
             }
 
             OpCode::Equal => {
