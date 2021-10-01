@@ -85,53 +85,54 @@ impl<'source> Scanner<'source> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
 
-        let res = match ch {
-            '/' if next_ch == '/' => {
+        let res = match (ch, next_ch) {
+            ('/', '/') => {
                 while !matches!(self.peek(), Some('\n')) && !self.is_at_end() {
                     self.advance();
                 }
 
                 None
             }
+
             _ if ch.is_whitespace() => None,
-            '+' => Some(Token::new(
+            ('+', _) => Some(Token::new(
                 TokenKind::Plus,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
-            '-' => Some(Token::new(
+            ('-', _) => Some(Token::new(
                 TokenKind::Minus,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
-            '=' => Some(Token::new(
+            ('=', _) => Some(Token::new(
                 TokenKind::Equal,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
-            '<' => Some(Token::new(
+            ('<', _) => Some(Token::new(
                 TokenKind::Less,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
-            '>' => Some(Token::new(
+            ('>', _) => Some(Token::new(
                 TokenKind::Greater,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
 
-            '.' => Some(Token::new(
+            ('.', _) => Some(Token::new(
                 TokenKind::Store,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),
             )),
-            ',' => Some(Token::new(
+            (',', _) => Some(Token::new(
                 TokenKind::Load,
                 self.lexeme(input),
                 self.file_id,
