@@ -81,7 +81,9 @@ fn main() -> Result<()> {
                     std::process::exit(-1);
                 }
             };
-            simulate::simulate_program(&program);
+            if let Err(diag) = simulate::simulate_program(&program) {
+                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            }
         }
         Args::Compile { file, run } => {
             let mut output_asm = Path::new(&file).to_path_buf();

@@ -1,9 +1,18 @@
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+
 use crate::{
     opcode::{Op, OpCode},
+    source_file::{FileId, SourceLocation},
     MEMORY_CAPACITY,
 };
 
-pub(crate) fn simulate_program(program: &[Op]) {
+fn generate_error(msg: &str, location: SourceLocation) -> Diagnostic<FileId> {
+    Diagnostic::error()
+        .with_message(msg)
+        .with_labels(vec![Label::primary(location.file_id, location.range())])
+}
+
+pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack = Vec::new();
     let mut memory: Vec<u8> = vec![0; MEMORY_CAPACITY];
@@ -14,14 +23,14 @@ pub(crate) fn simulate_program(program: &[Op]) {
                 let (b, a) = stack
                     .pop()
                     .zip(stack.last_mut())
-                    .expect("Add requires 2 operands");
+                    .ok_or_else(|| generate_error("`+` expects 2 operands", op.location))?;
                 *a += b;
             }
             OpCode::Subtract => {
                 let (b, a) = stack
                     .pop()
                     .zip(stack.last_mut())
-                    .expect("Minus expects 2 operands");
+                    .ok_or_else(|| generate_error("`-` expects 2 operands", op.location))?;
                 *a -= b;
             }
 
@@ -29,7 +38,9 @@ pub(crate) fn simulate_program(program: &[Op]) {
 
             OpCode::While { .. } => {}
             OpCode::Do { end_ip, .. } => {
-                let a = stack.pop().expect("Do expects an operand");
+                let a = stack
+                    .pop()
+                    .ok_or_else(|| generate_error("`while-do` expects a condition", op.location))?;
 
                 if a == 0 {
                     ip = end_ip + 1;
@@ -40,7 +51,9 @@ pub(crate) fn simulate_program(program: &[Op]) {
                 ip = condition_ip;
             }
             OpCode::If { end_ip, had_else } => {
-                let a = stack.pop().expect("If expects an operand");
+                let a = stack
+                    .pop()
+                    .ok_or_else(|| generate_error("`if` expects a condition", op.location))?;
 
                 if a == 0 {
                     ip = end_ip + had_else as usize;
@@ -56,47 +69,63 @@ pub(crate) fn simulate_program(program: &[Op]) {
                 let (b, a) = stack
                     .pop()
                     .zip(stack.pop())
-                    .expect("Greater expects 2 operands");
+                    .ok_or_else(|| generate_error("`>` expects 2 operands", op.location))?;
                 stack.push((a > b) as u64);
             }
             OpCode::Less => {
                 let (b, a) = stack
                     .pop()
                     .zip(stack.pop())
-                    .expect("Less expects 2 operands");
+                    .ok_or_else(|| generate_error("`<` expects 2 operands", op.location))?;
                 stack.push((a < b) as u64);
             }
             OpCode::Equal => {
                 let (a, b) = stack
                     .pop()
                     .zip(stack.pop())
-                    .expect("Equal expects 2 operands");
+                    .ok_or_else(|| generate_error("`=` expects 2 operands", op.location))?;
                 stack.push((a == b) as u64);
             }
 
             OpCode::Dump => {
-                let val = stack.pop().expect("Dump requires an operand");
+                let val = stack
+                    .pop()
+                    .ok_or_else(|| generate_error("`dump` requires an operand", op.location))?;
                 println!("{}", val);
             }
             OpCode::Dup => {
-                let a = stack.last().copied().expect("Dup requires an operand");
+                let a = stack
+                    .last()
+                    .copied()
+                    .ok_or_else(|| generate_error("`dup` requires an operand", op.location))?;
                 stack.push(a);
             }
             OpCode::Mem => stack.push(0),
             OpCode::Load => {
-                let address = stack.pop().expect("Load expects an operand");
-                stack.push(memory[address as usize] as u64);
+                let address = stack
+                    .pop()
+                    .ok_or_else(|| generate_error("`,` expects an operand", op.location))?;
+
+                let value = *memory
+                    .get(address as usize)
+                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                stack.push(value as u64);
             }
             OpCode::Store => {
                 let (value, address) = stack
                     .pop()
                     .zip(stack.pop())
-                    .expect("Store expects 2 operands");
+                    .ok_or_else(|| generate_error("'.' expects 2 operands", op.location))?;
 
-                memory[address as usize] = value as u8;
+                let dest = memory
+                    .get_mut(address as usize)
+                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                *dest = value as u8;
             }
         }
 
         ip += 1;
     }
+
+    Ok(())
 }
