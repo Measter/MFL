@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use codespan_reporting::files::{Files, Location, SimpleFile};
+use codespan_reporting::files::{Files, SimpleFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(usize);
