@@ -47,6 +47,7 @@ impl SourceLocation {
     }
 
     #[inline(always)]
+    #[allow(unused)]
     pub fn merge(self, other: Self) -> Self {
         assert!(self.file_id == other.file_id);
         Self {

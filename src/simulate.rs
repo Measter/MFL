@@ -208,7 +208,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                     .ok_or_else(|| generate_error("`syscall3` expects 4 operands", op.location))?;
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
             }
-            OpCode::SysCall(args @ 0..=6) => {}
+            OpCode::SysCall(0..=6) => {}
             OpCode::SysCall(_) => {
                 return Err(generate_error(
                     "invalid number of syscall args",
