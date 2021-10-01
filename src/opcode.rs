@@ -23,6 +23,7 @@ pub enum OpCode {
     Push(u64),
     Store,
     Subtract,
+    SysCall(usize),
     While { ip: usize },
 }
 
@@ -182,6 +183,10 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
 
             TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
             TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
+
+            TokenKind::SysCall(id) => {
+                ops.push(Op::new(OpCode::SysCall(id), token.kind, token.location))
+            }
         }
     }
 

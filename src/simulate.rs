@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
@@ -10,6 +12,36 @@ fn generate_error(msg: &str, location: SourceLocation) -> Diagnostic<FileId> {
     Diagnostic::error()
         .with_message(msg)
         .with_labels(vec![Label::primary(location.file_id, location.range())])
+}
+
+fn make_syscall3(
+    id: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    memory: &mut [u8],
+    op: Op,
+) -> Result<(), Diagnostic<FileId>> {
+    match id {
+        // Write
+        1 => {
+            let start = arg2 as usize;
+            let end = start + arg3 as usize;
+            let buffer = memory
+                .get(start..end)
+                .ok_or_else(|| generate_error("invalid memory range", op.location))?;
+
+            // Not my problem if this isn't valid output data.
+            let _ = match arg1 {
+                1 => std::io::stdout().write_all(buffer),
+                2 => std::io::stderr().write_all(buffer),
+                _ => return Err(generate_error("unsupported file descriptor", op.location)),
+            };
+        }
+        _ => return Err(generate_error("unsupported syscall ID", op.location)),
+    }
+
+    Ok(())
 }
 
 pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>> {
@@ -121,6 +153,22 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                     .get_mut(address as usize)
                     .ok_or_else(|| generate_error("invalid memory address", op.location))?;
                 *dest = value as u8;
+            }
+            OpCode::SysCall(3) => {
+                let (((syscall_id, arg1), arg2), arg3) = stack
+                    .pop()
+                    .zip(stack.pop())
+                    .zip(stack.pop())
+                    .zip(stack.pop())
+                    .ok_or_else(|| generate_error("`syscall3` expects 4 operands", op.location))?;
+                make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
+            }
+            OpCode::SysCall(args @ 0..=6) => {}
+            OpCode::SysCall(_) => {
+                return Err(generate_error(
+                    "invalid number of syscall args",
+                    op.location,
+                ));
             }
         }
 

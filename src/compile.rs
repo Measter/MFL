@@ -147,6 +147,18 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    pop rax")?;
                 writeln!(&mut out_file, "    mov BYTE [rax], bl")?;
             }
+
+            OpCode::SysCall(a @ 0..=6) => {
+                writeln!(&mut out_file, "    pop rax")?;
+                for reg in &["rdi", "rsi", "rdx", "r10", "r8", "r9"][..a] {
+                    writeln!(&mut out_file, "    pop {}", reg)?;
+                }
+
+                writeln!(&mut out_file, "    syscall")?;
+            }
+            OpCode::SysCall(arg_count) => {
+                panic!("ICE: Invalid syscall argument count: {}", arg_count)
+            }
         }
     }
 

@@ -21,6 +21,7 @@ pub enum TokenKind {
     Minus,
     Plus,
     Store,
+    SysCall(usize),
     While,
 }
 
@@ -149,6 +150,12 @@ impl<'source> Scanner<'source> {
                     "end" => TokenKind::End,
                     "if" => TokenKind::If,
                     "mem" => TokenKind::Mem,
+                    "syscall1" => TokenKind::SysCall(1),
+                    "syscall2" => TokenKind::SysCall(2),
+                    "syscall3" => TokenKind::SysCall(3),
+                    "syscall4" => TokenKind::SysCall(4),
+                    "syscall5" => TokenKind::SysCall(5),
+                    "syscall6" => TokenKind::SysCall(6),
                     "while" => TokenKind::While,
                     _ => TokenKind::Ident,
                 };
