@@ -24,11 +24,13 @@ pub enum OpCode {
     Load,
     Greater,
     Mem,
+    Over,
     Push(u64),
     ShiftLeft,
     ShiftRight,
     Store,
     Subtract,
+    Swap,
     SysCall(usize),
     While { ip: usize },
 }
@@ -61,6 +63,9 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
             TokenKind::Dup => ops.push(Op::new(OpCode::Dup, token.kind, token.location)),
             TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, token.kind, token.location)),
+            TokenKind::Over => ops.push(Op::new(OpCode::Over, token.kind, token.location)),
+            TokenKind::Swap => ops.push(Op::new(OpCode::Swap, token.kind, token.location)),
+
             TokenKind::Mem => ops.push(Op::new(OpCode::Mem, token.kind, token.location)),
             TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
             TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),

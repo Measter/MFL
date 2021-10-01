@@ -168,6 +168,16 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    push rbx")?;
                 writeln!(&mut out_file, "    push rax")?;
             }
+            OpCode::Over => {
+                writeln!(&mut out_file, "    mov rax, QWORD [rsp+8]")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
+            OpCode::Swap => {
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    pop rbx")?;
+                writeln!(&mut out_file, "    push rax")?;
+                writeln!(&mut out_file, "    push rbx")?;
+            }
 
             OpCode::Mem => writeln!(&mut out_file, "    push __memory")?,
             OpCode::Load => {

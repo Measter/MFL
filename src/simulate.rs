@@ -173,10 +173,20 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                     stack.push(a);
                     stack.push(b);
                 }
-                _ => {
-                    return Err(generate_error("`2dup` requires 2 operands", op.location));
-                }
+                _ => return Err(generate_error("`2dup` requires 2 operands", op.location)),
             },
+            OpCode::Over => match &*stack {
+                [.., a, _] => {
+                    let a = *a;
+                    stack.push(a);
+                }
+                _ => return Err(generate_error("`over` requires 2 operands", op.location)),
+            },
+            OpCode::Swap => match &mut *stack {
+                [.., a, b] => std::mem::swap(a, b),
+                _ => return Err(generate_error("`swap` requires 2 operands", op.location)),
+            },
+
             OpCode::Mem => stack.push(0),
             OpCode::Load => {
                 let address = stack
