@@ -17,9 +17,11 @@ pub enum OpCode {
     EndIf { ip: usize },
     EndWhile { condition_ip: usize, end_ip: usize },
     Less,
+    Load,
     Greater,
     Mem,
     Push(u64),
+    Store,
     Subtract,
     While { ip: usize },
 }
@@ -51,6 +53,8 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
             TokenKind::Dup => ops.push(Op::new(OpCode::Dup, token.kind, token.location)),
             TokenKind::Mem => ops.push(Op::new(OpCode::Mem, token.kind, token.location)),
+            TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
+            TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),
 
             TokenKind::Equal => ops.push(Op::new(OpCode::Equal, token.kind, token.location)),
             TokenKind::Greater => ops.push(Op::new(OpCode::Greater, token.kind, token.location)),

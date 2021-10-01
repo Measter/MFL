@@ -16,9 +16,11 @@ pub enum TokenKind {
     Ident,
     If,
     Less,
+    Load,
     Mem,
     Minus,
     Plus,
+    Store,
     While,
 }
 
@@ -47,7 +49,7 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '.' | '=' | '>' | '<') || c.is_whitespace()
+    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -115,6 +117,19 @@ impl<'source> Scanner<'source> {
             )),
             '>' => Some(Token::new(
                 TokenKind::Greater,
+                self.lexeme(input),
+                self.file_id,
+                self.lexeme_range(),
+            )),
+
+            '.' => Some(Token::new(
+                TokenKind::Store,
+                self.lexeme(input),
+                self.file_id,
+                self.lexeme_range(),
+            )),
+            ',' => Some(Token::new(
+                TokenKind::Load,
                 self.lexeme(input),
                 self.file_id,
                 self.lexeme_range(),

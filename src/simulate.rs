@@ -1,8 +1,12 @@
-use crate::opcode::{Op, OpCode};
+use crate::{
+    opcode::{Op, OpCode},
+    MEMORY_CAPACITY,
+};
 
 pub(crate) fn simulate_program(program: &[Op]) {
     let mut ip = 0;
     let mut stack = Vec::new();
+    let mut memory: Vec<u8> = vec![0; MEMORY_CAPACITY];
 
     while let Some(&op) = program.get(ip) {
         match op.code {
@@ -79,6 +83,18 @@ pub(crate) fn simulate_program(program: &[Op]) {
                 stack.push(a);
             }
             OpCode::Mem => stack.push(0),
+            OpCode::Load => {
+                let address = stack.pop().expect("Load expects an operand");
+                stack.push(memory[address as usize] as u64);
+            }
+            OpCode::Store => {
+                let (value, address) = stack
+                    .pop()
+                    .zip(stack.pop())
+                    .expect("Store expects 2 operands");
+
+                memory[address as usize] = value as u8;
+            }
         }
 
         ip += 1;
