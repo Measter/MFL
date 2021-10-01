@@ -156,15 +156,12 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    call dump")?;
             }
             OpCode::Dup => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    push rax")?;
+                writeln!(&mut out_file, "    mov rax, [rsp]")?;
                 writeln!(&mut out_file, "    push rax")?;
             }
             OpCode::DupPair => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    push rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
+                writeln!(&mut out_file, "    mov rax, [rsp]")?;
+                writeln!(&mut out_file, "    mov rbx, [rsp+8]")?;
                 writeln!(&mut out_file, "    push rbx")?;
                 writeln!(&mut out_file, "    push rax")?;
             }
@@ -193,8 +190,7 @@ pub(crate) fn compile_program(
             }
 
             OpCode::SysCall(a @ 0..=6) => {
-                writeln!(&mut out_file, "    pop rax")?;
-                for reg in &["rdi", "rsi", "rdx", "r10", "r8", "r9"][..a] {
+                for reg in &["rax", "rdi", "rsi", "rdx", "r10", "r8", "r9"][..=a] {
                     writeln!(&mut out_file, "    pop {}", reg)?;
                 }
 
