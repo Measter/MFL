@@ -99,10 +99,10 @@ fn main() -> Result<()> {
                 }
             };
 
-            println!("Compiling...");
+            println!("Compiling... to {}", output_asm.display());
             compile::compile_program(&program, &source_storage, &output_asm)?;
 
-            println!("Assembling...");
+            println!("Assembling... to {}", output_obj.display());
             let nasm = Command::new("nasm")
                 .arg("-felf64")
                 .arg(&output_asm)
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
                 std::process::exit(-2);
             }
 
-            println!("Linking...");
+            println!("Linking... into {}", output_binary.display());
             let ld = Command::new("ld")
                 .arg("-o")
                 .arg(&output_binary)
