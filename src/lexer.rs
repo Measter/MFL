@@ -101,12 +101,6 @@ impl<'source> Scanner<'source> {
                 self.file_id,
                 self.lexeme_range(),
             )),
-            '.' => Some(Token::new(
-                TokenKind::Dump,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
             '=' => Some(Token::new(
                 TokenKind::Equal,
                 self.lexeme(input),
@@ -134,6 +128,7 @@ impl<'source> Scanner<'source> {
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
                     "do" => TokenKind::Do,
+                    "dump" => TokenKind::Dump,
                     "dup" => TokenKind::Dup,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
