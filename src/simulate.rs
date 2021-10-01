@@ -132,6 +132,17 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                     .ok_or_else(|| generate_error("`dup` requires an operand", op.location))?;
                 stack.push(a);
             }
+            OpCode::DupPair => match &*stack {
+                [.., a, b] => {
+                    let a = *a;
+                    let b = *b;
+                    stack.push(a);
+                    stack.push(b);
+                }
+                _ => {
+                    return Err(generate_error("`2dup` requires 2 operands", op.location));
+                }
+            },
             OpCode::Mem => stack.push(0),
             OpCode::Load => {
                 let address = stack

@@ -9,6 +9,7 @@ pub enum TokenKind {
     Do,
     Dump,
     Dup,
+    DupPair,
     Else,
     End,
     Equal,
@@ -143,6 +144,7 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
+                    "2dup" => TokenKind::DupPair,
                     "do" => TokenKind::Do,
                     "dump" => TokenKind::Dump,
                     "dup" => TokenKind::Dup,

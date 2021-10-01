@@ -11,6 +11,7 @@ pub enum OpCode {
     Do { end_ip: usize, condition_ip: usize },
     Dump,
     Dup,
+    DupPair,
     Equal,
     If { end_ip: usize, had_else: bool },
     Else { else_start: usize, end_ip: usize },
@@ -53,6 +54,7 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
         match token.kind {
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
             TokenKind::Dup => ops.push(Op::new(OpCode::Dup, token.kind, token.location)),
+            TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, token.kind, token.location)),
             TokenKind::Mem => ops.push(Op::new(OpCode::Mem, token.kind, token.location)),
             TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
             TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),

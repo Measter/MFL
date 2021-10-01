@@ -134,6 +134,14 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    push rax")?;
                 writeln!(&mut out_file, "    push rax")?;
             }
+            OpCode::DupPair => {
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    pop rbx")?;
+                writeln!(&mut out_file, "    push rbx")?;
+                writeln!(&mut out_file, "    push rax")?;
+                writeln!(&mut out_file, "    push rbx")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
 
             OpCode::Mem => writeln!(&mut out_file, "    push __memory")?,
             OpCode::Load => {
