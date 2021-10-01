@@ -10,6 +10,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use crate::{
     opcode::{Op, OpCode},
     source_file::SourceStorage,
+    MEMORY_CAPACITY,
 };
 
 pub(crate) fn compile_program(
@@ -132,12 +133,15 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    push rax")?;
                 writeln!(&mut out_file, "    push rax")?;
             }
+            OpCode::Mem => writeln!(&mut out_file, "    push __memory")?,
         }
     }
 
     writeln!(&mut out_file, "    mov rax, 60")?;
     writeln!(&mut out_file, "    mov rdi, 0")?;
     writeln!(&mut out_file, "    syscall")?;
+    writeln!(&mut out_file, "segment .bss")?;
+    writeln!(&mut out_file, "    __memory: resb {}", MEMORY_CAPACITY)?;
 
     Ok(())
 }

@@ -16,6 +16,8 @@ mod source_file;
 
 use opcode::Op;
 
+const MEMORY_CAPACITY: usize = 2usize.pow(19);
+
 #[derive(Debug, StructOpt)]
 enum Args {
     /// Simulate the program

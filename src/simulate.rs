@@ -78,6 +78,7 @@ pub(crate) fn simulate_program(program: &[Op]) {
                 let a = stack.last().copied().expect("Dup requires an operand");
                 stack.push(a);
             }
+            OpCode::Mem => stack.push(0),
         }
 
         ip += 1;

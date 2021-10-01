@@ -16,6 +16,7 @@ pub enum TokenKind {
     Ident,
     If,
     Less,
+    Mem,
     Minus,
     Plus,
     While,
@@ -137,6 +138,7 @@ impl<'source> Scanner<'source> {
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
                     "if" => TokenKind::If,
+                    "mem" => TokenKind::Mem,
                     "while" => TokenKind::While,
                     _ => TokenKind::Ident,
                 };
