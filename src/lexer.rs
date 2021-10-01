@@ -7,6 +7,7 @@ use crate::source_file::{FileId, SourceLocation};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     Do,
+    Drop,
     Dump,
     Dup,
     DupPair,
@@ -146,6 +147,7 @@ impl<'source> Scanner<'source> {
                 let kind = match lexeme {
                     "2dup" => TokenKind::DupPair,
                     "do" => TokenKind::Do,
+                    "drop" => TokenKind::Drop,
                     "dump" => TokenKind::Dump,
                     "dup" => TokenKind::Dup,
                     "else" => TokenKind::Else,

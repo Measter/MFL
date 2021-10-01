@@ -67,6 +67,11 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
             }
 
             OpCode::Push(val) => stack.push(val),
+            OpCode::Drop => {
+                stack
+                    .pop()
+                    .ok_or_else(|| generate_error("`drop` expects an operand", op.location))?;
+            }
 
             OpCode::While { .. } => {}
             OpCode::Do { end_ip, .. } => {

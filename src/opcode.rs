@@ -8,6 +8,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpCode {
     Add,
+    Drop,
     Do { end_ip: usize, condition_ip: usize },
     Dump,
     Dup,
@@ -52,6 +53,7 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
 
     for token in tokens {
         match token.kind {
+            TokenKind::Drop => ops.push(Op::new(OpCode::Drop, token.kind, token.location)),
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
             TokenKind::Dup => ops.push(Op::new(OpCode::Dup, token.kind, token.location)),
             TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, token.kind, token.location)),

@@ -70,6 +70,7 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    mov rax, {}", v)?;
                 writeln!(&mut out_file, "    push rax")?;
             }
+            OpCode::Drop => writeln!(&mut out_file, "    pop rax")?,
 
             OpCode::Equal => {
                 writeln!(&mut out_file, "    mov rcx, 0")?;
