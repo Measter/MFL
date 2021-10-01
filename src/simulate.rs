@@ -66,6 +66,35 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 *a -= b;
             }
 
+            OpCode::BitOr => {
+                let (b, a) = stack
+                    .pop()
+                    .zip(stack.last_mut())
+                    .ok_or_else(|| generate_error("`bor` expects 2 operands", op.location))?;
+                *a |= b;
+            }
+            OpCode::BitAnd => {
+                let (b, a) = stack
+                    .pop()
+                    .zip(stack.last_mut())
+                    .ok_or_else(|| generate_error("`band` expects 2 operands", op.location))?;
+                *a &= b;
+            }
+            OpCode::ShiftLeft => {
+                let (b, a) = stack
+                    .pop()
+                    .zip(stack.last_mut())
+                    .ok_or_else(|| generate_error("`shl` expects 2 operands", op.location))?;
+                *a <<= b;
+            }
+            OpCode::ShiftRight => {
+                let (b, a) = stack
+                    .pop()
+                    .zip(stack.last_mut())
+                    .ok_or_else(|| generate_error("`shr` expects 2 operands", op.location))?;
+                *a >>= b;
+            }
+
             OpCode::Push(val) => stack.push(val),
             OpCode::Drop => {
                 stack

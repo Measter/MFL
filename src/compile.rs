@@ -66,6 +66,31 @@ pub(crate) fn compile_program(
                 writeln!(&mut out_file, "    push rbx")?;
             }
 
+            OpCode::BitAnd => {
+                writeln!(&mut out_file, "    pop rbx")?;
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    and rax, rbx")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
+            OpCode::BitOr => {
+                writeln!(&mut out_file, "    pop rbx")?;
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    or rax, rbx")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
+            OpCode::ShiftLeft => {
+                writeln!(&mut out_file, "    pop rcx")?;
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    shl rax, cl")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
+            OpCode::ShiftRight => {
+                writeln!(&mut out_file, "    pop rcx")?;
+                writeln!(&mut out_file, "    pop rax")?;
+                writeln!(&mut out_file, "    shr rax, cl")?;
+                writeln!(&mut out_file, "    push rax")?;
+            }
+
             OpCode::Push(v) => {
                 writeln!(&mut out_file, "    mov rax, {}", v)?;
                 writeln!(&mut out_file, "    push rax")?;

@@ -8,6 +8,8 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpCode {
     Add,
+    BitOr,
+    BitAnd,
     Drop,
     Do { end_ip: usize, condition_ip: usize },
     Dump,
@@ -23,6 +25,8 @@ pub enum OpCode {
     Greater,
     Mem,
     Push(u64),
+    ShiftLeft,
+    ShiftRight,
     Store,
     Subtract,
     SysCall(usize),
@@ -187,6 +191,15 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
 
             TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
             TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
+
+            TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, token.kind, token.location)),
+            TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, token.kind, token.location)),
+            TokenKind::ShiftLeft => {
+                ops.push(Op::new(OpCode::ShiftLeft, token.kind, token.location))
+            }
+            TokenKind::ShiftRight => {
+                ops.push(Op::new(OpCode::ShiftRight, token.kind, token.location))
+            }
 
             TokenKind::SysCall(id) => {
                 ops.push(Op::new(OpCode::SysCall(id), token.kind, token.location))

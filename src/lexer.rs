@@ -6,6 +6,8 @@ use crate::source_file::{FileId, SourceLocation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
+    BitOr,
+    BitAnd,
     Do,
     Drop,
     Dump,
@@ -22,6 +24,8 @@ pub enum TokenKind {
     Mem,
     Minus,
     Plus,
+    ShiftLeft,
+    ShiftRight,
     Store,
     SysCall(usize),
     While,
@@ -147,6 +151,8 @@ impl<'source> Scanner<'source> {
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
                     "2dup" => TokenKind::DupPair,
+                    "bor" => TokenKind::BitOr,
+                    "band" => TokenKind::BitAnd,
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
                     "dump" => TokenKind::Dump,
@@ -154,6 +160,8 @@ impl<'source> Scanner<'source> {
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
                     "if" => TokenKind::If,
+                    "shl" => TokenKind::ShiftLeft,
+                    "shr" => TokenKind::ShiftRight,
                     "mem" => TokenKind::Mem,
                     "syscall1" => TokenKind::SysCall(1),
                     "syscall2" => TokenKind::SysCall(2),
