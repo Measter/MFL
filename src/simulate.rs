@@ -4,6 +4,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
     opcode::{Op, OpCode},
+    popn::PopN,
     source_file::{FileId, SourceLocation},
     MEMORY_CAPACITY,
 };
@@ -132,23 +133,20 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.pop())
+                let [b, a] = stack
+                    .popn()
                     .ok_or_else(|| generate_error("`>` expects 2 operands", op.location))?;
                 stack.push((a > b) as u64);
             }
             OpCode::Less => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.pop())
+                let [b, a] = stack
+                    .popn()
                     .ok_or_else(|| generate_error("`<` expects 2 operands", op.location))?;
                 stack.push((a < b) as u64);
             }
             OpCode::Equal => {
-                let (a, b) = stack
-                    .pop()
-                    .zip(stack.pop())
+                let [a, b] = stack
+                    .popn()
                     .ok_or_else(|| generate_error("`=` expects 2 operands", op.location))?;
                 stack.push((a == b) as u64);
             }
@@ -167,19 +165,11 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 stack.push(a);
             }
             OpCode::DupPair => match &*stack {
-                [.., a, b] => {
-                    let a = *a;
-                    let b = *b;
-                    stack.push(a);
-                    stack.push(b);
-                }
+                [.., _, _] => stack.extend_from_within(stack.len() - 2..),
                 _ => return Err(generate_error("`2dup` requires 2 operands", op.location)),
             },
             OpCode::Over => match &*stack {
-                [.., a, _] => {
-                    let a = *a;
-                    stack.push(a);
-                }
+                [.., _, _] => stack.extend_from_within(stack.len() - 2..stack.len() - 1),
                 _ => return Err(generate_error("`over` requires 2 operands", op.location)),
             },
             OpCode::Swap => match &mut *stack {
@@ -199,9 +189,8 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 stack.push(value as u64);
             }
             OpCode::Store => {
-                let (value, address) = stack
-                    .pop()
-                    .zip(stack.pop())
+                let [value, address] = stack
+                    .popn()
                     .ok_or_else(|| generate_error("'.' expects 2 operands", op.location))?;
 
                 let dest = memory
@@ -210,11 +199,8 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 *dest = value as u8;
             }
             OpCode::SysCall(3) => {
-                let (((syscall_id, arg1), arg2), arg3) = stack
-                    .pop()
-                    .zip(stack.pop())
-                    .zip(stack.pop())
-                    .zip(stack.pop())
+                let [syscall_id, arg1, arg2, arg3] = stack
+                    .popn()
                     .ok_or_else(|| generate_error("`syscall3` expects 4 operands", op.location))?;
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
             }

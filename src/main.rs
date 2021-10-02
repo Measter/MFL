@@ -11,6 +11,7 @@ use structopt::StructOpt;
 mod compile;
 mod lexer;
 mod opcode;
+mod popn;
 mod simulate;
 mod source_file;
 
