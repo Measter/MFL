@@ -16,7 +16,7 @@ pub enum OpCode {
     Dup,
     DupPair,
     Equal,
-    If { end_ip: usize, had_else: bool },
+    If { end_ip: usize },
     Else { else_start: usize, end_ip: usize },
     EndIf { ip: usize },
     EndWhile { condition_ip: usize, end_ip: usize },
@@ -126,10 +126,7 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::If => {
                 block_kind_stack.push((ops.len(), token.kind));
                 ops.push(Op::new(
-                    OpCode::If {
-                        end_ip: usize::MAX,
-                        had_else: false,
-                    },
+                    OpCode::If { end_ip: usize::MAX },
                     token.kind,
                     token.location,
                 ));

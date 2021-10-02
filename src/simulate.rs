@@ -116,13 +116,13 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
             OpCode::EndWhile { condition_ip, .. } => {
                 ip = condition_ip;
             }
-            OpCode::If { end_ip, had_else } => {
+            OpCode::If { end_ip, .. } => {
                 let a = stack
                     .pop()
                     .ok_or_else(|| generate_error("`if` expects a condition", op.location))?;
 
                 if a == 0 {
-                    ip = end_ip + had_else as usize;
+                    ip = end_ip + 1;
                     continue;
                 }
             }
