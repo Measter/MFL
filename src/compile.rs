@@ -199,6 +199,9 @@ pub(crate) fn compile_program(
             OpCode::SysCall(arg_count) => {
                 panic!("ICE: Invalid syscall argument count: {}", arg_count)
             }
+            OpCode::End { .. } => {
+                panic!("ICE: Encountered OpCode::End")
+            }
         }
     }
 

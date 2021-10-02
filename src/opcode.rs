@@ -15,6 +15,7 @@ pub enum OpCode {
     Dump,
     Dup,
     DupPair,
+    End { ip: usize },
     Equal,
     If { end_ip: usize },
     Else { else_start: usize, end_ip: usize },
@@ -54,7 +55,6 @@ impl Op {
 
 pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
-    let mut block_kind_stack = Vec::new();
     let mut diags = Vec::new();
 
     for token in tokens {
@@ -92,104 +92,38 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
                 ops.push(Op::new(OpCode::Push(num), token.kind, token.location));
             }
 
-            TokenKind::While => {
-                let ip = ops.len();
-                block_kind_stack.push((ip, token.kind));
-                ops.push(Op::new(OpCode::While { ip }, token.kind, token.location));
-            }
-            TokenKind::Do => {
-                match block_kind_stack.pop() {
-                    Some((_, TokenKind::While)) => {}
-                    _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`do` requires a preceeding `while`")
-                            .with_labels(vec![Label::primary(
-                                token.location.file_id,
-                                token.location.range(),
-                            )]);
-                        diags.push(diag);
-                        continue;
-                    }
-                };
+            TokenKind::While => ops.push(Op::new(
+                OpCode::While { ip: ops.len() },
+                token.kind,
+                token.location,
+            )),
+            TokenKind::Do => ops.push(Op::new(
+                OpCode::Do {
+                    end_ip: usize::MAX,
+                    condition_ip: usize::MAX,
+                },
+                token.kind,
+                token.location,
+            )),
 
-                block_kind_stack.push((ops.len(), token.kind));
-                ops.push(Op::new(
-                    OpCode::Do {
-                        end_ip: usize::MAX,
-                        condition_ip: usize::MAX,
-                    },
-                    token.kind,
-                    token.location,
-                ));
-            }
-
-            TokenKind::If => {
-                block_kind_stack.push((ops.len(), token.kind));
-                ops.push(Op::new(
-                    OpCode::If { end_ip: usize::MAX },
-                    token.kind,
-                    token.location,
-                ));
-            }
-            TokenKind::Else => {
-                match block_kind_stack.pop() {
-                    Some((_, TokenKind::If)) => {}
-                    _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`else` requires a preceding `if`")
-                            .with_labels(vec![Label::primary(
-                                token.location.file_id,
-                                token.location.range(),
-                            )]);
-                        diags.push(diag);
-                        continue;
-                    }
-                }
-
-                let ip = ops.len();
-                block_kind_stack.push((ip, token.kind));
-                ops.push(Op::new(
-                    OpCode::Else {
-                        else_start: ip,
-                        end_ip: usize::MAX,
-                    },
-                    token.kind,
-                    token.location,
-                ));
-            }
-            TokenKind::End => {
-                let dest_idx = match block_kind_stack.pop() {
-                    Some((id, TokenKind::If | TokenKind::Else | TokenKind::Do)) => id,
-                    _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`end` requires a preceding `if`, `else`, or `while-do`")
-                            .with_labels(vec![Label::primary(
-                                token.location.file_id,
-                                token.location.range(),
-                            )]);
-                        diags.push(diag);
-                        continue;
-                    }
-                };
-
-                let ip = ops.len();
-                match &mut ops[dest_idx].code {
-                    OpCode::If { .. } | OpCode::Else { .. } => {
-                        ops.push(Op::new(OpCode::EndIf { ip }, token.kind, token.location));
-                    }
-                    OpCode::Do { .. } => {
-                        ops.push(Op::new(
-                            OpCode::EndWhile {
-                                condition_ip: usize::MAX,
-                                end_ip: ip,
-                            },
-                            token.kind,
-                            token.location,
-                        ));
-                    }
-                    _ => unreachable!(),
-                }
-            }
+            TokenKind::If => ops.push(Op::new(
+                OpCode::If { end_ip: usize::MAX },
+                token.kind,
+                token.location,
+            )),
+            TokenKind::Else => ops.push(Op::new(
+                OpCode::Else {
+                    else_start: ops.len(),
+                    end_ip: usize::MAX,
+                },
+                token.kind,
+                token.location,
+            )),
+            TokenKind::End => ops.push(Op::new(
+                OpCode::End { ip: ops.len() },
+                token.kind,
+                token.location,
+            )),
 
             TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
             TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
@@ -240,38 +174,6 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     _ => unreachable!(),
                 }
             }
-            OpCode::EndWhile { .. } => {
-                let do_ip = match jump_ip_stack.pop() {
-                    Some((id, TokenKind::Do, _)) => id,
-                    _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`end` requires a preceeding `while-do`")
-                            .with_labels(vec![Label::primary(
-                                op.location.file_id,
-                                op.location.range(),
-                            )]);
-                        diags.push(diag);
-                        continue;
-                    }
-                };
-
-                let while_ip = match &mut ops[do_ip].code {
-                    OpCode::Do {
-                        condition_ip,
-                        end_ip,
-                        ..
-                    } => {
-                        *end_ip = ip;
-                        *condition_ip
-                    }
-                    _ => unreachable!(),
-                };
-
-                match &mut ops[ip].code {
-                    OpCode::EndWhile { condition_ip, .. } => *condition_ip = while_ip,
-                    _ => unreachable!(),
-                }
-            }
             OpCode::While { .. } => jump_ip_stack.push((ip, op.token, op.location)),
 
             OpCode::If { .. } => jump_ip_stack.push((ip, op.token, op.location)),
@@ -297,9 +199,10 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
 
                 jump_ip_stack.push((ip, op.token, op.location));
             }
-            OpCode::EndIf { ip } => {
-                let if_else_idx = match jump_ip_stack.pop() {
-                    Some((id, TokenKind::If | TokenKind::Else, _)) => id,
+
+            OpCode::End { ip } => {
+                let src_ip = match jump_ip_stack.pop() {
+                    Some((id, TokenKind::If | TokenKind::Else | TokenKind::Do, _)) => id,
                     _ => {
                         let diag = Diagnostic::error()
                             .with_message("`end` requires a preceding `if`, `else`, or `while-do`")
@@ -312,9 +215,21 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     }
                 };
 
-                match &mut ops[if_else_idx].code {
-                    OpCode::If { end_ip, .. } | OpCode::Else { end_ip, .. } => {
+                match &mut ops[src_ip].code {
+                    OpCode::Do {
+                        end_ip,
+                        condition_ip,
+                    } => {
                         *end_ip = ip;
+                        let while_ip = *condition_ip;
+                        ops[ip].code = OpCode::EndWhile {
+                            condition_ip: while_ip,
+                            end_ip: ip,
+                        };
+                    }
+                    OpCode::If { end_ip } | OpCode::Else { end_ip, .. } => {
+                        *end_ip = ip;
+                        ops[ip].code = OpCode::EndIf { ip };
                     }
                     _ => unreachable!(),
                 }

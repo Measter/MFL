@@ -211,6 +211,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                     op.location,
                 ));
             }
+            OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
         }
 
         ip += 1;
