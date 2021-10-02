@@ -293,14 +293,8 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     }
                 };
 
-                match &mut ops[if_idx] {
-                    Op {
-                        code: OpCode::If { end_ip, had_else },
-                        ..
-                    } => {
-                        *end_ip = else_start;
-                        *had_else = true;
-                    }
+                match &mut ops[if_idx].code {
+                    OpCode::If { end_ip } => *end_ip = else_start,
                     _ => unreachable!(),
                 }
 
