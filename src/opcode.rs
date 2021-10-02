@@ -1,6 +1,7 @@
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
+    generate_error,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation},
 };
@@ -244,6 +245,115 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
             .with_message("unclosed `if`, `else`, or `while-do` block")
             .with_labels(vec![Label::primary(loc.file_id, loc.range())]);
         diags.push(diag);
+    }
+
+    diags.is_empty().then(|| ()).ok_or(diags)
+}
+
+pub fn check_stack(ops: &[Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
+    let mut stack_depth = 0;
+    let mut diags = Vec::new();
+
+    for op in ops {
+        match op.code {
+            OpCode::Add
+            | OpCode::Subtract
+            | OpCode::BitOr
+            | OpCode::BitAnd
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight
+            | OpCode::Equal
+            | OpCode::Less
+            | OpCode::Greater => {
+                if stack_depth < 2 {
+                    diags.push(generate_error(
+                        format!("2 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 1;
+                } else {
+                    stack_depth -= 1;
+                }
+            }
+
+            OpCode::Push(_) | OpCode::Mem => stack_depth += 1,
+            OpCode::Dup | OpCode::Over => {
+                if stack_depth < 1 {
+                    diags.push(generate_error(
+                        format!("1 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 1;
+                } else {
+                    stack_depth += 1;
+                }
+            }
+            OpCode::DupPair => {
+                if stack_depth < 2 {
+                    diags.push(generate_error(
+                        format!("2 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 2;
+                } else {
+                    stack_depth += 2;
+                }
+            }
+
+            OpCode::Drop | OpCode::Dump | OpCode::Do { .. } | OpCode::If { .. } => {
+                if stack_depth < 1 {
+                    diags.push(generate_error(
+                        format!("1 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                } else {
+                    stack_depth -= 1;
+                }
+            }
+
+            OpCode::Load => {
+                if stack_depth < 1 {
+                    diags.push(generate_error(
+                        format!("1 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 1;
+                }
+            }
+            OpCode::Store => {
+                if stack_depth < 2 {
+                    diags.push(generate_error(
+                        format!("2 operands expected, found {}", stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 0;
+                }
+            }
+
+            OpCode::SysCall(a @ 0..=6) => {
+                if stack_depth < a + 1 {
+                    diags.push(generate_error(
+                        format!("{} operands expected, found {}", a + 1, stack_depth),
+                        op.location,
+                    ));
+                    stack_depth = 0;
+                }
+            }
+            OpCode::SysCall(a) => {
+                diags.push(generate_error(
+                    format!("invalid syscall({})", a),
+                    op.location,
+                ));
+                stack_depth = 0;
+            }
+
+            OpCode::Else { .. }
+            | OpCode::End { .. }
+            | OpCode::EndIf { .. }
+            | OpCode::EndWhile { .. }
+            | OpCode::Swap
+            | OpCode::While { .. } => {}
+        }
     }
 
     diags.is_empty().then(|| ()).ok_or(diags)

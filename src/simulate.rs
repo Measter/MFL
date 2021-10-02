@@ -1,19 +1,14 @@
 use std::io::Write;
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::diagnostic::Diagnostic;
 
 use crate::{
+    generate_error,
     opcode::{Op, OpCode},
     popn::PopN,
-    source_file::{FileId, SourceLocation},
+    source_file::FileId,
     MEMORY_CAPACITY,
 };
-
-fn generate_error(msg: &str, location: SourceLocation) -> Diagnostic<FileId> {
-    Diagnostic::error()
-        .with_message(msg)
-        .with_labels(vec![Label::primary(location.file_id, location.range())])
-}
 
 fn make_syscall3(
     id: u64,
@@ -53,61 +48,39 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
     while let Some(&op) = program.get(ip) {
         match op.code {
             OpCode::Add => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`+` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a += b;
             }
             OpCode::Subtract => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`-` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a -= b;
             }
 
             OpCode::BitOr => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`bor` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a |= b;
             }
             OpCode::BitAnd => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`band` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a &= b;
             }
             OpCode::ShiftLeft => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`shl` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a <<= b;
             }
             OpCode::ShiftRight => {
-                let (b, a) = stack
-                    .pop()
-                    .zip(stack.last_mut())
-                    .ok_or_else(|| generate_error("`shr` expects 2 operands", op.location))?;
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a >>= b;
             }
 
             OpCode::Push(val) => stack.push(val),
             OpCode::Drop => {
-                stack
-                    .pop()
-                    .ok_or_else(|| generate_error("`drop` expects an operand", op.location))?;
+                stack.pop().unwrap();
             }
 
             OpCode::While { .. } => {}
             OpCode::Do { end_ip, .. } => {
-                let a = stack
-                    .pop()
-                    .ok_or_else(|| generate_error("`while-do` expects a condition", op.location))?;
+                let a = stack.pop().unwrap();
 
                 if a == 0 {
                     ip = end_ip + 1;
@@ -118,9 +91,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 ip = condition_ip;
             }
             OpCode::If { end_ip, .. } => {
-                let a = stack
-                    .pop()
-                    .ok_or_else(|| generate_error("`if` expects a condition", op.location))?;
+                let a = stack.pop().unwrap();
 
                 if a == 0 {
                     ip = end_ip + 1;
@@ -133,55 +104,47 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
-                let [b, a] = stack
-                    .popn()
-                    .ok_or_else(|| generate_error("`>` expects 2 operands", op.location))?;
+                let [b, a] = stack.popn().unwrap();
                 stack.push((a > b) as u64);
             }
             OpCode::Less => {
-                let [b, a] = stack
-                    .popn()
-                    .ok_or_else(|| generate_error("`<` expects 2 operands", op.location))?;
+                let [b, a] = stack.popn().unwrap();
                 stack.push((a < b) as u64);
             }
             OpCode::Equal => {
-                let [a, b] = stack
-                    .popn()
-                    .ok_or_else(|| generate_error("`=` expects 2 operands", op.location))?;
+                let [a, b] = stack.popn().unwrap();
                 stack.push((a == b) as u64);
             }
 
             OpCode::Dump => {
-                let val = stack
-                    .pop()
-                    .ok_or_else(|| generate_error("`dump` requires an operand", op.location))?;
+                let val = stack.pop().unwrap();
                 println!("{}", val);
             }
             OpCode::Dup => {
-                let a = stack
-                    .last()
-                    .copied()
-                    .ok_or_else(|| generate_error("`dup` requires an operand", op.location))?;
+                let a = stack.last().copied().unwrap();
                 stack.push(a);
             }
-            OpCode::DupPair => match &*stack {
-                [.., _, _] => stack.extend_from_within(stack.len() - 2..),
-                _ => return Err(generate_error("`2dup` requires 2 operands", op.location)),
-            },
-            OpCode::Over => match &*stack {
-                [.., _, _] => stack.extend_from_within(stack.len() - 2..stack.len() - 1),
-                _ => return Err(generate_error("`over` requires 2 operands", op.location)),
-            },
-            OpCode::Swap => match &mut *stack {
-                [.., a, b] => std::mem::swap(a, b),
-                _ => return Err(generate_error("`swap` requires 2 operands", op.location)),
-            },
+            OpCode::DupPair => {
+                if let [.., _, _] = &*stack {
+                    stack.extend_from_within(stack.len() - 2..);
+                }
+            }
+
+            OpCode::Over => {
+                if let [.., _, _] = &*stack {
+                    stack.extend_from_within(stack.len() - 2..stack.len() - 1);
+                }
+            }
+
+            OpCode::Swap => {
+                if let [.., a, b] = &mut *stack {
+                    std::mem::swap(a, b);
+                }
+            }
 
             OpCode::Mem => stack.push(0),
             OpCode::Load => {
-                let address = stack
-                    .pop()
-                    .ok_or_else(|| generate_error("`,` expects an operand", op.location))?;
+                let address = stack.pop().unwrap();
 
                 let value = *memory
                     .get(address as usize)
@@ -189,9 +152,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 stack.push(value as u64);
             }
             OpCode::Store => {
-                let [value, address] = stack
-                    .popn()
-                    .ok_or_else(|| generate_error("'.' expects 2 operands", op.location))?;
+                let [value, address] = stack.popn().unwrap();
 
                 let dest = memory
                     .get_mut(address as usize)
@@ -199,18 +160,10 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 *dest = value as u8;
             }
             OpCode::SysCall(3) => {
-                let [syscall_id, arg1, arg2, arg3] = stack
-                    .popn()
-                    .ok_or_else(|| generate_error("`syscall3` expects 4 operands", op.location))?;
+                let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
             }
-            OpCode::SysCall(0..=6) => {}
-            OpCode::SysCall(_) => {
-                return Err(generate_error(
-                    "invalid number of syscall args",
-                    op.location,
-                ));
-            }
+            OpCode::SysCall(_) => {}
             OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
         }
 

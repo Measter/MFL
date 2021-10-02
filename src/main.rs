@@ -1,11 +1,11 @@
 use std::{path::Path, process::Command};
 
 use codespan_reporting::{
-    diagnostic::Diagnostic,
+    diagnostic::{Diagnostic, Label},
     term::termcolor::{ColorChoice, StandardStream},
 };
 use color_eyre::eyre::{eyre, Context, Result};
-use source_file::{FileId, SourceStorage};
+use source_file::{FileId, SourceLocation, SourceStorage};
 use structopt::StructOpt;
 
 mod compile;
@@ -36,6 +36,12 @@ enum Args {
     },
 }
 
+fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnostic<FileId> {
+    Diagnostic::error()
+        .with_message(msg)
+        .with_labels(vec![Label::primary(location.file_id, location.range())])
+}
+
 fn load_program(
     source_store: &mut SourceStorage,
     file: &str,
@@ -54,6 +60,9 @@ fn load_program(
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
+    if let Err(diags) = opcode::check_stack(&ops) {
+        return Ok(Err(diags));
+    }
     if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
         return Ok(Err(diags));
     }
