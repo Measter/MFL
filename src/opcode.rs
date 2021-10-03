@@ -1,4 +1,5 @@
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use variantly::Variantly;
 
 use crate::{
     generate_error,
@@ -10,7 +11,7 @@ use self::optimizer_passes::PASSES;
 
 mod optimizer_passes;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum OpCode {
     Add,
     BitOr,
@@ -128,6 +129,13 @@ impl OpCode {
             Greater => |a, b| (a > b) as u64,
             Less => |a, b| (a < b) as u64,
             _ => panic!("ICE: Attempted to get the binary_op of a {:?}", self),
+        }
+    }
+
+    fn unwrap_mem(self) -> usize {
+        match self {
+            Self::Mem { offset } => offset,
+            _ => panic!("expected OpCode::Mem"),
         }
     }
 }

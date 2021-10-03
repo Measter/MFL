@@ -10,25 +10,21 @@ pub(super) const PASSES: &[PassFunction] = &[binary_ops, memory_offset];
 
 /// [Push(a), Push(b), BinOp] -> [Push(a BinOp b)]
 pub(super) fn binary_ops(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
-    let (a_loc, a_val, b_val, op, xs) = match ops {
-        [Op {
-            code: Push(a_val),
-            location: a_loc,
-            ..
-        }, Op {
-            code: Push(b_val), ..
-        }, op, xs @ ..]
-            if op.code.is_binary_op() =>
-        {
-            (*a_loc, *a_val, *b_val, op, xs)
+    let (a, b, op, xs) = match ops {
+        [a, b, op, xs @ ..] if a.code.is_push() && b.code.is_push() && op.code.is_binary_op() => {
+            (a, b, op, xs)
         }
+
         _ => return None,
     };
+
+    let a_val = a.code.unwrap_push();
+    let b_val = b.code.unwrap_push();
 
     let opt = Op {
         code: Push(op.code.get_binary_op()(a_val, b_val)),
         token: TokenKind::Ident,
-        location: a_loc.merge(op.location),
+        location: a.location.merge(op.location),
     };
 
     Some((vec![opt], xs))
@@ -37,37 +33,29 @@ pub(super) fn binary_ops(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
 ///   [Mem(a), Push(b), Add/Sub]
 /// | [Push(a), Mem(b), Add/Sub] -> [Mem(a Add/Sub b)]
 pub(super) fn memory_offset(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
-    let (a_loc, a_val, b_val, op, xs) = match ops {
-        [Op {
-            code: Push(a_val),
-            location: a_loc,
-            ..
-        }, Op {
-            code: Mem { offset: b_val },
-            ..
-        }, op @ Op {
-            code: Add | Subtract,
-            ..
-        }, xs @ ..] => (*a_loc, *a_val, *b_val as u64, op, xs),
-        [Op {
-            code: Mem { offset: a_val },
-            location: a_loc,
-            ..
-        }, Op {
-            code: Push(b_val), ..
-        }, op @ Op {
-            code: Add | Subtract,
-            ..
-        }, xs @ ..] => (*a_loc, *a_val as u64, *b_val, op, xs),
+    let (a, b, op, xs) = match ops {
+        [a, b, op, xs @ ..]
+            if a.code.is_push() && b.code.is_mem() && matches!(op.code, Add | Subtract) =>
+        {
+            (a, b, op, xs)
+        }
+        [a, b, op, xs @ ..]
+            if a.code.is_mem() && b.code.is_push() && matches!(op.code, Add | Subtract) =>
+        {
+            (a, b, op, xs)
+        }
         _ => return None,
     };
+
+    let a_val = a.code.push().unwrap_or_else(|| a.code.unwrap_mem() as u64);
+    let b_val = b.code.push().unwrap_or_else(|| b.code.unwrap_mem() as u64);
 
     let opt = Op {
         code: Mem {
             offset: op.code.get_binary_op()(a_val, b_val) as _,
         },
         token: TokenKind::Mem,
-        location: a_loc.merge(op.location),
+        location: a.location.merge(op.location),
     };
 
     Some((vec![opt], xs))
