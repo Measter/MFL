@@ -243,7 +243,7 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    mov rdi, 0")?;
     writeln!(&mut out_file, "    syscall")?;
 
-    writeln!(&mut out_file, "segment .data")?;
+    writeln!(&mut out_file, "segment .rodata")?;
     for (id, literal) in interner.iter() {
         let id = id.into_inner().get();
         write!(&mut out_file, "    __string_literal{}: db ", id)?;
