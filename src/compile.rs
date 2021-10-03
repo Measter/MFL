@@ -173,6 +173,18 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
     Ok(())
 }
 
+fn try_optimize(ops: &[Op]) -> (Vec<u8>, &[Op], &[Op]) {
+    let mut asm = Vec::new();
+
+    let (compiled, remaining) = ops.split_at(1);
+
+    for &op in compiled {
+        compile_op(&mut asm, op).unwrap();
+    }
+
+    (asm, compiled, remaining)
+}
+
 pub(crate) fn compile_program(
     program: &[Op],
     source_store: &SourceStorage,
@@ -201,19 +213,27 @@ pub(crate) fn compile_program(
 
     writeln!(&mut out_file, "_start:")?;
 
-    for (ip, &op) in program.iter().enumerate() {
-        let location = source_store.location(op.location.file_id, op.location.source_start)?;
-        writeln!(
-            &mut out_file,
-            ";; IP{} -- {}:{}:{} -- {:?}",
-            ip,
-            source_store.name(op.location.file_id)?,
-            location.line_number,
-            location.column_number,
-            op.code,
-        )?;
+    let mut ops = program;
+    let mut ip = 0;
+    while !ops.is_empty() {
+        let (asm, compiled_ops, remaining_ops) = try_optimize(ops);
 
-        compile_op(&mut out_file, op)?;
+        for op in compiled_ops {
+            let location = source_store.location(op.location.file_id, op.location.source_start)?;
+            writeln!(
+                &mut out_file,
+                ";; IP{} -- {}:{}:{} -- {:?}",
+                ip,
+                source_store.name(op.location.file_id)?,
+                location.line_number,
+                location.column_number,
+                op.code,
+            )?;
+        }
+        out_file.write_all(&asm)?;
+
+        ops = remaining_ops;
+        ip += 1;
     }
 
     writeln!(&mut out_file, "    mov rax, 60")?;
