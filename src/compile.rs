@@ -6,6 +6,7 @@ use std::{
 
 use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
+use lasso::Rodeo;
 
 use crate::{
     opcode::{Op, OpCode},
@@ -44,7 +45,7 @@ impl OpCode {
     }
 }
 
-fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
+fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
     match op.code {
         OpCode::Add
         | OpCode::Subtract
@@ -57,12 +58,20 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
             writeln!(output, "    {} QWORD [rsp], {}", op, b_reg)?;
         }
 
-        OpCode::Push(v) if v < u32::MAX as u64 => {
+        OpCode::PushInt(v) if v < u32::MAX as u64 => {
             writeln!(output, "    push {}", v)?;
         }
-        OpCode::Push(v) => {
+        OpCode::PushInt(v) => {
             writeln!(output, "    mov rax, {}", v)?;
             writeln!(output, "    push rax")?;
+        }
+        OpCode::PushStr(id) => {
+            let literal = interner.resolve(&id);
+            let id = id.into_inner().get();
+
+            writeln!(output, "    push {}", literal.len())?;
+            writeln!(output, "    push __string_literal{}", id)?;
+            // unimplemented!()
         }
         OpCode::Drop => writeln!(output, "    pop rax")?,
 
@@ -168,13 +177,18 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
     Ok(())
 }
 
-fn try_optimize(ops: &[Op]) -> (Vec<u8>, &[Op], &[Op]) {
-    PASSES.iter().filter_map(|pass| pass(ops)).next().unwrap()
+fn try_optimize<'a>(interner: &Rodeo, ops: &'a [Op]) -> (Vec<u8>, &'a [Op], &'a [Op]) {
+    PASSES
+        .iter()
+        .filter_map(|pass| pass(interner, ops))
+        .next()
+        .unwrap()
 }
 
 pub(crate) fn compile_program(
     program: &[Op],
     source_store: &SourceStorage,
+    interner: &Rodeo,
     out_file_path: &Path,
 ) -> Result<()> {
     let mut cur_exe_dur =
@@ -205,7 +219,7 @@ pub(crate) fn compile_program(
     let mut ops = program;
     let mut ip = 0;
     while !ops.is_empty() {
-        let (asm, compiled_ops, remaining_ops) = try_optimize(ops);
+        let (asm, compiled_ops, remaining_ops) = try_optimize(interner, ops);
 
         for op in compiled_ops {
             let location = source_store.location(op.location.file_id, op.location.source_start)?;
@@ -228,6 +242,19 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    mov rax, 60")?;
     writeln!(&mut out_file, "    mov rdi, 0")?;
     writeln!(&mut out_file, "    syscall")?;
+
+    writeln!(&mut out_file, "segment .data")?;
+    for (id, literal) in interner.iter() {
+        let id = id.into_inner().get();
+        write!(&mut out_file, "    __string_literal{}: db ", id)?;
+
+        for b in literal.as_bytes() {
+            write!(&mut out_file, "{},", b)?;
+        }
+
+        out_file.write_all(b"0\n")?;
+    }
+
     writeln!(&mut out_file, "segment .bss")?;
     writeln!(&mut out_file, "    __memory: resb {}", MEMORY_CAPACITY)?;
 

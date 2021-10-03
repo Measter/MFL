@@ -8,6 +8,7 @@ use codespan_reporting::{
     },
 };
 use color_eyre::eyre::{eyre, Context, Result};
+use lasso::Rodeo;
 use source_file::{FileId, SourceLocation, SourceStorage};
 use structopt::StructOpt;
 
@@ -49,6 +50,7 @@ fn load_program(
     stderr: &mut StandardStreamLock,
     cfg: &Config,
     source_store: &mut SourceStorage,
+    interner: &mut Rodeo,
     file: &str,
 ) -> Result<Result<Vec<Op>, Vec<Diagnostic<FileId>>>> {
     let contents =
@@ -56,7 +58,7 @@ fn load_program(
 
     let file_id = source_store.add(file, &contents);
 
-    let tokens = match lexer::lex_file(&contents, file_id) {
+    let tokens = match lexer::lex_file(&contents, file_id, interner) {
         Ok(program) => program,
         Err(diag) => return Ok(Err(vec![diag])),
     };
@@ -93,19 +95,26 @@ fn main() -> Result<()> {
     let mut stderr = stderr.lock();
 
     let mut source_storage = SourceStorage::new();
+    let mut interner = Rodeo::default();
 
     match args {
         Args::Simulate { file } => {
-            let program = match load_program(&mut stderr, &cfg, &mut source_storage, &file)? {
-                Ok(program) => program,
-                Err(diags) => {
-                    for diag in diags {
-                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            let program =
+                match load_program(&mut stderr, &cfg, &mut source_storage, &mut interner, &file)? {
+                    Ok(program) => program,
+                    Err(diags) => {
+                        for diag in diags {
+                            codespan_reporting::term::emit(
+                                &mut stderr,
+                                &cfg,
+                                &source_storage,
+                                &diag,
+                            )?;
+                        }
+                        std::process::exit(-1);
                     }
-                    std::process::exit(-1);
-                }
-            };
-            if let Err(diag) = simulate::simulate_program(&program) {
+                };
+            if let Err(diag) = simulate::simulate_program(&program, &interner) {
                 codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
             }
         }
@@ -117,18 +126,24 @@ fn main() -> Result<()> {
             let mut output_binary = output_obj.clone();
             output_binary.set_extension("");
 
-            let program = match load_program(&mut stderr, &cfg, &mut source_storage, &file)? {
-                Ok(program) => program,
-                Err(diags) => {
-                    for diag in diags {
-                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            let program =
+                match load_program(&mut stderr, &cfg, &mut source_storage, &mut interner, &file)? {
+                    Ok(program) => program,
+                    Err(diags) => {
+                        for diag in diags {
+                            codespan_reporting::term::emit(
+                                &mut stderr,
+                                &cfg,
+                                &source_storage,
+                                &diag,
+                            )?;
+                        }
+                        std::process::exit(-1);
                     }
-                    std::process::exit(-1);
-                }
-            };
+                };
 
             println!("Compiling... to {}", output_asm.display());
-            compile::compile_program(&program, &source_storage, &output_asm)?;
+            compile::compile_program(&program, &source_storage, &interner, &output_asm)?;
 
             println!("Assembling... to {}", output_obj.display());
             let nasm = Command::new("nasm")

@@ -1,4 +1,5 @@
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
@@ -32,7 +33,8 @@ pub enum OpCode {
     Greater,
     Mem { offset: usize },
     Over,
-    Push(u64),
+    PushInt(u64),
+    PushStr(Spur),
     ShiftLeft,
     ShiftRight,
     Store,
@@ -66,7 +68,8 @@ impl OpCode {
             | OpCode::EndWhile { .. }
             | OpCode::Mem { .. }
             | OpCode::Over
-            | OpCode::Push(_)
+            | OpCode::PushInt(_)
+            | OpCode::PushStr(_)
             | OpCode::Swap
             | OpCode::While { .. } => 0,
 
@@ -86,12 +89,12 @@ impl OpCode {
             | OpCode::Load
             | OpCode::Mem { .. }
             | OpCode::Over
-            | OpCode::Push(_)
+            | OpCode::PushInt(_)
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
             | OpCode::Subtract => 1,
 
-            OpCode::DupPair => 2,
+            OpCode::DupPair | OpCode::PushStr(_) => 2,
 
             OpCode::Drop
             | OpCode::Do { .. }
@@ -210,7 +213,10 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
                     }
                 };
 
-                ops.push(Op::new(OpCode::Push(num), token.kind, token.location));
+                ops.push(Op::new(OpCode::PushInt(num), token.kind, token.location));
+            }
+            TokenKind::String(id) => {
+                ops.push(Op::new(OpCode::PushStr(id), token.kind, token.location))
             }
 
             TokenKind::While => ops.push(Op::new(

@@ -1,6 +1,7 @@
 use std::{iter::Peekable, ops::Range, str::CharIndices};
 
-use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use lasso::{Rodeo, Spur};
 
 use crate::source_file::{FileId, SourceLocation};
 
@@ -27,6 +28,7 @@ pub enum TokenKind {
     Over,
     ShiftLeft,
     ShiftRight,
+    String(Spur),
     Store,
     Swap,
     SysCall(usize),
@@ -55,6 +57,7 @@ struct Scanner<'a> {
     cur_token_start: usize,
     next_token_start: usize,
     file_id: FileId,
+    string_buf: String,
 }
 
 fn end_token(c: char) -> bool {
@@ -84,9 +87,66 @@ impl<'source> Scanner<'source> {
         self.cur_token_start..self.next_token_start
     }
 
+    fn lex_string<'token>(
+        &mut self,
+        input: &'token str,
+        interner: &mut Rodeo,
+    ) -> Result<Token<'token>, Diagnostic<FileId>> {
+        self.string_buf.clear();
+
+        while !self.is_at_end() {
+            let ch = self.advance();
+            let next_ch = self.peek().unwrap_or_default();
+
+            match (ch, next_ch) {
+                ('\\', '\\' | '"') => {
+                    self.string_buf.push(next_ch);
+                    self.advance();
+                }
+                ('\\', 'r') => {
+                    self.string_buf.push('\r');
+                    self.advance();
+                }
+                ('\\', 'n') => {
+                    self.string_buf.push('\n');
+                    self.advance();
+                }
+                ('\\', 't') => {
+                    self.string_buf.push('\t');
+                    self.advance();
+                }
+                ('"', _) => break,
+                (ch, _) => self.string_buf.push(ch),
+            }
+        }
+
+        if self.is_at_end() {
+            let diag = Diagnostic::error()
+                .with_message("unclosed string literal")
+                .with_labels(vec![Label::primary(
+                    self.file_id,
+                    self.cur_token_start..self.next_token_start,
+                )]);
+            return Err(diag);
+        }
+
+        self.advance(); // Grab the close quote.
+
+        let lexeme = self.lexeme(input);
+        let id = interner.get_or_intern(&self.string_buf);
+
+        Ok(Token::new(
+            TokenKind::String(id),
+            lexeme,
+            self.file_id,
+            self.lexeme_range(),
+        ))
+    }
+
     fn scan_token<'token>(
         &mut self,
         input: &'token str,
+        interner: &mut Rodeo,
     ) -> Result<Option<Token<'token>>, Diagnostic<FileId>> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
@@ -120,6 +180,8 @@ impl<'source> Scanner<'source> {
                     self.lexeme_range(),
                 ))
             }
+
+            ('"', _) => Some(self.lex_string(input, interner)?),
 
             _ => {
                 while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
@@ -166,12 +228,17 @@ impl<'source> Scanner<'source> {
     }
 }
 
-pub(crate) fn lex_file(contents: &str, file_id: FileId) -> Result<Vec<Token>, Diagnostic<FileId>> {
+pub(crate) fn lex_file<'a>(
+    contents: &'a str,
+    file_id: FileId,
+    interner: &mut Rodeo,
+) -> Result<Vec<Token<'a>>, Diagnostic<FileId>> {
     let mut scanner = Scanner {
         chars: contents.char_indices().peekable(),
         cur_token_start: 0,
         next_token_start: 0,
         file_id,
+        string_buf: String::new(),
     };
 
     let mut ops = Vec::new();
@@ -179,7 +246,7 @@ pub(crate) fn lex_file(contents: &str, file_id: FileId) -> Result<Vec<Token>, Di
     while scanner.peek().is_some() {
         scanner.cur_token_start = scanner.next_token_start;
 
-        match scanner.scan_token(contents)? {
+        match scanner.scan_token(contents, interner)? {
             Some(op) => ops.push(op),
             None => continue,
         };

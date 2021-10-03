@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use codespan_reporting::diagnostic::Diagnostic;
+use lasso::Rodeo;
 
 use crate::{
     generate_error,
@@ -40,10 +41,31 @@ fn make_syscall3(
     Ok(())
 }
 
-pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>> {
+fn allocate_string_literals(interner: &Rodeo, memory: &mut Vec<u8>) -> Vec<u64> {
+    let mut indices = Vec::new();
+
+    for (id, literal) in interner.iter() {
+        let idx = id.into_inner().get() as usize;
+        let new_len = indices.len().max(idx + 1);
+        indices.resize(new_len, 0);
+        indices[idx] = memory.len() as u64;
+
+        memory.extend_from_slice(literal.as_bytes());
+    }
+
+    indices
+}
+
+pub(crate) fn simulate_program(program: &[Op], interner: &Rodeo) -> Result<(), Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack = Vec::new();
-    let mut memory: Vec<u8> = vec![0; MEMORY_CAPACITY];
+
+    let mut memory: Vec<u8> = Vec::new();
+    let literal_addresses = allocate_string_literals(interner, &mut memory);
+    let mem_base = memory.len() as u64;
+
+    let new_memory_len = memory.len() + MEMORY_CAPACITY;
+    memory.resize(new_memory_len, 0);
 
     while let Some(&op) = program.get(ip) {
         match op.code {
@@ -73,7 +95,12 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 *a >>= b;
             }
 
-            OpCode::Push(val) => stack.push(val),
+            OpCode::PushInt(val) => stack.push(val),
+            OpCode::PushStr(id) => {
+                let literal = interner.resolve(&id);
+                stack.push(literal.len() as u64);
+                stack.push(literal_addresses[id.into_inner().get() as usize]);
+            }
             OpCode::Drop => {
                 stack.pop().unwrap();
             }
@@ -142,7 +169,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 }
             }
 
-            OpCode::Mem { offset } => stack.push(offset as _),
+            OpCode::Mem { offset } => stack.push(mem_base + offset as u64),
             OpCode::Load => {
                 let address = stack.pop().unwrap();
 

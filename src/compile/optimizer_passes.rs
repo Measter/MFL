@@ -1,10 +1,12 @@
 use std::io::Write;
 
+use lasso::Rodeo;
+
 use crate::opcode::{Op, OpCode};
 
 use super::compile_op;
 
-type OptimizerFunction = fn(&[Op]) -> Option<(Vec<u8>, &[Op], &[Op])>;
+type OptimizerFunction = for<'a> fn(&Rodeo, &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     push_arithmetic,
@@ -16,7 +18,7 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
 ];
 
 /// Optimises adding Mem to whatever's on the stack.
-fn mem_plus(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn mem_plus<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let mem = match ops {
         [mem, op, ..] if mem.code.is_mem() && op.code.is_add() => mem,
         _ => return None,
@@ -38,13 +40,13 @@ fn mem_plus(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
 }
 
 /// Optimize a Push-Compare
-fn push_compare(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn push_compare<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let (push, op) = match ops {
-        [push, op, ..] if push.code.is_push() && op.code.is_compare() => (push, op),
+        [push, op, ..] if push.code.is_push_int() && op.code.is_compare() => (push, op),
         _ => return None,
     };
 
-    let push_val = push.code.unwrap_push();
+    let push_val = push.code.unwrap_push_int();
     let mut asm = Vec::new();
     let op = op.code.compile_compare_op();
 
@@ -63,13 +65,13 @@ fn push_compare(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
 }
 
 /// Optimize a Push-ArithBinOp
-fn push_arithmetic(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn push_arithmetic<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let (push, op) = match ops {
-        [push, op, ..] if push.code.is_push() && op.code.is_arithmetic() => (push, op),
+        [push, op, ..] if push.code.is_push_int() && op.code.is_arithmetic() => (push, op),
         _ => return None,
     };
 
-    let mut push_val = push.code.unwrap_push();
+    let mut push_val = push.code.unwrap_push_int();
     if matches!(op.code, OpCode::ShiftLeft | OpCode::ShiftRight) {
         push_val &= 0xFF;
     }
@@ -89,10 +91,10 @@ fn push_arithmetic(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
 }
 
 /// Optimises the Mem-Push-Store sequence.
-fn mem_push_store(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn mem_push_store<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let (mem, push) = match ops {
         [mem, push, store, ..]
-            if mem.code.is_mem() && push.code.is_push() && store.code.is_store() =>
+            if mem.code.is_mem() && push.code.is_push_int() && store.code.is_store() =>
         {
             (mem, push)
         }
@@ -100,7 +102,7 @@ fn mem_push_store(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
     };
 
     let mem_val = mem.code.unwrap_mem();
-    let push_val = push.code.unwrap_push() & 0xFF;
+    let push_val = push.code.unwrap_push_int() & 0xFF;
     let mut asm = Vec::new();
 
     writeln!(
@@ -115,7 +117,7 @@ fn mem_push_store(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
 }
 
 /// Optimises the Mem-Load sequence.
-fn mem_load(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn mem_load<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let mem = match ops {
         [mem, load, ..] if mem.code.is_mem() && load.code.is_load() => mem,
         _ => return None,
@@ -132,9 +134,9 @@ fn mem_load(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
 }
 
 /// Just compiles the first operation. Does no optimization at all.
-fn pass_through(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
+fn pass_through<'a>(interner: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let mut asm = Vec::new();
     let (compiled, remaining) = ops.split_at(1);
-    compile_op(&mut asm, compiled[0]).unwrap();
+    compile_op(&mut asm, compiled[0], interner).unwrap();
     Some((asm, compiled, remaining))
 }
