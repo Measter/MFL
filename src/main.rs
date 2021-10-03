@@ -2,7 +2,10 @@ use std::{path::Path, process::Command};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    term::termcolor::{ColorChoice, StandardStream},
+    term::{
+        termcolor::{ColorChoice, StandardStream, StandardStreamLock},
+        Config,
+    },
 };
 use color_eyre::eyre::{eyre, Context, Result};
 use source_file::{FileId, SourceLocation, SourceStorage};
@@ -43,6 +46,8 @@ fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnosti
 }
 
 fn load_program(
+    stderr: &mut StandardStreamLock,
+    cfg: &Config,
     source_store: &mut SourceStorage,
     file: &str,
 ) -> Result<Result<Vec<Op>, Vec<Diagnostic<FileId>>>> {
@@ -61,8 +66,13 @@ fn load_program(
         Err(diags) => return Ok(Err(diags)),
     };
 
-    if let Err(diags) = opcode::check_stack(&ops) {
-        return Ok(Err(diags));
+    match opcode::check_stack(&ops) {
+        Err(diags) => return Ok(Err(diags)),
+        Ok(warnings) => {
+            for warning in warnings {
+                codespan_reporting::term::emit(stderr, cfg, source_store, &warning)?;
+            }
+        }
     }
 
     let mut new_ops = opcode::optimize(&ops);
@@ -89,7 +99,7 @@ fn main() -> Result<()> {
 
     match args {
         Args::Simulate { file } => {
-            let program = match load_program(&mut source_storage, &file)? {
+            let program = match load_program(&mut stderr, &cfg, &mut source_storage, &file)? {
                 Ok(program) => program,
                 Err(diags) => {
                     for diag in diags {
@@ -110,7 +120,7 @@ fn main() -> Result<()> {
             let mut output_binary = output_obj.clone();
             output_binary.set_extension("");
 
-            let program = match load_program(&mut source_storage, &file)? {
+            let program = match load_program(&mut stderr, &cfg, &mut source_storage, &file)? {
                 Ok(program) => program,
                 Err(diags) => {
                     for diag in diags {

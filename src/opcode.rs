@@ -382,13 +382,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
     diags.is_empty().then(|| ()).ok_or(diags)
 }
 
-pub fn check_stack(ops: &[Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
+pub fn check_stack(ops: &[Op]) -> Result<Vec<Diagnostic<FileId>>, Vec<Diagnostic<FileId>>> {
     let mut stack_depth = 0;
-    let mut diags = Vec::new();
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
 
     for op in ops {
         if stack_depth < op.code.pop_count() {
-            diags.push(generate_error(
+            errors.push(generate_error(
                 format!(
                     "{} operand{} expected, found {}",
                     op.code.pop_count(),
@@ -412,14 +413,14 @@ pub fn check_stack(ops: &[Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
             .map(|op| vec![Label::primary(op.location.file_id, op.location.range())])
             .unwrap_or_else(Vec::new);
 
-        diags.push(
+        warnings.push(
             Diagnostic::warning()
                 .with_message("data left on stack")
                 .with_labels(label),
         );
     }
 
-    diags.is_empty().then(|| ()).ok_or(diags)
+    errors.is_empty().then(|| warnings).ok_or(errors)
 }
 
 pub fn optimize(ops: &[Op]) -> Vec<Op> {
