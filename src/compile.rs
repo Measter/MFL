@@ -13,6 +13,166 @@ use crate::{
     MEMORY_CAPACITY,
 };
 
+fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
+    match op.code {
+        OpCode::Add => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    add rax, rbx")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::Subtract => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    sub rbx, rax")?;
+            writeln!(output, "    push rbx")?;
+        }
+
+        OpCode::BitAnd => {
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    and rax, rbx")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::BitOr => {
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    or rax, rbx")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::ShiftLeft => {
+            writeln!(output, "    pop rcx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    shl rax, cl")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::ShiftRight => {
+            writeln!(output, "    pop rcx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    shr rax, cl")?;
+            writeln!(output, "    push rax")?;
+        }
+
+        OpCode::Push(v) => {
+            writeln!(output, "    mov rax, {}", v)?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::Drop => writeln!(output, "    pop rax")?,
+
+        OpCode::Equal => {
+            writeln!(output, "    mov rcx, 0")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    cmp rax, rbx")?;
+            writeln!(output, "    sete cl")?;
+            writeln!(output, "    push rcx")?;
+        }
+        OpCode::Less => {
+            writeln!(output, "    mov rcx, 0")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    cmp rax, rbx")?;
+            writeln!(output, "    setl cl")?;
+            writeln!(output, "    push rcx")?;
+        }
+        OpCode::Greater => {
+            writeln!(output, "    mov rcx, 0")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    cmp rax, rbx")?;
+            writeln!(output, "    setg cl")?;
+            writeln!(output, "    push rcx")?;
+        }
+
+        OpCode::While { ip } => {
+            writeln!(output, ".LBL{}:", ip)?;
+        }
+        OpCode::Do { end_ip, .. } => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    test rax, rax")?;
+            writeln!(output, "    jz .LBL{}", end_ip)?;
+        }
+        OpCode::EndWhile {
+            condition_ip,
+            end_ip,
+        } => {
+            writeln!(output, "    jmp .LBL{}", condition_ip)?;
+            writeln!(output, ".LBL{}:", end_ip)?;
+        }
+
+        OpCode::If { end_ip, .. } => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    test rax, rax")?;
+            writeln!(output, "    jz .LBL{}", end_ip)?;
+        }
+        OpCode::Else { end_ip, else_start } => {
+            writeln!(output, "    jmp .LBL{}", end_ip)?;
+            writeln!(output, ".LBL{}:", else_start)?;
+        }
+        OpCode::EndIf { ip } => {
+            writeln!(output, ".LBL{}:", ip)?;
+        }
+
+        OpCode::Dump => {
+            writeln!(output, "    pop rdi")?;
+            writeln!(output, "    call dump")?;
+        }
+        OpCode::Dup => {
+            writeln!(output, "    mov rax, [rsp]")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::DupPair => {
+            writeln!(output, "    mov rax, [rsp]")?;
+            writeln!(output, "    mov rbx, [rsp+8]")?;
+            writeln!(output, "    push rbx")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::Over => {
+            writeln!(output, "    mov rax, QWORD [rsp+8]")?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::Swap => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    push rax")?;
+            writeln!(output, "    push rbx")?;
+        }
+
+        OpCode::Mem { offset: 0 } => writeln!(output, "    push __memory")?,
+        OpCode::Mem { offset } => {
+            writeln!(output, "    lea rax, [__memory + {}]", offset)?;
+            writeln!(output, "    push rax")?;
+        }
+        OpCode::Load => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    xor rbx, rbx")?;
+            writeln!(output, "    mov bl, BYTE [rax]")?;
+            writeln!(output, "    push rbx")?;
+        }
+        OpCode::Store => {
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    mov BYTE [rax], bl")?;
+        }
+
+        OpCode::SysCall(a @ 0..=6) => {
+            for reg in &["rax", "rdi", "rsi", "rdx", "r10", "r8", "r9"][..=a] {
+                writeln!(output, "    pop {}", reg)?;
+            }
+
+            writeln!(output, "    syscall")?;
+        }
+        OpCode::SysCall(arg_count) => {
+            panic!("ICE: Invalid syscall argument count: {}", arg_count)
+        }
+        OpCode::End { .. } => {
+            panic!("ICE: Encountered OpCode::End")
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn compile_program(
     program: &[Op],
     source_store: &SourceStorage,
@@ -52,161 +212,8 @@ pub(crate) fn compile_program(
             location.column_number,
             op.code,
         )?;
-        match op.code {
-            OpCode::Add => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    add rax, rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::Subtract => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    sub rbx, rax")?;
-                writeln!(&mut out_file, "    push rbx")?;
-            }
 
-            OpCode::BitAnd => {
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    and rax, rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::BitOr => {
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    or rax, rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::ShiftLeft => {
-                writeln!(&mut out_file, "    pop rcx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    shl rax, cl")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::ShiftRight => {
-                writeln!(&mut out_file, "    pop rcx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    shr rax, cl")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-
-            OpCode::Push(v) => {
-                writeln!(&mut out_file, "    mov rax, {}", v)?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::Drop => writeln!(&mut out_file, "    pop rax")?,
-
-            OpCode::Equal => {
-                writeln!(&mut out_file, "    mov rcx, 0")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    cmp rax, rbx")?;
-                writeln!(&mut out_file, "    sete cl")?;
-                writeln!(&mut out_file, "    push rcx")?;
-            }
-            OpCode::Less => {
-                writeln!(&mut out_file, "    mov rcx, 0")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    cmp rax, rbx")?;
-                writeln!(&mut out_file, "    setl cl")?;
-                writeln!(&mut out_file, "    push rcx")?;
-            }
-            OpCode::Greater => {
-                writeln!(&mut out_file, "    mov rcx, 0")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    cmp rax, rbx")?;
-                writeln!(&mut out_file, "    setg cl")?;
-                writeln!(&mut out_file, "    push rcx")?;
-            }
-
-            OpCode::While { ip } => {
-                writeln!(&mut out_file, ".LBL{}:", ip)?;
-            }
-            OpCode::Do { end_ip, .. } => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    test rax, rax")?;
-                writeln!(&mut out_file, "    jz .LBL{}", end_ip)?;
-            }
-            OpCode::EndWhile {
-                condition_ip,
-                end_ip,
-            } => {
-                writeln!(&mut out_file, "    jmp .LBL{}", condition_ip)?;
-                writeln!(&mut out_file, ".LBL{}:", end_ip)?;
-            }
-
-            OpCode::If { end_ip, .. } => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    test rax, rax")?;
-                writeln!(&mut out_file, "    jz .LBL{}", end_ip)?;
-            }
-            OpCode::Else { end_ip, else_start } => {
-                writeln!(&mut out_file, "    jmp .LBL{}", end_ip)?;
-                writeln!(&mut out_file, ".LBL{}:", else_start)?;
-            }
-            OpCode::EndIf { ip } => {
-                writeln!(&mut out_file, ".LBL{}:", ip)?;
-            }
-
-            OpCode::Dump => {
-                writeln!(&mut out_file, "    pop rdi")?;
-                writeln!(&mut out_file, "    call dump")?;
-            }
-            OpCode::Dup => {
-                writeln!(&mut out_file, "    mov rax, [rsp]")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::DupPair => {
-                writeln!(&mut out_file, "    mov rax, [rsp]")?;
-                writeln!(&mut out_file, "    mov rbx, [rsp+8]")?;
-                writeln!(&mut out_file, "    push rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::Over => {
-                writeln!(&mut out_file, "    mov rax, QWORD [rsp+8]")?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::Swap => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    push rax")?;
-                writeln!(&mut out_file, "    push rbx")?;
-            }
-
-            OpCode::Mem { offset: 0 } => writeln!(&mut out_file, "    push __memory")?,
-            OpCode::Mem { offset } => {
-                writeln!(&mut out_file, "    lea rax, [__memory + {}]", offset)?;
-                writeln!(&mut out_file, "    push rax")?;
-            }
-            OpCode::Load => {
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    xor rbx, rbx")?;
-                writeln!(&mut out_file, "    mov bl, BYTE [rax]")?;
-                writeln!(&mut out_file, "    push rbx")?;
-            }
-            OpCode::Store => {
-                writeln!(&mut out_file, "    pop rbx")?;
-                writeln!(&mut out_file, "    pop rax")?;
-                writeln!(&mut out_file, "    mov BYTE [rax], bl")?;
-            }
-
-            OpCode::SysCall(a @ 0..=6) => {
-                for reg in &["rax", "rdi", "rsi", "rdx", "r10", "r8", "r9"][..=a] {
-                    writeln!(&mut out_file, "    pop {}", reg)?;
-                }
-
-                writeln!(&mut out_file, "    syscall")?;
-            }
-            OpCode::SysCall(arg_count) => {
-                panic!("ICE: Invalid syscall argument count: {}", arg_count)
-            }
-            OpCode::End { .. } => {
-                panic!("ICE: Encountered OpCode::End")
-            }
-        }
+        compile_op(&mut out_file, op)?;
     }
 
     writeln!(&mut out_file, "    mov rax, 60")?;
