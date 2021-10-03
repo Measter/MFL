@@ -101,49 +101,25 @@ impl<'source> Scanner<'source> {
             }
 
             _ if ch.is_whitespace() => None,
-            ('+', _) => Some(Token::new(
-                TokenKind::Plus,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
-            ('-', _) => Some(Token::new(
-                TokenKind::Minus,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
-            ('=', _) => Some(Token::new(
-                TokenKind::Equal,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
-            ('<', _) => Some(Token::new(
-                TokenKind::Less,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
-            ('>', _) => Some(Token::new(
-                TokenKind::Greater,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
+            ('+' | '-' | '=' | '<' | '>' | '.' | ',', _) => {
+                let kind = match ch {
+                    '+' => TokenKind::Plus,
+                    '-' => TokenKind::Minus,
+                    '=' => TokenKind::Equal,
+                    '<' => TokenKind::Less,
+                    '>' => TokenKind::Greater,
+                    '.' => TokenKind::Store,
+                    ',' => TokenKind::Load,
+                    _ => unreachable!(),
+                };
 
-            ('.', _) => Some(Token::new(
-                TokenKind::Store,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
-            (',', _) => Some(Token::new(
-                TokenKind::Load,
-                self.lexeme(input),
-                self.file_id,
-                self.lexeme_range(),
-            )),
+                Some(Token::new(
+                    kind,
+                    self.lexeme(input),
+                    self.file_id,
+                    self.lexeme_range(),
+                ))
+            }
 
             _ => {
                 while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
