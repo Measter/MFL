@@ -132,7 +132,20 @@ impl OpCode {
         }
     }
 
-    fn unwrap_mem(self) -> usize {
+    pub fn is_arithmetic(self) -> bool {
+        use OpCode::*;
+        matches!(
+            self,
+            Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight
+        )
+    }
+
+    pub fn is_compare(self) -> bool {
+        use OpCode::*;
+        matches!(self, Equal | Greater | Less)
+    }
+
+    pub fn unwrap_mem(self) -> usize {
         match self {
             Self::Mem { offset } => offset,
             _ => panic!("expected OpCode::Mem"),

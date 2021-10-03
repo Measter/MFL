@@ -13,43 +13,49 @@ use crate::{
     MEMORY_CAPACITY,
 };
 
+use self::optimizer_passes::PASSES;
+
+mod optimizer_passes;
+
+impl OpCode {
+    fn compile_arithmetic_op(
+        self,
+        big_b: &'static str,
+        little_b: &'static str,
+    ) -> (&'static str, &'static str) {
+        match self {
+            OpCode::Add => ("add", big_b),
+            OpCode::BitOr => ("or", big_b),
+            OpCode::BitAnd => ("and", big_b),
+            OpCode::ShiftLeft => ("shl", little_b),
+            OpCode::ShiftRight => ("shr", little_b),
+            OpCode::Subtract => ("sub", big_b),
+            _ => panic!("ICE: Attempted to compile_arithmetic_op a {:?}", self),
+        }
+    }
+
+    fn compile_compare_op(self) -> &'static str {
+        match self {
+            OpCode::Equal => "sete",
+            OpCode::Greater => "setg",
+            OpCode::Less => "setl",
+            _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
+        }
+    }
+}
+
 fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
     match op.code {
-        OpCode::Add => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    add rax, rbx")?;
-            writeln!(output, "    push rax")?;
-        }
-        OpCode::Subtract => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    sub rbx, rax")?;
-            writeln!(output, "    push rbx")?;
-        }
-
-        OpCode::BitAnd => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    and rax, rbx")?;
-            writeln!(output, "    push rax")?;
-        }
-        OpCode::BitOr => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    or rax, rbx")?;
-            writeln!(output, "    push rax")?;
-        }
-        OpCode::ShiftLeft => {
+        OpCode::Add
+        | OpCode::Subtract
+        | OpCode::BitAnd
+        | OpCode::BitOr
+        | OpCode::ShiftLeft
+        | OpCode::ShiftRight => {
+            let (op, b_reg) = op.code.compile_arithmetic_op("rcx", "cl");
             writeln!(output, "    pop rcx")?;
             writeln!(output, "    pop rax")?;
-            writeln!(output, "    shl rax, cl")?;
-            writeln!(output, "    push rax")?;
-        }
-        OpCode::ShiftRight => {
-            writeln!(output, "    pop rcx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    shr rax, cl")?;
+            writeln!(output, "    {} rax, {}", op, b_reg)?;
             writeln!(output, "    push rax")?;
         }
 
@@ -60,28 +66,25 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
         OpCode::Drop => writeln!(output, "    pop rax")?,
 
         OpCode::Equal => {
-            writeln!(output, "    mov rcx, 0")?;
-            writeln!(output, "    pop rax")?;
             writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
             writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    sete cl")?;
-            writeln!(output, "    push rcx")?;
+            writeln!(output, "    sete r15b")?;
+            writeln!(output, "    push r15")?;
         }
         OpCode::Less => {
-            writeln!(output, "    mov rcx, 0")?;
             writeln!(output, "    pop rbx")?;
             writeln!(output, "    pop rax")?;
             writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    setl cl")?;
-            writeln!(output, "    push rcx")?;
+            writeln!(output, "    setl r15b")?;
+            writeln!(output, "    push r15")?;
         }
         OpCode::Greater => {
-            writeln!(output, "    mov rcx, 0")?;
             writeln!(output, "    pop rbx")?;
             writeln!(output, "    pop rax")?;
             writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    setg cl")?;
-            writeln!(output, "    push rcx")?;
+            writeln!(output, "    setg r15b")?;
+            writeln!(output, "    push r15")?;
         }
 
         OpCode::While { ip } => {
@@ -145,9 +148,8 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
         }
         OpCode::Load => {
             writeln!(output, "    pop rax")?;
-            writeln!(output, "    xor rbx, rbx")?;
-            writeln!(output, "    mov bl, BYTE [rax]")?;
-            writeln!(output, "    push rbx")?;
+            writeln!(output, "    mov r15b, BYTE [rax]")?;
+            writeln!(output, "    push r15")?;
         }
         OpCode::Store => {
             writeln!(output, "    pop rbx")?;
@@ -174,15 +176,7 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
 }
 
 fn try_optimize(ops: &[Op]) -> (Vec<u8>, &[Op], &[Op]) {
-    let mut asm = Vec::new();
-
-    let (compiled, remaining) = ops.split_at(1);
-
-    for &op in compiled {
-        compile_op(&mut asm, op).unwrap();
-    }
-
-    (asm, compiled, remaining)
+    PASSES.iter().filter_map(|pass| pass(ops)).next().unwrap()
 }
 
 pub(crate) fn compile_program(
@@ -212,6 +206,8 @@ pub(crate) fn compile_program(
     })?;
 
     writeln!(&mut out_file, "_start:")?;
+    // R15 is used for single-byte handling, so we ideally do not want to touch the upper bytes.
+    writeln!(&mut out_file, "    xor r15, r15")?;
 
     let mut ops = program;
     let mut ip = 0;
@@ -229,11 +225,11 @@ pub(crate) fn compile_program(
                 location.column_number,
                 op.code,
             )?;
+            ip += 1;
         }
         out_file.write_all(&asm)?;
 
         ops = remaining_ops;
-        ip += 1;
     }
 
     writeln!(&mut out_file, "    mov rax, 60")?;
