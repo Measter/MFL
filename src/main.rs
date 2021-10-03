@@ -56,18 +56,25 @@ fn load_program(
         Err(diag) => return Ok(Err(vec![diag])),
     };
 
-    let mut ops = match opcode::parse_token(&tokens) {
+    let ops = match opcode::parse_token(&tokens) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
+
     if let Err(diags) = opcode::check_stack(&ops) {
         return Ok(Err(diags));
     }
-    if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
+
+    let mut new_ops = opcode::optimize(&ops);
+
+    if let Err(diags) = opcode::generate_jump_labels(&mut new_ops) {
         return Ok(Err(diags));
     }
 
-    Ok(Ok(ops))
+    if let Err(diags) = opcode::check_stack(&new_ops) {
+        return Ok(Err(diags));
+    }
+    Ok(Ok(new_ops))
 }
 
 fn main() -> Result<()> {

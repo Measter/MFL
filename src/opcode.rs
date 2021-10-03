@@ -6,6 +6,10 @@ use crate::{
     source_file::{FileId, SourceLocation},
 };
 
+use self::optimizer_passes::PASSES;
+
+mod optimizer_passes;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpCode {
     Add,
@@ -25,7 +29,7 @@ pub enum OpCode {
     Less,
     Load,
     Greater,
-    Mem,
+    Mem { offset: usize },
     Over,
     Push(u64),
     ShiftLeft,
@@ -59,7 +63,7 @@ impl OpCode {
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
-            | OpCode::Mem
+            | OpCode::Mem { .. }
             | OpCode::Over
             | OpCode::Push(_)
             | OpCode::Swap
@@ -79,7 +83,7 @@ impl OpCode {
             | OpCode::Greater
             | OpCode::Less
             | OpCode::Load
-            | OpCode::Mem
+            | OpCode::Mem { .. }
             | OpCode::Over
             | OpCode::Push(_)
             | OpCode::ShiftLeft
@@ -100,6 +104,30 @@ impl OpCode {
             | OpCode::Swap
             | OpCode::SysCall(_)
             | OpCode::While { .. } => 0,
+        }
+    }
+
+    fn is_binary_op(self) -> bool {
+        use OpCode::*;
+        matches!(
+            self,
+            Add | Subtract | BitOr | BitAnd | Equal | Greater | Less | ShiftLeft | ShiftRight
+        )
+    }
+
+    fn get_binary_op(self) -> fn(u64, u64) -> u64 {
+        use OpCode::*;
+        match self {
+            Add => |a, b| a + b,
+            Subtract => |a, b| a - b,
+            BitOr => |a, b| a | b,
+            BitAnd => |a, b| a & b,
+            ShiftLeft => |a, b| a << b,
+            ShiftRight => |a, b| a >> b,
+            Equal => |a, b| (a == b) as u64,
+            Greater => |a, b| (a > b) as u64,
+            Less => |a, b| (a < b) as u64,
+            _ => panic!("ICE: Attempted to get the binary_op of a {:?}", self),
         }
     }
 }
@@ -134,7 +162,11 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::Over => ops.push(Op::new(OpCode::Over, token.kind, token.location)),
             TokenKind::Swap => ops.push(Op::new(OpCode::Swap, token.kind, token.location)),
 
-            TokenKind::Mem => ops.push(Op::new(OpCode::Mem, token.kind, token.location)),
+            TokenKind::Mem => ops.push(Op::new(
+                OpCode::Mem { offset: 0 },
+                token.kind,
+                token.location,
+            )),
             TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
             TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),
 
@@ -161,7 +193,7 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             }
 
             TokenKind::While => ops.push(Op::new(
-                OpCode::While { ip: ops.len() },
+                OpCode::While { ip: usize::MAX },
                 token.kind,
                 token.location,
             )),
@@ -181,14 +213,14 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             )),
             TokenKind::Else => ops.push(Op::new(
                 OpCode::Else {
-                    else_start: ops.len(),
+                    else_start: usize::MAX,
                     end_ip: usize::MAX,
                 },
                 token.kind,
                 token.location,
             )),
             TokenKind::End => ops.push(Op::new(
-                OpCode::End { ip: ops.len() },
+                OpCode::End { ip: usize::MAX },
                 token.kind,
                 token.location,
             )),
@@ -242,10 +274,17 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     _ => unreachable!(),
                 }
             }
-            OpCode::While { .. } => jump_ip_stack.push((ip, op.token, op.location)),
+            OpCode::While { .. } => {
+                // Update our own IP.
+                match &mut ops[ip].code {
+                    OpCode::While { ip: while_ip } => *while_ip = ip,
+                    _ => unreachable!(),
+                }
+                jump_ip_stack.push((ip, op.token, op.location));
+            }
 
             OpCode::If { .. } => jump_ip_stack.push((ip, op.token, op.location)),
-            OpCode::Else { else_start, .. } => {
+            OpCode::Else { .. } => {
                 let if_idx = match jump_ip_stack.pop() {
                     Some((if_idx, TokenKind::If, _)) => if_idx,
                     _ => {
@@ -260,15 +299,20 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     }
                 };
 
+                // Update our own IP.
+                match &mut ops[ip].code {
+                    OpCode::Else { else_start, .. } => *else_start = ip,
+                    _ => unreachable!(),
+                }
                 match &mut ops[if_idx].code {
-                    OpCode::If { end_ip } => *end_ip = else_start,
+                    OpCode::If { end_ip } => *end_ip = ip,
                     _ => unreachable!(),
                 }
 
                 jump_ip_stack.push((ip, op.token, op.location));
             }
 
-            OpCode::End { ip } => {
+            OpCode::End { .. } => {
                 let src_ip = match jump_ip_stack.pop() {
                     Some((id, TokenKind::If | TokenKind::Else | TokenKind::Do, _)) => id,
                     _ => {
@@ -355,4 +399,35 @@ pub fn check_stack(ops: &[Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
     }
 
     diags.is_empty().then(|| ()).ok_or(diags)
+}
+
+pub fn optimize(ops: &[Op]) -> Vec<Op> {
+    let mut src_vec = ops.to_owned();
+    let mut dst_vec: Vec<Op> = Vec::with_capacity(ops.len());
+
+    // Keep making passes until we get no changes.
+    loop {
+        let mut src = src_vec.as_slice();
+        let mut changed = false;
+
+        while !src.is_empty() {
+            if let Some((ops, xs)) = PASSES.iter().filter_map(|pass| pass(src)).next() {
+                dst_vec.extend(ops);
+                src = xs;
+                changed = true;
+            } else if let [op, xs @ ..] = src {
+                dst_vec.push(*op);
+                src = xs;
+            }
+        }
+
+        if !changed {
+            break;
+        }
+
+        src_vec.clear();
+        std::mem::swap(&mut src_vec, &mut dst_vec);
+    }
+
+    dst_vec
 }

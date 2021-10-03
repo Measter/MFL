@@ -142,7 +142,7 @@ pub(crate) fn simulate_program(program: &[Op]) -> Result<(), Diagnostic<FileId>>
                 }
             }
 
-            OpCode::Mem => stack.push(0),
+            OpCode::Mem { offset } => stack.push(offset as _),
             OpCode::Load => {
                 let address = stack.pop().unwrap();
 
