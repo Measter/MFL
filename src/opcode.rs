@@ -37,6 +37,73 @@ pub enum OpCode {
     While { ip: usize },
 }
 
+impl OpCode {
+    fn pop_count(self) -> usize {
+        match self {
+            OpCode::Add
+            | OpCode::BitOr
+            | OpCode::BitAnd
+            | OpCode::Equal
+            | OpCode::Greater
+            | OpCode::Less
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight
+            | OpCode::Store
+            | OpCode::Subtract => 2,
+
+            OpCode::Drop | OpCode::Do { .. } | OpCode::Dump | OpCode::If { .. } | OpCode::Load => 1,
+
+            OpCode::Dup
+            | OpCode::DupPair
+            | OpCode::Else { .. }
+            | OpCode::End { .. }
+            | OpCode::EndIf { .. }
+            | OpCode::EndWhile { .. }
+            | OpCode::Mem
+            | OpCode::Over
+            | OpCode::Push(_)
+            | OpCode::Swap
+            | OpCode::While { .. } => 0,
+
+            OpCode::SysCall(a) => a + 1,
+        }
+    }
+
+    fn push_count(self) -> usize {
+        match self {
+            OpCode::Add
+            | OpCode::BitOr
+            | OpCode::BitAnd
+            | OpCode::Dup
+            | OpCode::Equal
+            | OpCode::Greater
+            | OpCode::Less
+            | OpCode::Load
+            | OpCode::Mem
+            | OpCode::Over
+            | OpCode::Push(_)
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight
+            | OpCode::Subtract => 1,
+
+            OpCode::DupPair => 2,
+
+            OpCode::Drop
+            | OpCode::Do { .. }
+            | OpCode::Dump
+            | OpCode::End { .. }
+            | OpCode::If { .. }
+            | OpCode::Else { .. }
+            | OpCode::EndIf { .. }
+            | OpCode::EndWhile { .. }
+            | OpCode::Store
+            | OpCode::Swap
+            | OpCode::SysCall(_)
+            | OpCode::While { .. } => 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Op {
     pub code: OpCode,
@@ -255,105 +322,36 @@ pub fn check_stack(ops: &[Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut diags = Vec::new();
 
     for op in ops {
-        match op.code {
-            OpCode::Add
-            | OpCode::Subtract
-            | OpCode::BitOr
-            | OpCode::BitAnd
-            | OpCode::ShiftLeft
-            | OpCode::ShiftRight
-            | OpCode::Equal
-            | OpCode::Less
-            | OpCode::Greater => {
-                if stack_depth < 2 {
-                    diags.push(generate_error(
-                        format!("2 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 1;
-                } else {
-                    stack_depth -= 1;
-                }
-            }
+        if stack_depth < op.code.pop_count() {
+            diags.push(generate_error(
+                format!(
+                    "{} operand{} expected, found {}",
+                    op.code.pop_count(),
+                    if op.code.pop_count() == 1 { "" } else { "s" },
+                    stack_depth
+                ),
+                op.location,
+            ));
 
-            OpCode::Push(_) | OpCode::Mem => stack_depth += 1,
-            OpCode::Dup | OpCode::Over => {
-                if stack_depth < 1 {
-                    diags.push(generate_error(
-                        format!("1 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 1;
-                } else {
-                    stack_depth += 1;
-                }
-            }
-            OpCode::DupPair => {
-                if stack_depth < 2 {
-                    diags.push(generate_error(
-                        format!("2 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 2;
-                } else {
-                    stack_depth += 2;
-                }
-            }
-
-            OpCode::Drop | OpCode::Dump | OpCode::Do { .. } | OpCode::If { .. } => {
-                if stack_depth < 1 {
-                    diags.push(generate_error(
-                        format!("1 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                } else {
-                    stack_depth -= 1;
-                }
-            }
-
-            OpCode::Load => {
-                if stack_depth < 1 {
-                    diags.push(generate_error(
-                        format!("1 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 1;
-                }
-            }
-            OpCode::Store => {
-                if stack_depth < 2 {
-                    diags.push(generate_error(
-                        format!("2 operands expected, found {}", stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 0;
-                }
-            }
-
-            OpCode::SysCall(a @ 0..=6) => {
-                if stack_depth < a + 1 {
-                    diags.push(generate_error(
-                        format!("{} operands expected, found {}", a + 1, stack_depth),
-                        op.location,
-                    ));
-                    stack_depth = 0;
-                }
-            }
-            OpCode::SysCall(a) => {
-                diags.push(generate_error(
-                    format!("invalid syscall({})", a),
-                    op.location,
-                ));
-                stack_depth = 0;
-            }
-
-            OpCode::Else { .. }
-            | OpCode::End { .. }
-            | OpCode::EndIf { .. }
-            | OpCode::EndWhile { .. }
-            | OpCode::Swap
-            | OpCode::While { .. } => {}
+            // This allows us to check subsequent operations by assuming
+            // that previous ones succeeded.
+            stack_depth = op.code.push_count();
+        } else {
+            stack_depth = stack_depth - op.code.pop_count() + op.code.push_count();
         }
+    }
+
+    if stack_depth != 0 {
+        let label = ops
+            .last()
+            .map(|op| vec![Label::primary(op.location.file_id, op.location.range())])
+            .unwrap_or_else(Vec::new);
+
+        diags.push(
+            Diagnostic::warning()
+                .with_message("data left on stack")
+                .with_labels(label),
+        );
     }
 
     diags.is_empty().then(|| ()).ok_or(diags)
