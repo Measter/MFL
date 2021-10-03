@@ -81,9 +81,6 @@ fn load_program(
         return Ok(Err(diags));
     }
 
-    if let Err(diags) = opcode::check_stack(&new_ops) {
-        return Ok(Err(diags));
-    }
     Ok(Ok(new_ops))
 }
 
