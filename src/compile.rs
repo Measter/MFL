@@ -54,11 +54,12 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
         | OpCode::ShiftRight => {
             let (op, b_reg) = op.code.compile_arithmetic_op("rcx", "cl");
             writeln!(output, "    pop rcx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    {} rax, {}", op, b_reg)?;
-            writeln!(output, "    push rax")?;
+            writeln!(output, "    {} QWORD [rsp], {}", op, b_reg)?;
         }
 
+        OpCode::Push(v) if v < u32::MAX as u64 => {
+            writeln!(output, "    push {}", v)?;
+        }
         OpCode::Push(v) => {
             writeln!(output, "    mov rax, {}", v)?;
             writeln!(output, "    push rax")?;
@@ -120,20 +121,12 @@ fn compile_op(output: &mut impl Write, op: Op) -> Result<()> {
             writeln!(output, "    pop rdi")?;
             writeln!(output, "    call dump")?;
         }
-        OpCode::Dup => {
-            writeln!(output, "    mov rax, [rsp]")?;
-            writeln!(output, "    push rax")?;
-        }
+        OpCode::Dup => writeln!(output, "    push QWORD [rsp]")?,
         OpCode::DupPair => {
-            writeln!(output, "    mov rax, [rsp]")?;
-            writeln!(output, "    mov rbx, [rsp+8]")?;
-            writeln!(output, "    push rbx")?;
-            writeln!(output, "    push rax")?;
+            writeln!(output, "    push QWORD [rsp+8]")?;
+            writeln!(output, "    push QWORD [rsp+8]")?;
         }
-        OpCode::Over => {
-            writeln!(output, "    mov rax, QWORD [rsp+8]")?;
-            writeln!(output, "    push rax")?;
-        }
+        OpCode::Over => writeln!(output, "    push QWORD [rsp+8]")?,
         OpCode::Swap => {
             writeln!(output, "    pop rax")?;
             writeln!(output, "    pop rbx")?;

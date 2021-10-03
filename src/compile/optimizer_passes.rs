@@ -25,9 +25,13 @@ fn mem_plus(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
     let mem_val = mem.code.unwrap_mem();
     let mut asm = Vec::new();
 
-    writeln!(&mut asm, "    pop rax").unwrap();
-    writeln!(&mut asm, "    lea rax, [rax + __memory + {}]", mem_val).unwrap();
-    writeln!(&mut asm, "    push rax").unwrap();
+    if mem_val == 0 {
+        writeln!(&mut asm, "    add QWORD [rsp], __memory").unwrap();
+    } else {
+        writeln!(&mut asm, "    pop rax").unwrap();
+        writeln!(&mut asm, "    lea rax, [rax + __memory + {}]", mem_val).unwrap();
+        writeln!(&mut asm, "    push rax").unwrap();
+    }
 
     let (compiled, remaining) = ops.split_at(2);
     Some((asm, compiled, remaining))
@@ -73,9 +77,12 @@ fn push_arithmetic(ops: &[Op]) -> Option<(Vec<u8>, &[Op], &[Op])> {
     let mut asm = Vec::new();
     let (op, _) = op.code.compile_arithmetic_op("rcx", "cl");
 
-    writeln!(&mut asm, "    pop rax").unwrap();
-    writeln!(&mut asm, "    {} rax, {}", op, push_val).unwrap();
-    writeln!(&mut asm, "    push rax").unwrap();
+    if push_val <= u32::MAX as u64 {
+        writeln!(&mut asm, "    {} QWORD [rsp], {}", op, push_val).unwrap();
+    } else {
+        writeln!(&mut asm, "    mov rax, {}", push_val).unwrap();
+        writeln!(&mut asm, "    {} QWORD [rsp], rax", op).unwrap();
+    }
 
     let (compiled, remaining) = ops.split_at(2);
     Some((asm, compiled, remaining))
