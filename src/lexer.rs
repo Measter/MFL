@@ -141,8 +141,9 @@ impl<'source> Scanner<'source> {
     ) -> Result<(), Diagnostic<FileId>> {
         self.string_buf.clear();
 
+        let mut ch = '\0';
         while !self.is_at_end() {
-            let ch = self.advance();
+            ch = self.advance();
             let next_ch = self.peek().unwrap_or_default();
 
             match (ch, next_ch) {
@@ -175,7 +176,7 @@ impl<'source> Scanner<'source> {
             }
         }
 
-        if self.is_at_end() {
+        if ch != close_char && self.is_at_end() {
             let diag = Diagnostic::error()
                 .with_message(format!("unclosed {} literal", kind))
                 .with_labels(vec![Label::primary(
