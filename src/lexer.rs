@@ -20,6 +20,7 @@ pub enum TokenKind {
     Greater,
     Ident,
     If,
+    Integer(u64),
     Less,
     Load,
     Mem,
@@ -182,6 +183,31 @@ impl<'source> Scanner<'source> {
             }
 
             ('"', _) => Some(self.lex_string(input, interner)?),
+
+            ('0'..='9', _) => {
+                while matches!(self.peek(), Some('0'..='9')) {
+                    self.advance();
+                }
+
+                let lexeme = self.lexeme(input);
+                let range = self.lexeme_range();
+                let value = match lexeme.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        let diag = Diagnostic::error()
+                            .with_message("invalid number literal")
+                            .with_labels(vec![Label::primary(self.file_id, range)]);
+                        return Err(diag);
+                    }
+                };
+
+                Some(Token::new(
+                    TokenKind::Integer(value),
+                    lexeme,
+                    self.file_id,
+                    range,
+                ))
+            }
 
             _ => {
                 while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {

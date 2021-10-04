@@ -199,21 +199,17 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::Less => ops.push(Op::new(OpCode::Less, token.kind, token.location)),
 
             TokenKind::Ident => {
-                let num = match token.lexeme.parse() {
-                    Ok(num) => num,
-                    Err(_) => {
-                        let diag = Diagnostic::error()
-                            .with_message("invalid number")
-                            .with_labels(vec![Label::primary(
-                                token.location.file_id,
-                                token.location.range(),
-                            )]);
-                        diags.push(diag);
-                        continue;
-                    }
-                };
-
-                ops.push(Op::new(OpCode::PushInt(num), token.kind, token.location));
+                let diag = Diagnostic::error()
+                    .with_message("invalid ident")
+                    .with_labels(vec![Label::primary(
+                        token.location.file_id,
+                        token.location.range(),
+                    )]);
+                diags.push(diag);
+                continue;
+            }
+            TokenKind::Integer(value) => {
+                ops.push(Op::new(OpCode::PushInt(value), token.kind, token.location))
             }
             TokenKind::String(id) => {
                 ops.push(Op::new(OpCode::PushStr(id), token.kind, token.location))
