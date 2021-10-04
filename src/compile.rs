@@ -9,6 +9,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use lasso::Rodeo;
 
 use crate::{
+    compile::optimizer_passes::pass_through,
     opcode::{Op, OpCode},
     source_file::SourceStorage,
     MEMORY_CAPACITY,
@@ -58,13 +59,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
             writeln!(output, "    {} QWORD [rsp], {}", op, b_reg)?;
         }
 
-        OpCode::PushInt(v) if v < u32::MAX as u64 => {
-            writeln!(output, "    push {}", v)?;
-        }
-        OpCode::PushInt(v) => {
-            writeln!(output, "    mov rax, {}", v)?;
-            writeln!(output, "    push rax")?;
-        }
+        OpCode::PushInt(v) => writeln!(output, "    push {}", v)?,
         OpCode::PushStr(id) => {
             let literal = interner.resolve(&id);
             let id = id.into_inner().get();
@@ -143,11 +138,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
             writeln!(output, "    push rbx")?;
         }
 
-        OpCode::Mem { offset: 0 } => writeln!(output, "    push __memory")?,
-        OpCode::Mem { offset } => {
-            writeln!(output, "    lea rax, [__memory + {}]", offset)?;
-            writeln!(output, "    push rax")?;
-        }
+        OpCode::Mem { offset } => writeln!(output, "    push __memory + {}", offset)?,
         OpCode::Load => {
             writeln!(output, "    pop rax")?;
             writeln!(output, "    mov r15b, BYTE [rax]")?;

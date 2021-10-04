@@ -27,12 +27,11 @@ fn mem_plus<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op]
     let mem_val = mem.code.unwrap_mem();
     let mut asm = Vec::new();
 
-    if mem_val == 0 {
-        writeln!(&mut asm, "    add QWORD [rsp], __memory").unwrap();
+    if mem_val <= u32::MAX as usize {
+        writeln!(&mut asm, "    add QWORD [rsp], __memory + {}", mem_val).unwrap();
     } else {
-        writeln!(&mut asm, "    pop rax").unwrap();
-        writeln!(&mut asm, "    lea rax, [rax + __memory + {}]", mem_val).unwrap();
-        writeln!(&mut asm, "    push rax").unwrap();
+        writeln!(&mut asm, "    mov rax, __memory + {}", mem_val).unwrap();
+        writeln!(&mut asm, "    add QWORD [rsp], rax").unwrap();
     }
 
     let (compiled, remaining) = ops.split_at(2);
@@ -51,11 +50,11 @@ fn push_compare<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a 
     let op = op.code.compile_compare_op();
 
     writeln!(&mut asm, "    pop rax").unwrap();
-    if push_val > u32::MAX as u64 {
+    if push_val <= u32::MAX as u64 {
+        writeln!(&mut asm, "    cmp rax, {}", push_val).unwrap();
+    } else {
         writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
         writeln!(&mut asm, "    cmp rax, rbx").unwrap();
-    } else {
-        writeln!(&mut asm, "    cmp rax, {}", push_val).unwrap();
     }
     writeln!(&mut asm, "    {} r15b", op).unwrap();
     writeln!(&mut asm, "    push r15").unwrap();
@@ -127,7 +126,7 @@ fn mem_load<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op]
     let mut asm = Vec::new();
 
     writeln!(&mut asm, "    mov r15b, BYTE [__memory + {}]", mem_val,).unwrap();
-    writeln!(&mut asm, "    push r15",).unwrap();
+    writeln!(&mut asm, "    push r15").unwrap();
 
     let (compiled, remaining) = ops.split_at(2);
     Some((asm, compiled, remaining))
