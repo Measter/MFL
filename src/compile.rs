@@ -190,6 +190,7 @@ pub(crate) fn compile_program(
     source_store: &SourceStorage,
     interner: &Rodeo,
     out_file_path: &Path,
+    optimize: bool,
 ) -> Result<()> {
     let mut cur_exe_dur =
         std::env::current_exe().with_context(|| eyre!("Failed to get compiler exe path"))?;
@@ -219,7 +220,11 @@ pub(crate) fn compile_program(
     let mut ops = program;
     let mut ip = 0;
     while !ops.is_empty() {
-        let (asm, compiled_ops, remaining_ops) = try_optimize(interner, ops);
+        let (asm, compiled_ops, remaining_ops) = if optimize {
+            try_optimize(interner, ops)
+        } else {
+            pass_through(interner, ops).unwrap()
+        };
 
         for op in compiled_ops {
             let location = source_store.location(op.location.file_id, op.location.source_start)?;

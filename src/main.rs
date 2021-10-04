@@ -27,7 +27,13 @@ const MEMORY_CAPACITY: usize = 2usize.pow(19);
 enum Args {
     /// Simulate the program
     #[structopt(name = "sim")]
-    Simulate { file: String },
+    Simulate {
+        file: String,
+
+        /// Enable optimizations
+        #[structopt(short)]
+        optimise: bool,
+    },
 
     /// Compile the program
     #[structopt(name = "com")]
@@ -37,6 +43,10 @@ enum Args {
         /// run the output immediately
         #[structopt(long, short)]
         run: bool,
+
+        /// Enable optimizations
+        #[structopt(short)]
+        optimise: bool,
     },
 }
 
@@ -46,13 +56,16 @@ fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnosti
         .with_labels(vec![Label::primary(location.file_id, location.range())])
 }
 
+type LoadProgramResult = Result<Vec<Op>, Vec<Diagnostic<FileId>>>;
+
 fn load_program(
     stderr: &mut StandardStreamLock,
     cfg: &Config,
     source_store: &mut SourceStorage,
     interner: &mut Rodeo,
     file: &str,
-) -> Result<Result<Vec<Op>, Vec<Diagnostic<FileId>>>> {
+    optimize: bool,
+) -> Result<LoadProgramResult> {
     let contents =
         std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
 
@@ -63,7 +76,7 @@ fn load_program(
         Err(diag) => return Ok(Err(vec![diag])),
     };
 
-    let ops = match opcode::parse_token(&tokens) {
+    let mut ops = match opcode::parse_token(&tokens) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
@@ -77,13 +90,15 @@ fn load_program(
         }
     }
 
-    let mut new_ops = opcode::optimize(&ops);
+    if optimize {
+        ops = opcode::optimize(&ops);
+    }
 
-    if let Err(diags) = opcode::generate_jump_labels(&mut new_ops) {
+    if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
         return Ok(Err(diags));
     }
 
-    Ok(Ok(new_ops))
+    Ok(Ok(ops))
 }
 
 fn main() -> Result<()> {
@@ -98,27 +113,32 @@ fn main() -> Result<()> {
     let mut interner = Rodeo::default();
 
     match args {
-        Args::Simulate { file } => {
-            let program =
-                match load_program(&mut stderr, &cfg, &mut source_storage, &mut interner, &file)? {
-                    Ok(program) => program,
-                    Err(diags) => {
-                        for diag in diags {
-                            codespan_reporting::term::emit(
-                                &mut stderr,
-                                &cfg,
-                                &source_storage,
-                                &diag,
-                            )?;
-                        }
-                        std::process::exit(-1);
+        Args::Simulate { file, optimise } => {
+            let program = match load_program(
+                &mut stderr,
+                &cfg,
+                &mut source_storage,
+                &mut interner,
+                &file,
+                optimise,
+            )? {
+                Ok(program) => program,
+                Err(diags) => {
+                    for diag in diags {
+                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
                     }
-                };
+                    std::process::exit(-1);
+                }
+            };
             if let Err(diag) = simulate::simulate_program(&program, &interner) {
                 codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
             }
         }
-        Args::Compile { file, run } => {
+        Args::Compile {
+            file,
+            run,
+            optimise,
+        } => {
             let mut output_asm = Path::new(&file).to_path_buf();
             output_asm.set_extension("asm");
             let mut output_obj = output_asm.clone();
@@ -126,24 +146,25 @@ fn main() -> Result<()> {
             let mut output_binary = output_obj.clone();
             output_binary.set_extension("");
 
-            let program =
-                match load_program(&mut stderr, &cfg, &mut source_storage, &mut interner, &file)? {
-                    Ok(program) => program,
-                    Err(diags) => {
-                        for diag in diags {
-                            codespan_reporting::term::emit(
-                                &mut stderr,
-                                &cfg,
-                                &source_storage,
-                                &diag,
-                            )?;
-                        }
-                        std::process::exit(-1);
+            let program = match load_program(
+                &mut stderr,
+                &cfg,
+                &mut source_storage,
+                &mut interner,
+                &file,
+                optimise,
+            )? {
+                Ok(program) => program,
+                Err(diags) => {
+                    for diag in diags {
+                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
                     }
-                };
+                    std::process::exit(-1);
+                }
+            };
 
             println!("Compiling... to {}", output_asm.display());
-            compile::compile_program(&program, &source_storage, &interner, &output_asm)?;
+            compile::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
 
             println!("Assembling... to {}", output_obj.display());
             let nasm = Command::new("nasm")

@@ -134,7 +134,10 @@ fn mem_load<'a>(_: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op]
 }
 
 /// Just compiles the first operation. Does no optimization at all.
-fn pass_through<'a>(interner: &Rodeo, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+pub(super) fn pass_through<'a>(
+    interner: &Rodeo,
+    ops: &'a [Op],
+) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let mut asm = Vec::new();
     let (compiled, remaining) = ops.split_at(1);
     compile_op(&mut asm, compiled[0], interner).unwrap();
