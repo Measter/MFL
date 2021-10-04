@@ -173,8 +173,6 @@ impl<'source> Scanner<'source> {
             return Err(diag);
         }
 
-        self.advance(); // Grab the close quote.
-
         let lexeme = interner.intern_lexeme(self.lexeme(input));
         let literal = interner.intern_literal(&self.string_buf);
 
