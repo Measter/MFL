@@ -1,10 +1,10 @@
 use std::io::Write;
 
 use codespan_reporting::diagnostic::Diagnostic;
-use lasso::Rodeo;
 
 use crate::{
     generate_error,
+    interners::Interners,
     opcode::{Op, OpCode},
     popn::PopN,
     source_file::FileId,
@@ -41,10 +41,10 @@ fn make_syscall3(
     Ok(())
 }
 
-fn allocate_string_literals(interner: &Rodeo, memory: &mut Vec<u8>) -> Vec<u64> {
+fn allocate_string_literals(interner: &Interners, memory: &mut Vec<u8>) -> Vec<u64> {
     let mut indices = Vec::new();
 
-    for (id, literal) in interner.iter() {
+    for (id, literal) in interner.iter_literals() {
         let idx = id.into_inner().get() as usize;
         let new_len = indices.len().max(idx + 1);
         indices.resize(new_len, 0);
@@ -56,7 +56,10 @@ fn allocate_string_literals(interner: &Rodeo, memory: &mut Vec<u8>) -> Vec<u64> 
     indices
 }
 
-pub(crate) fn simulate_program(program: &[Op], interner: &Rodeo) -> Result<(), Diagnostic<FileId>> {
+pub(crate) fn simulate_program(
+    program: &[Op],
+    interner: &Interners,
+) -> Result<(), Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack = Vec::new();
 
@@ -97,7 +100,7 @@ pub(crate) fn simulate_program(program: &[Op], interner: &Rodeo) -> Result<(), D
 
             OpCode::PushInt(val) => stack.push(val),
             OpCode::PushStr(id) => {
-                let literal = interner.resolve(&id);
+                let literal = interner.resolve_literal(id);
                 stack.push(literal.len() as u64);
                 stack.push(literal_addresses[id.into_inner().get() as usize]);
             }
@@ -192,6 +195,7 @@ pub(crate) fn simulate_program(program: &[Op], interner: &Rodeo) -> Result<(), D
             }
             OpCode::SysCall(_) => {}
             OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
+            OpCode::Ident(_) => panic!("ICE: Encountered OpCode::Ident"),
         }
 
         ip += 1;

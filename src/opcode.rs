@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use lasso::Spur;
 use variantly::Variantly;
@@ -24,6 +26,7 @@ pub enum OpCode {
     DupPair,
     End { ip: usize },
     Equal,
+    Ident(Spur),
     If { end_ip: usize },
     Else { else_start: usize, end_ip: usize },
     EndIf { ip: usize },
@@ -66,6 +69,7 @@ impl OpCode {
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
+            | OpCode::Ident(_)
             | OpCode::Mem { .. }
             | OpCode::Over
             | OpCode::PushInt(_)
@@ -100,6 +104,7 @@ impl OpCode {
             | OpCode::Do { .. }
             | OpCode::Dump
             | OpCode::End { .. }
+            | OpCode::Ident(_)
             | OpCode::If { .. }
             | OpCode::Else { .. }
             | OpCode::EndIf { .. }
@@ -173,11 +178,84 @@ impl Op {
     }
 }
 
-pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+fn parse_macro<'a>(
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
+    tokens: &'a [Token],
+    keyword: Token,
+) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
+    let (ident_idx, ident_token) = match token_iter.next() {
+        Some((idx, ident)) if ident.kind == TokenKind::Ident => (idx, ident),
+        Some((_, ident)) => {
+            let diag = Diagnostic::error()
+                .with_message(format!("expected ident, found {:?}", ident.kind))
+                .with_labels(vec![Label::primary(
+                    ident.location.file_id,
+                    ident.location.range(),
+                )]);
+
+            return Err(vec![diag]);
+        }
+        None => {
+            let diag = Diagnostic::error()
+                .with_message("unexpected end of file")
+                .with_labels(vec![Label::primary(
+                    keyword.location.file_id,
+                    keyword.location.range(),
+                )]);
+
+            return Err(vec![diag]);
+        }
+    };
+
+    let body_start_idx = ident_idx + 1;
+    let mut block_depth = 1;
+    let mut end_idx = body_start_idx;
+    let mut last_token = ident_token;
+
+    // We need to keep track of whether we're in an if or while block, because they
+    // should be usable inside a macro block.
+    for (idx, token) in token_iter {
+        if token.kind.new_block() {
+            block_depth += 1;
+        } else if token.kind.end_block() {
+            block_depth -= 1;
+        }
+
+        end_idx = idx;
+        last_token = token;
+
+        if block_depth == 0 {
+            break;
+        }
+    }
+
+    if last_token.kind != TokenKind::End {
+        let diag = Diagnostic::error()
+            .with_message("unexpected end of file")
+            .with_labels(vec![Label::primary(
+                last_token.location.file_id,
+                last_token.location.range(),
+            )]);
+
+        return Err(vec![diag]);
+    }
+
+    let body_tokens = &tokens[body_start_idx..end_idx];
+    let body_ops = parse_token(macros, body_tokens)?;
+
+    Ok((*ident_token, body_ops))
+}
+
+pub fn parse_token(
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    tokens: &[Token],
+) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
     let mut diags = Vec::new();
 
-    for token in tokens {
+    let mut token_iter = tokens.iter().enumerate();
+    while let Some((_, token)) = token_iter.next() {
         match token.kind {
             TokenKind::Drop => ops.push(Op::new(OpCode::Drop, token.kind, token.location)),
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
@@ -199,14 +277,11 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
             TokenKind::Less => ops.push(Op::new(OpCode::Less, token.kind, token.location)),
 
             TokenKind::Ident => {
-                let diag = Diagnostic::error()
-                    .with_message("invalid ident")
-                    .with_labels(vec![Label::primary(
-                        token.location.file_id,
-                        token.location.range(),
-                    )]);
-                diags.push(diag);
-                continue;
+                ops.push(Op::new(
+                    OpCode::Ident(token.lexeme),
+                    token.kind,
+                    token.location,
+                ));
             }
             TokenKind::Integer(value) => {
                 ops.push(Op::new(OpCode::PushInt(value), token.kind, token.location))
@@ -228,6 +303,32 @@ pub fn parse_token(tokens: &[Token<'_>]) -> Result<Vec<Op>, Vec<Diagnostic<FileI
                 token.kind,
                 token.location,
             )),
+
+            TokenKind::Macro => {
+                let (name, body) = match parse_macro(macros, &mut token_iter, tokens, *token) {
+                    Ok(a) => a,
+                    Err(mut e) => {
+                        diags.append(&mut e);
+                        continue;
+                    }
+                };
+
+                if let Some((prev_name, _)) = macros.insert(name.lexeme, (name, body)) {
+                    let diag = Diagnostic::error()
+                        .with_message("macro previously defined")
+                        .with_labels(vec![
+                            Label::primary(name.location.file_id, name.location.range())
+                                .with_message("defined here"),
+                            Label::secondary(
+                                prev_name.location.file_id,
+                                prev_name.location.range(),
+                            )
+                            .with_message("previously defined here"),
+                        ]);
+                    diags.push(diag);
+                }
+                continue;
+            }
 
             TokenKind::If => ops.push(Op::new(
                 OpCode::If { end_ip: usize::MAX },
@@ -454,4 +555,56 @@ pub fn optimize(ops: &[Op]) -> Vec<Op> {
     }
 
     dst_vec
+}
+
+pub fn expand_macros(
+    macros: &HashMap<Spur, (Token, Vec<Op>)>,
+    ops: &[Op],
+) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+    let mut src_vec = ops.to_owned();
+    let mut dst_vec = Vec::with_capacity(ops.len());
+    let mut diags = Vec::new();
+
+    // Keep making changes until we get no changes.
+    let mut num_expansions = 0;
+    loop {
+        let mut changed = false;
+
+        for op in src_vec.drain(..) {
+            match op.code {
+                OpCode::Ident(id) => {
+                    changed = true;
+                    match macros.get(&id) {
+                        Some((_, body)) => dst_vec.extend_from_slice(body),
+                        None => {
+                            let diag = Diagnostic::error()
+                                .with_message("unknown macro")
+                                .with_labels(vec![Label::primary(
+                                    op.location.file_id,
+                                    op.location.range(),
+                                )]);
+                            diags.push(diag);
+                        }
+                    }
+                }
+                _ => dst_vec.push(op),
+            }
+        }
+
+        if !changed {
+            break;
+        }
+
+        if num_expansions > 128 {
+            let diag = Diagnostic::error().with_message("depth of macro expansion exceeded 128");
+            diags.push(diag);
+            break;
+        }
+
+        num_expansions += 1;
+
+        std::mem::swap(&mut src_vec, &mut dst_vec);
+    }
+
+    diags.is_empty().then(|| dst_vec).ok_or(diags)
 }

@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::{collections::HashMap, path::Path, process::Command};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
@@ -8,11 +8,12 @@ use codespan_reporting::{
     },
 };
 use color_eyre::eyre::{eyre, Context, Result};
-use lasso::Rodeo;
+use interners::Interners;
 use source_file::{FileId, SourceLocation, SourceStorage};
 use structopt::StructOpt;
 
 mod compile;
+mod interners;
 mod lexer;
 mod opcode;
 mod popn;
@@ -62,7 +63,7 @@ fn load_program(
     stderr: &mut StandardStreamLock,
     cfg: &Config,
     source_store: &mut SourceStorage,
-    interner: &mut Rodeo,
+    interner: &mut Interners,
     file: &str,
     optimize: bool,
 ) -> Result<LoadProgramResult> {
@@ -76,7 +77,14 @@ fn load_program(
         Err(diag) => return Ok(Err(vec![diag])),
     };
 
-    let mut ops = match opcode::parse_token(&tokens) {
+    let mut macros = HashMap::new();
+
+    let mut ops = match opcode::parse_token(&mut macros, &tokens) {
+        Ok(ops) => ops,
+        Err(diags) => return Ok(Err(diags)),
+    };
+
+    ops = match opcode::expand_macros(&macros, &ops) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
@@ -110,7 +118,7 @@ fn main() -> Result<()> {
     let mut stderr = stderr.lock();
 
     let mut source_storage = SourceStorage::new();
-    let mut interner = Rodeo::default();
+    let mut interner = Interners::new();
 
     match args {
         Args::Simulate { file, optimise } => {

@@ -6,10 +6,10 @@ use std::{
 
 use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
-use lasso::Rodeo;
 
 use crate::{
     compile::optimizer_passes::pass_through,
+    interners::Interners,
     opcode::{Op, OpCode},
     source_file::SourceStorage,
     MEMORY_CAPACITY,
@@ -46,7 +46,7 @@ impl OpCode {
     }
 }
 
-fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
+fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<()> {
     match op.code {
         OpCode::Add
         | OpCode::Subtract
@@ -61,7 +61,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
 
         OpCode::PushInt(v) => writeln!(output, "    push {}", v)?,
         OpCode::PushStr(id) => {
-            let literal = interner.resolve(&id);
+            let literal = interner.resolve_literal(id);
             let id = id.into_inner().get();
 
             writeln!(output, "    push {}", literal.len())?;
@@ -163,12 +163,15 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Rodeo) -> Result<()> {
         OpCode::End { .. } => {
             panic!("ICE: Encountered OpCode::End")
         }
+        OpCode::Ident(_) => {
+            panic!("ICE: Encountered OpCode::Ident")
+        }
     }
 
     Ok(())
 }
 
-fn try_optimize<'a>(interner: &Rodeo, ops: &'a [Op]) -> (Vec<u8>, &'a [Op], &'a [Op]) {
+fn try_optimize<'a>(interner: &Interners, ops: &'a [Op]) -> (Vec<u8>, &'a [Op], &'a [Op]) {
     PASSES
         .iter()
         .filter_map(|pass| pass(interner, ops))
@@ -179,7 +182,7 @@ fn try_optimize<'a>(interner: &Rodeo, ops: &'a [Op]) -> (Vec<u8>, &'a [Op], &'a 
 pub(crate) fn compile_program(
     program: &[Op],
     source_store: &SourceStorage,
-    interner: &Rodeo,
+    interner: &Interners,
     out_file_path: &Path,
     optimize: bool,
 ) -> Result<()> {
@@ -240,7 +243,7 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    syscall")?;
 
     writeln!(&mut out_file, "segment .rodata")?;
-    for (id, literal) in interner.iter() {
+    for (id, literal) in interner.iter_literals() {
         let id = id.into_inner().get();
         write!(&mut out_file, "    __string_literal{}: db ", id)?;
 

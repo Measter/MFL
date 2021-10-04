@@ -1,9 +1,12 @@
 use std::{iter::Peekable, ops::Range, str::CharIndices};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use lasso::{Rodeo, Spur};
+use lasso::Spur;
 
-use crate::source_file::{FileId, SourceLocation};
+use crate::{
+    interners::Interners,
+    source_file::{FileId, SourceLocation},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
@@ -23,6 +26,7 @@ pub enum TokenKind {
     Integer(u64),
     Less,
     Load,
+    Macro,
     Mem,
     Minus,
     Plus,
@@ -36,15 +40,53 @@ pub enum TokenKind {
     While,
 }
 
+impl TokenKind {
+    pub fn new_block(self) -> bool {
+        match self {
+            TokenKind::BitOr
+            | TokenKind::BitAnd
+            | TokenKind::Do
+            | TokenKind::Drop
+            | TokenKind::Dump
+            | TokenKind::Dup
+            | TokenKind::DupPair
+            | TokenKind::Else
+            | TokenKind::End
+            | TokenKind::Equal
+            | TokenKind::Greater
+            | TokenKind::Ident
+            | TokenKind::Integer(_)
+            | TokenKind::Less
+            | TokenKind::Load
+            | TokenKind::Mem
+            | TokenKind::Minus
+            | TokenKind::Plus
+            | TokenKind::Over
+            | TokenKind::ShiftLeft
+            | TokenKind::ShiftRight
+            | TokenKind::String(_)
+            | TokenKind::Store
+            | TokenKind::Swap
+            | TokenKind::SysCall(_) => false,
+
+            TokenKind::If | TokenKind::While | TokenKind::Macro => true,
+        }
+    }
+
+    pub fn end_block(self) -> bool {
+        self == TokenKind::End
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct Token<'a> {
+pub struct Token {
     pub kind: TokenKind,
-    pub lexeme: &'a str,
+    pub lexeme: Spur,
     pub location: SourceLocation,
 }
 
-impl<'a> Token<'a> {
-    fn new(kind: TokenKind, lexeme: &'a str, file_id: FileId, source_range: Range<usize>) -> Self {
+impl Token {
+    fn new(kind: TokenKind, lexeme: Spur, file_id: FileId, source_range: Range<usize>) -> Self {
         Self {
             kind,
             lexeme,
@@ -91,8 +133,8 @@ impl<'source> Scanner<'source> {
     fn lex_string<'token>(
         &mut self,
         input: &'token str,
-        interner: &mut Rodeo,
-    ) -> Result<Token<'token>, Diagnostic<FileId>> {
+        interner: &mut Interners,
+    ) -> Result<Token, Diagnostic<FileId>> {
         self.string_buf.clear();
 
         while !self.is_at_end() {
@@ -133,22 +175,22 @@ impl<'source> Scanner<'source> {
 
         self.advance(); // Grab the close quote.
 
-        let lexeme = self.lexeme(input);
-        let id = interner.get_or_intern(&self.string_buf);
+        let lexeme = interner.intern_lexeme(self.lexeme(input));
+        let literal = interner.intern_literal(&self.string_buf);
 
         Ok(Token::new(
-            TokenKind::String(id),
+            TokenKind::String(literal),
             lexeme,
             self.file_id,
             self.lexeme_range(),
         ))
     }
 
-    fn scan_token<'token>(
+    fn scan_token(
         &mut self,
-        input: &'token str,
-        interner: &mut Rodeo,
-    ) -> Result<Option<Token<'token>>, Diagnostic<FileId>> {
+        input: &str,
+        interner: &mut Interners,
+    ) -> Result<Option<Token>, Diagnostic<FileId>> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
 
@@ -174,17 +216,15 @@ impl<'source> Scanner<'source> {
                     _ => unreachable!(),
                 };
 
-                Some(Token::new(
-                    kind,
-                    self.lexeme(input),
-                    self.file_id,
-                    self.lexeme_range(),
-                ))
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             ('"', _) => Some(self.lex_string(input, interner)?),
 
-            ('0'..='9', _) => {
+            // Need to make sure we don't have a collision with the "2dup"
+            // keyword
+            ('0'..='9', c) if c != 'd' => {
                 while matches!(self.peek(), Some('0'..='9')) {
                     self.advance();
                 }
@@ -201,6 +241,7 @@ impl<'source> Scanner<'source> {
                     }
                 };
 
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
                 Some(Token::new(
                     TokenKind::Integer(value),
                     lexeme,
@@ -230,6 +271,7 @@ impl<'source> Scanner<'source> {
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
                     "swap" => TokenKind::Swap,
+                    "macro" => TokenKind::Macro,
                     "mem" => TokenKind::Mem,
                     "syscall1" => TokenKind::SysCall(1),
                     "syscall2" => TokenKind::SysCall(2),
@@ -241,12 +283,8 @@ impl<'source> Scanner<'source> {
                     _ => TokenKind::Ident,
                 };
 
-                Some(Token::new(
-                    kind,
-                    self.lexeme(input),
-                    self.file_id,
-                    self.lexeme_range(),
-                ))
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
         };
 
@@ -254,11 +292,11 @@ impl<'source> Scanner<'source> {
     }
 }
 
-pub(crate) fn lex_file<'a>(
-    contents: &'a str,
+pub(crate) fn lex_file(
+    contents: &str,
     file_id: FileId,
-    interner: &mut Rodeo,
-) -> Result<Vec<Token<'a>>, Diagnostic<FileId>> {
+    interner: &mut Interners,
+) -> Result<Vec<Token>, Diagnostic<FileId>> {
     let mut scanner = Scanner {
         chars: contents.char_indices().peekable(),
         cur_token_start: 0,
