@@ -25,6 +25,10 @@ impl Interners {
         self.literals.resolve(&id)
     }
 
+    pub fn resolve_lexeme(&self, id: Spur) -> &str {
+        self.lexemes.resolve(&id)
+    }
+
     pub fn iter_literals(&self) -> Iter<'_, Spur> {
         self.literals.iter()
     }

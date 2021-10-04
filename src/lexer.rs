@@ -23,6 +23,7 @@ pub enum TokenKind {
     Greater,
     Ident,
     If,
+    Include,
     Integer(u64),
     Less,
     Load,
@@ -55,6 +56,7 @@ impl TokenKind {
             | TokenKind::Equal
             | TokenKind::Greater
             | TokenKind::Ident
+            | TokenKind::Include
             | TokenKind::Integer(_)
             | TokenKind::Less
             | TokenKind::Load
@@ -265,6 +267,7 @@ impl<'source> Scanner<'source> {
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
                     "if" => TokenKind::If,
+                    "include" => TokenKind::Include,
                     "over" => TokenKind::Over,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,

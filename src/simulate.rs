@@ -196,6 +196,7 @@ pub(crate) fn simulate_program(
             OpCode::SysCall(_) => {}
             OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
             OpCode::Ident(_) => panic!("ICE: Encountered OpCode::Ident"),
+            OpCode::Include(_) => panic!("ICE: Encountered OpCode::Include"),
         }
 
         ip += 1;

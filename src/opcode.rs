@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use lasso::Spur;
@@ -6,6 +6,7 @@ use variantly::Variantly;
 
 use crate::{
     generate_error,
+    interners::Interners,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation},
 };
@@ -28,6 +29,7 @@ pub enum OpCode {
     Equal,
     Ident(Spur),
     If { end_ip: usize },
+    Include(Spur),
     Else { else_start: usize, end_ip: usize },
     EndIf { ip: usize },
     EndWhile { condition_ip: usize, end_ip: usize },
@@ -70,6 +72,7 @@ impl OpCode {
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
             | OpCode::Ident(_)
+            | OpCode::Include(_)
             | OpCode::Mem { .. }
             | OpCode::Over
             | OpCode::PushInt(_)
@@ -106,6 +109,7 @@ impl OpCode {
             | OpCode::End { .. }
             | OpCode::Ident(_)
             | OpCode::If { .. }
+            | OpCode::Include(_)
             | OpCode::Else { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
@@ -178,34 +182,59 @@ impl Op {
     }
 }
 
-fn parse_macro<'a>(
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
-    tokens: &'a [Token],
-    keyword: Token,
-) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
-    let (ident_idx, ident_token) = match token_iter.next() {
-        Some((idx, ident)) if ident.kind == TokenKind::Ident => (idx, ident),
+fn expect_token<'a>(
+    tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
+    kind_str: &str,
+    expected: fn(TokenKind) -> bool,
+    prev: Token,
+    interner: &Interners,
+) -> Result<(usize, Token), Diagnostic<FileId>> {
+    match tokens.next() {
+        Some((idx, ident)) if expected(ident.kind) => Ok((idx, *ident)),
         Some((_, ident)) => {
             let diag = Diagnostic::error()
-                .with_message(format!("expected ident, found {:?}", ident.kind))
+                .with_message(format!(
+                    "expected {}, found '{}'",
+                    kind_str,
+                    interner.resolve_lexeme(ident.lexeme)
+                ))
                 .with_labels(vec![Label::primary(
                     ident.location.file_id,
                     ident.location.range(),
                 )]);
 
-            return Err(vec![diag]);
+            Err(diag)
         }
         None => {
             let diag = Diagnostic::error()
                 .with_message("unexpected end of file")
                 .with_labels(vec![Label::primary(
-                    keyword.location.file_id,
-                    keyword.location.range(),
+                    prev.location.file_id,
+                    prev.location.range(),
                 )]);
 
-            return Err(vec![diag]);
+            Err(diag)
         }
+    }
+}
+
+fn parse_macro<'a>(
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
+    tokens: &'a [Token],
+    keyword: Token,
+    interner: &Interners,
+    include_list: &mut Vec<(Token, Spur)>,
+) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
+    let (ident_idx, ident_token) = match expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+    ) {
+        Ok(a) => a,
+        Err(diag) => return Err(vec![diag]),
     };
 
     let body_start_idx = ident_idx + 1;
@@ -223,7 +252,7 @@ fn parse_macro<'a>(
         }
 
         end_idx = idx;
-        last_token = token;
+        last_token = *token;
 
         if block_depth == 0 {
             break;
@@ -242,14 +271,16 @@ fn parse_macro<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(macros, body_tokens)?;
+    let body_ops = parse_token(macros, body_tokens, interner, include_list)?;
 
-    Ok((*ident_token, body_ops))
+    Ok((ident_token, body_ops))
 }
 
 pub fn parse_token(
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
     tokens: &[Token],
+    interner: &Interners,
+    include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
     let mut diags = Vec::new();
@@ -305,7 +336,14 @@ pub fn parse_token(
             )),
 
             TokenKind::Macro => {
-                let (name, body) = match parse_macro(macros, &mut token_iter, tokens, *token) {
+                let (name, body) = match parse_macro(
+                    macros,
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    interner,
+                    include_list,
+                ) {
                     Ok(a) => a,
                     Err(mut e) => {
                         diags.append(&mut e);
@@ -315,7 +353,7 @@ pub fn parse_token(
 
                 if let Some((prev_name, _)) = macros.insert(name.lexeme, (name, body)) {
                     let diag = Diagnostic::error()
-                        .with_message("macro previously defined")
+                        .with_message("macro defined multiple times")
                         .with_labels(vec![
                             Label::primary(name.location.file_id, name.location.range())
                                 .with_message("defined here"),
@@ -323,11 +361,37 @@ pub fn parse_token(
                                 prev_name.location.file_id,
                                 prev_name.location.range(),
                             )
-                            .with_message("previously defined here"),
+                            .with_message("also defined here"),
                         ]);
                     diags.push(diag);
                 }
-                continue;
+            }
+            TokenKind::Include => {
+                let (_, path_token) = match expect_token(
+                    &mut token_iter,
+                    "string",
+                    |k| matches!(k, TokenKind::String(_)),
+                    *token,
+                    interner,
+                ) {
+                    Ok(ident) => ident,
+                    Err(diag) => {
+                        diags.push(diag);
+                        continue;
+                    }
+                };
+
+                let literal = match path_token.kind {
+                    TokenKind::String(id) => id,
+                    _ => unreachable!(),
+                };
+
+                include_list.push((path_token, literal));
+                ops.push(Op::new(
+                    OpCode::Include(literal),
+                    token.kind,
+                    token.location,
+                ));
             }
 
             TokenKind::If => ops.push(Op::new(
@@ -558,12 +622,14 @@ pub fn optimize(ops: &[Op]) -> Vec<Op> {
 }
 
 pub fn expand_macros(
+    included_files: &HashMap<Spur, Vec<Op>>,
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
     ops: &[Op],
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec = Vec::with_capacity(ops.len());
     let mut diags = Vec::new();
+    let mut already_included = HashSet::new();
 
     // Keep making changes until we get no changes.
     let mut num_expansions = 0;
@@ -585,6 +651,14 @@ pub fn expand_macros(
                                 )]);
                             diags.push(diag);
                         }
+                    }
+                }
+                OpCode::Include(id) => {
+                    changed = true;
+                    if !already_included.contains(&id) {
+                        let body = &included_files[&id];
+                        dst_vec.extend_from_slice(body);
+                        already_included.insert(id);
                     }
                 }
                 _ => dst_vec.push(op),

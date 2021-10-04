@@ -166,6 +166,9 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
         OpCode::Ident(_) => {
             panic!("ICE: Encountered OpCode::Ident")
         }
+        OpCode::Include(_) => {
+            panic!("ICE: Encountered OpCode::Include")
+        }
     }
 
     Ok(())

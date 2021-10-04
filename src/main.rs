@@ -78,13 +78,51 @@ fn load_program(
     };
 
     let mut macros = HashMap::new();
+    let mut include_list = Vec::new();
 
-    let mut ops = match opcode::parse_token(&mut macros, &tokens) {
+    let mut ops = match opcode::parse_token(&mut macros, &tokens, interner, &mut include_list) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
 
-    ops = match opcode::expand_macros(&macros, &ops) {
+    let mut included_files = HashMap::new();
+
+    while let Some((include_token, file)) = include_list.pop() {
+        if included_files.contains_key(&file) {
+            continue;
+        }
+
+        let file_path = interner.resolve_literal(file);
+        let contents = match std::fs::read_to_string(file_path) {
+            Ok(contents) => contents,
+            Err(e) => {
+                let diag = Diagnostic::error()
+                    .with_message(format!("error opening `{}`", file_path))
+                    .with_labels(vec![Label::primary(
+                        include_token.location.file_id,
+                        include_token.location.range(),
+                    )])
+                    .with_notes(vec![format!("{}", e)]);
+                return Ok(Err(vec![diag]));
+            }
+        };
+
+        let file_id = source_store.add(file_path, &contents);
+
+        let tokens = match lexer::lex_file(&contents, file_id, interner) {
+            Ok(program) => program,
+            Err(diag) => return Ok(Err(vec![diag])),
+        };
+
+        let ops = match opcode::parse_token(&mut macros, &tokens, interner, &mut include_list) {
+            Ok(ops) => ops,
+            Err(diags) => return Ok(Err(diags)),
+        };
+
+        included_files.insert(file, ops);
+    }
+
+    ops = match opcode::expand_macros(&included_files, &macros, &ops) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
