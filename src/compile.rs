@@ -29,6 +29,7 @@ impl OpCode {
             OpCode::Add => ("add", big_b),
             OpCode::BitOr => ("or", big_b),
             OpCode::BitAnd => ("and", big_b),
+            OpCode::Multiply => ("mul", big_b),
             OpCode::ShiftLeft => ("shl", little_b),
             OpCode::ShiftRight => ("shr", little_b),
             OpCode::Subtract => ("sub", big_b),
@@ -57,6 +58,13 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             let (op, b_reg) = op.code.compile_arithmetic_op("rcx", "cl");
             writeln!(output, "    pop rcx")?;
             writeln!(output, "    {} QWORD [rsp], {}", op, b_reg)?;
+        }
+
+        // The multiply operator is dumb :(
+        OpCode::Multiply => {
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    mul QWORD [rsp]")?;
+            writeln!(output, "    mov QWORD [rsp], rax")?;
         }
 
         OpCode::PushInt(v) => writeln!(output, "    push {}", v)?,

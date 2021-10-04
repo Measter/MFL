@@ -34,6 +34,7 @@ pub enum TokenKind {
     Over,
     ShiftLeft,
     ShiftRight,
+    Star,
     String(Spur),
     Store,
     Swap,
@@ -66,6 +67,7 @@ impl TokenKind {
             | TokenKind::Over
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
+            | TokenKind::Star
             | TokenKind::String(_)
             | TokenKind::Store
             | TokenKind::Swap
@@ -106,7 +108,7 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',') || c.is_whitespace()
+    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',' | '*') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -204,10 +206,11 @@ impl<'source> Scanner<'source> {
             }
 
             _ if ch.is_whitespace() => None,
-            ('+' | '-' | '=' | '<' | '>' | '.' | ',', _) => {
+            ('+' | '-' | '=' | '<' | '>' | '.' | ',' | '*', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
+                    '*' => TokenKind::Star,
                     '=' => TokenKind::Equal,
                     '<' => TokenKind::Less,
                     '>' => TokenKind::Greater,

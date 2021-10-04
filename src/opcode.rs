@@ -37,6 +37,7 @@ pub enum OpCode {
     Load,
     Greater,
     Mem { offset: usize },
+    Multiply,
     Over,
     PushInt(u64),
     PushStr(Spur),
@@ -58,6 +59,7 @@ impl OpCode {
             | OpCode::Equal
             | OpCode::Greater
             | OpCode::Less
+            | OpCode::Multiply
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
             | OpCode::Store
@@ -95,6 +97,7 @@ impl OpCode {
             | OpCode::Less
             | OpCode::Load
             | OpCode::Mem { .. }
+            | OpCode::Multiply
             | OpCode::Over
             | OpCode::PushInt(_)
             | OpCode::ShiftLeft
@@ -124,7 +127,15 @@ impl OpCode {
         use OpCode::*;
         matches!(
             self,
-            Add | Subtract | BitOr | BitAnd | Equal | Greater | Less | ShiftLeft | ShiftRight
+            Add | Subtract
+                | Multiply
+                | BitOr
+                | BitAnd
+                | Equal
+                | Greater
+                | Less
+                | ShiftLeft
+                | ShiftRight
         )
     }
 
@@ -133,6 +144,7 @@ impl OpCode {
         match self {
             Add => |a, b| a + b,
             Subtract => |a, b| a - b,
+            Multiply => |a, b| a * b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
             ShiftLeft => |a, b| a << b,
@@ -415,6 +427,7 @@ pub fn parse_token(
 
             TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
             TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
+            TokenKind::Star => ops.push(Op::new(OpCode::Multiply, token.kind, token.location)),
 
             TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, token.kind, token.location)),
             TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, token.kind, token.location)),

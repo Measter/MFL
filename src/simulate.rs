@@ -80,6 +80,10 @@ pub(crate) fn simulate_program(
                 let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a -= b;
             }
+            OpCode::Multiply => {
+                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                *a *= b;
+            }
 
             OpCode::BitOr => {
                 let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
