@@ -123,6 +123,7 @@ impl OpCode {
         }
     }
 
+    // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
     fn is_binary_op(self) -> bool {
         use OpCode::*;
         matches!(
@@ -156,7 +157,8 @@ impl OpCode {
         }
     }
 
-    pub fn is_arithmetic(self) -> bool {
+    // Used by the compiler optimization passes to detect whether it can optimize further.
+    pub fn is_compiler_opt_arithmetic(self) -> bool {
         use OpCode::*;
         matches!(
             self,

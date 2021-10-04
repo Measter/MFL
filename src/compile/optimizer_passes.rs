@@ -67,7 +67,9 @@ fn push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], 
 /// Optimize a Push-ArithBinOp
 fn push_arithmetic<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let (push, op) = match ops {
-        [push, op, ..] if push.code.is_push_int() && op.code.is_arithmetic() => (push, op),
+        [push, op, ..] if push.code.is_push_int() && op.code.is_compiler_opt_arithmetic() => {
+            (push, op)
+        }
         _ => return None,
     };
 
