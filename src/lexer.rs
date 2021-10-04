@@ -134,11 +134,11 @@ impl<'source> Scanner<'source> {
         self.cur_token_start..self.next_token_start
     }
 
-    fn lex_string<'token>(
+    fn consume_string_or_char_literal(
         &mut self,
-        input: &'token str,
-        interner: &mut Interners,
-    ) -> Result<Token, Diagnostic<FileId>> {
+        close_char: char,
+        kind: &str,
+    ) -> Result<(), Diagnostic<FileId>> {
         self.string_buf.clear();
 
         while !self.is_at_end() {
@@ -146,7 +146,15 @@ impl<'source> Scanner<'source> {
             let next_ch = self.peek().unwrap_or_default();
 
             match (ch, next_ch) {
-                ('\\', '\\' | '"') => {
+                ('\\', '\'') if close_char == '\'' => {
+                    self.string_buf.push(next_ch);
+                    self.advance();
+                }
+                ('\\', '"') if close_char == '"' => {
+                    self.string_buf.push(next_ch);
+                    self.advance();
+                }
+                ('\\', '\\') => {
                     self.string_buf.push(next_ch);
                     self.advance();
                 }
@@ -162,14 +170,14 @@ impl<'source> Scanner<'source> {
                     self.string_buf.push('\t');
                     self.advance();
                 }
-                ('"', _) => break,
+                (ch, _) if ch == close_char => break,
                 (ch, _) => self.string_buf.push(ch),
             }
         }
 
         if self.is_at_end() {
             let diag = Diagnostic::error()
-                .with_message("unclosed string literal")
+                .with_message(format!("unclosed {} literal", kind))
                 .with_labels(vec![Label::primary(
                     self.file_id,
                     self.cur_token_start..self.next_token_start,
@@ -177,15 +185,7 @@ impl<'source> Scanner<'source> {
             return Err(diag);
         }
 
-        let lexeme = interner.intern_lexeme(self.lexeme(input));
-        let literal = interner.intern_literal(&self.string_buf);
-
-        Ok(Token::new(
-            TokenKind::String(literal),
-            lexeme,
-            self.file_id,
-            self.lexeme_range(),
-        ))
+        Ok(())
     }
 
     fn scan_token(
@@ -223,7 +223,41 @@ impl<'source> Scanner<'source> {
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
-            ('"', _) => Some(self.lex_string(input, interner)?),
+            ('"', _) => {
+                self.consume_string_or_char_literal('"', "string")?;
+
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let literal = interner.intern_literal(&self.string_buf);
+
+                Some(Token::new(
+                    TokenKind::String(literal),
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                ))
+            }
+
+            ('\'', _) => {
+                self.consume_string_or_char_literal('\'', "char")?;
+
+                if self.string_buf.chars().count() != 1 {
+                    let diag = Diagnostic::error()
+                        .with_message("invalid char literal")
+                        .with_labels(vec![Label::primary(self.file_id, self.lexeme_range())]);
+
+                    return Err(diag);
+                }
+
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let ch = self.string_buf.chars().next().unwrap();
+
+                Some(Token::new(
+                    TokenKind::Integer(ch as _),
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                ))
+            }
 
             // Need to make sure we don't have a collision with the "2dup"
             // keyword
