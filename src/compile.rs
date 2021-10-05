@@ -133,12 +133,13 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    pop rdi")?;
             writeln!(output, "    call dump")?;
         }
-        OpCode::Dup => writeln!(output, "    push QWORD [rsp]")?,
+        OpCode::Dup { depth } => {
+            writeln!(output, "    push QWORD [rsp + 8*{}]", depth)?;
+        }
         OpCode::DupPair => {
             writeln!(output, "    push QWORD [rsp+8]")?;
             writeln!(output, "    push QWORD [rsp+8]")?;
         }
-        OpCode::Over => writeln!(output, "    push QWORD [rsp+8]")?,
         OpCode::Swap => {
             writeln!(output, "    pop rax")?;
             writeln!(output, "    pop rbx")?;

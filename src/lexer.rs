@@ -15,7 +15,7 @@ pub enum TokenKind {
     Do,
     Drop,
     Dump,
-    Dup,
+    Dup(usize),
     DupPair,
     Else,
     End,
@@ -31,7 +31,6 @@ pub enum TokenKind {
     Mem,
     Minus,
     Plus,
-    Over,
     ShiftLeft,
     ShiftRight,
     Star,
@@ -50,7 +49,7 @@ impl TokenKind {
             | TokenKind::Do
             | TokenKind::Drop
             | TokenKind::Dump
-            | TokenKind::Dup
+            | TokenKind::Dup(_)
             | TokenKind::DupPair
             | TokenKind::Else
             | TokenKind::End
@@ -64,7 +63,6 @@ impl TokenKind {
             | TokenKind::Mem
             | TokenKind::Minus
             | TokenKind::Plus
-            | TokenKind::Over
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
             | TokenKind::Star
@@ -301,12 +299,12 @@ impl<'source> Scanner<'source> {
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
                     "dump" => TokenKind::Dump,
-                    "dup" => TokenKind::Dup,
+                    "dup" => TokenKind::Dup(0),
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
                     "if" => TokenKind::If,
                     "include" => TokenKind::Include,
-                    "over" => TokenKind::Over,
+                    "over" => TokenKind::Dup(1),
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
                     "swap" => TokenKind::Swap,

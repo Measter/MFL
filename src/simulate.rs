@@ -154,19 +154,13 @@ pub(crate) fn simulate_program(
                 let val = stack.pop().unwrap();
                 println!("{}", val);
             }
-            OpCode::Dup => {
-                let a = stack.last().copied().unwrap();
+            OpCode::Dup { depth } => {
+                let a = stack[stack.len() - 1 - depth];
                 stack.push(a);
             }
             OpCode::DupPair => {
                 if let [.., _, _] = &*stack {
                     stack.extend_from_within(stack.len() - 2..);
-                }
-            }
-
-            OpCode::Over => {
-                if let [.., _, _] = &*stack {
-                    stack.extend_from_within(stack.len() - 2..stack.len() - 1);
                 }
             }
 

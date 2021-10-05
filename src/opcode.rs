@@ -23,7 +23,7 @@ pub enum OpCode {
     Drop,
     Do { end_ip: usize, condition_ip: usize },
     Dump,
-    Dup,
+    Dup { depth: usize },
     DupPair,
     End { ip: usize },
     Equal,
@@ -38,7 +38,6 @@ pub enum OpCode {
     Greater,
     Mem { offset: usize },
     Multiply,
-    Over,
     PushInt(u64),
     PushStr(Spur),
     ShiftLeft,
@@ -67,7 +66,7 @@ impl OpCode {
 
             OpCode::Drop | OpCode::Do { .. } | OpCode::Dump | OpCode::If { .. } | OpCode::Load => 1,
 
-            OpCode::Dup
+            OpCode::Dup { .. }
             | OpCode::DupPair
             | OpCode::Else { .. }
             | OpCode::End { .. }
@@ -76,7 +75,6 @@ impl OpCode {
             | OpCode::Ident(_)
             | OpCode::Include(_)
             | OpCode::Mem { .. }
-            | OpCode::Over
             | OpCode::PushInt(_)
             | OpCode::PushStr(_)
             | OpCode::Swap
@@ -91,14 +89,13 @@ impl OpCode {
             OpCode::Add
             | OpCode::BitOr
             | OpCode::BitAnd
-            | OpCode::Dup
+            | OpCode::Dup { .. }
             | OpCode::Equal
             | OpCode::Greater
             | OpCode::Less
             | OpCode::Load
             | OpCode::Mem { .. }
             | OpCode::Multiply
-            | OpCode::Over
             | OpCode::PushInt(_)
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
@@ -304,9 +301,10 @@ pub fn parse_token(
         match token.kind {
             TokenKind::Drop => ops.push(Op::new(OpCode::Drop, token.kind, token.location)),
             TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
-            TokenKind::Dup => ops.push(Op::new(OpCode::Dup, token.kind, token.location)),
+            TokenKind::Dup(depth) => {
+                ops.push(Op::new(OpCode::Dup { depth }, token.kind, token.location))
+            }
             TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, token.kind, token.location)),
-            TokenKind::Over => ops.push(Op::new(OpCode::Over, token.kind, token.location)),
             TokenKind::Swap => ops.push(Op::new(OpCode::Swap, token.kind, token.location)),
 
             TokenKind::Mem => ops.push(Op::new(
