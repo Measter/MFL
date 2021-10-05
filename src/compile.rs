@@ -37,14 +37,14 @@ impl OpCode {
         }
     }
 
-    fn compile_compare_op(self) -> &'static str {
+    fn compile_compare_op_suffix(self) -> &'static str {
         match self {
-            OpCode::Equal => "sete",
-            OpCode::Greater => "setg",
-            OpCode::GreaterEqual => "setge",
-            OpCode::Less => "setl",
-            OpCode::LessEqual => "setle",
-            OpCode::NotEq => "setne",
+            OpCode::Equal => "e",
+            OpCode::Greater => "g",
+            OpCode::GreaterEqual => "ge",
+            OpCode::Less => "l",
+            OpCode::LessEqual => "le",
+            OpCode::NotEq => "ne",
             _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
         }
     }
@@ -98,7 +98,11 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    pop rbx")?;
             writeln!(output, "    pop rax")?;
             writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    {} r15b", op.code.compile_compare_op())?;
+            writeln!(
+                output,
+                "    set{} r15b",
+                op.code.compile_compare_op_suffix()
+            )?;
             writeln!(output, "    push r15")?;
         }
 

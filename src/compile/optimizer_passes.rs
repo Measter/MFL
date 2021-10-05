@@ -74,7 +74,7 @@ fn dup_push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [O
     let push_val = push.code.unwrap_push_int();
     let dup_depth = dup.code.unwrap_dup();
     let mut asm = Vec::new();
-    let op = op.code.compile_compare_op();
+    let op = op.code.compile_compare_op_suffix();
 
     if push_val <= u32::MAX as u64 {
         writeln!(
@@ -87,7 +87,7 @@ fn dup_push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [O
         writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
         writeln!(&mut asm, "    cmp QWORD [rsp + 8*{}], rbx", dup_depth).unwrap();
     }
-    writeln!(&mut asm, "    {} r15b", op).unwrap();
+    writeln!(&mut asm, "    set{} r15b", op).unwrap();
     writeln!(&mut asm, "    push r15").unwrap();
 
     let (compiled, remaining) = ops.split_at(3);
@@ -103,7 +103,7 @@ fn push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], 
 
     let push_val = push.code.unwrap_push_int();
     let mut asm = Vec::new();
-    let op = op.code.compile_compare_op();
+    let op = op.code.compile_compare_op_suffix();
 
     writeln!(&mut asm, "    pop rax").unwrap();
     if push_val <= u32::MAX as u64 {
@@ -112,7 +112,7 @@ fn push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], 
         writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
         writeln!(&mut asm, "    cmp rax, rbx").unwrap();
     }
-    writeln!(&mut asm, "    {} r15b", op).unwrap();
+    writeln!(&mut asm, "    set{} r15b", op).unwrap();
     writeln!(&mut asm, "    push r15").unwrap();
 
     let (compiled, remaining) = ops.split_at(2);
