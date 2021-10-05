@@ -261,7 +261,7 @@ impl<'source> Scanner<'source> {
             // Need to make sure we don't have a collision with the "2dup"
             // keyword
             ('0'..='9', c) if c != 'd' => {
-                while matches!(self.peek(), Some('0'..='9')) {
+                while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
                     self.advance();
                 }
 
