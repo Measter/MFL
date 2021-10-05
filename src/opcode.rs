@@ -174,6 +174,13 @@ impl OpCode {
             _ => panic!("expected OpCode::Mem"),
         }
     }
+
+    pub fn unwrap_dup(self) -> usize {
+        match self {
+            Self::Dup { depth } => depth,
+            _ => panic!("expected OpCode::Dup"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

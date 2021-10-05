@@ -11,6 +11,7 @@ type OptimizerFunction = for<'a> fn(&Interners, &'a [Op]) -> Option<(Vec<u8>, &'
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     push_arithmetic,
+    dup_push_compare,
     push_compare,
     mem_plus,
     mem_push_store,
@@ -36,6 +37,40 @@ fn mem_plus<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a 
     }
 
     let (compiled, remaining) = ops.split_at(2);
+    Some((asm, compiled, remaining))
+}
+
+/// Optimize a Dup-Push-Compare
+fn dup_push_compare<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let (dup, push, op) = match ops {
+        [dup, push, op, ..]
+            if dup.code.is_dup() && push.code.is_push_int() && op.code.is_compare() =>
+        {
+            (dup, push, op)
+        }
+        _ => return None,
+    };
+
+    let push_val = push.code.unwrap_push_int();
+    let dup_depth = dup.code.unwrap_dup();
+    let mut asm = Vec::new();
+    let op = op.code.compile_compare_op();
+
+    if push_val <= u32::MAX as u64 {
+        writeln!(
+            &mut asm,
+            "    cmp QWORD [rsp + 8*{}], {}",
+            dup_depth, push_val
+        )
+        .unwrap();
+    } else {
+        writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
+        writeln!(&mut asm, "    cmp QWORD [rsp + 8*{}], rbx", dup_depth).unwrap();
+    }
+    writeln!(&mut asm, "    {} r15b", op).unwrap();
+    writeln!(&mut asm, "    push r15").unwrap();
+
+    let (compiled, remaining) = ops.split_at(3);
     Some((asm, compiled, remaining))
 }
 
