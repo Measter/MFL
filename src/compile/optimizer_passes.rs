@@ -10,6 +10,7 @@ use super::compile_op;
 type OptimizerFunction = for<'a> fn(&Interners, &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
+    push_divmod,
     push_arithmetic,
     dup_push_compare,
     push_compare,
@@ -18,6 +19,25 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
     mem_load,
     pass_through,
 ];
+
+/// Optimises PushInt-DivMod
+fn push_divmod<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let a = match ops {
+        [a, op, ..] if a.code.is_push_int() && op.code.is_div_mod() => a,
+        _ => return None,
+    };
+
+    let mut asm = Vec::new();
+    writeln!(&mut asm, "    mov rbx, {}", a.code.unwrap_push_int()).unwrap();
+    writeln!(&mut asm, "    pop rax").unwrap();
+    writeln!(&mut asm, "    xor rdx, rdx").unwrap();
+    writeln!(&mut asm, "    div rbx").unwrap();
+    writeln!(&mut asm, "    push rax").unwrap();
+    writeln!(&mut asm, "    push rdx").unwrap();
+
+    let (compiled, remaining) = ops.split_at(2);
+    Some((asm, compiled, remaining))
+}
 
 /// Optimises adding Mem to whatever's on the stack.
 fn mem_plus<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
