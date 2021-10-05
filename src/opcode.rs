@@ -66,8 +66,8 @@ impl OpCode {
 
             OpCode::Drop | OpCode::Do { .. } | OpCode::Dump | OpCode::If { .. } | OpCode::Load => 1,
 
-            OpCode::Dup { .. }
-            | OpCode::DupPair
+            OpCode::Dup { depth } => depth + 1,
+            OpCode::DupPair
             | OpCode::Else { .. }
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
@@ -86,10 +86,11 @@ impl OpCode {
 
     fn push_count(self) -> usize {
         match self {
+            OpCode::Dup { depth } => depth + 2,
+
             OpCode::Add
             | OpCode::BitOr
             | OpCode::BitAnd
-            | OpCode::Dup { .. }
             | OpCode::Equal
             | OpCode::Greater
             | OpCode::Less
