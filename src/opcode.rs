@@ -20,6 +20,7 @@ pub enum OpCode {
     Add,
     BitOr,
     BitAnd,
+    DivMod,
     Drop,
     Do { end_ip: usize, condition_ip: usize },
     Dump,
@@ -58,6 +59,7 @@ impl OpCode {
             OpCode::Add
             | OpCode::BitOr
             | OpCode::BitAnd
+            | OpCode::DivMod
             | OpCode::Equal
             | OpCode::Greater
             | OpCode::GreaterEqual
@@ -111,7 +113,7 @@ impl OpCode {
             | OpCode::ShiftRight
             | OpCode::Subtract => 1,
 
-            OpCode::DupPair | OpCode::PushStr(_) => 2,
+            OpCode::DivMod | OpCode::DupPair | OpCode::PushStr(_) => 2,
 
             OpCode::Drop
             | OpCode::Do { .. }
@@ -137,8 +139,9 @@ impl OpCode {
             Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | GreaterEqual | Less
             | LessEqual | NotEq | ShiftLeft | ShiftRight => true,
 
-            Drop
+            DivMod
             | Do { .. }
+            | Drop
             | Dump
             | Dup { .. }
             | DupPair
@@ -177,8 +180,9 @@ impl OpCode {
             LessEqual => |a, b| (a <= b) as u64,
             NotEq => |a, b| (a != b) as u64,
 
-            Drop
+            DivMod
             | Do { .. }
+            | Drop
             | Dump
             | Dup { .. }
             | DupPair
@@ -208,8 +212,9 @@ impl OpCode {
         match self {
             Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight => true,
 
-            Drop
+            DivMod
             | Do { .. }
+            | Drop
             | Dump
             | Dup { .. }
             | DupPair
@@ -246,6 +251,7 @@ impl OpCode {
             Add
             | BitOr
             | BitAnd
+            | DivMod
             | Drop
             | Do { .. }
             | Dump
@@ -547,6 +553,7 @@ pub fn parse_token(
             TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
             TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
             TokenKind::Star => ops.push(Op::new(OpCode::Multiply, token.kind, token.location)),
+            TokenKind::DivMod => ops.push(Op::new(OpCode::DivMod, token.kind, token.location)),
 
             TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, token.kind, token.location)),
             TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, token.kind, token.location)),

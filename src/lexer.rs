@@ -12,6 +12,7 @@ use crate::{
 pub enum TokenKind {
     BitOr,
     BitAnd,
+    DivMod,
     Do,
     Drop,
     Dump,
@@ -49,6 +50,7 @@ impl TokenKind {
         match self {
             TokenKind::BitOr
             | TokenKind::BitAnd
+            | TokenKind::DivMod
             | TokenKind::Do
             | TokenKind::Drop
             | TokenKind::Dump
@@ -315,6 +317,7 @@ impl<'source> Scanner<'source> {
                 let kind = match lexeme {
                     "2dup" => TokenKind::DupPair,
                     "bor" => TokenKind::BitOr,
+                    "divmod" => TokenKind::DivMod,
                     "band" => TokenKind::BitAnd,
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,

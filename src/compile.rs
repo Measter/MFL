@@ -69,6 +69,14 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    mul QWORD [rsp]")?;
             writeln!(output, "    mov QWORD [rsp], rax")?;
         }
+        OpCode::DivMod => {
+            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop rax")?;
+            writeln!(output, "    xor rdx, rdx")?;
+            writeln!(output, "    div rbx")?;
+            writeln!(output, "    push rax")?;
+            writeln!(output, "    push rdx")?;
+        }
 
         OpCode::PushInt(v) => writeln!(output, "    push {}", v)?,
         OpCode::PushStr(id) => {

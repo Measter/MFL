@@ -84,6 +84,12 @@ pub(crate) fn simulate_program(
                 let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
                 *a *= b;
             }
+            OpCode::DivMod => {
+                let [b, a] = stack.popn().unwrap();
+                let (rem, quot) = (a % b, a / b);
+                stack.push(quot);
+                stack.push(rem);
+            }
 
             OpCode::BitOr => {
                 let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
