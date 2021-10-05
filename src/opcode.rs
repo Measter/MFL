@@ -124,18 +124,31 @@ impl OpCode {
     // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
     fn is_binary_op(self) -> bool {
         use OpCode::*;
-        matches!(
-            self,
-            Add | Subtract
-                | Multiply
-                | BitOr
-                | BitAnd
-                | Equal
-                | Greater
-                | Less
-                | ShiftLeft
-                | ShiftRight
-        )
+        match self {
+            Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | Less | ShiftLeft
+            | ShiftRight => true,
+
+            Drop
+            | Do { .. }
+            | Dump
+            | Dup { .. }
+            | DupPair
+            | End { .. }
+            | Ident(_)
+            | If { .. }
+            | Include(_)
+            | Else { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
+            | Load
+            | Mem { .. }
+            | PushInt(_)
+            | PushStr(_)
+            | Store
+            | Swap
+            | SysCall(_)
+            | While { .. } => false,
+        }
     }
 
     fn get_binary_op(self) -> fn(u64, u64) -> u64 {
@@ -151,22 +164,98 @@ impl OpCode {
             Equal => |a, b| (a == b) as u64,
             Greater => |a, b| (a > b) as u64,
             Less => |a, b| (a < b) as u64,
-            _ => panic!("ICE: Attempted to get the binary_op of a {:?}", self),
+
+            Drop
+            | Do { .. }
+            | Dump
+            | Dup { .. }
+            | DupPair
+            | End { .. }
+            | Ident(_)
+            | If { .. }
+            | Include { .. }
+            | Else { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
+            | Load
+            | Mem { .. }
+            | PushInt(_)
+            | PushStr(_)
+            | Store
+            | Swap
+            | SysCall(_)
+            | While { .. } => {
+                panic!("ICE: Attempted to get the binary_op of a {:?}", self)
+            }
         }
     }
 
     // Used by the compiler optimization passes to detect whether it can optimize further.
     pub fn is_compiler_opt_arithmetic(self) -> bool {
         use OpCode::*;
-        matches!(
-            self,
-            Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight
-        )
+        match self {
+            Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight => true,
+
+            Drop
+            | Do { .. }
+            | Dump
+            | Dup { .. }
+            | DupPair
+            | End { .. }
+            | Equal
+            | Ident(_)
+            | If { .. }
+            | Include(_)
+            | Else { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
+            | Less
+            | Load
+            | Greater
+            | Mem { .. }
+            | Multiply
+            | PushInt(_)
+            | PushStr(_)
+            | Store
+            | Swap
+            | SysCall(_)
+            | While { .. } => false,
+        }
     }
 
     pub fn is_compare(self) -> bool {
         use OpCode::*;
-        matches!(self, Equal | Greater | Less)
+        match self {
+            Equal | Greater | Less => true,
+
+            Add
+            | BitOr
+            | BitAnd
+            | Drop
+            | Do { .. }
+            | Dump
+            | Dup { .. }
+            | DupPair
+            | End { .. }
+            | Ident(_)
+            | If { .. }
+            | Include(_)
+            | Else { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
+            | Load
+            | Mem { .. }
+            | Multiply
+            | PushInt(_)
+            | PushStr(_)
+            | ShiftLeft
+            | ShiftRight
+            | Store
+            | Subtract
+            | Swap
+            | SysCall(_)
+            | While { .. } => false,
+        }
     }
 
     pub fn unwrap_mem(self) -> usize {
