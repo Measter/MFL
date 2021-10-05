@@ -131,7 +131,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, ".LBL{}:", ip)?;
         }
 
-        OpCode::Dump => {
+        OpCode::Print => {
             writeln!(output, "    pop rdi")?;
             writeln!(output, "    call dump")?;
         }

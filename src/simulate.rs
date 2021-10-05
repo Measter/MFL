@@ -168,7 +168,7 @@ pub(crate) fn simulate_program(
                 stack.push((a != b) as u64);
             }
 
-            OpCode::Dump => {
+            OpCode::Print => {
                 let val = stack.pop().unwrap();
                 println!("{}", val);
             }

@@ -23,7 +23,6 @@ pub enum OpCode {
     DivMod,
     Drop,
     Do { end_ip: usize, condition_ip: usize },
-    Dump,
     Dup { depth: usize },
     DupPair,
     End { ip: usize },
@@ -42,6 +41,7 @@ pub enum OpCode {
     Mem { offset: usize },
     Multiply,
     NotEq,
+    Print,
     PushInt(u64),
     PushStr(Spur),
     ShiftLeft,
@@ -72,7 +72,9 @@ impl OpCode {
             | OpCode::Store
             | OpCode::Subtract => 2,
 
-            OpCode::Drop | OpCode::Do { .. } | OpCode::Dump | OpCode::If { .. } | OpCode::Load => 1,
+            OpCode::Drop | OpCode::Do { .. } | OpCode::Print | OpCode::If { .. } | OpCode::Load => {
+                1
+            }
 
             OpCode::Dup { depth } => depth + 1,
             OpCode::DupPair
@@ -117,7 +119,7 @@ impl OpCode {
 
             OpCode::Drop
             | OpCode::Do { .. }
-            | OpCode::Dump
+            | OpCode::Print
             | OpCode::End { .. }
             | OpCode::Ident(_)
             | OpCode::If { .. }
@@ -142,7 +144,7 @@ impl OpCode {
             DivMod
             | Do { .. }
             | Drop
-            | Dump
+            | Print
             | Dup { .. }
             | DupPair
             | End { .. }
@@ -183,7 +185,7 @@ impl OpCode {
             DivMod
             | Do { .. }
             | Drop
-            | Dump
+            | Print
             | Dup { .. }
             | DupPair
             | End { .. }
@@ -215,7 +217,7 @@ impl OpCode {
             DivMod
             | Do { .. }
             | Drop
-            | Dump
+            | Print
             | Dup { .. }
             | DupPair
             | End { .. }
@@ -254,7 +256,7 @@ impl OpCode {
             | DivMod
             | Drop
             | Do { .. }
-            | Dump
+            | Print
             | Dup { .. }
             | DupPair
             | End { .. }
@@ -418,7 +420,7 @@ pub fn parse_token(
     while let Some((_, token)) = token_iter.next() {
         match token.kind {
             TokenKind::Drop => ops.push(Op::new(OpCode::Drop, token.kind, token.location)),
-            TokenKind::Dump => ops.push(Op::new(OpCode::Dump, token.kind, token.location)),
+            TokenKind::Print => ops.push(Op::new(OpCode::Print, token.kind, token.location)),
             TokenKind::Dup(depth) => {
                 ops.push(Op::new(OpCode::Dup { depth }, token.kind, token.location))
             }
