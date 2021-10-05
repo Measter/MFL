@@ -48,6 +48,18 @@ impl OpCode {
             _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
         }
     }
+
+    fn compile_compare_op_inverse_suffix(self) -> &'static str {
+        match self {
+            OpCode::Equal => "ne",
+            OpCode::Greater => "le",
+            OpCode::GreaterEqual => "l",
+            OpCode::Less => "ge",
+            OpCode::LessEqual => "g",
+            OpCode::NotEq => "e",
+            _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
+        }
+    }
 }
 
 fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<()> {

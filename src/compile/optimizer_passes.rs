@@ -26,14 +26,14 @@ fn dup_pushint_compare_doif<'a>(
     _: &Interners,
     ops: &'a [Op],
 ) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
-    let (dup, push, doif) = match ops {
+    let (dup, push, op, doif) = match ops {
         [dup, push, op, doif, ..]
             if dup.code.is_dup()
                 && push.code.is_push_int()
                 && op.code.is_compare()
                 && (doif.code.is_do() || doif.code.is_if()) =>
         {
-            (dup, push, doif)
+            (dup, push, op, doif)
         }
         _ => return None,
     };
@@ -46,6 +46,7 @@ fn dup_pushint_compare_doif<'a>(
         OpCode::If { end_ip } => end_ip,
         _ => unreachable!(),
     };
+    let op = op.code.compile_compare_op_inverse_suffix();
 
     if push_val <= u32::MAX as u64 {
         writeln!(
@@ -58,7 +59,7 @@ fn dup_pushint_compare_doif<'a>(
         writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
         writeln!(&mut asm, "    cmp QWORD [rsp + 8*{}], rbx", dup_depth).unwrap();
     }
-    writeln!(&mut asm, "    jz .LBL{}", end_ip).unwrap();
+    writeln!(&mut asm, "    j{} .LBL{}", op, end_ip).unwrap();
 
     let (compiled, remaining) = ops.split_at(4);
     Some((asm, compiled, remaining))
