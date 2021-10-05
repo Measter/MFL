@@ -1,1 +1,7 @@
 /target
+/tests
+
+Cargo.lock
+*.asm
+*.porth
+*.o
