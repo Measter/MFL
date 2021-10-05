@@ -12,6 +12,7 @@ type OptimizerFunction = for<'a> fn(&Interners, &'a [Op]) -> Option<(Vec<u8>, &'
 pub(super) const PASSES: &[OptimizerFunction] = &[
     push_divmod,
     push_arithmetic,
+    dup_pushint_compare_doif,
     dup_push_compare,
     push_compare,
     mem_plus,
@@ -19,6 +20,49 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
     mem_load,
     pass_through,
 ];
+
+// Optimize the common Dup-PushInt-Compare-Do/If sequence
+fn dup_pushint_compare_doif<'a>(
+    _: &Interners,
+    ops: &'a [Op],
+) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let (dup, push, doif) = match ops {
+        [dup, push, op, doif, ..]
+            if dup.code.is_dup()
+                && push.code.is_push_int()
+                && op.code.is_compare()
+                && (doif.code.is_do() || doif.code.is_if()) =>
+        {
+            (dup, push, doif)
+        }
+        _ => return None,
+    };
+
+    let push_val = push.code.unwrap_push_int();
+    let dup_depth = dup.code.unwrap_dup();
+    let mut asm = Vec::new();
+    let end_ip = match doif.code {
+        OpCode::Do { end_ip, .. } => end_ip,
+        OpCode::If { end_ip } => end_ip,
+        _ => unreachable!(),
+    };
+
+    if push_val <= u32::MAX as u64 {
+        writeln!(
+            &mut asm,
+            "    cmp QWORD [rsp + 8*{}], {}",
+            dup_depth, push_val
+        )
+        .unwrap();
+    } else {
+        writeln!(&mut asm, "    mov rbx, {}", push_val).unwrap();
+        writeln!(&mut asm, "    cmp QWORD [rsp + 8*{}], rbx", dup_depth).unwrap();
+    }
+    writeln!(&mut asm, "    jz .LBL{}", end_ip).unwrap();
+
+    let (compiled, remaining) = ops.split_at(4);
+    Some((asm, compiled, remaining))
+}
 
 /// Optimises PushInt-DivMod
 fn push_divmod<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
