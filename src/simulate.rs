@@ -141,13 +141,25 @@ pub(crate) fn simulate_program(
                 let [b, a] = stack.popn().unwrap();
                 stack.push((a > b) as u64);
             }
+            OpCode::GreaterEqual => {
+                let [b, a] = stack.popn().unwrap();
+                stack.push((a >= b) as u64);
+            }
             OpCode::Less => {
                 let [b, a] = stack.popn().unwrap();
                 stack.push((a < b) as u64);
             }
+            OpCode::LessEqual => {
+                let [b, a] = stack.popn().unwrap();
+                stack.push((a <= b) as u64);
+            }
             OpCode::Equal => {
                 let [a, b] = stack.popn().unwrap();
                 stack.push((a == b) as u64);
+            }
+            OpCode::NotEq => {
+                let [a, b] = stack.popn().unwrap();
+                stack.push((a != b) as u64);
             }
 
             OpCode::Dump => {

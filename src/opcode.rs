@@ -34,10 +34,13 @@ pub enum OpCode {
     EndIf { ip: usize },
     EndWhile { condition_ip: usize, end_ip: usize },
     Less,
+    LessEqual,
     Load,
     Greater,
+    GreaterEqual,
     Mem { offset: usize },
     Multiply,
+    NotEq,
     PushInt(u64),
     PushStr(Spur),
     ShiftLeft,
@@ -57,8 +60,11 @@ impl OpCode {
             | OpCode::BitAnd
             | OpCode::Equal
             | OpCode::Greater
+            | OpCode::GreaterEqual
             | OpCode::Less
+            | OpCode::LessEqual
             | OpCode::Multiply
+            | OpCode::NotEq
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
             | OpCode::Store
@@ -93,10 +99,13 @@ impl OpCode {
             | OpCode::BitAnd
             | OpCode::Equal
             | OpCode::Greater
+            | OpCode::GreaterEqual
             | OpCode::Less
+            | OpCode::LessEqual
             | OpCode::Load
             | OpCode::Mem { .. }
             | OpCode::Multiply
+            | OpCode::NotEq
             | OpCode::PushInt(_)
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
@@ -125,8 +134,8 @@ impl OpCode {
     fn is_binary_op(self) -> bool {
         use OpCode::*;
         match self {
-            Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | Less | ShiftLeft
-            | ShiftRight => true,
+            Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | GreaterEqual | Less
+            | LessEqual | NotEq | ShiftLeft | ShiftRight => true,
 
             Drop
             | Do { .. }
@@ -163,7 +172,10 @@ impl OpCode {
             ShiftRight => |a, b| a >> b,
             Equal => |a, b| (a == b) as u64,
             Greater => |a, b| (a > b) as u64,
+            GreaterEqual => |a, b| (a >= b) as u64,
             Less => |a, b| (a < b) as u64,
+            LessEqual => |a, b| (a <= b) as u64,
+            NotEq => |a, b| (a != b) as u64,
 
             Drop
             | Do { .. }
@@ -210,10 +222,13 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Less
+            | LessEqual
             | Load
             | Greater
+            | GreaterEqual
             | Mem { .. }
             | Multiply
+            | NotEq
             | PushInt(_)
             | PushStr(_)
             | Store
@@ -226,7 +241,7 @@ impl OpCode {
     pub fn is_compare(self) -> bool {
         use OpCode::*;
         match self {
-            Equal | Greater | Less => true,
+            Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
 
             Add
             | BitOr
@@ -414,7 +429,14 @@ pub fn parse_token(
 
             TokenKind::Equal => ops.push(Op::new(OpCode::Equal, token.kind, token.location)),
             TokenKind::Greater => ops.push(Op::new(OpCode::Greater, token.kind, token.location)),
+            TokenKind::GreaterEqual => {
+                ops.push(Op::new(OpCode::GreaterEqual, token.kind, token.location))
+            }
             TokenKind::Less => ops.push(Op::new(OpCode::Less, token.kind, token.location)),
+            TokenKind::LessEqual => {
+                ops.push(Op::new(OpCode::LessEqual, token.kind, token.location))
+            }
+            TokenKind::NotEqual => ops.push(Op::new(OpCode::NotEq, token.kind, token.location)),
 
             TokenKind::Ident => {
                 ops.push(Op::new(

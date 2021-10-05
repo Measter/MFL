@@ -21,15 +21,18 @@ pub enum TokenKind {
     End,
     Equal,
     Greater,
+    GreaterEqual,
     Ident,
     If,
     Include,
     Integer(u64),
     Less,
+    LessEqual,
     Load,
     Macro,
     Mem,
     Minus,
+    NotEqual,
     Plus,
     ShiftLeft,
     ShiftRight,
@@ -55,13 +58,16 @@ impl TokenKind {
             | TokenKind::End
             | TokenKind::Equal
             | TokenKind::Greater
+            | TokenKind::GreaterEqual
             | TokenKind::Ident
             | TokenKind::Include
             | TokenKind::Integer(_)
             | TokenKind::Less
+            | TokenKind::LessEqual
             | TokenKind::Load
             | TokenKind::Mem
             | TokenKind::Minus
+            | TokenKind::NotEqual
             | TokenKind::Plus
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
@@ -106,7 +112,7 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',' | '*') || c.is_whitespace()
+    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',' | '*' | '!') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -202,6 +208,20 @@ impl<'source> Scanner<'source> {
                 }
 
                 None
+            }
+
+            ('!' | '<' | '>', '=') => {
+                let kind = match ch {
+                    '!' => TokenKind::NotEqual,
+                    '<' => TokenKind::LessEqual,
+                    '>' => TokenKind::GreaterEqual,
+                    _ => unreachable!(),
+                };
+
+                self.advance(); // Consume the '='
+
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             _ if ch.is_whitespace() => None,

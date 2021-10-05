@@ -41,7 +41,10 @@ impl OpCode {
         match self {
             OpCode::Equal => "sete",
             OpCode::Greater => "setg",
+            OpCode::GreaterEqual => "setge",
             OpCode::Less => "setl",
+            OpCode::LessEqual => "setle",
+            OpCode::NotEq => "setne",
             _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
         }
     }
@@ -78,25 +81,16 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
         }
         OpCode::Drop => writeln!(output, "    pop rax")?,
 
-        OpCode::Equal => {
+        OpCode::Equal
+        | OpCode::Less
+        | OpCode::LessEqual
+        | OpCode::Greater
+        | OpCode::GreaterEqual
+        | OpCode::NotEq => {
             writeln!(output, "    pop rbx")?;
             writeln!(output, "    pop rax")?;
             writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    sete r15b")?;
-            writeln!(output, "    push r15")?;
-        }
-        OpCode::Less => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    setl r15b")?;
-            writeln!(output, "    push r15")?;
-        }
-        OpCode::Greater => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    cmp rax, rbx")?;
-            writeln!(output, "    setg r15b")?;
+            writeln!(output, "    {} r15b", op.code.compile_compare_op())?;
             writeln!(output, "    push r15")?;
         }
 
@@ -166,6 +160,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
 
             writeln!(output, "    syscall")?;
         }
+
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }
