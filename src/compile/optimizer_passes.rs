@@ -10,6 +10,7 @@ use super::compile_op;
 type OptimizerFunction = for<'a> fn(&Interners, &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
+    swap_pushint_arithmetic_swap,
     push_divmod,
     push_arithmetic,
     dup_pushint_compare_doif,
@@ -20,6 +21,42 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
     mem_load,
     pass_through,
 ];
+
+/// Optimize a Swap-PushInt-ArithBinOp-Swap sequence
+fn swap_pushint_arithmetic_swap<'a>(
+    _: &Interners,
+    ops: &'a [Op],
+) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let (push, op) = match ops {
+        [swapa, push, op, swapb, ..]
+            if swapa.code.is_swap()
+                && push.code.is_push_int()
+                && op.code.is_compiler_opt_arithmetic()
+                && swapb.code.is_swap() =>
+        {
+            (push, op)
+        }
+        _ => return None,
+    };
+
+    let mut push_val = push.code.unwrap_push_int();
+    if matches!(op.code, OpCode::ShiftLeft | OpCode::ShiftRight) {
+        push_val &= 0xFF;
+    }
+
+    let mut asm = Vec::new();
+    let (op, _) = op.code.compile_arithmetic_op("rcx", "cl");
+
+    if push_val <= u32::MAX as u64 {
+        writeln!(&mut asm, "    {} QWORD [rsp+8], {}", op, push_val).unwrap();
+    } else {
+        writeln!(&mut asm, "    mov rax, {}", push_val).unwrap();
+        writeln!(&mut asm, "    {} QWORD [rsp+8], rax", op).unwrap();
+    }
+
+    let (compiled, remaining) = ops.split_at(4);
+    Some((asm, compiled, remaining))
+}
 
 // Optimize the common Dup-PushInt-Compare-Do/If sequence
 fn dup_pushint_compare_doif<'a>(
