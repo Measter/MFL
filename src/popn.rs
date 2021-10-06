@@ -2,6 +2,7 @@ use std::mem::MaybeUninit;
 
 pub trait PopN<T> {
     fn popn<const N: usize>(&mut self) -> Option<[T; N]>;
+    fn popn_last_mut<const N: usize>(&mut self) -> Option<([T; N], &mut T)>;
 }
 
 impl<T> PopN<T> for Vec<T> {
@@ -24,5 +25,15 @@ impl<T> PopN<T> for Vec<T> {
             dest.reverse();
             Some(dest)
         }
+    }
+
+    fn popn_last_mut<const N: usize>(&mut self) -> Option<([T; N], &mut T)> {
+        if self.len() < N + 1 {
+            return None;
+        }
+
+        let popped = self.popn().unwrap();
+        let last = self.last_mut().unwrap();
+        Some((popped, last))
     }
 }

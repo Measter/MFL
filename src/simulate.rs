@@ -73,15 +73,15 @@ pub(crate) fn simulate_program(
     while let Some(&op) = program.get(ip) {
         match op.code {
             OpCode::Add => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a += b;
             }
             OpCode::Subtract => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a -= b;
             }
             OpCode::Multiply => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a *= b;
             }
             OpCode::DivMod => {
@@ -92,19 +92,19 @@ pub(crate) fn simulate_program(
             }
 
             OpCode::BitOr => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a |= b;
             }
             OpCode::BitAnd => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a &= b;
             }
             OpCode::ShiftLeft => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a <<= b;
             }
             OpCode::ShiftRight => {
-                let (b, a) = stack.pop().zip(stack.last_mut()).unwrap();
+                let ([b], a) = stack.popn_last_mut().unwrap();
                 *a >>= b;
             }
 
