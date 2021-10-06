@@ -803,15 +803,20 @@ pub fn expand_macros(
 
     // Keep making changes until we get no changes.
     let mut num_expansions = 0;
+    let mut last_changed_macros = Vec::new();
     loop {
         let mut changed = false;
+        last_changed_macros.clear();
 
         for op in src_vec.drain(..) {
             match op.code {
                 OpCode::Ident(id) => {
                     changed = true;
                     match macros.get(&id) {
-                        Some((_, body)) => dst_vec.extend_from_slice(body),
+                        Some((name, body)) => {
+                            last_changed_macros.push(*name);
+                            dst_vec.extend_from_slice(body);
+                        }
                         None => {
                             let diag = Diagnostic::error()
                                 .with_message("unknown macro")
@@ -832,7 +837,16 @@ pub fn expand_macros(
         }
 
         if num_expansions > 128 {
-            let diag = Diagnostic::error().with_message("depth of macro expansion exceeded 128");
+            let mut labels = Vec::new();
+
+            for mac in last_changed_macros {
+                labels.push(Label::primary(mac.location.file_id, mac.location.range()));
+            }
+
+            let diag = Diagnostic::error()
+                .with_message("depth of macro expansion exceeded 128")
+                .with_labels(labels);
+
             diags.push(diag);
             break;
         }
