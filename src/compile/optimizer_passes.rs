@@ -11,6 +11,8 @@ type OptimizerFunction = for<'a> fn(&Interners, &'a [Op]) -> Option<(Vec<u8>, &'
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     swap_pushint_arithmetic_swap,
+    push_divmod_swap_drop,
+    push_divmod_drop,
     push_divmod,
     push_arithmetic,
     dup_pushint_compare_doif,
@@ -99,6 +101,56 @@ fn dup_pushint_compare_doif<'a>(
     writeln!(&mut asm, "    j{} .LBL{}", op, end_ip).unwrap();
 
     let (compiled, remaining) = ops.split_at(4);
+    Some((asm, compiled, remaining))
+}
+
+/// Optimises PushInt-DivMod-Swap-Drop (mod macro)
+fn push_divmod_swap_drop<'a>(
+    _: &Interners,
+    ops: &'a [Op],
+) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let a = match ops {
+        [a, div, swap, drop, ..]
+            if a.code.is_push_int()
+                && div.code.is_div_mod()
+                && swap.code.is_swap()
+                && drop.code.is_drop() =>
+        {
+            a
+        }
+        _ => return None,
+    };
+
+    let mut asm = Vec::new();
+    writeln!(&mut asm, "    mov rbx, {}", a.code.unwrap_push_int()).unwrap();
+    writeln!(&mut asm, "    pop rax").unwrap();
+    writeln!(&mut asm, "    xor rdx, rdx").unwrap();
+    writeln!(&mut asm, "    div rbx").unwrap();
+    writeln!(&mut asm, "    push rdx").unwrap();
+
+    let (compiled, remaining) = ops.split_at(4);
+    Some((asm, compiled, remaining))
+}
+
+/// Optimises PushInt-DivMod-Drop (division macro)
+fn push_divmod_drop<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let a = match ops {
+        [a, div, drop, ..]
+            if a.code.is_push_int() && div.code.is_div_mod() && drop.code.is_drop() =>
+        {
+            a
+        }
+        _ => return None,
+    };
+
+    let mut asm = Vec::new();
+    writeln!(&mut asm, "    mov rbx, {}", a.code.unwrap_push_int()).unwrap();
+    writeln!(&mut asm, "    pop rax").unwrap();
+    writeln!(&mut asm, "    xor rdx, rdx").unwrap();
+    writeln!(&mut asm, "    div rbx").unwrap();
+    writeln!(&mut asm, "    push rax").unwrap();
+
+    let (compiled, remaining) = ops.split_at(3);
     Some((asm, compiled, remaining))
 }
 
