@@ -41,6 +41,15 @@ fn make_syscall3(
     Ok(())
 }
 
+fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: Op) -> Result<(), Diagnostic<FileId>> {
+    match id {
+        // Exit
+        60 => std::process::exit(arg1 as _),
+
+        _ => Err(generate_error("unsupported syscall ID", op.location)),
+    }
+}
+
 fn allocate_string_literals(interner: &Interners, memory: &mut Vec<u8>) -> Vec<u64> {
     let mut indices = Vec::new();
 
@@ -208,6 +217,10 @@ pub(crate) fn simulate_program(
             OpCode::SysCall(3) => {
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
+            }
+            OpCode::SysCall(1) => {
+                let [syscall_id, arg1] = stack.popn().unwrap();
+                make_syscall1(syscall_id, arg1, &mut memory, op)?;
             }
             OpCode::SysCall(_) => {
                 return Err(generate_error("unsupported syscall", op.location));
