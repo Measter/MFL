@@ -209,7 +209,9 @@ pub(crate) fn simulate_program(
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
             }
-            OpCode::SysCall(_) => {}
+            OpCode::SysCall(_) => {
+                return Err(generate_error("unsupported syscall", op.location));
+            }
             OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
             OpCode::Ident(_) => panic!("ICE: Encountered OpCode::Ident"),
             OpCode::Include(_) => panic!("ICE: Encountered OpCode::Include"),
