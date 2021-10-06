@@ -82,18 +82,18 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    mov QWORD [rsp], rax")?;
         }
         OpCode::DivMod => {
-            writeln!(output, "    pop rbx")?;
+            writeln!(output, "    pop r9")?;
             writeln!(output, "    pop rax")?;
             writeln!(output, "    xor rdx, rdx")?;
-            writeln!(output, "    div rbx")?;
+            writeln!(output, "    div r9")?;
             writeln!(output, "    push rax")?;
             writeln!(output, "    push rdx")?;
         }
 
         OpCode::PushInt(v) if v <= u32::MAX as u64 => writeln!(output, "    push {}", v)?,
         OpCode::PushInt(v) => {
-            writeln!(output, "    mov rax, {}", v)?;
-            writeln!(output, "    push rax",)?;
+            writeln!(output, "    mov r8, {}", v)?;
+            writeln!(output, "    push r8",)?;
         }
         OpCode::PushStr(id) => {
             let literal = interner.resolve_literal(id);
@@ -103,7 +103,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    push __string_literal{}", id)?;
             // unimplemented!()
         }
-        OpCode::Drop => writeln!(output, "    pop rax")?,
+        OpCode::Drop => writeln!(output, "    pop r8")?,
 
         OpCode::Equal
         | OpCode::Less
@@ -111,9 +111,9 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
         | OpCode::Greater
         | OpCode::GreaterEqual
         | OpCode::NotEq => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    cmp rax, rbx")?;
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    cmp r8, r9")?;
             writeln!(
                 output,
                 "    set{} r15b",
@@ -126,8 +126,8 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, ".LBL{}:", ip)?;
         }
         OpCode::Do { end_ip, .. } => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    test rax, rax")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    test r8, r8")?;
             writeln!(output, "    jz .LBL{}", end_ip)?;
         }
         OpCode::EndWhile {
@@ -139,8 +139,8 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
         }
 
         OpCode::If { end_ip, .. } => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    test rax, rax")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    test r8, r8")?;
             writeln!(output, "    jz .LBL{}", end_ip)?;
         }
         OpCode::Else { end_ip, else_start } => {
@@ -163,25 +163,25 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    push QWORD [rsp+8]")?;
         }
         OpCode::Swap => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    push rax")?;
-            writeln!(output, "    push rbx")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    push r8")?;
+            writeln!(output, "    push r9")?;
         }
 
         OpCode::Mem { offset } => {
-            writeln!(output, "    mov rax, __memory + {}", offset)?;
-            writeln!(output, "    push rax")?;
+            writeln!(output, "    mov r8, __memory + {}", offset)?;
+            writeln!(output, "    push r8")?;
         }
         OpCode::Load => {
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    mov r15b, BYTE [rax]")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    mov r15b, BYTE [r8]")?;
             writeln!(output, "    push r15")?;
         }
         OpCode::Store => {
-            writeln!(output, "    pop rbx")?;
-            writeln!(output, "    pop rax")?;
-            writeln!(output, "    mov BYTE [rax], bl")?;
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    mov BYTE [r8], r9b")?;
         }
 
         OpCode::SysCall(a @ 0..=6) => {
