@@ -25,7 +25,7 @@ use opcode::Op;
 const MEMORY_CAPACITY: usize = 2usize.pow(19);
 
 #[derive(Debug, StructOpt)]
-enum Args {
+enum Mode {
     /// Simulate the program
     #[structopt(name = "sim")]
     Simulate {
@@ -51,6 +51,16 @@ enum Args {
     },
 }
 
+#[derive(Debug, StructOpt)]
+struct Args {
+    /// Comma-separated list of paths to search includes.
+    #[structopt(short = "I", require_delimiter = true)]
+    include_paths: Vec<String>,
+
+    #[structopt(subcommand)]
+    mode: Mode,
+}
+
 fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnostic<FileId> {
     Diagnostic::error()
         .with_message(msg)
@@ -59,6 +69,23 @@ fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnosti
 
 type LoadProgramResult = Result<Vec<Op>, Vec<Diagnostic<FileId>>>;
 
+fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
+    // Stupidly innefficient, but whatever...
+
+    for path in paths {
+        let path = Path::new(path).join(file_name);
+        if path.exists() {
+            return Some(
+                path.to_str()
+                    .map(ToOwned::to_owned)
+                    .expect("Mangled string"),
+            );
+        }
+    }
+
+    None
+}
+
 fn load_program(
     stderr: &mut StandardStreamLock,
     cfg: &Config,
@@ -66,6 +93,7 @@ fn load_program(
     interner: &mut Interners,
     file: &str,
     optimize: bool,
+    include_paths: &[String],
 ) -> Result<LoadProgramResult> {
     let contents =
         std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
@@ -92,12 +120,26 @@ fn load_program(
             continue;
         }
 
-        let file_path = interner.resolve_literal(file);
-        let contents = match std::fs::read_to_string(file_path) {
+        let file_name = interner.resolve_literal(file);
+
+        let include_path = match search_includes(include_paths, file_name) {
+            Some(path) => path,
+            None => {
+                let diag = Diagnostic::error()
+                    .with_message(format!("include not found: `{}`", file_name))
+                    .with_labels(vec![Label::primary(
+                        include_token.location.file_id,
+                        include_token.location.range(),
+                    )]);
+                return Ok(Err(vec![diag]));
+            }
+        };
+
+        let contents = match std::fs::read_to_string(&include_path) {
             Ok(contents) => contents,
             Err(e) => {
                 let diag = Diagnostic::error()
-                    .with_message(format!("error opening `{}`", file_path))
+                    .with_message(format!("error opening `{}`", include_path))
                     .with_labels(vec![Label::primary(
                         include_token.location.file_id,
                         include_token.location.range(),
@@ -107,7 +149,7 @@ fn load_program(
             }
         };
 
-        let file_id = source_store.add(file_path, &contents);
+        let file_id = source_store.add(&include_path, &contents);
 
         let tokens = match lexer::lex_file(&contents, file_id, interner) {
             Ok(program) => program,
@@ -158,8 +200,8 @@ fn main() -> Result<()> {
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
-    match args {
-        Args::Simulate { file, optimise } => {
+    match args.mode {
+        Mode::Simulate { file, optimise } => {
             let program = match load_program(
                 &mut stderr,
                 &cfg,
@@ -167,6 +209,7 @@ fn main() -> Result<()> {
                 &mut interner,
                 &file,
                 optimise,
+                &args.include_paths,
             )? {
                 Ok(program) => program,
                 Err(diags) => {
@@ -180,7 +223,7 @@ fn main() -> Result<()> {
                 codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
             }
         }
-        Args::Compile {
+        Mode::Compile {
             file,
             run,
             optimise,
@@ -199,6 +242,7 @@ fn main() -> Result<()> {
                 &mut interner,
                 &file,
                 optimise,
+                &args.include_paths,
             )? {
                 Ok(program) => program,
                 Err(diags) => {
