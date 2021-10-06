@@ -762,15 +762,44 @@ pub fn optimize(ops: &[Op]) -> Vec<Op> {
     dst_vec
 }
 
+pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> Vec<Op> {
+    let mut src_vec = ops.to_owned();
+    let mut dst_vec = Vec::with_capacity(ops.len());
+    let mut already_included = HashSet::new();
+
+    loop {
+        let mut changed = false;
+
+        for op in src_vec.drain(..) {
+            match op.code {
+                OpCode::Include(id) => {
+                    changed = true;
+                    if !already_included.contains(&id) {
+                        dst_vec.extend_from_slice(&included_files[&id]);
+                        already_included.insert(id);
+                    }
+                }
+                _ => dst_vec.push(op),
+            }
+        }
+
+        if !changed {
+            break;
+        }
+
+        std::mem::swap(&mut src_vec, &mut dst_vec);
+    }
+
+    dst_vec
+}
+
 pub fn expand_macros(
-    included_files: &HashMap<Spur, Vec<Op>>,
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
     ops: &[Op],
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec = Vec::with_capacity(ops.len());
     let mut diags = Vec::new();
-    let mut already_included = HashSet::new();
 
     // Keep making changes until we get no changes.
     let mut num_expansions = 0;
@@ -792,14 +821,6 @@ pub fn expand_macros(
                                 )]);
                             diags.push(diag);
                         }
-                    }
-                }
-                OpCode::Include(id) => {
-                    changed = true;
-                    if !already_included.contains(&id) {
-                        let body = &included_files[&id];
-                        dst_vec.extend_from_slice(body);
-                        already_included.insert(id);
                     }
                 }
                 _ => dst_vec.push(op),

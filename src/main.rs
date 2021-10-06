@@ -164,7 +164,9 @@ fn load_program(
         included_files.insert(file, ops);
     }
 
-    ops = match opcode::expand_macros(&included_files, &macros, &ops) {
+    ops = opcode::expand_includes(&included_files, &ops);
+
+    ops = match opcode::expand_macros(&macros, &ops) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
