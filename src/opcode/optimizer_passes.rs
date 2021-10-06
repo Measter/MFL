@@ -88,12 +88,18 @@ pub(super) fn memory_offset(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
         .push_int()
         .unwrap_or_else(|| b.code.unwrap_mem() as u64);
 
+    let location = if a.location.file_id != op.location.file_id {
+        op.location
+    } else {
+        a.location.merge(op.location)
+    };
+
     let opt = Op {
         code: Mem {
             offset: op.code.get_binary_op()(a_val, b_val) as _,
         },
         token: TokenKind::Mem,
-        location: a.location.merge(op.location),
+        location,
     };
 
     Some((vec![opt], xs))
