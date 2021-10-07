@@ -320,7 +320,6 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
-                    "2dup" => TokenKind::DupPair,
                     "bor" => TokenKind::BitOr,
                     "divmod" => TokenKind::DivMod,
                     "band" => TokenKind::BitAnd,

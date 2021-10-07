@@ -6,9 +6,31 @@ use OpCode::*;
 
 type PassFunction = fn(&[Op]) -> Option<(Vec<Op>, &[Op])>;
 
-pub(super) const PASSES: &[PassFunction] = &[push_push_divmod, binary_ops, memory_offset];
+pub(super) const PASSES: &[PassFunction] =
+    &[over_over, push_push_divmod, binary_ops, memory_offset];
 
-pub(super) fn push_push_divmod(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
+/// [Over, Over] -> [DupPair]
+fn over_over(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
+    let (a, b, xs) = match ops {
+        [a, b, xs @ ..]
+            if a.code == OpCode::Dup { depth: 1 } && b.code == OpCode::Dup { depth: 1 } =>
+        {
+            (a, b, xs)
+        }
+        _ => return None,
+    };
+
+    let op = Op {
+        code: OpCode::DupPair,
+        token: TokenKind::DupPair,
+        location: a.location.merge(b.location),
+    };
+
+    Some((vec![op], xs))
+}
+
+/// [PushInt(a), PushInt(b) DivMod] -> [PushInt(a / b), PushInt(a % b)]
+fn push_push_divmod(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
     let (a, b, op, xs) = match ops {
         [a, b, op, xs @ ..]
             if a.code.is_push_int() && b.code.is_push_int() && op.code.is_div_mod() =>
@@ -39,7 +61,7 @@ pub(super) fn push_push_divmod(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
 }
 
 /// [PushInt(a), PushInt(b), BinOp] -> [Push(a BinOp b)]
-pub(super) fn binary_ops(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
+fn binary_ops(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
     let (a, b, op, xs) = match ops {
         [a, b, op, xs @ ..]
             if a.code.is_push_int() && b.code.is_push_int() && op.code.is_binary_op() =>
@@ -64,7 +86,7 @@ pub(super) fn binary_ops(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
 
 ///   [Mem(a), PushInt(b), Add/Sub]
 /// | [PushInt(a), Mem(b), Add/Sub] -> [Mem(a Add/Sub b)]
-pub(super) fn memory_offset(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
+fn memory_offset(ops: &[Op]) -> Option<(Vec<Op>, &[Op])> {
     let (a, b, op, xs) = match ops {
         [a, b, op, xs @ ..]
             if a.code.is_push_int() && b.code.is_mem() && matches!(op.code, Add | Subtract) =>
