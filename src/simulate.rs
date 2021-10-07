@@ -305,13 +305,6 @@ pub fn simulate_stack_check(
             // that previous ones succeeded.
             stack_depth = op.code.push_count();
         } else {
-            eprintln!(
-                "{:?} SD: {} -{} +{}",
-                op.code,
-                stack_depth,
-                op.code.pop_count(),
-                op.code.push_count()
-            );
             stack_depth = stack_depth - op.code.pop_count() + op.code.push_count();
         }
     }

@@ -217,7 +217,6 @@ fn main() -> Result<()> {
 
             // They also need to be null terminated.
             program_args.iter_mut().for_each(|a| a.push('\0'));
-            dbg!(program_args.len());
 
             let program = match load_program(
                 &mut stderr,
