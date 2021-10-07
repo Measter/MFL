@@ -120,7 +120,8 @@ impl OpCode {
             | OpCode::PushInt(_)
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
-            | OpCode::Subtract => 1,
+            | OpCode::Subtract
+            | OpCode::SysCall(_) => 1,
 
             OpCode::DivMod | OpCode::DupPair | OpCode::PushStr(_) => 2,
 
@@ -137,7 +138,6 @@ impl OpCode {
             | OpCode::Store
             | OpCode::Store64
             | OpCode::Swap
-            | OpCode::SysCall(_)
             | OpCode::While { .. } => 0,
         }
     }

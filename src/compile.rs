@@ -200,6 +200,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             }
 
             writeln!(output, "    syscall")?;
+            writeln!(output, "    push rax")?;
         }
 
         OpCode::SysCall(arg_count) => {

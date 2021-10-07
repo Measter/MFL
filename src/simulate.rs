@@ -17,6 +17,7 @@ fn make_syscall3(
     arg2: u64,
     arg3: u64,
     memory: &mut [u8],
+    stack: &mut Vec<u64>,
     op: Op,
 ) -> Result<(), Diagnostic<FileId>> {
     match id {
@@ -34,6 +35,8 @@ fn make_syscall3(
                 2 => std::io::stderr().write_all(buffer),
                 _ => return Err(generate_error("unsupported file descriptor", op.location)),
             };
+
+            stack.push(arg3);
         }
         _ => return Err(generate_error("unsupported syscall ID", op.location)),
     }
@@ -235,7 +238,7 @@ pub(crate) fn simulate_program(
 
             OpCode::SysCall(3) => {
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
-                make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;
+                make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, &mut stack, op)?;
             }
             OpCode::SysCall(1) => {
                 let [syscall_id, arg1] = stack.popn().unwrap();
