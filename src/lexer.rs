@@ -177,6 +177,10 @@ impl<'source> Scanner<'source> {
                     self.string_buf.push('\t');
                     self.advance();
                 }
+                ('\\', '0') => {
+                    self.string_buf.push('\0');
+                    self.advance();
+                }
                 (ch, _) if ch == close_char => break,
                 (ch, _) => self.string_buf.push(ch),
             }
