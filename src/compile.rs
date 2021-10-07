@@ -178,10 +178,20 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    mov r15b, BYTE [r8]")?;
             writeln!(output, "    push r15")?;
         }
+        OpCode::Load64 => {
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    mov r15, QWORD [r8]")?;
+            writeln!(output, "    push r15")?;
+        }
         OpCode::Store => {
             writeln!(output, "    pop r9")?;
             writeln!(output, "    pop r8")?;
             writeln!(output, "    mov BYTE [r8], r9b")?;
+        }
+        OpCode::Store64 => {
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    mov QWORD [r8], r9")?;
         }
 
         OpCode::SysCall(a @ 0..=6) => {

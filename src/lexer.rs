@@ -29,6 +29,7 @@ pub enum TokenKind {
     Less,
     LessEqual,
     Load,
+    Load64,
     Macro,
     Mem,
     Minus,
@@ -40,6 +41,7 @@ pub enum TokenKind {
     Star,
     String(Spur),
     Store,
+    Store64,
     Swap,
     SysCall(usize),
     While,
@@ -66,6 +68,7 @@ impl TokenKind {
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load
+            | TokenKind::Load64
             | TokenKind::Mem
             | TokenKind::Minus
             | TokenKind::NotEqual
@@ -76,6 +79,7 @@ impl TokenKind {
             | TokenKind::Star
             | TokenKind::String(_)
             | TokenKind::Store
+            | TokenKind::Store64
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
@@ -232,7 +236,7 @@ impl<'source> Scanner<'source> {
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
-            ('+' | '-' | '=' | '<' | '>' | '.' | ',' | '*', _) => {
+            ('+' | '-' | '=' | '<' | '>' | '*', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
@@ -240,8 +244,6 @@ impl<'source> Scanner<'source> {
                     '=' => TokenKind::Equal,
                     '<' => TokenKind::Less,
                     '>' => TokenKind::Greater,
-                    '.' => TokenKind::Store,
-                    ',' => TokenKind::Load,
                     _ => unreachable!(),
                 };
 
@@ -320,6 +322,10 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
+                    "." => TokenKind::Store,
+                    "," => TokenKind::Load,
+                    ".64" => TokenKind::Store64,
+                    ",64" => TokenKind::Load64,
                     "bor" => TokenKind::BitOr,
                     "divmod" => TokenKind::DivMod,
                     "band" => TokenKind::BitAnd,

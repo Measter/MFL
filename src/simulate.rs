@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{convert::TryInto, io::Write};
 
 use codespan_reporting::diagnostic::Diagnostic;
 
@@ -206,6 +206,15 @@ pub(crate) fn simulate_program(
                     .ok_or_else(|| generate_error("invalid memory address", op.location))?;
                 stack.push(value as u64);
             }
+            OpCode::Load64 => {
+                let address = stack.pop().unwrap() as usize;
+                let value_bytes = memory
+                    .get(address..address + 8)
+                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+
+                let value = u64::from_le_bytes(value_bytes.try_into().unwrap());
+                stack.push(value);
+            }
             OpCode::Store => {
                 let [value, address] = stack.popn().unwrap();
 
@@ -214,6 +223,16 @@ pub(crate) fn simulate_program(
                     .ok_or_else(|| generate_error("invalid memory address", op.location))?;
                 *dest = value as u8;
             }
+            OpCode::Store64 => {
+                let [value, address] = stack.popn().unwrap();
+                let address = address as usize;
+                let value_bytes = value.to_le_bytes();
+                let dst_bytes = memory
+                    .get_mut(address..address + 8)
+                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                dst_bytes.copy_from_slice(&value_bytes);
+            }
+
             OpCode::SysCall(3) => {
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, op)?;

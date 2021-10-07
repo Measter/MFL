@@ -36,6 +36,7 @@ pub enum OpCode {
     Less,
     LessEqual,
     Load,
+    Load64,
     Greater,
     GreaterEqual,
     Mem { offset: usize },
@@ -47,6 +48,7 @@ pub enum OpCode {
     ShiftLeft,
     ShiftRight,
     Store,
+    Store64,
     Subtract,
     Swap,
     SysCall(usize),
@@ -70,11 +72,15 @@ impl OpCode {
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
             | OpCode::Store
+            | OpCode::Store64
             | OpCode::Subtract => 2,
 
-            OpCode::Drop | OpCode::Do { .. } | OpCode::Print | OpCode::If { .. } | OpCode::Load => {
-                1
-            }
+            OpCode::Drop
+            | OpCode::Do { .. }
+            | OpCode::Print
+            | OpCode::If { .. }
+            | OpCode::Load
+            | OpCode::Load64 => 1,
 
             OpCode::Dup { depth } => depth + 1,
             OpCode::DupPair
@@ -107,6 +113,7 @@ impl OpCode {
             | OpCode::Less
             | OpCode::LessEqual
             | OpCode::Load
+            | OpCode::Load64
             | OpCode::Mem { .. }
             | OpCode::Multiply
             | OpCode::NotEq
@@ -128,6 +135,7 @@ impl OpCode {
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
             | OpCode::Store
+            | OpCode::Store64
             | OpCode::Swap
             | OpCode::SysCall(_)
             | OpCode::While { .. } => 0,
@@ -155,10 +163,12 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Load
+            | Load64
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
             | Store
+            | Store64
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -196,10 +206,12 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Load
+            | Load64
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
             | Store
+            | Store64
             | Swap
             | SysCall(_)
             | While { .. } => {
@@ -231,6 +243,7 @@ impl OpCode {
             | Less
             | LessEqual
             | Load
+            | Load64
             | Greater
             | GreaterEqual
             | Mem { .. }
@@ -239,6 +252,7 @@ impl OpCode {
             | PushInt(_)
             | PushStr(_)
             | Store
+            | Store64
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -267,6 +281,7 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Load
+            | Load64
             | Mem { .. }
             | Multiply
             | PushInt(_)
@@ -274,6 +289,7 @@ impl OpCode {
             | ShiftLeft
             | ShiftRight
             | Store
+            | Store64
             | Subtract
             | Swap
             | SysCall(_)
@@ -433,7 +449,9 @@ pub fn parse_token(
                 token.location,
             )),
             TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
+            TokenKind::Load64 => ops.push(Op::new(OpCode::Load64, token.kind, token.location)),
             TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),
+            TokenKind::Store64 => ops.push(Op::new(OpCode::Store64, token.kind, token.location)),
 
             TokenKind::Equal => ops.push(Op::new(OpCode::Equal, token.kind, token.location)),
             TokenKind::Greater => ops.push(Op::new(OpCode::Greater, token.kind, token.location)),
