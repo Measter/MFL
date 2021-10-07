@@ -1,6 +1,6 @@
 use std::{convert::TryInto, io::Write};
 
-use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
     generate_error,
@@ -68,21 +68,41 @@ fn allocate_string_literals(interner: &Interners, memory: &mut Vec<u8>) -> Vec<u
     indices
 }
 
-pub(crate) fn simulate_program(
+fn allocate_program_args(memory: &mut Vec<u8>, stack: &mut Vec<u64>, args: &[String]) {
+    stack.push(0); // The list of args ends with a null pointer.
+
+    for arg in args.iter().rev() {
+        let addr = memory.len();
+        memory.extend_from_slice(arg.as_bytes());
+        stack.push(addr as _);
+    }
+
+    stack.push(args.len() as _);
+}
+
+pub(crate) fn simulate_execute_program(
     program: &[Op],
     interner: &Interners,
+    program_args: &[String],
 ) -> Result<(), Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack = Vec::new();
 
-    let mut memory: Vec<u8> = Vec::new();
+    // The program arguments list has a null pointer (0) as a sentinal value
+    // to indicate the end. However, if we don't have any string literals the
+    // first argument will have the address 0. We need to insert a byte of padding
+    // to avoid that.
+    let mut memory: Vec<u8> = vec![0];
     let literal_addresses = allocate_string_literals(interner, &mut memory);
+    allocate_program_args(&mut memory, &mut stack, program_args);
+
     let mem_base = memory.len() as u64;
 
     let new_memory_len = memory.len() + MEMORY_CAPACITY;
     memory.resize(new_memory_len, 0);
 
     while let Some(&op) = program.get(ip) {
+        // eprintln!("{:?}", op.code);
         match op.code {
             OpCode::Add => {
                 let ([b], a) = stack.popn_last_mut().unwrap();
@@ -256,4 +276,58 @@ pub(crate) fn simulate_program(
     }
 
     Ok(())
+}
+
+// This is really kinda broken for now when it comes to handling the
+// program arguments. Specifically, if any extra arguments are passed
+// it thinks they get left on the stack when they're consumed in a loop.
+pub fn simulate_stack_check(
+    ops: &[Op],
+    initial_stack_depth: usize,
+) -> Result<Vec<Diagnostic<FileId>>, Vec<Diagnostic<FileId>>> {
+    let mut stack_depth = initial_stack_depth;
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    for op in ops {
+        if stack_depth < op.code.pop_count() {
+            errors.push(generate_error(
+                format!(
+                    "{} operand{} expected, found {}",
+                    op.code.pop_count(),
+                    if op.code.pop_count() == 1 { "" } else { "s" },
+                    stack_depth
+                ),
+                op.location,
+            ));
+
+            // This allows us to check subsequent operations by assuming
+            // that previous ones succeeded.
+            stack_depth = op.code.push_count();
+        } else {
+            eprintln!(
+                "{:?} SD: {} -{} +{}",
+                op.code,
+                stack_depth,
+                op.code.pop_count(),
+                op.code.push_count()
+            );
+            stack_depth = stack_depth - op.code.pop_count() + op.code.push_count();
+        }
+    }
+
+    if stack_depth != 0 {
+        let label = ops
+            .last()
+            .map(|op| vec![Label::primary(op.location.file_id, op.location.range())])
+            .unwrap_or_else(Vec::new);
+
+        warnings.push(
+            Diagnostic::warning()
+                .with_message(format!("{} elements left on the stack", stack_depth))
+                .with_labels(label),
+        );
+    }
+
+    errors.is_empty().then(|| warnings).ok_or(errors)
 }

@@ -5,7 +5,6 @@ use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
-    generate_error,
     interners::Interners,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation},
@@ -56,7 +55,7 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    fn pop_count(self) -> usize {
+    pub fn pop_count(self) -> usize {
         match self {
             OpCode::Add
             | OpCode::BitOr
@@ -100,7 +99,7 @@ impl OpCode {
         }
     }
 
-    fn push_count(self) -> usize {
+    pub fn push_count(self) -> usize {
         match self {
             OpCode::Dup { depth } => depth + 2,
 
@@ -706,47 +705,6 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
     }
 
     diags.is_empty().then(|| ()).ok_or(diags)
-}
-
-pub fn check_stack(ops: &[Op]) -> Result<Vec<Diagnostic<FileId>>, Vec<Diagnostic<FileId>>> {
-    let mut stack_depth = 0;
-    let mut errors = Vec::new();
-    let mut warnings = Vec::new();
-
-    for op in ops {
-        if stack_depth < op.code.pop_count() {
-            errors.push(generate_error(
-                format!(
-                    "{} operand{} expected, found {}",
-                    op.code.pop_count(),
-                    if op.code.pop_count() == 1 { "" } else { "s" },
-                    stack_depth
-                ),
-                op.location,
-            ));
-
-            // This allows us to check subsequent operations by assuming
-            // that previous ones succeeded.
-            stack_depth = op.code.push_count();
-        } else {
-            stack_depth = stack_depth - op.code.pop_count() + op.code.push_count();
-        }
-    }
-
-    if stack_depth != 0 {
-        let label = ops
-            .last()
-            .map(|op| vec![Label::primary(op.location.file_id, op.location.range())])
-            .unwrap_or_else(Vec::new);
-
-        warnings.push(
-            Diagnostic::warning()
-                .with_message("data left on stack")
-                .with_labels(label),
-        );
-    }
-
-    errors.is_empty().then(|| warnings).ok_or(errors)
 }
 
 pub fn optimize(ops: &[Op]) -> Vec<Op> {

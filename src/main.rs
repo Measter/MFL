@@ -34,6 +34,9 @@ enum Mode {
         /// Enable optimizations
         #[structopt(short)]
         optimise: bool,
+
+        /// Arguments to pass to the executed Porth program
+        args: Vec<String>,
     },
 
     /// Compile the program
@@ -86,6 +89,7 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_program(
     stderr: &mut StandardStreamLock,
     cfg: &Config,
@@ -94,6 +98,7 @@ fn load_program(
     file: &str,
     optimize: bool,
     include_paths: &[String],
+    initial_stack_depth: usize,
 ) -> Result<LoadProgramResult> {
     let contents =
         std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
@@ -171,21 +176,21 @@ fn load_program(
         Err(diags) => return Ok(Err(diags)),
     };
 
-    match opcode::check_stack(&ops) {
-        Err(diags) => return Ok(Err(diags)),
-        Ok(warnings) => {
-            for warning in warnings {
-                codespan_reporting::term::emit(stderr, cfg, source_store, &warning)?;
-            }
-        }
-    }
-
     if optimize {
         ops = opcode::optimize(&ops);
     }
 
     if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
         return Ok(Err(diags));
+    }
+
+    match simulate::simulate_stack_check(&ops, initial_stack_depth) {
+        Err(diags) => return Ok(Err(diags)),
+        Ok(warnings) => {
+            for warning in warnings {
+                codespan_reporting::term::emit(stderr, cfg, source_store, &warning)?;
+            }
+        }
     }
 
     Ok(Ok(ops))
@@ -203,7 +208,17 @@ fn main() -> Result<()> {
     let mut interner = Interners::new();
 
     match args.mode {
-        Mode::Simulate { file, optimise } => {
+        Mode::Simulate {
+            file,
+            optimise,
+            args: mut program_args,
+        } => {
+            program_args.insert(0, file.clone()); // We need the program name to be part of the args.
+
+            // They also need to be null terminated.
+            program_args.iter_mut().for_each(|a| a.push('\0'));
+            dbg!(program_args.len());
+
             let program = match load_program(
                 &mut stderr,
                 &cfg,
@@ -212,6 +227,7 @@ fn main() -> Result<()> {
                 &file,
                 optimise,
                 &args.include_paths,
+                program_args.len() + 1, // We also have the number of args on the stack.
             )? {
                 Ok(program) => program,
                 Err(diags) => {
@@ -221,7 +237,10 @@ fn main() -> Result<()> {
                     std::process::exit(-1);
                 }
             };
-            if let Err(diag) = simulate::simulate_program(&program, &interner) {
+
+            if let Err(diag) =
+                simulate::simulate_execute_program(&program, &interner, &program_args)
+            {
                 codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
             }
         }
@@ -245,6 +264,7 @@ fn main() -> Result<()> {
                 &file,
                 optimise,
                 &args.include_paths,
+                2,
             )? {
                 Ok(program) => program,
                 Err(diags) => {
