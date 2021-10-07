@@ -21,8 +21,41 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
     mem_plus,
     mem_push_store,
     mem_load,
+    pushint_pushint_syscall3,
     pass_through,
 ];
+
+/// Optimize PushInt-PushInt-SysCall(3) - Commonly used for writing to stdout
+fn pushint_pushint_syscall3<'a>(
+    _: &Interners,
+    ops: &'a [Op],
+) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
+    let (a, b) = match ops {
+        [a, b, syscall, ..]
+            if a.code.is_push_int()
+                && b.code.is_push_int()
+                && syscall.code == OpCode::SysCall(3) =>
+        {
+            (a, b)
+        }
+        _ => return None,
+    };
+
+    let a_val = a.code.unwrap_push_int();
+    let b_val = b.code.unwrap_push_int();
+
+    let mut asm = Vec::new();
+
+    writeln!(&mut asm, "    mov rax, {}", b_val).unwrap();
+    writeln!(&mut asm, "    mov rdi, {}", a_val).unwrap();
+    writeln!(&mut asm, "    pop rsi").unwrap();
+    writeln!(&mut asm, "    pop rdx").unwrap();
+    writeln!(&mut asm, "    syscall").unwrap();
+    writeln!(&mut asm, "    push rax").unwrap();
+
+    let (compiled, remaining) = ops.split_at(3);
+    Some((asm, compiled, remaining))
+}
 
 /// Optimize a Swap-PushInt-ArithBinOp-Swap sequence
 fn swap_pushint_arithmetic_swap<'a>(
