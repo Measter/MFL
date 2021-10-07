@@ -208,6 +208,8 @@ impl<'source> Scanner<'source> {
         let next_ch = self.peek().unwrap_or_default();
 
         let res = match (ch, next_ch) {
+            _ if ch.is_whitespace() => None,
+
             ('/', '/') => {
                 while !matches!(self.peek(), Some('\n')) && !self.is_at_end() {
                     self.advance();
@@ -230,7 +232,6 @@ impl<'source> Scanner<'source> {
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
-            _ if ch.is_whitespace() => None,
             ('+' | '-' | '=' | '<' | '>' | '.' | ',' | '*', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
