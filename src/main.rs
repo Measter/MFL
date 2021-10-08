@@ -98,7 +98,6 @@ fn load_program(
     file: &str,
     optimize: bool,
     include_paths: &[String],
-    initial_stack_depth: usize,
 ) -> Result<LoadProgramResult> {
     let contents =
         std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
@@ -184,7 +183,7 @@ fn load_program(
         return Ok(Err(diags));
     }
 
-    match simulate::simulate_stack_check(&ops, initial_stack_depth) {
+    match simulate::simulate_stack_check(&ops) {
         Err(diags) => return Ok(Err(diags)),
         Ok(warnings) => {
             for warning in warnings {
@@ -215,9 +214,6 @@ fn main() -> Result<()> {
         } => {
             program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
-            // They also need to be null terminated.
-            program_args.iter_mut().for_each(|a| a.push('\0'));
-
             let program = match load_program(
                 &mut stderr,
                 &cfg,
@@ -226,7 +222,6 @@ fn main() -> Result<()> {
                 &file,
                 optimise,
                 &args.include_paths,
-                program_args.len() + 1, // We also have the number of args on the stack.
             )? {
                 Ok(program) => program,
                 Err(diags) => {
@@ -263,7 +258,6 @@ fn main() -> Result<()> {
                 &file,
                 optimise,
                 &args.include_paths,
-                2,
             )? {
                 Ok(program) => program,
                 Err(diags) => {

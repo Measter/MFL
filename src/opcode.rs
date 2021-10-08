@@ -17,6 +17,8 @@ mod optimizer_passes;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum OpCode {
     Add,
+    ArgC,
+    ArgV,
     BitOr,
     BitAnd,
     DivMod,
@@ -82,7 +84,10 @@ impl OpCode {
             | OpCode::Load64 => 1,
 
             OpCode::Dup { depth } => depth + 1,
-            OpCode::DupPair
+
+            OpCode::ArgC
+            | OpCode::ArgV
+            | OpCode::DupPair
             | OpCode::Else { .. }
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
@@ -104,6 +109,8 @@ impl OpCode {
             OpCode::Dup { depth } => depth + 2,
 
             OpCode::Add
+            | OpCode::ArgC
+            | OpCode::ArgV
             | OpCode::BitOr
             | OpCode::BitAnd
             | OpCode::Equal
@@ -148,7 +155,9 @@ impl OpCode {
             Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | GreaterEqual | Less
             | LessEqual | NotEq | ShiftLeft | ShiftRight => true,
 
-            DivMod
+            ArgC
+            | ArgV
+            | DivMod
             | Do { .. }
             | Drop
             | Print
@@ -191,7 +200,9 @@ impl OpCode {
             LessEqual => |a, b| (a <= b) as u64,
             NotEq => |a, b| (a != b) as u64,
 
-            DivMod
+            ArgC
+            | ArgV
+            | DivMod
             | Do { .. }
             | Drop
             | Print
@@ -225,7 +236,9 @@ impl OpCode {
         match self {
             Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight => true,
 
-            DivMod
+            ArgC
+            | ArgV
+            | DivMod
             | Do { .. }
             | Drop
             | Print
@@ -264,6 +277,8 @@ impl OpCode {
             Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
 
             Add
+            | ArgC
+            | ArgV
             | BitOr
             | BitAnd
             | DivMod
@@ -476,6 +491,8 @@ pub fn parse_token(
             TokenKind::String(id) => {
                 ops.push(Op::new(OpCode::PushStr(id), token.kind, token.location))
             }
+            TokenKind::ArgC => ops.push(Op::new(OpCode::ArgC, token.kind, token.location)),
+            TokenKind::ArgV => ops.push(Op::new(OpCode::ArgV, token.kind, token.location)),
 
             TokenKind::While => ops.push(Op::new(
                 OpCode::While { ip: usize::MAX },

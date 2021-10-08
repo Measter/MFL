@@ -180,8 +180,7 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
         }
         OpCode::Load64 => {
             writeln!(output, "    pop r8")?;
-            writeln!(output, "    mov r15, QWORD [r8]")?;
-            writeln!(output, "    push r15")?;
+            writeln!(output, "    push QWORD [r8]")?;
         }
         OpCode::Store => {
             writeln!(output, "    pop r9")?;
@@ -192,6 +191,13 @@ fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<(
             writeln!(output, "    pop r9")?;
             writeln!(output, "    pop r8")?;
             writeln!(output, "    mov QWORD [r8], r9")?;
+        }
+
+        OpCode::ArgC => {
+            writeln!(output, "    push QWORD [__argc]")?;
+        }
+        OpCode::ArgV => {
+            writeln!(output, "    push QWORD [__argv]")?;
         }
 
         OpCode::SysCall(a @ 0..=6) => {
@@ -257,6 +263,8 @@ pub(crate) fn compile_program(
     })?;
 
     writeln!(&mut out_file, "_start:")?;
+    writeln!(&mut out_file, "    pop QWORD [__argc]")?;
+    writeln!(&mut out_file, "    mov QWORD [__argv], rsp")?;
     // R15 is used for single-byte handling, so we ideally do not want to touch the upper bytes.
     writeln!(&mut out_file, "    xor r15, r15")?;
 
@@ -304,6 +312,8 @@ pub(crate) fn compile_program(
     }
 
     writeln!(&mut out_file, "segment .bss")?;
+    writeln!(&mut out_file, "    __argc: resq {}", 1)?;
+    writeln!(&mut out_file, "    __argv: resq {}", 1)?;
     writeln!(&mut out_file, "    __memory: resb {}", MEMORY_CAPACITY)?;
 
     Ok(())

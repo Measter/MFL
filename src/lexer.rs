@@ -10,6 +10,8 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
+    ArgC,
+    ArgV,
     BitOr,
     BitAnd,
     DivMod,
@@ -50,7 +52,9 @@ pub enum TokenKind {
 impl TokenKind {
     pub fn new_block(self) -> bool {
         match self {
-            TokenKind::BitOr
+            TokenKind::ArgC
+            | TokenKind::ArgV
+            | TokenKind::BitOr
             | TokenKind::BitAnd
             | TokenKind::DivMod
             | TokenKind::Do
@@ -326,6 +330,8 @@ impl<'source> Scanner<'source> {
                     "," => TokenKind::Load,
                     ".64" => TokenKind::Store64,
                     ",64" => TokenKind::Load64,
+                    "argc" => TokenKind::ArgC,
+                    "argv" => TokenKind::ArgV,
                     "bor" => TokenKind::BitOr,
                     "divmod" => TokenKind::DivMod,
                     "band" => TokenKind::BitAnd,

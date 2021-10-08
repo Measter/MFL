@@ -1,4 +1,4 @@
-use std::{convert::TryInto, io::Write};
+use std::{convert::TryInto, io::Write, iter::repeat};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
@@ -68,16 +68,24 @@ fn allocate_string_literals(interner: &Interners, memory: &mut Vec<u8>) -> Vec<u
     indices
 }
 
-fn allocate_program_args(memory: &mut Vec<u8>, stack: &mut Vec<u64>, args: &[String]) {
-    stack.push(0); // The list of args ends with a null pointer.
+fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
+    let argc = memory.len();
+    // Space for ARGC
+    memory.extend_from_slice(&args.len().to_le_bytes());
+    // Allocate space for the ARGV array. +1 for the nullptr marker.
+    let argv = memory.len();
+    memory.extend(repeat(0).take((args.len() + 1) * 8));
 
-    for arg in args.iter().rev() {
+    for (mut idx, arg) in args.iter().enumerate() {
         let addr = memory.len();
         memory.extend_from_slice(arg.as_bytes());
-        stack.push(addr as _);
+        memory.push(0); // Gotta be null-terminated.
+        idx *= 8;
+        let argv_addr = argv + idx;
+        memory[argv_addr..argv_addr + 8].copy_from_slice(&addr.to_le_bytes());
     }
 
-    stack.push(args.len() as _);
+    (argc as u64, argv as u64)
 }
 
 pub(crate) fn simulate_execute_program(
@@ -88,13 +96,9 @@ pub(crate) fn simulate_execute_program(
     let mut ip = 0;
     let mut stack = Vec::new();
 
-    // The program arguments list has a null pointer (0) as a sentinal value
-    // to indicate the end. However, if we don't have any string literals the
-    // first argument will have the address 0. We need to insert a byte of padding
-    // to avoid that.
-    let mut memory: Vec<u8> = vec![0];
+    let mut memory: Vec<u8> = Vec::new();
     let literal_addresses = allocate_string_literals(interner, &mut memory);
-    allocate_program_args(&mut memory, &mut stack, program_args);
+    let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
 
     let mem_base = memory.len() as u64;
 
@@ -256,6 +260,9 @@ pub(crate) fn simulate_execute_program(
                 dst_bytes.copy_from_slice(&value_bytes);
             }
 
+            OpCode::ArgC => stack.push(program_args.len() as _),
+            OpCode::ArgV => stack.push(argv_ptr),
+
             OpCode::SysCall(3) => {
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, &mut stack, op)?;
@@ -283,9 +290,8 @@ pub(crate) fn simulate_execute_program(
 // it thinks they get left on the stack when they're consumed in a loop.
 pub fn simulate_stack_check(
     ops: &[Op],
-    initial_stack_depth: usize,
 ) -> Result<Vec<Diagnostic<FileId>>, Vec<Diagnostic<FileId>>> {
-    let mut stack_depth = initial_stack_depth;
+    let mut stack_depth = 0;
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
