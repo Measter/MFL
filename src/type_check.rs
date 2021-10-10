@@ -218,8 +218,24 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     None => stack.push(PorthType::Unknown),
                 }
             }
-            OpCode::Subtract
-            | OpCode::Multiply
+            OpCode::Subtract => {
+                let res = stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    [PorthType::Int, PorthType::Int] | [PorthType::Ptr, PorthType::Ptr]
+                );
+
+                match res {
+                    Some([PorthType::Int, PorthType::Int]) => stack.push(PorthType::Int),
+                    Some([PorthType::Ptr, PorthType::Ptr]) => stack.push(PorthType::Ptr),
+                    Some(_) => unreachable!(),
+                    None => stack.push(PorthType::Unknown),
+                }
+            }
+
+            OpCode::Multiply
             | OpCode::BitOr
             | OpCode::BitAnd
             | OpCode::ShiftLeft
@@ -366,15 +382,14 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 }
             },
 
-            OpCode::Swap => match &*stack {
+            OpCode::Swap => match stack.as_mut_slice() {
                 [.., a, b] => {
-                    let a = *a;
-                    let b = *b;
-                    stack.extend_from_slice(&[b, a]);
+                    std::mem::swap(a, b);
                 }
                 [a] => {
                     let a = *a;
                     generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
+                    stack.clear();
                     stack.extend_from_slice(&[a, PorthType::Unknown]);
                 }
                 [] => {
