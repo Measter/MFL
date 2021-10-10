@@ -2,10 +2,7 @@ use std::{collections::HashMap, path::Path, process::Command};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    term::{
-        termcolor::{ColorChoice, StandardStream, StandardStreamLock},
-        Config,
-    },
+    term::termcolor::{ColorChoice, StandardStream},
 };
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
@@ -19,6 +16,7 @@ mod opcode;
 mod popn;
 mod simulate;
 mod source_file;
+mod type_check;
 
 use opcode::Op;
 
@@ -91,8 +89,6 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
 
 #[allow(clippy::too_many_arguments)]
 fn load_program(
-    stderr: &mut StandardStreamLock,
-    cfg: &Config,
     source_store: &mut SourceStorage,
     interner: &mut Interners,
     file: &str,
@@ -176,20 +172,15 @@ fn load_program(
     };
 
     if optimize {
-        ops = opcode::optimize(&ops);
+        ops = opcode::optimize(&ops, interner, source_store);
     }
 
     if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
         return Ok(Err(diags));
     }
 
-    match simulate::simulate_stack_check(&ops) {
-        Err(diags) => return Ok(Err(diags)),
-        Ok(warnings) => {
-            for warning in warnings {
-                codespan_reporting::term::emit(stderr, cfg, source_store, &warning)?;
-            }
-        }
+    if let Err(diags) = type_check::type_check(&ops, interner) {
+        return Ok(Err(diags));
     }
 
     Ok(Ok(ops))
@@ -215,8 +206,6 @@ fn main() -> Result<()> {
             program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
             let program = match load_program(
-                &mut stderr,
-                &cfg,
                 &mut source_storage,
                 &mut interner,
                 &file,
@@ -251,8 +240,6 @@ fn main() -> Result<()> {
             output_binary.set_extension("");
 
             let program = match load_program(
-                &mut stderr,
-                &cfg,
                 &mut source_storage,
                 &mut interner,
                 &file,

@@ -1,6 +1,6 @@
 use std::{convert::TryInto, io::Write, iter::repeat};
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::diagnostic::Diagnostic;
 
 use crate::{
     generate_error,
@@ -27,18 +27,23 @@ fn make_syscall3(
             let end = start + arg3 as usize;
             let buffer = memory
                 .get(start..end)
-                .ok_or_else(|| generate_error("invalid memory range", op.location))?;
+                .ok_or_else(|| generate_error("invalid memory range", op.token.location))?;
 
             // Not my problem if this isn't valid output data.
             let _ = match arg1 {
                 1 => std::io::stdout().write_all(buffer),
                 2 => std::io::stderr().write_all(buffer),
-                _ => return Err(generate_error("unsupported file descriptor", op.location)),
+                _ => {
+                    return Err(generate_error(
+                        "unsupported file descriptor",
+                        op.token.location,
+                    ))
+                }
             };
 
             stack.push(arg3);
         }
-        _ => return Err(generate_error("unsupported syscall ID", op.location)),
+        _ => return Err(generate_error("unsupported syscall ID", op.token.location)),
     }
 
     Ok(())
@@ -49,7 +54,7 @@ fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: Op) -> Result<(), Diagnos
         // Exit
         60 => std::process::exit(arg1 as _),
 
-        _ => Err(generate_error("unsupported syscall ID", op.location)),
+        _ => Err(generate_error("unsupported syscall ID", op.token.location)),
     }
 }
 
@@ -230,14 +235,14 @@ pub(crate) fn simulate_execute_program(
 
                 let value = *memory
                     .get(address as usize)
-                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
                 stack.push(value as u64);
             }
             OpCode::Load64 => {
                 let address = stack.pop().unwrap() as usize;
                 let value_bytes = memory
                     .get(address..address + 8)
-                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
 
                 let value = u64::from_le_bytes(value_bytes.try_into().unwrap());
                 stack.push(value);
@@ -247,7 +252,7 @@ pub(crate) fn simulate_execute_program(
 
                 let dest = memory
                     .get_mut(address as usize)
-                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
                 *dest = value as u8;
             }
             OpCode::Store64 => {
@@ -256,7 +261,7 @@ pub(crate) fn simulate_execute_program(
                 let value_bytes = value.to_le_bytes();
                 let dst_bytes = memory
                     .get_mut(address..address + 8)
-                    .ok_or_else(|| generate_error("invalid memory address", op.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
                 dst_bytes.copy_from_slice(&value_bytes);
             }
 
@@ -272,7 +277,7 @@ pub(crate) fn simulate_execute_program(
                 make_syscall1(syscall_id, arg1, &mut memory, op)?;
             }
             OpCode::SysCall(_) => {
-                return Err(generate_error("unsupported syscall", op.location));
+                return Err(generate_error("unsupported syscall", op.token.location));
             }
             OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
             OpCode::Ident(_) => panic!("ICE: Encountered OpCode::Ident"),
@@ -283,50 +288,4 @@ pub(crate) fn simulate_execute_program(
     }
 
     Ok(())
-}
-
-// This is really kinda broken for now when it comes to handling the
-// program arguments. Specifically, if any extra arguments are passed
-// it thinks they get left on the stack when they're consumed in a loop.
-pub fn simulate_stack_check(
-    ops: &[Op],
-) -> Result<Vec<Diagnostic<FileId>>, Vec<Diagnostic<FileId>>> {
-    let mut stack_depth = 0;
-    let mut errors = Vec::new();
-    let mut warnings = Vec::new();
-
-    for op in ops {
-        if stack_depth < op.code.pop_count() {
-            errors.push(generate_error(
-                format!(
-                    "{} operand{} expected, found {}",
-                    op.code.pop_count(),
-                    if op.code.pop_count() == 1 { "" } else { "s" },
-                    stack_depth
-                ),
-                op.location,
-            ));
-
-            // This allows us to check subsequent operations by assuming
-            // that previous ones succeeded.
-            stack_depth = op.code.push_count();
-        } else {
-            stack_depth = stack_depth - op.code.pop_count() + op.code.push_count();
-        }
-    }
-
-    if stack_depth != 0 {
-        let label = ops
-            .last()
-            .map(|op| vec![Label::primary(op.location.file_id, op.location.range())])
-            .unwrap_or_else(Vec::new);
-
-        warnings.push(
-            Diagnostic::warning()
-                .with_message(format!("{} elements left on the stack", stack_depth))
-                .with_labels(label),
-        );
-    }
-
-    errors.is_empty().then(|| warnings).ok_or(errors)
 }

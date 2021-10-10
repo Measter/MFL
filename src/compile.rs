@@ -278,12 +278,13 @@ pub(crate) fn compile_program(
         };
 
         for op in compiled_ops {
-            let location = source_store.location(op.location.file_id, op.location.source_start)?;
+            let location =
+                source_store.location(op.token.location.file_id, op.token.location.source_start)?;
             writeln!(
                 &mut out_file,
                 ";; IP{} -- {}:{}:{} -- {:?}",
                 ip,
-                source_store.name(op.location.file_id)?,
+                source_store.name(op.token.location.file_id)?,
                 location.line_number,
                 location.column_number,
                 op.code,

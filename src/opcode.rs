@@ -7,7 +7,7 @@ use variantly::Variantly;
 use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
-    source_file::{FileId, SourceLocation},
+    source_file::{FileId, SourceLocation, SourceStorage},
 };
 
 use self::optimizer_passes::PASSES;
@@ -329,17 +329,12 @@ impl OpCode {
 #[derive(Debug, Clone, Copy)]
 pub struct Op {
     pub code: OpCode,
-    pub token: TokenKind,
-    pub location: SourceLocation,
+    pub token: Token,
 }
 
 impl Op {
-    fn new(code: OpCode, token: TokenKind, location: SourceLocation) -> Self {
-        Self {
-            code,
-            token,
-            location,
-        }
+    fn new(code: OpCode, token: Token) -> Self {
+        Self { code, token }
     }
 }
 
@@ -449,63 +444,38 @@ pub fn parse_token(
     let mut token_iter = tokens.iter().enumerate();
     while let Some((_, token)) = token_iter.next() {
         match token.kind {
-            TokenKind::Drop => ops.push(Op::new(OpCode::Drop, token.kind, token.location)),
-            TokenKind::Print => ops.push(Op::new(OpCode::Print, token.kind, token.location)),
-            TokenKind::Dup(depth) => {
-                ops.push(Op::new(OpCode::Dup { depth }, token.kind, token.location))
-            }
-            TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, token.kind, token.location)),
-            TokenKind::Swap => ops.push(Op::new(OpCode::Swap, token.kind, token.location)),
+            TokenKind::Drop => ops.push(Op::new(OpCode::Drop, *token)),
+            TokenKind::Print => ops.push(Op::new(OpCode::Print, *token)),
+            TokenKind::Dup(depth) => ops.push(Op::new(OpCode::Dup { depth }, *token)),
+            TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, *token)),
+            TokenKind::Swap => ops.push(Op::new(OpCode::Swap, *token)),
 
-            TokenKind::Mem => ops.push(Op::new(
-                OpCode::Mem { offset: 0 },
-                token.kind,
-                token.location,
-            )),
-            TokenKind::Load => ops.push(Op::new(OpCode::Load, token.kind, token.location)),
-            TokenKind::Load64 => ops.push(Op::new(OpCode::Load64, token.kind, token.location)),
-            TokenKind::Store => ops.push(Op::new(OpCode::Store, token.kind, token.location)),
-            TokenKind::Store64 => ops.push(Op::new(OpCode::Store64, token.kind, token.location)),
+            TokenKind::Mem => ops.push(Op::new(OpCode::Mem { offset: 0 }, *token)),
+            TokenKind::Load => ops.push(Op::new(OpCode::Load, *token)),
+            TokenKind::Load64 => ops.push(Op::new(OpCode::Load64, *token)),
+            TokenKind::Store => ops.push(Op::new(OpCode::Store, *token)),
+            TokenKind::Store64 => ops.push(Op::new(OpCode::Store64, *token)),
 
-            TokenKind::Equal => ops.push(Op::new(OpCode::Equal, token.kind, token.location)),
-            TokenKind::Greater => ops.push(Op::new(OpCode::Greater, token.kind, token.location)),
-            TokenKind::GreaterEqual => {
-                ops.push(Op::new(OpCode::GreaterEqual, token.kind, token.location))
-            }
-            TokenKind::Less => ops.push(Op::new(OpCode::Less, token.kind, token.location)),
-            TokenKind::LessEqual => {
-                ops.push(Op::new(OpCode::LessEqual, token.kind, token.location))
-            }
-            TokenKind::NotEqual => ops.push(Op::new(OpCode::NotEq, token.kind, token.location)),
+            TokenKind::Equal => ops.push(Op::new(OpCode::Equal, *token)),
+            TokenKind::Greater => ops.push(Op::new(OpCode::Greater, *token)),
+            TokenKind::GreaterEqual => ops.push(Op::new(OpCode::GreaterEqual, *token)),
+            TokenKind::Less => ops.push(Op::new(OpCode::Less, *token)),
+            TokenKind::LessEqual => ops.push(Op::new(OpCode::LessEqual, *token)),
+            TokenKind::NotEqual => ops.push(Op::new(OpCode::NotEq, *token)),
 
-            TokenKind::Ident => {
-                ops.push(Op::new(
-                    OpCode::Ident(token.lexeme),
-                    token.kind,
-                    token.location,
-                ));
-            }
-            TokenKind::Integer(value) => {
-                ops.push(Op::new(OpCode::PushInt(value), token.kind, token.location))
-            }
-            TokenKind::String(id) => {
-                ops.push(Op::new(OpCode::PushStr(id), token.kind, token.location))
-            }
-            TokenKind::ArgC => ops.push(Op::new(OpCode::ArgC, token.kind, token.location)),
-            TokenKind::ArgV => ops.push(Op::new(OpCode::ArgV, token.kind, token.location)),
+            TokenKind::Ident => ops.push(Op::new(OpCode::Ident(token.lexeme), *token)),
+            TokenKind::Integer(value) => ops.push(Op::new(OpCode::PushInt(value), *token)),
+            TokenKind::String(id) => ops.push(Op::new(OpCode::PushStr(id), *token)),
+            TokenKind::ArgC => ops.push(Op::new(OpCode::ArgC, *token)),
+            TokenKind::ArgV => ops.push(Op::new(OpCode::ArgV, *token)),
 
-            TokenKind::While => ops.push(Op::new(
-                OpCode::While { ip: usize::MAX },
-                token.kind,
-                token.location,
-            )),
+            TokenKind::While => ops.push(Op::new(OpCode::While { ip: usize::MAX }, *token)),
             TokenKind::Do => ops.push(Op::new(
                 OpCode::Do {
                     end_ip: usize::MAX,
                     condition_ip: usize::MAX,
                 },
-                token.kind,
-                token.location,
+                *token,
             )),
 
             TokenKind::Macro => {
@@ -560,49 +530,30 @@ pub fn parse_token(
                 };
 
                 include_list.push((path_token, literal));
-                ops.push(Op::new(
-                    OpCode::Include(literal),
-                    token.kind,
-                    token.location,
-                ));
+                ops.push(Op::new(OpCode::Include(literal), *token));
             }
 
-            TokenKind::If => ops.push(Op::new(
-                OpCode::If { end_ip: usize::MAX },
-                token.kind,
-                token.location,
-            )),
+            TokenKind::If => ops.push(Op::new(OpCode::If { end_ip: usize::MAX }, *token)),
             TokenKind::Else => ops.push(Op::new(
                 OpCode::Else {
                     else_start: usize::MAX,
                     end_ip: usize::MAX,
                 },
-                token.kind,
-                token.location,
+                *token,
             )),
-            TokenKind::End => ops.push(Op::new(
-                OpCode::End { ip: usize::MAX },
-                token.kind,
-                token.location,
-            )),
+            TokenKind::End => ops.push(Op::new(OpCode::End { ip: usize::MAX }, *token)),
 
-            TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, token.kind, token.location)),
-            TokenKind::Plus => ops.push(Op::new(OpCode::Add, token.kind, token.location)),
-            TokenKind::Star => ops.push(Op::new(OpCode::Multiply, token.kind, token.location)),
-            TokenKind::DivMod => ops.push(Op::new(OpCode::DivMod, token.kind, token.location)),
+            TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, *token)),
+            TokenKind::Plus => ops.push(Op::new(OpCode::Add, *token)),
+            TokenKind::Star => ops.push(Op::new(OpCode::Multiply, *token)),
+            TokenKind::DivMod => ops.push(Op::new(OpCode::DivMod, *token)),
 
-            TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, token.kind, token.location)),
-            TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, token.kind, token.location)),
-            TokenKind::ShiftLeft => {
-                ops.push(Op::new(OpCode::ShiftLeft, token.kind, token.location))
-            }
-            TokenKind::ShiftRight => {
-                ops.push(Op::new(OpCode::ShiftRight, token.kind, token.location))
-            }
+            TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, *token)),
+            TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, *token)),
+            TokenKind::ShiftLeft => ops.push(Op::new(OpCode::ShiftLeft, *token)),
+            TokenKind::ShiftRight => ops.push(Op::new(OpCode::ShiftRight, *token)),
 
-            TokenKind::SysCall(id) => {
-                ops.push(Op::new(OpCode::SysCall(id), token.kind, token.location))
-            }
+            TokenKind::SysCall(id) => ops.push(Op::new(OpCode::SysCall(id), *token)),
         }
     }
 
@@ -623,15 +574,15 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         let diag = Diagnostic::error()
                             .with_message("`do` requires a preceeding `while`")
                             .with_labels(vec![Label::primary(
-                                op.location.file_id,
-                                op.location.range(),
+                                op.token.location.file_id,
+                                op.token.location.range(),
                             )]);
                         diags.push(diag);
                         continue;
                     }
                 };
 
-                jump_ip_stack.push((ip, op.token, op.location));
+                jump_ip_stack.push((ip, op.token.kind, op.token.location));
                 match &mut ops[ip].code {
                     OpCode::Do { condition_ip, .. } => *condition_ip = while_ip,
                     _ => unreachable!(),
@@ -643,10 +594,10 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     OpCode::While { ip: while_ip } => *while_ip = ip,
                     _ => unreachable!(),
                 }
-                jump_ip_stack.push((ip, op.token, op.location));
+                jump_ip_stack.push((ip, op.token.kind, op.token.location));
             }
 
-            OpCode::If { .. } => jump_ip_stack.push((ip, op.token, op.location)),
+            OpCode::If { .. } => jump_ip_stack.push((ip, op.token.kind, op.token.location)),
             OpCode::Else { .. } => {
                 let if_idx = match jump_ip_stack.pop() {
                     Some((if_idx, TokenKind::If, _)) => if_idx,
@@ -654,8 +605,8 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         let diag = Diagnostic::error()
                             .with_message("`else` requires a preceding `if`")
                             .with_labels(vec![Label::primary(
-                                op.location.file_id,
-                                op.location.range(),
+                                op.token.location.file_id,
+                                op.token.location.range(),
                             )]);
                         diags.push(diag);
                         continue;
@@ -672,7 +623,7 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     _ => unreachable!(),
                 }
 
-                jump_ip_stack.push((ip, op.token, op.location));
+                jump_ip_stack.push((ip, op.token.kind, op.token.location));
             }
 
             OpCode::End { .. } => {
@@ -682,8 +633,8 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         let diag = Diagnostic::error()
                             .with_message("`end` requires a preceding `if`, `else`, or `while-do`")
                             .with_labels(vec![Label::primary(
-                                op.location.file_id,
-                                op.location.range(),
+                                op.token.location.file_id,
+                                op.token.location.range(),
                             )]);
                         diags.push(diag);
                         continue;
@@ -724,7 +675,7 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
     diags.is_empty().then(|| ()).ok_or(diags)
 }
 
-pub fn optimize(ops: &[Op]) -> Vec<Op> {
+pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -> Vec<Op> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec: Vec<Op> = Vec::with_capacity(ops.len());
 
@@ -734,7 +685,11 @@ pub fn optimize(ops: &[Op]) -> Vec<Op> {
         let mut changed = false;
 
         while !src.is_empty() {
-            if let Some((ops, xs)) = PASSES.iter().filter_map(|pass| pass(src)).next() {
+            if let Some((ops, xs)) = PASSES
+                .iter()
+                .filter_map(|pass| pass(src, interner, sources))
+                .next()
+            {
                 dst_vec.extend(ops);
                 src = xs;
                 changed = true;
@@ -814,8 +769,8 @@ pub fn expand_macros(
                             let diag = Diagnostic::error()
                                 .with_message("unknown macro")
                                 .with_labels(vec![Label::primary(
-                                    op.location.file_id,
-                                    op.location.range(),
+                                    op.token.location.file_id,
+                                    op.token.location.range(),
                                 )]);
                             diags.push(diag);
                         }
