@@ -209,6 +209,8 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    push rax")?;
         }
 
+        OpCode::CastPtr => {}
+
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }

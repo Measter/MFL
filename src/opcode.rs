@@ -21,6 +21,7 @@ pub enum OpCode {
     ArgV,
     BitOr,
     BitAnd,
+    CastPtr,
     DivMod,
     Drop,
     Do { end_ip: usize, condition_ip: usize },
@@ -76,7 +77,8 @@ impl OpCode {
             | OpCode::Store64
             | OpCode::Subtract => 2,
 
-            OpCode::Drop
+            OpCode::CastPtr
+            | OpCode::Drop
             | OpCode::Do { .. }
             | OpCode::Print
             | OpCode::If { .. }
@@ -113,6 +115,7 @@ impl OpCode {
             | OpCode::ArgV
             | OpCode::BitOr
             | OpCode::BitAnd
+            | OpCode::CastPtr
             | OpCode::Equal
             | OpCode::Greater
             | OpCode::GreaterEqual
@@ -157,6 +160,7 @@ impl OpCode {
 
             ArgC
             | ArgV
+            | CastPtr
             | DivMod
             | Do { .. }
             | Drop
@@ -202,6 +206,7 @@ impl OpCode {
 
             ArgC
             | ArgV
+            | CastPtr
             | DivMod
             | Do { .. }
             | Drop
@@ -238,6 +243,7 @@ impl OpCode {
 
             ArgC
             | ArgV
+            | CastPtr
             | DivMod
             | Do { .. }
             | Drop
@@ -279,6 +285,7 @@ impl OpCode {
             Add
             | ArgC
             | ArgV
+            | CastPtr
             | BitOr
             | BitAnd
             | DivMod
@@ -557,6 +564,8 @@ pub fn parse_token(
             TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, *token)),
             TokenKind::ShiftLeft => ops.push(Op::new(OpCode::ShiftLeft, *token)),
             TokenKind::ShiftRight => ops.push(Op::new(OpCode::ShiftRight, *token)),
+
+            TokenKind::CastPtr => ops.push(Op::new(OpCode::CastPtr, *token)),
 
             TokenKind::SysCall(id) => ops.push(Op::new(OpCode::SysCall(id), *token)),
         }

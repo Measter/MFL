@@ -268,6 +268,8 @@ pub(crate) fn simulate_execute_program(
             OpCode::ArgC => stack.push(program_args.len() as _),
             OpCode::ArgV => stack.push(argv_ptr),
 
+            OpCode::CastPtr => {}
+
             OpCode::SysCall(3) => {
                 let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, &mut stack, op)?;

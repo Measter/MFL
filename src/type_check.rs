@@ -410,6 +410,17 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             OpCode::ArgC => stack.push(PorthType::Int),
             OpCode::ArgV => stack.push(PorthType::Ptr),
 
+            OpCode::CastPtr => {
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    [PorthType::Int] | [PorthType::Ptr]
+                );
+                stack.push(PorthType::Ptr);
+            }
+
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
                 if stack.len() < required {

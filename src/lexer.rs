@@ -14,6 +14,7 @@ pub enum TokenKind {
     ArgV,
     BitOr,
     BitAnd,
+    CastPtr,
     DivMod,
     Do,
     Drop,
@@ -56,6 +57,7 @@ impl TokenKind {
             | TokenKind::ArgV
             | TokenKind::BitOr
             | TokenKind::BitAnd
+            | TokenKind::CastPtr
             | TokenKind::DivMod
             | TokenKind::Do
             | TokenKind::Drop
@@ -333,6 +335,7 @@ impl<'source> Scanner<'source> {
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
                     "bor" => TokenKind::BitOr,
+                    "cast(ptr)" => TokenKind::CastPtr,
                     "divmod" => TokenKind::DivMod,
                     "band" => TokenKind::BitAnd,
                     "do" => TokenKind::Do,
