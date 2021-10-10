@@ -364,6 +364,6 @@ pub(super) fn pass_through<'a>(
 ) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let mut asm = Vec::new();
     let (compiled, remaining) = ops.split_at(1);
-    compile_op(&mut asm, compiled[0], interner).unwrap();
+    compile_op(&mut asm, &compiled[0], interner).unwrap();
     Some((asm, compiled, remaining))
 }

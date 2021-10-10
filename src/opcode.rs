@@ -326,15 +326,20 @@ impl OpCode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Op {
     pub code: OpCode,
     pub token: Token,
+    pub expansions: Vec<SourceLocation>,
 }
 
 impl Op {
     fn new(code: OpCode, token: Token) -> Self {
-        Self { code, token }
+        Self {
+            code,
+            token,
+            expansions: Vec::new(),
+        }
     }
 }
 
@@ -565,7 +570,7 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
     let mut diags = Vec::new();
 
     for ip in 0..ops.len() {
-        let op = ops[ip];
+        let op = &ops[ip];
         match op.code {
             OpCode::Do { .. } => {
                 let while_ip = match jump_ip_stack.pop() {
@@ -589,12 +594,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                 }
             }
             OpCode::While { .. } => {
+                let kind = op.token.kind;
+                let loc = op.token.location;
                 // Update our own IP.
                 match &mut ops[ip].code {
                     OpCode::While { ip: while_ip } => *while_ip = ip,
                     _ => unreachable!(),
                 }
-                jump_ip_stack.push((ip, op.token.kind, op.token.location));
+                jump_ip_stack.push((ip, kind, loc));
             }
 
             OpCode::If { .. } => jump_ip_stack.push((ip, op.token.kind, op.token.location)),
@@ -613,6 +620,9 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     }
                 };
 
+                let kind = op.token.kind;
+                let loc = op.token.location;
+
                 // Update our own IP.
                 match &mut ops[ip].code {
                     OpCode::Else { else_start, .. } => *else_start = ip,
@@ -623,7 +633,7 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     _ => unreachable!(),
                 }
 
-                jump_ip_stack.push((ip, op.token.kind, op.token.location));
+                jump_ip_stack.push((ip, kind, loc));
             }
 
             OpCode::End { .. } => {
@@ -694,7 +704,7 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
                 src = xs;
                 changed = true;
             } else if let [op, xs @ ..] = src {
-                dst_vec.push(*op);
+                dst_vec.push(op.clone());
                 src = xs;
             }
         }
@@ -763,7 +773,12 @@ pub fn expand_macros(
                     match macros.get(&id) {
                         Some((name, body)) => {
                             last_changed_macros.push(*name);
-                            dst_vec.extend_from_slice(body);
+                            dst_vec.extend(body.iter().map(|new_op| {
+                                let mut new_op = new_op.clone();
+                                new_op.expansions.push(op.token.location);
+                                new_op.expansions.extend_from_slice(&op.expansions);
+                                new_op
+                            }));
                         }
                         None => {
                             let diag = Diagnostic::error()

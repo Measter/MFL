@@ -20,7 +20,7 @@ enum PorthType {
 fn generate_type_mismatch(
     diags: &mut Vec<Diagnostic<FileId>>,
     operator_str: &str,
-    location: SourceLocation,
+    op: &Op,
     types: &[PorthType],
 ) {
     let mut message = format!("cannot use `{}` on ", operator_str);
@@ -37,24 +37,46 @@ fn generate_type_mismatch(
         }
     }
 
+    let mut labels = vec![Label::primary(
+        op.token.location.file_id,
+        op.token.location.range(),
+    )];
+
+    for source in op.expansions.iter().skip(1) {
+        labels.push(
+            Label::secondary(source.file_id, source.range()).with_message("expanded from here"),
+        );
+    }
+
     let diag = Diagnostic::error()
         .with_message(message)
-        .with_labels(vec![Label::primary(location.file_id, location.range())]);
+        .with_labels(labels);
 
     diags.push(diag);
 }
 
 fn generate_stack_exhaustion(
     diags: &mut Vec<Diagnostic<FileId>>,
-    location: SourceLocation,
+    op: &Op,
     actual: usize,
     expected: usize,
 ) {
     let message = format!("expected {} items, found {}", expected, actual);
 
+    let mut labels = vec![Label::primary(
+        op.token.location.file_id,
+        op.token.location.range(),
+    )];
+
+    for source in op.expansions.iter().skip(1) {
+        labels.push(
+            Label::secondary(source.file_id, source.range()).with_message("expanded from here"),
+        );
+    }
+
     let diag = Diagnostic::error()
         .with_message(message)
-        .with_labels(vec![Label::primary(location.file_id, location.range())]);
+        .with_labels(labels);
 
     diags.push(diag);
 }
@@ -84,13 +106,13 @@ macro_rules! stack_check {
             #[allow(unreachable_patterns)]
             Some(ts) => {
                 let lexeme = $interners.resolve_lexeme($op.token.lexeme);
-                generate_type_mismatch(&mut $errors, lexeme, $op.token.location, &ts);
+                generate_type_mismatch(&mut $errors, lexeme, $op, &ts);
                 None
             }
             None => {
                 generate_stack_exhaustion(
                     &mut $errors,
-                    $op.token.location,
+                    $op,
                     $stack.len(),
                     $op.code.pop_count(),
                 );
@@ -233,12 +255,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             }
             OpCode::Dup { depth } => {
                 if stack.len() < (depth + 1) {
-                    generate_stack_exhaustion(
-                        &mut diags,
-                        op.token.location,
-                        stack.len(),
-                        depth + 1,
-                    );
+                    generate_stack_exhaustion(&mut diags, op, stack.len(), depth + 1);
                     // We don't know what was expected, but we need something there.
                     stack.push(PorthType::Unknown);
                 } else {
@@ -254,21 +271,11 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 }
                 [a] => {
                     let a = *a;
-                    generate_stack_exhaustion(
-                        &mut diags,
-                        op.token.location,
-                        stack.len(),
-                        op.code.pop_count(),
-                    );
+                    generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
                     stack.extend_from_slice(&[PorthType::Unknown, a]);
                 }
                 [] => {
-                    generate_stack_exhaustion(
-                        &mut diags,
-                        op.token.location,
-                        0,
-                        op.code.pop_count(),
-                    );
+                    generate_stack_exhaustion(&mut diags, op, 0, op.code.pop_count());
                     stack.extend_from_slice(&[PorthType::Unknown, PorthType::Unknown]);
                 }
             },
@@ -281,21 +288,11 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 }
                 [a] => {
                     let a = *a;
-                    generate_stack_exhaustion(
-                        &mut diags,
-                        op.token.location,
-                        stack.len(),
-                        op.code.pop_count(),
-                    );
+                    generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
                     stack.extend_from_slice(&[a, PorthType::Unknown]);
                 }
                 [] => {
-                    generate_stack_exhaustion(
-                        &mut diags,
-                        op.token.location,
-                        0,
-                        op.code.pop_count(),
-                    );
+                    generate_stack_exhaustion(&mut diags, op, 0, op.code.pop_count());
                     stack.extend_from_slice(&[PorthType::Unknown, PorthType::Unknown]);
                 }
             },
@@ -315,7 +312,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
                 if stack.len() < required {
-                    generate_stack_exhaustion(&mut diags, op.token.location, stack.len(), required);
+                    generate_stack_exhaustion(&mut diags, op, stack.len(), required);
                 } else {
                     stack.truncate(stack.len() - required);
                 }
@@ -333,10 +330,19 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
         let label = ops
             .last()
             .map(|op| {
-                vec![Label::primary(
+                let mut labels = vec![Label::primary(
                     op.token.location.file_id,
                     op.token.location.range(),
-                )]
+                )];
+
+                for source in op.expansions.iter() {
+                    labels.push(
+                        Label::secondary(source.file_id, source.range())
+                            .with_message("expanded from here"),
+                    );
+                }
+
+                labels
             })
             .unwrap_or_else(Vec::new);
 

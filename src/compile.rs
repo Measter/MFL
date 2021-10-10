@@ -62,7 +62,7 @@ impl OpCode {
     }
 }
 
-fn compile_op(output: &mut impl Write, op: Op, interner: &Interners) -> Result<()> {
+fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<()> {
     match op.code {
         OpCode::Add
         | OpCode::Subtract

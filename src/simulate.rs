@@ -18,7 +18,7 @@ fn make_syscall3(
     arg3: u64,
     memory: &mut [u8],
     stack: &mut Vec<u64>,
-    op: Op,
+    op: &Op,
 ) -> Result<(), Diagnostic<FileId>> {
     match id {
         // Write
@@ -49,7 +49,7 @@ fn make_syscall3(
     Ok(())
 }
 
-fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: Op) -> Result<(), Diagnostic<FileId>> {
+fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: &Op) -> Result<(), Diagnostic<FileId>> {
     match id {
         // Exit
         60 => std::process::exit(arg1 as _),
@@ -110,7 +110,7 @@ pub(crate) fn simulate_execute_program(
     let new_memory_len = memory.len() + MEMORY_CAPACITY;
     memory.resize(new_memory_len, 0);
 
-    while let Some(&op) = program.get(ip) {
+    while let Some(op) = program.get(ip) {
         // eprintln!("{:?}", op.code);
         match op.code {
             OpCode::Add => {
