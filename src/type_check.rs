@@ -1,4 +1,7 @@
-use std::fmt::Write;
+use std::{
+    cmp::Ordering,
+    fmt::{self, Write},
+};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
@@ -15,6 +18,17 @@ enum PorthType {
     Ptr,
     Bool,
     Unknown,
+}
+
+impl fmt::Display for PorthType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PorthType::Int => "Int".fmt(f),
+            PorthType::Ptr => "Ptr".fmt(f),
+            PorthType::Bool => "Bool".fmt(f),
+            PorthType::Unknown => "Unknown".fmt(f),
+        }
+    }
 }
 
 fn generate_type_mismatch(
@@ -99,6 +113,61 @@ fn generate_block_depth_mismatch(
     diags.push(diag);
 }
 
+fn compare_expected_stacks(
+    expected_stack: &[PorthType],
+    actual_stack: &[PorthType],
+    diags: &mut Vec<Diagnostic<FileId>>,
+    open_loc: SourceLocation,
+    op: &Op,
+    msg: &str,
+) {
+    match expected_stack.len().cmp(&actual_stack.len()) {
+        Ordering::Less | Ordering::Greater => {
+            generate_block_depth_mismatch(
+                diags,
+                open_loc,
+                op.token.location,
+                expected_stack.len(),
+                actual_stack.len(),
+            );
+        }
+        Ordering::Equal if expected_stack != actual_stack => {
+            let mut diag = Diagnostic::error().with_message(msg).with_labels(vec![
+                Label::primary(open_loc.file_id, open_loc.range()),
+                Label::primary(op.token.location.file_id, op.token.location.range()),
+            ]);
+
+            diag.notes.push("IDX  | Expected |   Actual".to_owned());
+            diag.notes.push("_____|__________|_________".to_owned());
+
+            if expected_stack[0] == actual_stack[0] {
+                diag.notes.push("...".to_owned());
+            }
+
+            let mut pairs = expected_stack
+                .iter()
+                .zip(actual_stack)
+                .enumerate()
+                .peekable();
+            while matches!(pairs.peek(), Some((_, (a, b))) if a == b) {
+                pairs.next();
+            }
+
+            for (idx, (a, b)) in pairs {
+                diag.notes.push(format!(
+                    "{:<4} | {:<8} | {:>8}",
+                    actual_stack.len() - idx - 1,
+                    a,
+                    b
+                ));
+            }
+
+            diags.push(diag);
+        }
+        _ => {}
+    }
+}
+
 macro_rules! stack_check {
     ($errors:ident, $stack:ident, $interners:ident, $op:ident, $($expected:pat)|+) => {
         match $stack.popn() {
@@ -125,7 +194,7 @@ macro_rules! stack_check {
 
 pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut stack: Vec<PorthType> = Vec::new();
-    let mut stack_depths: Vec<(usize, SourceLocation)> = Vec::new();
+    let mut block_stack_states: Vec<(SourceLocation, Vec<PorthType>, bool)> = Vec::new();
     let mut diags = Vec::new();
 
     for op in ops {
@@ -171,73 +240,90 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 stack_check!(diags, stack, interner, op, [_]);
             }
 
-            OpCode::While { .. } => {}
-            OpCode::Do { .. } | OpCode::If { .. } => {
-                stack_check!(diags, stack, interner, op, [PorthType::Bool]);
-                stack_depths.push((stack.len(), op.token.location));
+            OpCode::While { .. } => {
+                block_stack_states.push((op.token.location, stack.clone(), false));
             }
-            OpCode::EndIf { .. } | OpCode::EndWhile { .. } => {
-                let (open_depth, open_loc) = stack_depths
+            OpCode::Do { .. } => {
+                stack_check!(diags, stack, interner, op, [PorthType::Bool]);
+                let (open_loc, expected_stack, _) = block_stack_states
+                    .last()
+                    .expect("ICE: EndWhile/EndIf requires a stack depth");
+
+                compare_expected_stacks(
+                    expected_stack,
+                    &stack,
+                    &mut diags,
+                    *open_loc,
+                    op,
+                    "while-do condition must leave the stack in the same state it entered with",
+                );
+
+                // Restore the stack so that we know it's the expected state before the body executes.
+                stack.clear();
+                stack.extend_from_slice(expected_stack);
+            }
+            OpCode::EndWhile { .. } => {
+                let (open_loc, expected_stack, _) = block_stack_states
                     .pop()
                     .expect("ICE: EndWhile/EndIf requires a stack depth");
 
-                match open_depth.cmp(&stack.len()) {
-                    std::cmp::Ordering::Less => {
-                        generate_block_depth_mismatch(
-                            &mut diags,
-                            open_loc,
-                            op.token.location,
-                            open_depth,
-                            stack.len(),
-                        );
+                compare_expected_stacks(
+                    &expected_stack,
+                    &stack,
+                    &mut diags,
+                    open_loc,
+                    op,
+                    "while-do blocks must leave the stack in the same state it entered with",
+                );
 
-                        stack.truncate(open_depth);
-                    }
-                    std::cmp::Ordering::Greater => {
-                        generate_block_depth_mismatch(
-                            &mut diags,
-                            open_loc,
-                            op.token.location,
-                            open_depth,
-                            stack.len(),
-                        );
+                // Now that we've checked, we need to restore the stack to the state it was in
+                // prior to the branch, so that the remainder of the code can operate as if
+                // we never went down it.
+                stack = expected_stack;
+            }
 
-                        stack.resize(open_depth, PorthType::Unknown);
-                    }
-                    std::cmp::Ordering::Equal => {}
-                }
+            OpCode::If { .. } => {
+                stack_check!(diags, stack, interner, op, [PorthType::Bool]);
+                block_stack_states.push((op.token.location, stack.clone(), false));
             }
             OpCode::Else { .. } => {
-                let (open_depth, open_loc) = stack_depths
-                    .last()
-                    .copied()
+                // If the if-expr has an else-branch, then both branches are allowed to alter the state of the
+                // stack *as long as* both alter it in the same way.
+                // We need to restore the stack to how it was when we entered the if-expr, but need to store
+                // the exit state of the true branch to enforce that both branches leave the stack in the same
+                // state.
+
+                let (_, entry_stack, had_else) = block_stack_states
+                    .last_mut()
                     .expect("ICE: Else requires a stack depth");
 
-                match open_depth.cmp(&stack.len()) {
-                    std::cmp::Ordering::Less => {
-                        generate_block_depth_mismatch(
-                            &mut diags,
-                            open_loc,
-                            op.token.location,
-                            open_depth,
-                            stack.len(),
-                        );
+                // We need the state of the stack from the true-branch, so we can restore that on the end-tag.
+                let exit_branch = stack.clone();
+                *had_else = true;
 
-                        stack.truncate(open_depth);
-                    }
-                    std::cmp::Ordering::Greater => {
-                        generate_block_depth_mismatch(
-                            &mut diags,
-                            open_loc,
-                            op.token.location,
-                            open_depth,
-                            stack.len(),
-                        );
+                // Now we need to restore the stack to the state it was in prior to entering the if-expr, so
+                // that the else branch can operate on the same state.
+                stack.clear();
+                stack.extend_from_slice(entry_stack);
+                *entry_stack = exit_branch;
+            }
+            OpCode::EndIf { .. } => {
+                let (open_loc, expected_stack, had_else) = block_stack_states
+                    .pop()
+                    .expect("ICE: EndWhile/EndIf requires a stack depth");
 
-                        stack.resize(open_depth, PorthType::Unknown);
-                    }
-                    std::cmp::Ordering::Equal => {}
-                }
+                let msg = if had_else {
+                    "if-else blocks must leave the stack in the same state"
+                } else {
+                    "if-end blocks must leave the stack in the same state it entered with"
+                };
+
+                compare_expected_stacks(&expected_stack, &stack, &mut diags, open_loc, op, msg);
+
+                // Now that we've checked, we need to restore the stack to the state it was in
+                // prior to the branch, so that the remainder of the code can operate as if
+                // we never went down it.
+                stack = expected_stack;
             }
 
             OpCode::Greater
