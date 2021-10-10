@@ -13,20 +13,38 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PorthType {
+enum PorthTypeKind {
     Int,
     Ptr,
     Bool,
     Unknown,
 }
 
-impl fmt::Display for PorthType {
+#[derive(Debug, Clone, Copy, Eq)]
+struct PorthType {
+    kind: PorthTypeKind,
+    location: SourceLocation,
+}
+
+impl PorthType {
+    fn new(kind: PorthTypeKind, location: SourceLocation) -> Self {
+        Self { kind, location }
+    }
+}
+
+impl PartialEq for PorthType {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl fmt::Display for PorthTypeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PorthType::Int => "Int".fmt(f),
-            PorthType::Ptr => "Ptr".fmt(f),
-            PorthType::Bool => "Bool".fmt(f),
-            PorthType::Unknown => "Unknown".fmt(f),
+            PorthTypeKind::Int => "Int".fmt(f),
+            PorthTypeKind::Ptr => "Ptr".fmt(f),
+            PorthTypeKind::Bool => "Bool".fmt(f),
+            PorthTypeKind::Unknown => "Unknown".fmt(f),
         }
     }
 }
@@ -40,14 +58,14 @@ fn generate_type_mismatch(
     let mut message = format!("cannot use `{}` on ", operator_str);
     match types {
         [] => unreachable!(),
-        [a] => write!(&mut message, "`{:?}`", a).unwrap(),
-        [a, b] => write!(&mut message, "`{:?}` and `{:?}`", a, b).unwrap(),
+        [a] => write!(&mut message, "`{:?}`", a.kind).unwrap(),
+        [a, b] => write!(&mut message, "`{}` and `{}`", a.kind, b.kind).unwrap(),
         [xs @ .., last] => {
             for x in xs {
-                write!(&mut message, "`{:?}`, ", x).unwrap();
+                write!(&mut message, "`{:?}`, ", x.kind).unwrap();
             }
 
-            write!(&mut message, "and `{:?}`", last).unwrap();
+            write!(&mut message, "and `{:?}`", last.kind).unwrap();
         }
     }
 
@@ -60,6 +78,13 @@ fn generate_type_mismatch(
         labels.push(
             Label::secondary(source.file_id, source.range()).with_message("expanded from here"),
         );
+    }
+
+    for ty in types {
+        labels.push(
+            Label::secondary(ty.location.file_id, ty.location.range())
+                .with_message(format!("{}", ty.kind)),
+        )
     }
 
     let diag = Diagnostic::error()
@@ -157,8 +182,8 @@ fn compare_expected_stacks(
                 diag.notes.push(format!(
                     "{:<4} | {:<8} | {:>8}",
                     actual_stack.len() - idx - 1,
-                    a,
-                    b
+                    a.kind,
+                    b.kind
                 ));
             }
 
@@ -192,6 +217,16 @@ macro_rules! stack_check {
     };
 }
 
+macro_rules! kind_pat {
+    ($( [ $( $p:path ),+ ] )|+ ) => {
+        $(
+            [
+                $( PorthType { kind: $p, .. } ),+
+            ]
+        )|+
+    };
+}
+
 pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut stack: Vec<PorthType> = Vec::new();
     let mut block_stack_states: Vec<(SourceLocation, Vec<PorthType>, bool)> = Vec::new();
@@ -205,17 +240,25 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack,
                     interner,
                     op,
-                    [PorthType::Int, PorthType::Int]
-                        | [PorthType::Int, PorthType::Ptr]
-                        | [PorthType::Ptr, PorthType::Int]
+                    kind_pat!(
+                        [PorthTypeKind::Int, PorthTypeKind::Int]
+                            | [PorthTypeKind::Int, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Int]
+                    )
                 );
 
                 match res {
-                    Some([PorthType::Int, PorthType::Int]) => stack.push(PorthType::Int),
-                    Some([PorthType::Ptr, PorthType::Int]) => stack.push(PorthType::Ptr),
-                    Some([PorthType::Int, PorthType::Ptr]) => stack.push(PorthType::Ptr),
+                    Some(kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
+                    }
+                    Some(kind_pat!([PorthTypeKind::Ptr, PorthTypeKind::Int])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
+                    }
+                    Some(kind_pat!([PorthTypeKind::Int, PorthTypeKind::Ptr])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
+                    }
                     Some(_) => unreachable!(),
-                    None => stack.push(PorthType::Unknown),
+                    None => stack.push(PorthType::new(PorthTypeKind::Unknown, op.token.location)),
                 }
             }
             OpCode::Subtract => {
@@ -224,17 +267,25 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack,
                     interner,
                     op,
-                    [PorthType::Int, PorthType::Int]
-                        | [PorthType::Ptr, PorthType::Ptr]
-                        | [PorthType::Ptr, PorthType::Int]
+                    kind_pat!(
+                        [PorthTypeKind::Int, PorthTypeKind::Int]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Int]
+                    )
                 );
 
                 match res {
-                    Some([PorthType::Int, PorthType::Int]) => stack.push(PorthType::Int),
-                    Some([PorthType::Ptr, PorthType::Ptr]) => stack.push(PorthType::Ptr),
-                    Some([PorthType::Ptr, PorthType::Int]) => stack.push(PorthType::Ptr),
+                    Some(kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
+                    }
+                    Some(kind_pat!([PorthTypeKind::Ptr, PorthTypeKind::Ptr])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
+                    }
+                    Some(kind_pat!([PorthTypeKind::Ptr, PorthTypeKind::Int])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
+                    }
                     Some(_) => unreachable!(),
-                    None => stack.push(PorthType::Unknown),
+                    None => stack.push(PorthType::new(PorthTypeKind::Unknown, op.token.location)),
                 }
             }
 
@@ -243,18 +294,37 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             | OpCode::BitAnd
             | OpCode::ShiftLeft
             | OpCode::ShiftRight => {
-                stack_check!(diags, stack, interner, op, [PorthType::Int, PorthType::Int]);
-                stack.push(PorthType::Int);
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])
+                );
+
+                stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
 
             OpCode::DivMod => {
-                stack_check!(diags, stack, interner, op, [PorthType::Int, PorthType::Int]);
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])
+                );
 
-                stack.extend_from_slice(&[PorthType::Int, PorthType::Int]);
+                stack.extend_from_slice(&[
+                    PorthType::new(PorthTypeKind::Int, op.token.location),
+                    PorthType::new(PorthTypeKind::Int, op.token.location),
+                ]);
             }
 
-            OpCode::PushInt(_) => stack.push(PorthType::Int),
-            OpCode::PushStr(_) => stack.extend_from_slice(&[PorthType::Int, PorthType::Ptr]),
+            OpCode::PushInt(_) => stack.push(PorthType::new(PorthTypeKind::Int, op.token.location)),
+            OpCode::PushStr(_) => stack.extend_from_slice(&[
+                PorthType::new(PorthTypeKind::Int, op.token.location),
+                PorthType::new(PorthTypeKind::Ptr, op.token.location),
+            ]),
             OpCode::Drop => {
                 stack_check!(diags, stack, interner, op, [_]);
             }
@@ -263,7 +333,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 block_stack_states.push((op.token.location, stack.clone(), false));
             }
             OpCode::Do { .. } => {
-                stack_check!(diags, stack, interner, op, [PorthType::Bool]);
+                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Bool]));
                 let (open_loc, expected_stack, _) = block_stack_states
                     .last()
                     .expect("ICE: EndWhile/EndIf requires a stack depth");
@@ -302,7 +372,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             }
 
             OpCode::If { .. } => {
-                stack_check!(diags, stack, interner, op, [PorthType::Bool]);
+                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Bool]));
                 block_stack_states.push((op.token.location, stack.clone(), false));
             }
             OpCode::Else { .. } => {
@@ -351,18 +421,24 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             | OpCode::LessEqual
             | OpCode::Equal
             | OpCode::NotEq => {
-                stack_check!(diags, stack, interner, op, [PorthType::Int, PorthType::Int]);
-                stack.push(PorthType::Bool);
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])
+                );
+                stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
             }
 
             OpCode::Print => {
-                stack_check!(diags, stack, interner, op, [PorthType::Int]);
+                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Int]));
             }
             OpCode::Dup { depth } => {
                 if stack.len() < (depth + 1) {
                     generate_stack_exhaustion(&mut diags, op, stack.len(), depth + 1);
                     // We don't know what was expected, but we need something there.
-                    stack.push(PorthType::Unknown);
+                    stack.push(PorthType::new(PorthTypeKind::Unknown, op.token.location));
                 } else {
                     let ty = stack[stack.len() - 1 - depth];
                     stack.push(ty);
@@ -377,11 +453,17 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 [a] => {
                     let a = *a;
                     generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
-                    stack.extend_from_slice(&[PorthType::Unknown, a]);
+                    stack.extend_from_slice(&[
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                        a,
+                    ]);
                 }
                 [] => {
                     generate_stack_exhaustion(&mut diags, op, 0, op.code.pop_count());
-                    stack.extend_from_slice(&[PorthType::Unknown, PorthType::Unknown]);
+                    stack.extend_from_slice(&[
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                    ]);
                 }
             },
 
@@ -393,25 +475,41 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     let a = *a;
                     generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
                     stack.clear();
-                    stack.extend_from_slice(&[a, PorthType::Unknown]);
+                    stack.extend_from_slice(&[
+                        a,
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                    ]);
                 }
                 [] => {
                     generate_stack_exhaustion(&mut diags, op, 0, op.code.pop_count());
-                    stack.extend_from_slice(&[PorthType::Unknown, PorthType::Unknown]);
+                    stack.extend_from_slice(&[
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
+                    ]);
                 }
             },
 
-            OpCode::Mem { .. } => stack.push(PorthType::Ptr),
+            OpCode::Mem { .. } => stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location)),
             OpCode::Load | OpCode::Load64 => {
-                stack_check!(diags, stack, interner, op, [PorthType::Ptr]);
-                stack.push(PorthType::Int);
+                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Ptr]));
+                stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
             OpCode::Store | OpCode::Store64 => {
-                stack_check!(diags, stack, interner, op, [_, PorthType::Ptr]);
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!(
+                        [PorthTypeKind::Int, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Bool, PorthTypeKind::Ptr]
+                    )
+                );
             }
 
-            OpCode::ArgC => stack.push(PorthType::Int),
-            OpCode::ArgV => stack.push(PorthType::Ptr),
+            OpCode::ArgC => stack.push(PorthType::new(PorthTypeKind::Int, op.token.location)),
+            OpCode::ArgV => stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location)),
 
             OpCode::CastPtr => {
                 stack_check!(
@@ -419,9 +517,9 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack,
                     interner,
                     op,
-                    [PorthType::Int] | [PorthType::Ptr]
+                    kind_pat!([PorthTypeKind::Int] | [PorthTypeKind::Ptr])
                 );
-                stack.push(PorthType::Ptr);
+                stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
             }
 
             OpCode::SysCall(num_args @ 0..=6) => {
@@ -432,7 +530,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack.truncate(stack.len() - required);
                 }
 
-                stack.push(PorthType::Int);
+                stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
 
             OpCode::SysCall(_) | OpCode::Ident(_) | OpCode::Include(_) | OpCode::End { .. } => {
