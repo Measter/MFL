@@ -224,12 +224,15 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack,
                     interner,
                     op,
-                    [PorthType::Int, PorthType::Int] | [PorthType::Ptr, PorthType::Ptr]
+                    [PorthType::Int, PorthType::Int]
+                        | [PorthType::Ptr, PorthType::Ptr]
+                        | [PorthType::Ptr, PorthType::Int]
                 );
 
                 match res {
                     Some([PorthType::Int, PorthType::Int]) => stack.push(PorthType::Int),
                     Some([PorthType::Ptr, PorthType::Ptr]) => stack.push(PorthType::Ptr),
+                    Some([PorthType::Ptr, PorthType::Int]) => stack.push(PorthType::Ptr),
                     Some(_) => unreachable!(),
                     None => stack.push(PorthType::Unknown),
                 }
