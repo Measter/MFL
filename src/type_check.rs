@@ -435,12 +435,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 stack = expected_stack;
             }
 
-            OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Equal
-            | OpCode::NotEq => {
+            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
                 stack_check!(
                     diags,
                     stack,
@@ -448,6 +443,21 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     op,
                     kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])
                 );
+                stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
+            }
+            OpCode::Equal | OpCode::NotEq => {
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!(
+                        [PorthTypeKind::Int, PorthTypeKind::Int]
+                            | [PorthTypeKind::Bool, PorthTypeKind::Bool]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
+                    )
+                );
+
                 stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
             }
 
