@@ -23,18 +23,18 @@ pub enum OpCode {
     BitAnd,
     CastPtr,
     DivMod,
-    Drop,
     Do { end_ip: usize, condition_ip: usize },
     Dup { depth: usize },
     DupPair,
+    Drop,
+    Else { else_start: usize, end_ip: usize },
     End { ip: usize },
+    EndIf { ip: usize },
+    EndWhile { condition_ip: usize, end_ip: usize },
     Equal,
     Ident(Spur),
     If { end_ip: usize },
     Include(Spur),
-    Else { else_start: usize, end_ip: usize },
-    EndIf { ip: usize },
-    EndWhile { condition_ip: usize, end_ip: usize },
     Less,
     LessEqual,
     Load,
@@ -80,10 +80,10 @@ impl OpCode {
             OpCode::CastPtr
             | OpCode::Drop
             | OpCode::Do { .. }
-            | OpCode::Print
             | OpCode::If { .. }
             | OpCode::Load
-            | OpCode::Load64 => 1,
+            | OpCode::Load64
+            | OpCode::Print => 1,
 
             OpCode::Dup { depth } => depth + 1,
 
