@@ -47,6 +47,7 @@ pub enum OpCode {
     Print,
     PushInt(u64),
     PushStr(Spur),
+    Rot,
     ShiftLeft,
     ShiftRight,
     Store { addr_first: bool },
@@ -60,6 +61,8 @@ pub enum OpCode {
 impl OpCode {
     pub fn pop_count(self) -> usize {
         match self {
+            OpCode::Rot => 3,
+
             OpCode::Add
             | OpCode::BitOr
             | OpCode::BitAnd
@@ -108,6 +111,8 @@ impl OpCode {
 
     pub fn push_count(self) -> usize {
         match self {
+            OpCode::Rot => 3,
+
             OpCode::Dup { depth } => depth + 2,
 
             OpCode::Add
@@ -179,6 +184,7 @@ impl OpCode {
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
+            | Rot
             | Store { .. }
             | Store64 { .. }
             | Swap
@@ -225,6 +231,7 @@ impl OpCode {
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
+            | Rot
             | Store { .. }
             | Store64 { .. }
             | Swap
@@ -269,6 +276,7 @@ impl OpCode {
             | NotEq
             | PushInt(_)
             | PushStr(_)
+            | Rot
             | Store { .. }
             | Store64 { .. }
             | Swap
@@ -307,6 +315,7 @@ impl OpCode {
             | Multiply
             | PushInt(_)
             | PushStr(_)
+            | Rot
             | ShiftLeft
             | ShiftRight
             | Store { .. }
@@ -467,6 +476,7 @@ pub fn parse_token(
             TokenKind::Print => ops.push(Op::new(OpCode::Print, *token)),
             TokenKind::Dup(depth) => ops.push(Op::new(OpCode::Dup { depth }, *token)),
             TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, *token)),
+            TokenKind::Rot => ops.push(Op::new(OpCode::Rot, *token)),
             TokenKind::Swap => ops.push(Op::new(OpCode::Swap, *token)),
 
             TokenKind::Mem => ops.push(Op::new(OpCode::Mem { offset: 0 }, *token)),

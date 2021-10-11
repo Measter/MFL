@@ -43,6 +43,7 @@ pub enum TokenKind {
     NotEqual,
     Plus,
     Print,
+    Rot,
     ShiftLeft,
     ShiftRight,
     Star,
@@ -85,6 +86,7 @@ impl TokenKind {
             | TokenKind::NotEqual
             | TokenKind::Plus
             | TokenKind::Print
+            | TokenKind::Rot
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
             | TokenKind::Star
@@ -377,6 +379,7 @@ impl<'source> Scanner<'source> {
                     "mem" => TokenKind::Mem,
                     "over" => TokenKind::Dup(1),
                     "print" => TokenKind::Print,
+                    "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
                     "swap" => TokenKind::Swap,

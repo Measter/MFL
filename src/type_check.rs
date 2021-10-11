@@ -496,7 +496,17 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     ]);
                 }
             },
-
+            OpCode::Rot => {
+                match &*stack {
+                    [.., _, _, _] => {}
+                    _ => {
+                        generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
+                        stack.resize(3, PorthType::new(PorthTypeKind::Unknown, op.token.location));
+                    }
+                }
+                let start = stack.len() - 3;
+                stack[start..].rotate_left(1);
+            }
             OpCode::Swap => match stack.as_mut_slice() {
                 [.., a, b] => {
                     std::mem::swap(a, b);

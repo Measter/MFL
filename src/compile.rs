@@ -162,8 +162,15 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    push QWORD [rsp+8]")?;
             writeln!(output, "    push QWORD [rsp+8]")?;
         }
-        OpCode::Swap => {
+        OpCode::Rot => {
             writeln!(output, "    pop r8")?;
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    pop r10")?;
+            writeln!(output, "    push r9")?;
+            writeln!(output, "    push r8")?;
+            writeln!(output, "    push r10")?;
+        }
+        OpCode::Swap => {
             writeln!(output, "    pop r9")?;
             writeln!(output, "    push r8")?;
             writeln!(output, "    push r9")?;

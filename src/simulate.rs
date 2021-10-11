@@ -222,7 +222,10 @@ pub(crate) fn simulate_execute_program(
                     stack.extend_from_within(stack.len() - 2..);
                 }
             }
-
+            OpCode::Rot => {
+                let start = stack.len() - 3;
+                stack[start..].rotate_left(1);
+            }
             OpCode::Swap => {
                 if let [.., a, b] = &mut *stack {
                     std::mem::swap(a, b);
