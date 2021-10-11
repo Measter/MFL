@@ -100,7 +100,7 @@ fn load_program(
 
     let file_id = source_store.add(file, &contents);
 
-    let tokens = match lexer::lex_file(&contents, file_id, interner) {
+    let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
         Ok(program) => program,
         Err(diag) => return Ok(Err(vec![diag])),
     };
@@ -151,7 +151,7 @@ fn load_program(
 
         let file_id = source_store.add(&include_path, &contents);
 
-        let tokens = match lexer::lex_file(&contents, file_id, interner) {
+        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
             Ok(program) => program,
             Err(diag) => return Ok(Err(vec![diag])),
         };

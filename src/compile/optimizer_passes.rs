@@ -318,7 +318,18 @@ fn push_arithmetic<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op
 fn mem_push_store<'a>(_: &Interners, ops: &'a [Op]) -> Option<(Vec<u8>, &'a [Op], &'a [Op])> {
     let (mem, push) = match ops {
         [mem, push, store, ..]
-            if mem.code.is_mem() && push.code.is_push_int() && store.code.is_store() =>
+            if mem.code.is_mem()
+                && push.code.is_push_int()
+                && store.code.is_store()
+                && !store.code.unwrap_store() =>
+        {
+            (mem, push)
+        }
+        [push, mem, store, ..]
+            if mem.code.is_mem()
+                && push.code.is_push_int()
+                && store.code.is_store()
+                && store.code.unwrap_store() =>
         {
             (mem, push)
         }

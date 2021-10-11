@@ -514,7 +514,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Ptr]));
                 stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
-            OpCode::Store | OpCode::Store64 => {
+            OpCode::Store { addr_first: false } | OpCode::Store64 { addr_first: false } => {
                 stack_check!(
                     diags,
                     stack,
@@ -524,6 +524,19 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                         [PorthTypeKind::Int, PorthTypeKind::Ptr]
                             | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
                             | [PorthTypeKind::Bool, PorthTypeKind::Ptr]
+                    )
+                );
+            }
+            OpCode::Store { addr_first: true } | OpCode::Store64 { addr_first: true } => {
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!(
+                        [PorthTypeKind::Ptr, PorthTypeKind::Int]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Bool]
                     )
                 );
             }

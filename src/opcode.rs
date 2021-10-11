@@ -49,8 +49,8 @@ pub enum OpCode {
     PushStr(Spur),
     ShiftLeft,
     ShiftRight,
-    Store,
-    Store64,
+    Store { addr_first: bool },
+    Store64 { addr_first: bool },
     Subtract,
     Swap,
     SysCall(usize),
@@ -73,13 +73,13 @@ impl OpCode {
             | OpCode::NotEq
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
-            | OpCode::Store
-            | OpCode::Store64
+            | OpCode::Store { .. }
+            | OpCode::Store64 { .. }
             | OpCode::Subtract => 2,
 
             OpCode::CastPtr
-            | OpCode::Drop
             | OpCode::Do { .. }
+            | OpCode::Drop
             | OpCode::If { .. }
             | OpCode::Load
             | OpCode::Load64
@@ -144,8 +144,8 @@ impl OpCode {
             | OpCode::Else { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
-            | OpCode::Store
-            | OpCode::Store64
+            | OpCode::Store { .. }
+            | OpCode::Store64 { .. }
             | OpCode::Swap
             | OpCode::While { .. } => 0,
         }
@@ -179,8 +179,8 @@ impl OpCode {
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
-            | Store
-            | Store64
+            | Store { .. }
+            | Store64 { .. }
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -225,8 +225,8 @@ impl OpCode {
             | Mem { .. }
             | PushInt(_)
             | PushStr(_)
-            | Store
-            | Store64
+            | Store { .. }
+            | Store64 { .. }
             | Swap
             | SysCall(_)
             | While { .. } => {
@@ -269,8 +269,8 @@ impl OpCode {
             | NotEq
             | PushInt(_)
             | PushStr(_)
-            | Store
-            | Store64
+            | Store { .. }
+            | Store64 { .. }
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -309,8 +309,8 @@ impl OpCode {
             | PushStr(_)
             | ShiftLeft
             | ShiftRight
-            | Store
-            | Store64
+            | Store { .. }
+            | Store64 { .. }
             | Subtract
             | Swap
             | SysCall(_)
@@ -329,6 +329,13 @@ impl OpCode {
         match self {
             Self::Dup { depth } => depth,
             _ => panic!("expected OpCode::Dup"),
+        }
+    }
+
+    pub fn unwrap_store(self) -> bool {
+        match self {
+            Self::Store { addr_first } | Self::Store64 { addr_first } => addr_first,
+            _ => panic!("expected OpCode::Store or OpCode::Store64"),
         }
     }
 }
@@ -465,8 +472,12 @@ pub fn parse_token(
             TokenKind::Mem => ops.push(Op::new(OpCode::Mem { offset: 0 }, *token)),
             TokenKind::Load => ops.push(Op::new(OpCode::Load, *token)),
             TokenKind::Load64 => ops.push(Op::new(OpCode::Load64, *token)),
-            TokenKind::Store => ops.push(Op::new(OpCode::Store, *token)),
-            TokenKind::Store64 => ops.push(Op::new(OpCode::Store64, *token)),
+            TokenKind::Store { addr_first } => {
+                ops.push(Op::new(OpCode::Store { addr_first }, *token))
+            }
+            TokenKind::Store64 { addr_first } => {
+                ops.push(Op::new(OpCode::Store64 { addr_first }, *token))
+            }
 
             TokenKind::Equal => ops.push(Op::new(OpCode::Equal, *token)),
             TokenKind::Greater => ops.push(Op::new(OpCode::Greater, *token)),
@@ -478,6 +489,7 @@ pub fn parse_token(
             TokenKind::Ident => ops.push(Op::new(OpCode::Ident(token.lexeme), *token)),
             TokenKind::Integer(value) => ops.push(Op::new(OpCode::PushInt(value), *token)),
             TokenKind::String(id) => ops.push(Op::new(OpCode::PushStr(id), *token)),
+            TokenKind::Here(id) => ops.push(Op::new(OpCode::PushStr(id), *token)),
             TokenKind::ArgC => ops.push(Op::new(OpCode::ArgC, *token)),
             TokenKind::ArgV => ops.push(Op::new(OpCode::ArgV, *token)),
 

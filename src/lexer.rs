@@ -1,11 +1,14 @@
-use std::{iter::Peekable, ops::Range, str::CharIndices};
+use std::{fmt::Write, iter::Peekable, ops::Range, str::CharIndices};
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    files::Files,
+};
 use lasso::Spur;
 
 use crate::{
     interners::Interners,
-    source_file::{FileId, SourceLocation},
+    source_file::{FileId, SourceLocation, SourceStorage},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +28,7 @@ pub enum TokenKind {
     Equal,
     Greater,
     GreaterEqual,
+    Here(Spur),
     Ident,
     If,
     Include,
@@ -43,8 +47,8 @@ pub enum TokenKind {
     ShiftRight,
     Star,
     String(Spur),
-    Store,
-    Store64,
+    Store { addr_first: bool },
+    Store64 { addr_first: bool },
     Swap,
     SysCall(usize),
     While,
@@ -68,6 +72,7 @@ impl TokenKind {
             | TokenKind::Equal
             | TokenKind::Greater
             | TokenKind::GreaterEqual
+            | TokenKind::Here(_)
             | TokenKind::Ident
             | TokenKind::Include
             | TokenKind::Integer(_)
@@ -84,8 +89,8 @@ impl TokenKind {
             | TokenKind::ShiftRight
             | TokenKind::Star
             | TokenKind::String(_)
-            | TokenKind::Store
-            | TokenKind::Store64
+            | TokenKind::Store { .. }
+            | TokenKind::Store64 { .. }
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
@@ -213,6 +218,7 @@ impl<'source> Scanner<'source> {
         &mut self,
         input: &str,
         interner: &mut Interners,
+        source_store: &SourceStorage,
     ) -> Result<Option<Token>, Diagnostic<FileId>> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
@@ -328,10 +334,14 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
-                    "." => TokenKind::Store,
+                    "." => TokenKind::Store { addr_first: false },
                     "," => TokenKind::Load,
-                    ".64" => TokenKind::Store64,
+                    ".64" => TokenKind::Store64 { addr_first: false },
                     ",64" => TokenKind::Load64,
+                    "@" => TokenKind::Load,
+                    "!" => TokenKind::Store { addr_first: true },
+                    "@64" => TokenKind::Load64,
+                    "!64" => TokenKind::Store64 { addr_first: true },
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
                     "bor" => TokenKind::BitOr,
@@ -343,6 +353,24 @@ impl<'source> Scanner<'source> {
                     "dup" => TokenKind::Dup(0),
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
+                    "here" => {
+                        // These should never fail; we get the file ID from the source store, and the store
+                        // has a full copy of the contents.
+                        let filename = source_store.name(self.file_id).unwrap();
+                        let location = source_store
+                            .location(self.file_id, self.cur_token_start)
+                            .unwrap();
+
+                        self.string_buf.clear();
+                        write!(
+                            &mut self.string_buf,
+                            "{}:{}:{}",
+                            filename, location.line_number, location.column_number
+                        )
+                        .unwrap();
+                        let id = interner.intern_literal(&self.string_buf);
+                        TokenKind::Here(id)
+                    }
                     "if" => TokenKind::If,
                     "include" => TokenKind::Include,
                     "over" => TokenKind::Dup(1),
@@ -375,6 +403,7 @@ pub(crate) fn lex_file(
     contents: &str,
     file_id: FileId,
     interner: &mut Interners,
+    source_store: &SourceStorage,
 ) -> Result<Vec<Token>, Diagnostic<FileId>> {
     let mut scanner = Scanner {
         chars: contents.char_indices().peekable(),
@@ -389,7 +418,7 @@ pub(crate) fn lex_file(
     while scanner.peek().is_some() {
         scanner.cur_token_start = scanner.next_token_start;
 
-        match scanner.scan_token(contents, interner)? {
+        match scanner.scan_token(contents, interner, source_store)? {
             Some(op) => ops.push(op),
             None => continue,
         };

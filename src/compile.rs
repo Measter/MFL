@@ -182,14 +182,24 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    pop r8")?;
             writeln!(output, "    push QWORD [r8]")?;
         }
-        OpCode::Store => {
+        OpCode::Store { addr_first: false } => {
             writeln!(output, "    pop r9")?;
             writeln!(output, "    pop r8")?;
             writeln!(output, "    mov BYTE [r8], r9b")?;
         }
-        OpCode::Store64 => {
+        OpCode::Store { addr_first: true } => {
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    pop r9")?;
+            writeln!(output, "    mov BYTE [r8], r9b")?;
+        }
+        OpCode::Store64 { addr_first: false } => {
             writeln!(output, "    pop r9")?;
             writeln!(output, "    pop r8")?;
+            writeln!(output, "    mov QWORD [r8], r9")?;
+        }
+        OpCode::Store64 { addr_first: true } => {
+            writeln!(output, "    pop r8")?;
+            writeln!(output, "    pop r9")?;
             writeln!(output, "    mov QWORD [r8], r9")?;
         }
 
