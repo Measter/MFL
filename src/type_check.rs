@@ -198,6 +198,13 @@ macro_rules! stack_check {
         match $stack.popn() {
             Some( $(a @ $expected)|+) => Some(a),
             #[allow(unreachable_patterns)]
+            Some(ts) if ts.iter().any(|ty| ty.kind == PorthTypeKind::Unknown) => {
+                // This means one or more operands were the result of a failed type check.
+                // In order to avoid flooding the user with errors that resulted from the
+                // original failure, we'll not emit an error here.
+                None
+            }
+            #[allow(unreachable_patterns)]
             Some(ts) => {
                 let lexeme = $interners.resolve_lexeme($op.token.lexeme);
                 generate_type_mismatch(&mut $errors, lexeme, $op, &ts);
