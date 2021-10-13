@@ -471,46 +471,39 @@ pub fn parse_token(
 
     let mut token_iter = tokens.iter().enumerate();
     while let Some((_, token)) = token_iter.next() {
-        match token.kind {
-            TokenKind::Drop => ops.push(Op::new(OpCode::Drop, *token)),
-            TokenKind::Print => ops.push(Op::new(OpCode::Print, *token)),
-            TokenKind::Dup(depth) => ops.push(Op::new(OpCode::Dup { depth }, *token)),
-            TokenKind::DupPair => ops.push(Op::new(OpCode::DupPair, *token)),
-            TokenKind::Rot => ops.push(Op::new(OpCode::Rot, *token)),
-            TokenKind::Swap => ops.push(Op::new(OpCode::Swap, *token)),
+        let kind = match token.kind {
+            TokenKind::Drop => OpCode::Drop,
+            TokenKind::Print => OpCode::Print,
+            TokenKind::Dup(depth) => OpCode::Dup { depth },
+            TokenKind::DupPair => OpCode::DupPair,
+            TokenKind::Rot => OpCode::Rot,
+            TokenKind::Swap => OpCode::Swap,
 
-            TokenKind::Mem => ops.push(Op::new(OpCode::Mem { offset: 0 }, *token)),
-            TokenKind::Load => ops.push(Op::new(OpCode::Load, *token)),
-            TokenKind::Load64 => ops.push(Op::new(OpCode::Load64, *token)),
-            TokenKind::Store { addr_first } => {
-                ops.push(Op::new(OpCode::Store { addr_first }, *token))
-            }
-            TokenKind::Store64 { addr_first } => {
-                ops.push(Op::new(OpCode::Store64 { addr_first }, *token))
-            }
+            TokenKind::Mem => OpCode::Mem { offset: 0 },
+            TokenKind::Load => OpCode::Load,
+            TokenKind::Load64 => OpCode::Load64,
+            TokenKind::Store { addr_first } => OpCode::Store { addr_first },
+            TokenKind::Store64 { addr_first } => OpCode::Store64 { addr_first },
 
-            TokenKind::Equal => ops.push(Op::new(OpCode::Equal, *token)),
-            TokenKind::Greater => ops.push(Op::new(OpCode::Greater, *token)),
-            TokenKind::GreaterEqual => ops.push(Op::new(OpCode::GreaterEqual, *token)),
-            TokenKind::Less => ops.push(Op::new(OpCode::Less, *token)),
-            TokenKind::LessEqual => ops.push(Op::new(OpCode::LessEqual, *token)),
-            TokenKind::NotEqual => ops.push(Op::new(OpCode::NotEq, *token)),
+            TokenKind::Equal => OpCode::Equal,
+            TokenKind::Greater => OpCode::Greater,
+            TokenKind::GreaterEqual => OpCode::GreaterEqual,
+            TokenKind::Less => OpCode::Less,
+            TokenKind::LessEqual => OpCode::LessEqual,
+            TokenKind::NotEqual => OpCode::NotEq,
 
-            TokenKind::Ident => ops.push(Op::new(OpCode::Ident(token.lexeme), *token)),
-            TokenKind::Integer(value) => ops.push(Op::new(OpCode::PushInt(value), *token)),
-            TokenKind::String(id) => ops.push(Op::new(OpCode::PushStr(id), *token)),
-            TokenKind::Here(id) => ops.push(Op::new(OpCode::PushStr(id), *token)),
-            TokenKind::ArgC => ops.push(Op::new(OpCode::ArgC, *token)),
-            TokenKind::ArgV => ops.push(Op::new(OpCode::ArgV, *token)),
+            TokenKind::Ident => OpCode::Ident(token.lexeme),
+            TokenKind::Integer(value) => OpCode::PushInt(value),
+            TokenKind::String(id) => OpCode::PushStr(id),
+            TokenKind::Here(id) => OpCode::PushStr(id),
+            TokenKind::ArgC => OpCode::ArgC,
+            TokenKind::ArgV => OpCode::ArgV,
 
-            TokenKind::While => ops.push(Op::new(OpCode::While { ip: usize::MAX }, *token)),
-            TokenKind::Do => ops.push(Op::new(
-                OpCode::Do {
-                    end_ip: usize::MAX,
-                    condition_ip: usize::MAX,
-                },
-                *token,
-            )),
+            TokenKind::While => OpCode::While { ip: usize::MAX },
+            TokenKind::Do => OpCode::Do {
+                end_ip: usize::MAX,
+                condition_ip: usize::MAX,
+            },
 
             TokenKind::Macro => {
                 let (name, body) = match parse_macro(
@@ -542,6 +535,8 @@ pub fn parse_token(
                         ]);
                     diags.push(diag);
                 }
+
+                continue;
             }
             TokenKind::Include => {
                 let (_, path_token) = match expect_token(
@@ -564,33 +559,32 @@ pub fn parse_token(
                 };
 
                 include_list.push((path_token, literal));
-                ops.push(Op::new(OpCode::Include(literal), *token));
+                OpCode::Include(literal)
             }
 
-            TokenKind::If => ops.push(Op::new(OpCode::If { end_ip: usize::MAX }, *token)),
-            TokenKind::Else => ops.push(Op::new(
-                OpCode::Else {
-                    else_start: usize::MAX,
-                    end_ip: usize::MAX,
-                },
-                *token,
-            )),
-            TokenKind::End => ops.push(Op::new(OpCode::End { ip: usize::MAX }, *token)),
+            TokenKind::If => OpCode::If { end_ip: usize::MAX },
+            TokenKind::Else => OpCode::Else {
+                else_start: usize::MAX,
+                end_ip: usize::MAX,
+            },
+            TokenKind::End => OpCode::End { ip: usize::MAX },
 
-            TokenKind::Minus => ops.push(Op::new(OpCode::Subtract, *token)),
-            TokenKind::Plus => ops.push(Op::new(OpCode::Add, *token)),
-            TokenKind::Star => ops.push(Op::new(OpCode::Multiply, *token)),
-            TokenKind::DivMod => ops.push(Op::new(OpCode::DivMod, *token)),
+            TokenKind::Minus => OpCode::Subtract,
+            TokenKind::Plus => OpCode::Add,
+            TokenKind::Star => OpCode::Multiply,
+            TokenKind::DivMod => OpCode::DivMod,
 
-            TokenKind::BitAnd => ops.push(Op::new(OpCode::BitAnd, *token)),
-            TokenKind::BitOr => ops.push(Op::new(OpCode::BitOr, *token)),
-            TokenKind::ShiftLeft => ops.push(Op::new(OpCode::ShiftLeft, *token)),
-            TokenKind::ShiftRight => ops.push(Op::new(OpCode::ShiftRight, *token)),
+            TokenKind::BitAnd => OpCode::BitAnd,
+            TokenKind::BitOr => OpCode::BitOr,
+            TokenKind::ShiftLeft => OpCode::ShiftLeft,
+            TokenKind::ShiftRight => OpCode::ShiftRight,
 
-            TokenKind::CastPtr => ops.push(Op::new(OpCode::CastPtr, *token)),
+            TokenKind::CastPtr => OpCode::CastPtr,
 
-            TokenKind::SysCall(id) => ops.push(Op::new(OpCode::SysCall(id), *token)),
-        }
+            TokenKind::SysCall(id) => OpCode::SysCall(id),
+        };
+
+        ops.push(Op::new(kind, *token));
     }
 
     diags.is_empty().then(|| ops).ok_or(diags)
