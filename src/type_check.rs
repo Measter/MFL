@@ -218,7 +218,7 @@ macro_rules! stack_check {
 }
 
 macro_rules! kind_pat {
-    ($( [ $( $p:path ),+ ] )|+ ) => {
+    ($( [ $( $p:pat ),+ ] )|+ ) => {
         $(
             [
                 $( PorthType { kind: $p, .. } ),+
@@ -441,7 +441,10 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     stack,
                     interner,
                     op,
-                    kind_pat!([PorthTypeKind::Int, PorthTypeKind::Int])
+                    kind_pat!(
+                        [PorthTypeKind::Int, PorthTypeKind::Int]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
+                    )
                 );
                 stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
             }
