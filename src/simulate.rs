@@ -250,9 +250,9 @@ pub(crate) fn simulate_execute_program(
                 let value = u64::from_le_bytes(value_bytes.try_into().unwrap());
                 stack.push(value);
             }
-            OpCode::Store { addr_first } => {
+            OpCode::Store { forth_style } => {
                 let [mut value, mut address] = stack.popn().unwrap();
-                if addr_first {
+                if forth_style {
                     std::mem::swap(&mut value, &mut address);
                 }
 
@@ -261,9 +261,9 @@ pub(crate) fn simulate_execute_program(
                     .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
                 *dest = value as u8;
             }
-            OpCode::Store64 { addr_first } => {
+            OpCode::Store64 { forth_style } => {
                 let [mut value, mut address] = stack.popn().unwrap();
-                if addr_first {
+                if forth_style {
                     std::mem::swap(&mut value, &mut address);
                 }
                 let address = address as usize;
