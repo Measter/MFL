@@ -126,7 +126,7 @@ pub(crate) fn simulate_execute_program(
                 *a *= b;
             }
             OpCode::DivMod => {
-                let [b, a] = stack.popn().unwrap();
+                let [a, b] = stack.popn().unwrap();
                 let (rem, quot) = (a % b, a / b);
                 stack.push(quot);
                 stack.push(rem);
@@ -185,19 +185,19 @@ pub(crate) fn simulate_execute_program(
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
-                let [b, a] = stack.popn().unwrap();
+                let [a, b] = stack.popn().unwrap();
                 stack.push((a > b) as u64);
             }
             OpCode::GreaterEqual => {
-                let [b, a] = stack.popn().unwrap();
+                let [a, b] = stack.popn().unwrap();
                 stack.push((a >= b) as u64);
             }
             OpCode::Less => {
-                let [b, a] = stack.popn().unwrap();
+                let [a, b] = stack.popn().unwrap();
                 stack.push((a < b) as u64);
             }
             OpCode::LessEqual => {
-                let [b, a] = stack.popn().unwrap();
+                let [a, b] = stack.popn().unwrap();
                 stack.push((a <= b) as u64);
             }
             OpCode::Equal => {
@@ -251,7 +251,7 @@ pub(crate) fn simulate_execute_program(
                 stack.push(value);
             }
             OpCode::Store { forth_style } => {
-                let [mut value, mut address] = stack.popn().unwrap();
+                let [mut address, mut value] = stack.popn().unwrap();
                 if forth_style {
                     std::mem::swap(&mut value, &mut address);
                 }
@@ -262,7 +262,7 @@ pub(crate) fn simulate_execute_program(
                 *dest = value as u8;
             }
             OpCode::Store64 { forth_style } => {
-                let [mut value, mut address] = stack.popn().unwrap();
+                let [mut address, mut value] = stack.popn().unwrap();
                 if forth_style {
                     std::mem::swap(&mut value, &mut address);
                 }
@@ -280,11 +280,11 @@ pub(crate) fn simulate_execute_program(
             OpCode::CastPtr => {}
 
             OpCode::SysCall(3) => {
-                let [syscall_id, arg1, arg2, arg3] = stack.popn().unwrap();
+                let [arg3, arg2, arg1, syscall_id] = stack.popn().unwrap();
                 make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, &mut stack, op)?;
             }
             OpCode::SysCall(1) => {
-                let [syscall_id, arg1] = stack.popn().unwrap();
+                let [arg1, syscall_id] = stack.popn().unwrap();
                 make_syscall1(syscall_id, arg1, &mut memory, op)?;
             }
             OpCode::SysCall(_) => {

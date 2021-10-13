@@ -544,9 +544,9 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     interner,
                     op,
                     kind_pat!(
-                        [PorthTypeKind::Int, PorthTypeKind::Ptr]
+                        [PorthTypeKind::Ptr, PorthTypeKind::Int]
                             | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
-                            | [PorthTypeKind::Bool, PorthTypeKind::Ptr]
+                            | [PorthTypeKind::Ptr, PorthTypeKind::Bool]
                     )
                 );
             }
@@ -557,9 +557,9 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     interner,
                     op,
                     kind_pat!(
-                        [PorthTypeKind::Ptr, PorthTypeKind::Int]
+                        [PorthTypeKind::Int, PorthTypeKind::Ptr]
                             | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
-                            | [PorthTypeKind::Ptr, PorthTypeKind::Bool]
+                            | [PorthTypeKind::Bool, PorthTypeKind::Ptr]
                     )
                 );
             }

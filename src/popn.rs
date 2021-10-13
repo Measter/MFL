@@ -21,9 +21,7 @@ impl<T> PopN<T> for Vec<T> {
 
             self.set_len(self.len() - N);
 
-            let mut dest = dest.assume_init();
-            dest.reverse();
-            Some(dest)
+            Some(dest.assume_init())
         }
     }
 
