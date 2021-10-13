@@ -514,21 +514,9 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 [.., a, b] => {
                     std::mem::swap(a, b);
                 }
-                [a] => {
-                    let a = *a;
+                _ => {
                     generate_stack_exhaustion(&mut diags, op, stack.len(), op.code.pop_count());
-                    stack.clear();
-                    stack.extend_from_slice(&[
-                        a,
-                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
-                    ]);
-                }
-                [] => {
-                    generate_stack_exhaustion(&mut diags, op, 0, op.code.pop_count());
-                    stack.extend_from_slice(&[
-                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
-                        PorthType::new(PorthTypeKind::Unknown, op.token.location),
-                    ]);
+                    stack.resize(2, PorthType::new(PorthTypeKind::Unknown, op.token.location));
                 }
             },
 
