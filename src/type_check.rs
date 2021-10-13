@@ -577,6 +577,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 let required = num_args + 1; //
                 if stack.len() < required {
                     generate_stack_exhaustion(&mut diags, op, stack.len(), required);
+                    stack.clear();
                 } else {
                     stack.truncate(stack.len() - required);
                 }
