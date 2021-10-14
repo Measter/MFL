@@ -125,7 +125,7 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
         OpCode::While { ip } => {
             writeln!(output, ".LBL{}:", ip)?;
         }
-        OpCode::Do { end_ip, .. } => {
+        OpCode::DoWhile { end_ip, .. } => {
             writeln!(output, "    pop r8")?;
             writeln!(output, "    test r8, r8")?;
             writeln!(output, "    jz .LBL{}", end_ip)?;
@@ -138,7 +138,8 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, ".LBL{}:", end_ip)?;
         }
 
-        OpCode::If { end_ip, .. } => {
+        OpCode::If => {}
+        OpCode::DoIf { end_ip, .. } => {
             writeln!(output, "    pop r8")?;
             writeln!(output, "    test r8, r8")?;
             writeln!(output, "    jz .LBL{}", end_ip)?;
@@ -231,14 +232,8 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }
-        OpCode::End { .. } => {
-            panic!("ICE: Encountered OpCode::End")
-        }
-        OpCode::Ident(_) => {
-            panic!("ICE: Encountered OpCode::Ident")
-        }
-        OpCode::Include(_) => {
-            panic!("ICE: Encountered OpCode::Include")
+        OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
+            panic!("ICE: Encountered {:?}", op.code)
         }
     }
 

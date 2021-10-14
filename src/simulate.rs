@@ -160,7 +160,7 @@ pub(crate) fn simulate_execute_program(
             }
 
             OpCode::While { .. } => {}
-            OpCode::Do { end_ip, .. } => {
+            OpCode::DoWhile { end_ip, .. } => {
                 let a = stack.pop().unwrap();
 
                 if a == 0 {
@@ -171,7 +171,8 @@ pub(crate) fn simulate_execute_program(
             OpCode::EndWhile { condition_ip, .. } => {
                 ip = condition_ip;
             }
-            OpCode::If { end_ip, .. } => {
+            OpCode::If => {}
+            OpCode::DoIf { end_ip, .. } => {
                 let a = stack.pop().unwrap();
 
                 if a == 0 {
@@ -290,9 +291,9 @@ pub(crate) fn simulate_execute_program(
             OpCode::SysCall(_) => {
                 return Err(generate_error("unsupported syscall", op.token.location));
             }
-            OpCode::End { .. } => panic!("ICE: Encountered OpCode::End"),
-            OpCode::Ident(_) => panic!("ICE: Encountered OpCode::Ident"),
-            OpCode::Include(_) => panic!("ICE: Encountered OpCode::Include"),
+            OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
+                panic!("ICE: Encountered {:?}", op.code)
+            }
         }
 
         ip += 1;

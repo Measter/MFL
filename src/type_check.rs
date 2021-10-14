@@ -359,11 +359,11 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             OpCode::While { .. } => {
                 block_stack_states.push((op.token.location, stack.clone(), false));
             }
-            OpCode::Do { .. } => {
+            OpCode::DoWhile { .. } => {
                 stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Bool]));
                 let (open_loc, expected_stack, _) = block_stack_states
                     .last()
-                    .expect("ICE: EndWhile/EndIf requires a stack depth");
+                    .expect("ICE: DoWhile requires a stack depth");
 
                 compare_expected_stacks(
                     expected_stack,
@@ -398,9 +398,27 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 stack = expected_stack;
             }
 
-            OpCode::If { .. } => {
-                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Bool]));
+            OpCode::If => {
                 block_stack_states.push((op.token.location, stack.clone(), false));
+            }
+            OpCode::DoIf { .. } => {
+                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Bool]));
+                let (open_loc, expected_stack, _) = block_stack_states
+                    .last()
+                    .expect("ICE: DoIf requires a stack depth");
+
+                compare_expected_stacks(
+                    expected_stack,
+                    &stack,
+                    &mut diags,
+                    *open_loc,
+                    op,
+                    "if-do condition must leave the stack in the same state it entered with",
+                );
+
+                // Restore the stack so that we know it's the expected state before the body executes.
+                stack.clear();
+                stack.extend_from_slice(expected_stack);
             }
             OpCode::Else { .. } => {
                 // If the if-expr has an else-branch, then both branches are allowed to alter the state of the
@@ -585,7 +603,11 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
 
-            OpCode::SysCall(_) | OpCode::Ident(_) | OpCode::Include(_) | OpCode::End { .. } => {
+            OpCode::SysCall(_)
+            | OpCode::Ident(_)
+            | OpCode::Include(_)
+            | OpCode::End
+            | OpCode::Do => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

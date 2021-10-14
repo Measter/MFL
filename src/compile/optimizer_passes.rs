@@ -103,7 +103,7 @@ fn dup_pushint_compare_doif<'a>(
             if dup.code.is_dup()
                 && push.code.is_push_int()
                 && op.code.is_compare()
-                && (doif.code.is_do() || doif.code.is_if()) =>
+                && (doif.code.is_do_while() || doif.code.is_do_if()) =>
         {
             (dup, push, op, doif)
         }
@@ -114,8 +114,8 @@ fn dup_pushint_compare_doif<'a>(
     let dup_depth = dup.code.unwrap_dup();
     let mut asm = Vec::new();
     let end_ip = match doif.code {
-        OpCode::Do { end_ip, .. } => end_ip,
-        OpCode::If { end_ip } => end_ip,
+        OpCode::DoWhile { end_ip, .. } => end_ip,
+        OpCode::DoIf { end_ip } => end_ip,
         _ => unreachable!(),
     };
     let op = op.code.compile_compare_op_inverse_suffix();
