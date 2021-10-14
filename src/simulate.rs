@@ -252,10 +252,12 @@ pub(crate) fn simulate_execute_program(
                 stack.push(value);
             }
             OpCode::Store { forth_style } => {
-                let [mut address, mut value] = stack.popn().unwrap();
-                if forth_style {
-                    std::mem::swap(&mut value, &mut address);
-                }
+                let [arg0, arg1] = stack.popn().unwrap();
+                let (address, value) = if forth_style {
+                    (arg1, arg0)
+                } else {
+                    (arg0, arg1)
+                };
 
                 let dest = memory
                     .get_mut(address as usize)
@@ -263,10 +265,12 @@ pub(crate) fn simulate_execute_program(
                 *dest = value as u8;
             }
             OpCode::Store64 { forth_style } => {
-                let [mut address, mut value] = stack.popn().unwrap();
-                if forth_style {
-                    std::mem::swap(&mut value, &mut address);
-                }
+                let [arg0, arg1] = stack.popn().unwrap();
+                let (address, value) = if forth_style {
+                    (arg1, arg0)
+                } else {
+                    (arg0, arg1)
+                };
                 let address = address as usize;
                 let value_bytes = value.to_le_bytes();
                 let dst_bytes = memory
