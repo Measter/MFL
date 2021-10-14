@@ -172,6 +172,7 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    push r10")?;
         }
         OpCode::Swap => {
+            writeln!(output, "    pop r8")?;
             writeln!(output, "    pop r9")?;
             writeln!(output, "    push r8")?;
             writeln!(output, "    push r9")?;
