@@ -353,6 +353,9 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 ]);
             }
 
+            OpCode::PushBool(_) => {
+                stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location))
+            }
             OpCode::PushInt(_) => stack.push(PorthType::new(PorthTypeKind::Int, op.token.location)),
             OpCode::PushStr(_) => stack.extend_from_slice(&[
                 PorthType::new(PorthTypeKind::Int, op.token.location),

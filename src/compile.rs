@@ -90,6 +90,7 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    push rdx")?;
         }
 
+        OpCode::PushBool(v) => writeln!(output, "    push {}", v as u64)?,
         OpCode::PushInt(v) if v <= u32::MAX as u64 => writeln!(output, "    push {}", v)?,
         OpCode::PushInt(v) => {
             writeln!(output, "    mov r8, {}", v)?;

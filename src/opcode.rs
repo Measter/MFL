@@ -47,6 +47,7 @@ pub enum OpCode {
     Multiply,
     NotEq,
     Print,
+    PushBool(bool),
     PushInt(u64),
     PushStr(Spur),
     Rot,
@@ -104,6 +105,7 @@ impl OpCode {
             | OpCode::If
             | OpCode::Include(_)
             | OpCode::Mem { .. }
+            | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr(_)
             | OpCode::Swap
@@ -135,6 +137,7 @@ impl OpCode {
             | OpCode::Mem { .. }
             | OpCode::Multiply
             | OpCode::NotEq
+            | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
@@ -190,11 +193,57 @@ impl OpCode {
             | Load
             | Load64
             | Mem { .. }
+            | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot
             | Store { .. }
             | Store64 { .. }
+            | Swap
+            | SysCall(_)
+            | While { .. } => false,
+        }
+    }
+
+    fn is_boolean_op(self) -> bool {
+        use OpCode::*;
+        match self {
+            Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
+
+            Add
+            | ArgC
+            | ArgV
+            | BitAnd
+            | BitOr
+            | CastPtr
+            | DivMod
+            | Do
+            | DoIf { .. }
+            | DoWhile { .. }
+            | Drop
+            | Print
+            | Dup { .. }
+            | DupPair
+            | End { .. }
+            | Ident(_)
+            | If
+            | Include(_)
+            | Else { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
+            | Load
+            | Load64
+            | Mem { .. }
+            | Multiply
+            | PushBool(_)
+            | PushInt(_)
+            | PushStr(_)
+            | Rot
+            | ShiftLeft
+            | ShiftRight
+            | Store { .. }
+            | Store64 { .. }
+            | Subtract
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -239,6 +288,7 @@ impl OpCode {
             | Load
             | Load64
             | Mem { .. }
+            | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot
@@ -286,6 +336,7 @@ impl OpCode {
             | Mem { .. }
             | Multiply
             | NotEq
+            | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot
@@ -327,6 +378,7 @@ impl OpCode {
             | Load64
             | Mem { .. }
             | Multiply
+            | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot

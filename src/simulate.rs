@@ -149,6 +149,7 @@ pub(crate) fn simulate_execute_program(
                 *a >>= b;
             }
 
+            OpCode::PushBool(val) => stack.push(val as _),
             OpCode::PushInt(val) => stack.push(val),
             OpCode::PushStr(id) => {
                 let literal = interner.resolve_literal(id);

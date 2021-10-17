@@ -141,8 +141,14 @@ fn binary_ops<'a>(
         location,
     };
 
+    let code = if op.code.is_boolean_op() {
+        PushBool(res != 0)
+    } else {
+        PushInt(res)
+    };
+
     let opt = Op {
-        code: PushInt(res),
+        code,
         token,
         expansions: Vec::new(),
     };
