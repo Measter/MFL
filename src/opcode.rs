@@ -146,18 +146,18 @@ impl OpCode {
 
             OpCode::DivMod | OpCode::DupPair | OpCode::PushStr(_) => 2,
 
-            OpCode::Drop
-            | OpCode::Do
+            OpCode::Do
+            | OpCode::Drop
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
-            | OpCode::Print
+            | OpCode::Else { .. }
             | OpCode::End { .. }
+            | OpCode::EndIf { .. }
+            | OpCode::EndWhile { .. }
             | OpCode::Ident(_)
             | OpCode::If
             | OpCode::Include(_)
-            | OpCode::Else { .. }
-            | OpCode::EndIf { .. }
-            | OpCode::EndWhile { .. }
+            | OpCode::Print
             | OpCode::Store { .. }
             | OpCode::Store64 { .. }
             | OpCode::Swap
@@ -169,8 +169,8 @@ impl OpCode {
     fn is_binary_op(self) -> bool {
         use OpCode::*;
         match self {
-            Add | Subtract | Multiply | BitOr | BitAnd | Equal | Greater | GreaterEqual | Less
-            | LessEqual | NotEq | ShiftLeft | ShiftRight => true,
+            Add | BitAnd | BitOr | Equal | Greater | GreaterEqual | Less | LessEqual | Multiply
+            | NotEq | ShiftLeft | ShiftRight | Subtract => true,
 
             ArgC
             | ArgV
@@ -180,19 +180,19 @@ impl OpCode {
             | DoIf { .. }
             | DoWhile { .. }
             | Drop
-            | Print
             | Dup { .. }
             | DupPair
+            | Else { .. }
             | End { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
             | Ident(_)
             | If
             | Include(_)
-            | Else { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
             | Load
             | Load64
             | Mem { .. }
+            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
@@ -221,20 +221,20 @@ impl OpCode {
             | DoIf { .. }
             | DoWhile { .. }
             | Drop
-            | Print
             | Dup { .. }
             | DupPair
+            | Else { .. }
             | End { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
             | Ident(_)
             | If
             | Include(_)
-            | Else { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
             | Load
             | Load64
             | Mem { .. }
             | Multiply
+            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
@@ -254,18 +254,18 @@ impl OpCode {
         use OpCode::*;
         match self {
             Add => |a, b| a + b,
-            Subtract => |a, b| a - b,
-            Multiply => |a, b| a * b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
-            ShiftLeft => |a, b| a << b,
-            ShiftRight => |a, b| a >> b,
             Equal => |a, b| (a == b) as u64,
             Greater => |a, b| (a > b) as u64,
             GreaterEqual => |a, b| (a >= b) as u64,
             Less => |a, b| (a < b) as u64,
             LessEqual => |a, b| (a <= b) as u64,
+            Multiply => |a, b| a * b,
             NotEq => |a, b| (a != b) as u64,
+            ShiftLeft => |a, b| a << b,
+            ShiftRight => |a, b| a >> b,
+            Subtract => |a, b| a - b,
 
             ArgC
             | ArgV
@@ -275,19 +275,19 @@ impl OpCode {
             | DoIf { .. }
             | DoWhile { .. }
             | Drop
-            | Print
             | Dup { .. }
             | DupPair
+            | Else { .. }
             | End { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
             | Ident(_)
             | If
             | Include { .. }
-            | Else { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
             | Load
             | Load64
             | Mem { .. }
+            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
@@ -306,7 +306,7 @@ impl OpCode {
     pub fn is_compiler_opt_arithmetic(self) -> bool {
         use OpCode::*;
         match self {
-            Add | Subtract | BitOr | BitAnd | ShiftLeft | ShiftRight => true,
+            Add | BitAnd | BitOr | ShiftLeft | ShiftRight | Subtract => true,
 
             ArgC
             | ArgV
@@ -316,17 +316,16 @@ impl OpCode {
             | DoIf { .. }
             | DoWhile { .. }
             | Drop
-            | Print
             | Dup { .. }
             | DupPair
+            | Else { .. }
             | End { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
             | Equal
             | Ident(_)
             | If
             | Include(_)
-            | Else { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
             | Less
             | LessEqual
             | Load
@@ -364,20 +363,20 @@ impl OpCode {
             | Do
             | DoIf { .. }
             | DoWhile { .. }
-            | Print
             | Dup { .. }
             | DupPair
+            | Else { .. }
             | End { .. }
+            | EndIf { .. }
+            | EndWhile { .. }
             | Ident(_)
             | If
             | Include(_)
-            | Else { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
             | Load
             | Load64
             | Mem { .. }
             | Multiply
+            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
