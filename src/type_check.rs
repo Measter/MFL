@@ -126,15 +126,14 @@ fn generate_block_depth_mismatch(
     close_loc: SourceLocation,
     expected: usize,
     actual: usize,
+    msg: &str,
 ) {
-    let diag = Diagnostic::error()
-        .with_message("blocks require the same depth on exit as on entry")
-        .with_labels(vec![
-            Label::primary(open_loc.file_id, open_loc.range())
-                .with_message(format!("depth here: {}", expected)),
-            Label::primary(close_loc.file_id, close_loc.range())
-                .with_message(format!("depth here: {}", actual)),
-        ]);
+    let diag = Diagnostic::error().with_message(msg).with_labels(vec![
+        Label::primary(open_loc.file_id, open_loc.range())
+            .with_message(format!("depth here: {}", expected)),
+        Label::primary(close_loc.file_id, close_loc.range())
+            .with_message(format!("depth here: {}", actual)),
+    ]);
     diags.push(diag);
 }
 
@@ -154,6 +153,7 @@ fn compare_expected_stacks(
                 op.token.location,
                 expected_stack.len(),
                 actual_stack.len(),
+                msg,
             );
         }
         Ordering::Equal if expected_stack != actual_stack => {
@@ -236,8 +236,8 @@ macro_rules! kind_pat {
 
 struct BlockStackState {
     open_location: SourceLocation,
-    stack: Vec<PorthType>,
-    had_else: bool,
+    entry_stack: Vec<PorthType>,
+    true_stack: Option<Vec<PorthType>>,
 }
 
 pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
@@ -368,8 +368,8 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             OpCode::While { .. } => {
                 block_stack_states.push(BlockStackState {
                     open_location: op.token.location,
-                    stack: stack.clone(),
-                    had_else: false,
+                    entry_stack: stack.clone(),
+                    true_stack: None,
                 });
             }
             OpCode::DoWhile { .. } => {
@@ -379,7 +379,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     .expect("ICE: DoWhile requires a stack depth");
 
                 compare_expected_stacks(
-                    &entry_stack_state.stack,
+                    &entry_stack_state.entry_stack,
                     &stack,
                     &mut diags,
                     entry_stack_state.open_location,
@@ -389,7 +389,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
 
                 // Restore the stack so that we know it's the expected state before the body executes.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.stack);
+                stack.extend_from_slice(&entry_stack_state.entry_stack);
             }
             OpCode::EndWhile { .. } => {
                 let entry_stack_state = block_stack_states
@@ -397,7 +397,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     .expect("ICE: EndWhile/EndIf requires a stack depth");
 
                 compare_expected_stacks(
-                    &entry_stack_state.stack,
+                    &entry_stack_state.entry_stack,
                     &stack,
                     &mut diags,
                     entry_stack_state.open_location,
@@ -408,14 +408,14 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 // Now that we've checked, we need to restore the stack to the state it was in
                 // prior to the branch, so that the remainder of the code can operate as if
                 // we never went down it.
-                stack = entry_stack_state.stack;
+                stack = entry_stack_state.entry_stack;
             }
 
             OpCode::If => {
                 block_stack_states.push(BlockStackState {
                     open_location: op.token.location,
-                    stack: stack.clone(),
-                    had_else: false,
+                    entry_stack: stack.clone(),
+                    true_stack: None,
                 });
             }
             OpCode::DoIf { .. } => {
@@ -425,7 +425,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     .expect("ICE: DoIf requires a stack depth");
 
                 compare_expected_stacks(
-                    &entry_stack_state.stack,
+                    &entry_stack_state.entry_stack,
                     &stack,
                     &mut diags,
                     entry_stack_state.open_location,
@@ -435,42 +435,62 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
 
                 // Restore the stack so that we know it's the expected state before the body executes.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.stack);
+                stack.extend_from_slice(&entry_stack_state.entry_stack);
             }
-            OpCode::Else { .. } => {
-                // If the if-expr has an else-branch, then both branches are allowed to alter the state of the
-                // stack *as long as* both alter it in the same way.
+            OpCode::Elif { .. } | OpCode::Else { .. } => {
+                // If the if-expr has an else- or elif-branch, then all branches are allowed to alter the
+                // state of the stack *as long as* all alter it in the same way.
                 // We need to restore the stack to how it was when we entered the if-expr, but need to store
-                // the exit state of the true branch to enforce that both branches leave the stack in the same
+                // the exit state of the first branch to enforce that all branches leave the stack in the same
                 // state.
 
                 let entry_stack_state = block_stack_states
                     .last_mut()
-                    .expect("ICE: Else requires a stack depth");
+                    .expect("ICE: Else/Elif requires a stack depth");
 
-                // We need the state of the stack from the true-branch, so we can restore that on the end-tag.
-                let exit_branch = stack.clone();
-                entry_stack_state.had_else = true;
+                // As there can be arbitrarily many branches, we should treat each elif-else opcode
+                // as if it were an end-branch and check the stack state.
+                match &mut entry_stack_state.true_stack {
+                    Some(expected_stack) => {
+                        compare_expected_stacks(
+                            expected_stack,
+                            &stack,
+                            &mut diags,
+                            entry_stack_state.open_location,
+                            op,
+                            "all if-elif-else blocks must leave the stack in the same state",
+                        );
+                    }
+                    true_stack => {
+                        *true_stack = Some(stack.clone());
+                        entry_stack_state.open_location = op.token.location;
+                    }
+                }
 
                 // Now we need to restore the stack to the state it was in prior to entering the if-expr, so
-                // that the else branch can operate on the same state.
+                // that the subsequent branches can operate on the same state.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.stack);
-                entry_stack_state.stack = exit_branch;
+                stack.extend_from_slice(&entry_stack_state.entry_stack);
             }
             OpCode::EndIf { .. } => {
                 let entry_stack_state = block_stack_states
                     .pop()
                     .expect("ICE: EndWhile/EndIf requires a stack depth");
 
-                let msg = if entry_stack_state.had_else {
-                    "if-else blocks must leave the stack in the same state"
+                let (msg, expected_stack) = if let Some(true_stack) = entry_stack_state.true_stack {
+                    (
+                        "all if-elif-else blocks must leave the stack in the same state",
+                        true_stack,
+                    )
                 } else {
-                    "if-end blocks must leave the stack in the same state it entered with"
+                    (
+                        "if-end blocks must leave the stack in the same state it entered with",
+                        entry_stack_state.entry_stack,
+                    )
                 };
 
                 compare_expected_stacks(
-                    &entry_stack_state.stack,
+                    &expected_stack,
                     &stack,
                     &mut diags,
                     entry_stack_state.open_location,
@@ -481,7 +501,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                 // Now that we've checked, we need to restore the stack to the state it was in
                 // prior to the branch, so that the remainder of the code can operate as if
                 // we never went down it.
-                stack = entry_stack_state.stack;
+                stack = expected_stack;
             }
 
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {

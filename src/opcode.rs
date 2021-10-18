@@ -29,6 +29,7 @@ pub enum OpCode {
     Dup { depth: usize },
     DupPair,
     Drop,
+    Elif { else_start: usize, end_ip: usize },
     Else { else_start: usize, end_ip: usize },
     End,
     EndIf { ip: usize },
@@ -97,6 +98,7 @@ impl OpCode {
             OpCode::ArgC
             | OpCode::ArgV
             | OpCode::DupPair
+            | OpCode::Elif { .. }
             | OpCode::Else { .. }
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
@@ -150,6 +152,7 @@ impl OpCode {
             | OpCode::Drop
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
+            | OpCode::Elif { .. }
             | OpCode::Else { .. }
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
@@ -182,6 +185,7 @@ impl OpCode {
             | Drop
             | Dup { .. }
             | DupPair
+            | Elif { .. }
             | Else { .. }
             | End { .. }
             | EndIf { .. }
@@ -223,6 +227,7 @@ impl OpCode {
             | Drop
             | Dup { .. }
             | DupPair
+            | Elif { .. }
             | Else { .. }
             | End { .. }
             | EndIf { .. }
@@ -277,6 +282,7 @@ impl OpCode {
             | Drop
             | Dup { .. }
             | DupPair
+            | Elif { .. }
             | Else { .. }
             | End { .. }
             | EndIf { .. }
@@ -318,6 +324,7 @@ impl OpCode {
             | Drop
             | Dup { .. }
             | DupPair
+            | Elif { .. }
             | Else { .. }
             | End { .. }
             | EndIf { .. }
@@ -335,6 +342,7 @@ impl OpCode {
             | Mem { .. }
             | Multiply
             | NotEq
+            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
@@ -365,6 +373,7 @@ impl OpCode {
             | DoWhile { .. }
             | Dup { .. }
             | DupPair
+            | Elif { .. }
             | Else { .. }
             | End { .. }
             | EndIf { .. }
@@ -625,6 +634,10 @@ pub fn parse_token(
             }
 
             TokenKind::If => OpCode::If,
+            TokenKind::Elif => OpCode::Elif {
+                else_start: usize::MAX,
+                end_ip: usize::MAX,
+            },
             TokenKind::Else => OpCode::Else {
                 else_start: usize::MAX,
                 end_ip: usize::MAX,
@@ -660,6 +673,8 @@ struct JumpIpStack {
 
 pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut jump_ip_stack: Vec<JumpIpStack> = Vec::new();
+    // Stores the IPs of the Elif opcodes so we can update their end IPs when we encounter an End opcode.
+    let mut if_blocks_stack_ips: Vec<Vec<usize>> = Vec::new();
     let mut diags = Vec::new();
 
     for ip in 0..ops.len() {
@@ -678,11 +693,64 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                 }
             }
 
-            OpCode::If => jump_ip_stack.push(JumpIpStack {
-                ip,
-                kind: op.token.kind,
-                location: op.token.location,
-            }),
+            OpCode::If => {
+                if_blocks_stack_ips.push(Vec::new());
+                jump_ip_stack.push(JumpIpStack {
+                    ip,
+                    kind: op.token.kind,
+                    location: op.token.location,
+                })
+            }
+            OpCode::Elif { .. } => {
+                let if_idx = match jump_ip_stack.pop() {
+                    Some(JumpIpStack {
+                        ip: if_idx,
+                        kind: TokenKind::Do,
+                        ..
+                    }) => if_idx,
+                    _ => {
+                        let diag = Diagnostic::error()
+                            .with_message("`elif` requires a preceding `if-do`")
+                            .with_labels(vec![Label::primary(
+                                op.token.location.file_id,
+                                op.token.location.range(),
+                            )]);
+                        diags.push(diag);
+                        continue;
+                    }
+                };
+
+                let kind = op.token.kind;
+                let location = op.token.location;
+
+                // update our own IP.
+                match &mut ops[ip].code {
+                    OpCode::Elif { else_start, .. } => *else_start = ip,
+                    _ => unreachable!(),
+                };
+                match &mut ops[if_idx].code {
+                    OpCode::DoIf { end_ip } => *end_ip = ip,
+                    OpCode::DoWhile { .. } => {
+                        let while_token = &ops[if_idx].token;
+                        let diag = Diagnostic::error()
+                            .with_message("`elif` can only be used with `if` blocks")
+                            .with_labels(vec![
+                                Label::primary(location.file_id, location.range()),
+                                Label::secondary(
+                                    while_token.location.file_id,
+                                    while_token.location.range(),
+                                )
+                                .with_message("opened here"),
+                            ]);
+                        diags.push(diag);
+                        continue;
+                    }
+                    _ => unreachable!(),
+                };
+
+                if_blocks_stack_ips.last_mut().unwrap().push(ip);
+                jump_ip_stack.push(JumpIpStack { ip, kind, location });
+            }
             OpCode::Else { .. } => {
                 let if_idx = match jump_ip_stack.pop() {
                     Some(JumpIpStack {
@@ -722,12 +790,12 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                 let src_ip = match jump_ip_stack.pop() {
                     Some(JumpIpStack {
                         ip,
-                        kind: TokenKind::If | TokenKind::While,
+                        kind: TokenKind::Elif | TokenKind::If | TokenKind::While,
                         ..
                     }) => ip,
                     _ => {
                         let diag = Diagnostic::error()
-                            .with_message("`do` requires a preceding `if` or `while`")
+                            .with_message("`do` requires a preceding `if`, `elif` or `while`")
                             .with_labels(vec![Label::primary(
                                 op.token.location.file_id,
                                 op.token.location.range(),
@@ -751,7 +819,9 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                             condition_ip: *condition_ip,
                         };
                     }
-                    OpCode::If => ops[ip].code = OpCode::DoIf { end_ip: usize::MAX },
+                    OpCode::Elif { .. } | OpCode::If => {
+                        ops[ip].code = OpCode::DoIf { end_ip: usize::MAX }
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -792,6 +862,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     OpCode::DoIf { end_ip } | OpCode::Else { end_ip, .. } => {
                         *end_ip = ip;
                         ops[ip].code = OpCode::EndIf { ip };
+
+                        // Update any Elifs in the block.
+                        for elif_ip in if_blocks_stack_ips.pop().unwrap() {
+                            match &mut ops[elif_ip].code {
+                                OpCode::Elif { end_ip, .. } => *end_ip = ip,
+                                _ => unreachable!(),
+                            }
+                        }
                     }
                     _ => unreachable!(),
                 }

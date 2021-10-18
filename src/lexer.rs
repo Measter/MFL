@@ -23,6 +23,7 @@ pub enum TokenKind {
     Drop,
     Dup(usize),
     DupPair,
+    Elif,
     Else,
     End,
     Equal,
@@ -68,6 +69,7 @@ impl TokenKind {
             | TokenKind::Drop
             | TokenKind::Dup(_)
             | TokenKind::DupPair
+            | TokenKind::Elif
             | TokenKind::Else
             | TokenKind::End
             | TokenKind::Equal
@@ -353,6 +355,7 @@ impl<'source> Scanner<'source> {
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
                     "dup" => TokenKind::Dup(0),
+                    "elif" => TokenKind::Elif,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
                     "here" => {

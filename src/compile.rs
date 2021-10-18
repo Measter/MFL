@@ -145,7 +145,7 @@ fn compile_op(output: &mut impl Write, op: &Op, interner: &Interners) -> Result<
             writeln!(output, "    test r8, r8")?;
             writeln!(output, "    jz .LBL{}", end_ip)?;
         }
-        OpCode::Else { end_ip, else_start } => {
+        OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
             writeln!(output, "    jmp .LBL{}", end_ip)?;
             writeln!(output, ".LBL{}:", else_start)?;
         }

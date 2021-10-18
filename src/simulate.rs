@@ -181,9 +181,7 @@ pub(crate) fn simulate_execute_program(
                     continue;
                 }
             }
-            OpCode::Else { end_ip, .. } => {
-                ip = end_ip;
-            }
+            OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = end_ip,
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
