@@ -9,7 +9,8 @@ use interners::Interners;
 use source_file::{FileId, SourceLocation, SourceStorage};
 use structopt::StructOpt;
 
-mod compile;
+// mod compile;
+mod compile_new;
 mod interners;
 mod lexer;
 mod opcode;
@@ -252,7 +253,7 @@ fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Resu
     };
 
     println!("Compiling... to {}", output_asm.display());
-    compile::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
+    compile_new::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
 
     println!("Assembling... to {}", output_obj.display());
     let nasm = Command::new("nasm")

@@ -8,6 +8,7 @@ edition = "2018"
 [dependencies]
 codespan-reporting = "0.11.1"
 color-eyre = "0.5.11"
+derive_more = "0.99.16"
 lasso = "0.6.0"
 structopt = "0.3.23"
 variantly = "0.2.0"
