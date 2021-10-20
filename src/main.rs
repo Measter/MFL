@@ -42,10 +42,6 @@ enum Mode {
     Compile {
         file: String,
 
-        /// run the output immediately
-        #[structopt(long, short)]
-        run: bool,
-
         /// Enable optimizations
         #[structopt(short)]
         optimise: bool,
@@ -186,10 +182,12 @@ fn load_program(
     Ok(Ok(ops))
 }
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
-    let args = Args::from_args();
-
+fn run_simulate(
+    file: String,
+    optimise: bool,
+    mut program_args: Vec<String>,
+    include_paths: Vec<String>,
+) -> Result<()> {
     let cfg = codespan_reporting::term::Config::default();
     let stderr = StandardStream::stderr(ColorChoice::Always);
     let mut stderr = stderr.lock();
@@ -197,100 +195,101 @@ fn main() -> Result<()> {
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
+    program_args.insert(0, file.clone()); // We need the program name to be part of the args.
+
+    let program = match load_program(
+        &mut source_storage,
+        &mut interner,
+        &file,
+        optimise,
+        &include_paths,
+    )? {
+        Ok(program) => program,
+        Err(diags) => {
+            for diag in diags {
+                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            }
+            std::process::exit(-1);
+        }
+    };
+
+    if let Err(diag) = simulate::simulate_execute_program(&program, &interner, &program_args) {
+        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+    }
+
+    Ok(())
+}
+
+fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Result<()> {
+    let cfg = codespan_reporting::term::Config::default();
+    let stderr = StandardStream::stderr(ColorChoice::Always);
+    let mut stderr = stderr.lock();
+
+    let mut source_storage = SourceStorage::new();
+    let mut interner = Interners::new();
+
+    let mut output_asm = Path::new(&file).to_path_buf();
+    output_asm.set_extension("asm");
+    let mut output_obj = output_asm.clone();
+    output_obj.set_extension("o");
+    let mut output_binary = output_obj.clone();
+    output_binary.set_extension("");
+
+    let program = match load_program(
+        &mut source_storage,
+        &mut interner,
+        &file,
+        optimise,
+        &include_paths,
+    )? {
+        Ok(program) => program,
+        Err(diags) => {
+            for diag in diags {
+                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            }
+            std::process::exit(-1);
+        }
+    };
+
+    println!("Compiling... to {}", output_asm.display());
+    compile::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
+
+    println!("Assembling... to {}", output_obj.display());
+    let nasm = Command::new("nasm")
+        .arg("-felf64")
+        .arg(&output_asm)
+        .status()
+        .with_context(|| eyre!("Failed to execute nasm"))?;
+    if !nasm.success() {
+        std::process::exit(-2);
+    }
+
+    println!("Linking... into {}", output_binary.display());
+    let ld = Command::new("ld")
+        .arg("-o")
+        .arg(&output_binary)
+        .arg(&output_obj)
+        .status()
+        .with_context(|| eyre!("Failed to execude ld"))?;
+
+    if !ld.success() {
+        std::process::exit(-3);
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+    let args = Args::from_args();
+
     match args.mode {
         Mode::Simulate {
             file,
             optimise,
-            args: mut program_args,
-        } => {
-            program_args.insert(0, file.clone()); // We need the program name to be part of the args.
-
-            let program = match load_program(
-                &mut source_storage,
-                &mut interner,
-                &file,
-                optimise,
-                &args.include_paths,
-            )? {
-                Ok(program) => program,
-                Err(diags) => {
-                    for diag in diags {
-                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-                    }
-                    std::process::exit(-1);
-                }
-            };
-
-            if let Err(diag) =
-                simulate::simulate_execute_program(&program, &interner, &program_args)
-            {
-                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-            }
-        }
-        Mode::Compile {
-            file,
-            run,
-            optimise,
-        } => {
-            let mut output_asm = Path::new(&file).to_path_buf();
-            output_asm.set_extension("asm");
-            let mut output_obj = output_asm.clone();
-            output_obj.set_extension("o");
-            let mut output_binary = output_obj.clone();
-            output_binary.set_extension("");
-
-            let program = match load_program(
-                &mut source_storage,
-                &mut interner,
-                &file,
-                optimise,
-                &args.include_paths,
-            )? {
-                Ok(program) => program,
-                Err(diags) => {
-                    for diag in diags {
-                        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-                    }
-                    std::process::exit(-1);
-                }
-            };
-
-            println!("Compiling... to {}", output_asm.display());
-            compile::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
-
-            println!("Assembling... to {}", output_obj.display());
-            let nasm = Command::new("nasm")
-                .arg("-felf64")
-                .arg(&output_asm)
-                .status()
-                .with_context(|| eyre!("Failed to execute nasm"))?;
-            if !nasm.success() {
-                std::process::exit(-2);
-            }
-
-            println!("Linking... into {}", output_binary.display());
-            let ld = Command::new("ld")
-                .arg("-o")
-                .arg(&output_binary)
-                .arg(&output_obj)
-                .status()
-                .with_context(|| eyre!("Failed to execude ld"))?;
-
-            if !ld.success() {
-                std::process::exit(-3);
-            }
-
-            if run {
-                println!("Running...");
-                let bin = Command::new(&output_binary)
-                    .status()
-                    .with_context(|| eyre!("Failed to run {}", output_binary.display()))?;
-
-                if !bin.success() {
-                    std::process::exit(-4);
-                }
-            }
-        }
+            args: program_args,
+        } => run_simulate(file, optimise, program_args, args.include_paths)?,
+        Mode::Compile { file, optimise } => run_compile(file, optimise, args.include_paths)?,
     }
 
     Ok(())
