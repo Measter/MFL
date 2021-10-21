@@ -194,7 +194,7 @@ fn compare_expected_stacks(
 }
 
 macro_rules! stack_check {
-    ($errors:ident, $stack:ident, $interners:ident, $op:ident, $($expected:pat)|+) => {
+    ($errors:ident, $stack:ident, $interners:ident, $op:ident, $($expected:pat_param)|+) => {
         match $stack.popn() {
             Some( $(a @ $expected)|+) => Some(a),
             #[allow(unreachable_patterns)]
@@ -225,7 +225,7 @@ macro_rules! stack_check {
 }
 
 macro_rules! kind_pat {
-    ($( [ $( $p:pat ),+ ] )|+ ) => {
+    ($( [ $( $p:pat_param ),+ ] )|+ ) => {
         $(
             [
                 $( PorthType { kind: $p, .. } ),+
