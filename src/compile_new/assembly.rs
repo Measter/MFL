@@ -110,6 +110,8 @@ pub enum AsmInstruction {
     RegFreeDynamic { reg_id: usize, push: bool },
     RegFreeFixed { reg_id: Register, push: bool },
     Instruction(Vec<InstructionPart>),
+    BlockBoundry,
+    Nop,
 }
 
 impl AsmInstruction {
@@ -184,6 +186,7 @@ impl AsmInstruction {
 
                 writeln!(out_file)?;
             }
+            AsmInstruction::BlockBoundry | AsmInstruction::Nop => {}
         }
 
         Ok(())
@@ -220,6 +223,11 @@ impl Assembler {
 
     pub fn into_assembly(self) -> Vec<Assembly> {
         self.assembly
+    }
+
+    pub fn block_boundry(&mut self) {
+        self.assembly
+            .push(Assembly::new(AsmInstruction::BlockBoundry, self.op_range));
     }
 
     pub fn set_op_range(&mut self, start: usize, end: usize) {
