@@ -235,7 +235,7 @@ impl Assembly {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct OpRange {
     start: usize,
     end: usize,
@@ -352,17 +352,108 @@ impl OpCode {
     }
 }
 
+#[derive(Debug, Default)]
+struct Assembler {
+    assembly: Vec<Assembly>,
+    register_id: usize,
+    op_range: OpRange,
+}
+
+impl Assembler {
+    fn next_register(&mut self) -> usize {
+        self.register_id += 1;
+        self.register_id
+    }
+
+    fn set_op_range(&mut self, start: usize, end: usize) {
+        self.op_range = OpRange { start, end };
+    }
+
+    fn push_instr(&mut self, instr: impl Into<Vec<InstructionPart>>) {
+        let asm = AsmInstruction::Instruction(instr.into());
+        self.assembly.push(Assembly::new(asm, self.op_range));
+    }
+
+    fn reg_alloc_dyn_pop(&mut self) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocDynamicPop(id),
+            self.op_range,
+        ));
+        id
+    }
+
+    fn reg_alloc_dyn_nop(&mut self) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocDynamicNop(id),
+            self.op_range,
+        ));
+        id
+    }
+
+    fn reg_alloc_dyn_literal(&mut self, value: impl Into<Cow<'static, str>>) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocDynamicLiteral(id, value.into()),
+            self.op_range,
+        ));
+        id
+    }
+
+    fn reg_alloc_fixed_pop(&mut self, reg: Register) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocFixedPop(reg),
+            self.op_range,
+        ));
+    }
+
+    fn reg_alloc_fixed_literal(&mut self, reg: Register, value: impl Into<Cow<'static, str>>) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocFixedLiteral(reg, value.into()),
+            self.op_range,
+        ));
+    }
+
+    fn reg_free_dyn_push(&mut self, reg_id: usize) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegFreeDynamic { reg_id, push: true },
+            self.op_range,
+        ));
+    }
+
+    fn reg_free_dyn_drop(&mut self, reg_id: usize) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegFreeDynamic {
+                reg_id,
+                push: false,
+            },
+            self.op_range,
+        ));
+    }
+
+    fn reg_free_fixed_push(&mut self, reg_id: Register) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegFreeFixed { reg_id, push: true },
+            self.op_range,
+        ));
+    }
+
+    fn reg_free_fixed_drop(&mut self, reg_id: Register) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegFreeFixed {
+                reg_id,
+                push: false,
+            },
+            self.op_range,
+        ));
+    }
+}
+
 fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
-    use AsmInstruction::*;
     use InstructionPart::{DynamicRegister, FixedRegister};
 
-    let mut assembly = Vec::new();
-    let mut register_id = 0;
-    let mut next_register = || {
-        let new_id = register_id;
-        register_id += 1;
-        new_id
-    };
+    let mut assembler = Assembler::default();
 
     let dyn_reg = |reg_id| DynamicRegister {
         reg_id,
@@ -373,88 +464,63 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
         is_byte: true,
     };
 
-    let str_lit = |lit: &'static str| InstructionPart::Literal(lit.into());
-    let string_lit = |lit: String| InstructionPart::Literal(lit.into());
-
-    let dyn_free_push = |id| RegFreeDynamic {
-        reg_id: id,
-        push: true,
-    };
-    let dyn_free_drop = |id| RegFreeDynamic {
-        reg_id: id,
-        push: false,
-    };
-    let fixed_free_push = |id| RegFreeFixed {
-        reg_id: id,
-        push: true,
-    };
-    let fixed_free_drop = |id| RegFreeFixed {
-        reg_id: id,
-        push: false,
-    };
+    fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
+        InstructionPart::Literal(lit.into())
+    }
 
     for (ip, op) in program.iter().enumerate() {
-        let op_range = OpRange {
-            start: ip,
-            end: ip + 1,
-        };
+        assembler.set_op_range(ip, ip + 1);
 
-        let mut push_asm = |asm| assembly.push(Assembly::new(asm, op_range));
         match op.code {
             OpCode::Add | OpCode::Subtract | OpCode::BitOr | OpCode::BitAnd => {
-                let a_id = next_register();
-                let b_id = next_register();
-                push_asm(RegAllocDynamicPop(b_id));
-                push_asm(RegAllocDynamicPop(a_id));
-                let op_asm = Instruction(vec![
+                let a_id = assembler.reg_alloc_dyn_pop();
+                let b_id = assembler.reg_alloc_dyn_pop();
+
+                assembler.push_instr([
                     str_lit(op.code.compile_arithmetic_op()),
                     dyn_reg(a_id),
                     str_lit(", "),
                     dyn_reg(b_id),
                 ]);
-                push_asm(op_asm);
-                push_asm(dyn_free_drop(b_id));
-                push_asm(dyn_free_push(a_id));
+
+                assembler.reg_free_dyn_drop(b_id);
+                assembler.reg_free_dyn_push(a_id);
             }
             OpCode::ShiftLeft | OpCode::ShiftRight => {
-                let a_id = next_register();
-                push_asm(RegAllocFixedPop(Register::Rcx));
-                push_asm(RegAllocDynamicPop(a_id));
-                let op_asm = Instruction(vec![
+                assembler.reg_alloc_fixed_pop(Register::Rcx);
+                let a_id = assembler.reg_alloc_dyn_pop();
+
+                assembler.push_instr([
                     str_lit(op.code.compile_arithmetic_op()),
                     dyn_reg(a_id),
                     str_lit(", "),
                     FixedRegister(Register::Cl),
                 ]);
-                push_asm(op_asm);
-                push_asm(fixed_free_drop(Register::Rcx));
-                push_asm(dyn_free_push(a_id));
+
+                assembler.reg_free_fixed_drop(Register::Rcx);
+                assembler.reg_free_dyn_push(a_id);
             }
             OpCode::DivMod => {
-                let divisor_reg = next_register();
+                let divisor_reg = assembler.reg_alloc_dyn_pop();
+                assembler.reg_alloc_fixed_pop(Register::Rax);
+                assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
 
-                push_asm(RegAllocDynamicPop(divisor_reg));
-                push_asm(RegAllocFixedPop(Register::Rax));
-                push_asm(RegAllocFixedLiteral(Register::Rdx, "0".into()));
+                assembler.push_instr([str_lit("    div "), dyn_reg(divisor_reg)]);
 
-                push_asm(Instruction(vec![str_lit("    div "), dyn_reg(divisor_reg)]));
-
-                push_asm(dyn_free_drop(divisor_reg));
-                push_asm(fixed_free_push(Register::Rax));
-                push_asm(fixed_free_push(Register::Rdx));
+                assembler.reg_free_dyn_drop(divisor_reg);
+                assembler.reg_free_fixed_push(Register::Rax);
+                assembler.reg_free_fixed_push(Register::Rdx);
             }
             OpCode::Multiply => {
-                let mult_reg = next_register();
+                assembler.reg_alloc_fixed_pop(Register::Rax);
+                assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
+                let mult_reg = assembler.reg_alloc_dyn_pop();
 
-                push_asm(RegAllocFixedPop(Register::Rax));
-                push_asm(RegAllocFixedLiteral(Register::Rdx, "0".into()));
-                push_asm(RegAllocDynamicPop(mult_reg));
+                assembler.push_instr([str_lit("    mul "), dyn_reg(mult_reg)]);
 
-                push_asm(Instruction(vec![str_lit("    mul "), dyn_reg(mult_reg)]));
-
-                push_asm(dyn_free_drop(mult_reg));
-                push_asm(fixed_free_drop(Register::Rdx));
-                push_asm(fixed_free_push(Register::Rax));
+                assembler.reg_free_dyn_drop(mult_reg);
+                assembler.reg_free_fixed_drop(Register::Rdx);
+                assembler.reg_free_fixed_push(Register::Rax);
             }
 
             OpCode::Equal
@@ -463,237 +529,188 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
             | OpCode::LessEqual
             | OpCode::Greater
             | OpCode::GreaterEqual => {
-                let a_id = next_register();
-                let b_id = next_register();
-                let dst_id = next_register();
-                push_asm(RegAllocDynamicPop(b_id));
-                push_asm(RegAllocDynamicPop(a_id));
-                push_asm(RegAllocDynamicLiteral(dst_id, "0".into()));
+                let b_id = assembler.reg_alloc_dyn_pop();
+                let a_id = assembler.reg_alloc_dyn_pop();
+                let dst_id = assembler.reg_alloc_dyn_literal("0");
 
-                let op_asm = Instruction(vec![
+                assembler.push_instr([
                     str_lit("    cmp "),
                     dyn_reg(a_id),
                     str_lit(", "),
                     dyn_reg(b_id),
                 ]);
-                push_asm(op_asm);
 
-                let set_asm = Instruction(vec![
-                    string_lit(format!("    set{} ", op.code.compile_compare_op_suffix())),
+                assembler.push_instr([
+                    str_lit(format!("    set{} ", op.code.compile_compare_op_suffix())),
                     dyn_byte_reg(dst_id),
                 ]);
-                push_asm(set_asm);
 
-                push_asm(dyn_free_drop(b_id));
-                push_asm(dyn_free_drop(a_id));
-                push_asm(dyn_free_push(dst_id));
+                assembler.reg_free_dyn_drop(b_id);
+                assembler.reg_free_dyn_drop(a_id);
+                assembler.reg_free_dyn_push(dst_id);
             }
 
-            OpCode::ArgC => push_asm(Instruction(vec![str_lit("    push QWORD [__argc]")])),
-            OpCode::ArgV => push_asm(Instruction(vec![str_lit("    push QWORD [__argv]")])),
+            OpCode::ArgC => assembler.push_instr([str_lit("    push QWORD [__argc]")]),
+            OpCode::ArgV => assembler.push_instr([str_lit("    push QWORD [__argv]")]),
             OpCode::PushBool(val) => {
-                let reg = next_register();
-                push_asm(RegAllocDynamicLiteral(reg, (val as u64).to_string().into()));
-                push_asm(dyn_free_push(reg));
+                let reg = assembler.reg_alloc_dyn_literal((val as u64).to_string());
+                assembler.reg_free_dyn_push(reg);
             }
             OpCode::PushInt(val) => {
-                let reg = next_register();
-                push_asm(RegAllocDynamicLiteral(reg, val.to_string().into()));
-                push_asm(dyn_free_push(reg));
+                let reg = assembler.reg_alloc_dyn_literal(val.to_string());
+                assembler.reg_free_dyn_push(reg);
             }
             OpCode::PushStr(id) => {
                 let literal = interner.resolve_literal(id);
                 let id = id.into_inner().get();
-                let len_reg = next_register();
-                let ptr_reg = next_register();
 
-                push_asm(RegAllocDynamicLiteral(
-                    len_reg,
-                    literal.len().to_string().into(),
-                ));
-                push_asm(RegAllocDynamicLiteral(
-                    ptr_reg,
-                    format!("__string_literal{}", id).into(),
-                ));
-                push_asm(dyn_free_push(len_reg));
-                push_asm(dyn_free_push(ptr_reg));
+                let len_reg = assembler.reg_alloc_dyn_literal(literal.len().to_string());
+                let ptr_reg = assembler.reg_alloc_dyn_literal(format!("__string_literal{}", id));
+                assembler.reg_free_dyn_push(len_reg);
+                assembler.reg_free_dyn_push(ptr_reg);
             }
             OpCode::Mem { offset } => {
-                let reg = next_register();
-                push_asm(RegAllocDynamicLiteral(
-                    reg,
-                    format!("__memory + {}", offset).into(),
-                ));
-                push_asm(dyn_free_push(reg));
+                let reg = assembler.reg_alloc_dyn_literal(format!("__memory + {}", offset));
+                assembler.reg_free_dyn_push(reg);
             }
 
             OpCode::Drop => {
-                push_asm(Instruction(vec![str_lit("    add rsp, 8")]));
+                let reg = assembler.reg_alloc_dyn_pop();
+                assembler.reg_free_dyn_drop(reg);
             }
             OpCode::Dup { depth } => {
-                let reg = next_register();
-                push_asm(RegAllocDynamicLiteral(
-                    reg,
-                    format!("QWORD [rsp + 8*{}]", depth).into(),
-                ));
-                push_asm(dyn_free_push(reg));
+                let reg = assembler.reg_alloc_dyn_literal(format!("QWORD [rsp + 8*{}]", depth));
+                assembler.reg_free_dyn_push(reg);
             }
             OpCode::DupPair => {
-                let reg_top = next_register();
-                let reg_lower = next_register();
-                push_asm(RegAllocDynamicLiteral(reg_top, "QWORD [rsp]".into()));
-                push_asm(RegAllocDynamicLiteral(reg_lower, "QWORD [rsp+8]".into()));
-                push_asm(dyn_free_push(reg_lower));
-                push_asm(dyn_free_push(reg_top));
+                let reg_top = assembler.reg_alloc_dyn_literal("QWORD [rsp]");
+                let reg_lower = assembler.reg_alloc_dyn_literal("QWORD [rsp+8]");
+                assembler.reg_free_dyn_push(reg_lower);
+                assembler.reg_free_dyn_push(reg_top);
             }
             OpCode::Print => {
-                push_asm(RegAllocFixedPop(Register::Rdi));
-                push_asm(Instruction(vec![str_lit("    call dump")]));
-                push_asm(fixed_free_drop(Register::Rdi));
+                assembler.reg_alloc_fixed_pop(Register::Rdi);
+                assembler.push_instr([str_lit("    call dump")]);
+                assembler.reg_free_fixed_drop(Register::Rdi);
             }
             OpCode::Rot => {
-                let a_reg = next_register();
-                let b_reg = next_register();
-                let c_reg = next_register();
+                let a_reg = assembler.reg_alloc_dyn_pop();
+                let b_reg = assembler.reg_alloc_dyn_pop();
+                let c_reg = assembler.reg_alloc_dyn_pop();
 
-                push_asm(RegAllocDynamicPop(a_reg));
-                push_asm(RegAllocDynamicPop(b_reg));
-                push_asm(RegAllocDynamicPop(c_reg));
-
-                push_asm(dyn_free_push(b_reg));
-                push_asm(dyn_free_push(a_reg));
-                push_asm(dyn_free_push(c_reg));
+                assembler.reg_free_dyn_push(b_reg);
+                assembler.reg_free_dyn_push(a_reg);
+                assembler.reg_free_dyn_push(c_reg);
             }
             OpCode::Swap => {
-                let a_id = next_register();
-                let b_id = next_register();
-                push_asm(RegAllocDynamicPop(a_id));
-                push_asm(RegAllocDynamicPop(b_id));
-                push_asm(dyn_free_push(a_id));
-                push_asm(dyn_free_push(b_id));
+                let a_id = assembler.reg_alloc_dyn_pop();
+                let b_id = assembler.reg_alloc_dyn_pop();
+                assembler.reg_free_dyn_push(a_id);
+                assembler.reg_free_dyn_push(b_id);
             }
 
             OpCode::Load => {
-                let val_reg = next_register();
-                let addr_reg = next_register();
+                let addr_reg = assembler.reg_alloc_dyn_pop();
+                let val_reg = assembler.reg_alloc_dyn_literal("0");
 
-                push_asm(RegAllocDynamicPop(addr_reg));
-                push_asm(RegAllocDynamicLiteral(val_reg, "0".into()));
-
-                push_asm(Instruction(vec![
+                assembler.push_instr([
                     str_lit("    mov "),
                     dyn_byte_reg(val_reg),
                     str_lit(", BYTE ["),
                     dyn_reg(addr_reg),
                     str_lit("]"),
-                ]));
+                ]);
 
-                push_asm(dyn_free_drop(addr_reg));
-                push_asm(dyn_free_push(val_reg));
+                assembler.reg_free_dyn_drop(addr_reg);
+                assembler.reg_free_dyn_push(val_reg);
             }
             OpCode::Load64 => {
-                let addr_reg = next_register();
-                let val_reg = next_register();
+                let addr_reg = assembler.reg_alloc_dyn_pop();
+                let val_reg = assembler.reg_alloc_dyn_nop();
 
-                push_asm(RegAllocDynamicPop(addr_reg));
-                push_asm(RegAllocDynamicNop(val_reg));
-
-                push_asm(Instruction(vec![
+                assembler.push_instr([
                     str_lit("    mov "),
                     dyn_reg(val_reg),
                     str_lit(", QWORD ["),
                     dyn_reg(addr_reg),
                     str_lit("]"),
-                ]));
+                ]);
 
-                push_asm(dyn_free_drop(addr_reg));
-                push_asm(dyn_free_push(val_reg));
+                assembler.reg_free_dyn_drop(addr_reg);
+                assembler.reg_free_dyn_push(val_reg);
             }
             OpCode::Store { forth_style } => {
-                let val_reg = next_register();
-                let addr_reg = next_register();
-                if forth_style {
-                    push_asm(RegAllocDynamicPop(addr_reg));
-                    push_asm(RegAllocDynamicPop(val_reg));
+                let (val_reg, addr_reg) = if forth_style {
+                    let addr_reg = assembler.reg_alloc_dyn_pop();
+                    let val_reg = assembler.reg_alloc_dyn_pop();
+                    (val_reg, addr_reg)
                 } else {
-                    push_asm(RegAllocDynamicPop(val_reg));
-                    push_asm(RegAllocDynamicPop(addr_reg));
-                }
-                push_asm(Instruction(vec![
+                    let val_reg = assembler.reg_alloc_dyn_pop();
+                    let addr_reg = assembler.reg_alloc_dyn_pop();
+                    (val_reg, addr_reg)
+                };
+                assembler.push_instr([
                     str_lit("    mov BYTE ["),
                     dyn_reg(addr_reg),
                     str_lit("], "),
                     dyn_byte_reg(val_reg),
-                ]));
+                ]);
 
-                push_asm(dyn_free_drop(val_reg));
-                push_asm(dyn_free_drop(addr_reg));
+                assembler.reg_free_dyn_drop(val_reg);
+                assembler.reg_free_dyn_drop(addr_reg);
             }
             OpCode::Store64 { forth_style } => {
-                let val_reg = next_register();
-                let addr_reg = next_register();
-                if forth_style {
-                    push_asm(RegAllocDynamicPop(addr_reg));
-                    push_asm(RegAllocDynamicPop(val_reg));
+                let (val_reg, addr_reg) = if forth_style {
+                    let addr_reg = assembler.reg_alloc_dyn_pop();
+                    let val_reg = assembler.reg_alloc_dyn_pop();
+                    (val_reg, addr_reg)
                 } else {
-                    push_asm(RegAllocDynamicPop(val_reg));
-                    push_asm(RegAllocDynamicPop(addr_reg));
-                }
-                push_asm(Instruction(vec![
+                    let val_reg = assembler.reg_alloc_dyn_pop();
+                    let addr_reg = assembler.reg_alloc_dyn_pop();
+                    (val_reg, addr_reg)
+                };
+                assembler.push_instr([
                     str_lit("    mov QWORD ["),
                     dyn_reg(addr_reg),
                     str_lit("], "),
                     dyn_reg(val_reg),
-                ]));
+                ]);
 
-                push_asm(dyn_free_drop(val_reg));
-                push_asm(dyn_free_drop(addr_reg));
+                assembler.reg_free_dyn_drop(val_reg);
+                assembler.reg_free_dyn_drop(addr_reg);
             }
 
             OpCode::DoWhile { end_ip, .. } | OpCode::DoIf { end_ip, .. } => {
-                let reg_id = next_register();
-                push_asm(RegAllocDynamicPop(reg_id));
+                let reg_id = assembler.reg_alloc_dyn_pop();
 
-                push_asm(Instruction(vec![
+                assembler.push_instr([
                     str_lit("    test "),
                     dyn_reg(reg_id),
                     str_lit(", "),
                     dyn_reg(reg_id),
-                ]));
-                push_asm(Instruction(vec![string_lit(format!(
-                    "    jz .LBL{}",
-                    end_ip
-                ))]));
+                ]);
+                assembler.push_instr([str_lit(format!("    jz .LBL{}", end_ip))]);
 
-                push_asm(dyn_free_drop(reg_id));
+                assembler.reg_free_dyn_drop(reg_id);
             }
             OpCode::While { ip } => {
-                push_asm(Instruction(vec![string_lit(format!(".LBL{}:", ip))]));
+                assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
             }
             OpCode::EndWhile {
                 condition_ip,
                 end_ip,
             } => {
-                push_asm(Instruction(vec![string_lit(format!(
-                    "    jmp .LBL{}",
-                    condition_ip
-                ))]));
-                push_asm(Instruction(vec![string_lit(format!(".LBL{}:", end_ip))]));
+                assembler.push_instr([str_lit(format!("    jmp .LBL{}", condition_ip))]);
+                assembler.push_instr([str_lit(format!(".LBL{}:", end_ip))]);
             }
 
             OpCode::If => {}
             OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
-                push_asm(Instruction(vec![string_lit(format!(
-                    "    jmp .LBL{}",
-                    end_ip
-                ))]));
-                push_asm(Instruction(vec![string_lit(format!(
-                    ".LBL{}:",
-                    else_start
-                ))]));
+                assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
+                assembler.push_instr([str_lit(format!(".LBL{}:", else_start))]);
             }
             OpCode::EndIf { ip } => {
-                push_asm(Instruction(vec![string_lit(format!(".LBL{}:", ip))]));
+                assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
             }
 
             OpCode::SysCall(a @ 0..=6) => {
@@ -708,15 +725,15 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
                 ];
 
                 for &reg in &regs[..=a] {
-                    push_asm(RegAllocFixedPop(reg));
+                    assembler.reg_alloc_fixed_pop(reg);
                 }
 
-                push_asm(Instruction(vec![str_lit("    syscall")]));
+                assembler.push_instr([str_lit("    syscall")]);
 
                 for &reg in &regs[1..=a] {
-                    push_asm(fixed_free_drop(reg));
+                    assembler.reg_free_fixed_drop(reg);
                 }
-                push_asm(fixed_free_push(Register::Rax));
+                assembler.reg_free_fixed_push(Register::Rax);
             }
 
             OpCode::CastPtr => {}
@@ -730,7 +747,7 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
         }
     }
 
-    assembly
+    assembler.assembly
 }
 
 pub(crate) fn compile_program(
