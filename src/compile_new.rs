@@ -181,8 +181,8 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
 
         match op.code {
             OpCode::Add | OpCode::Subtract | OpCode::BitOr | OpCode::BitAnd => {
-                let a_id = assembler.reg_alloc_dyn_pop();
                 let b_id = assembler.reg_alloc_dyn_pop();
+                let a_id = assembler.reg_alloc_dyn_pop();
 
                 assembler.push_instr([
                     str_lit(op.code.compile_arithmetic_op()),
