@@ -308,53 +308,6 @@ impl OpCode {
         }
     }
 
-    // Used by the compiler optimization passes to detect whether it can optimize further.
-    pub fn is_compiler_opt_arithmetic(self) -> bool {
-        use OpCode::*;
-        match self {
-            Add | BitAnd | BitOr | ShiftLeft | ShiftRight | Subtract => true,
-
-            ArgC
-            | ArgV
-            | CastPtr
-            | DivMod
-            | Do
-            | DoIf { .. }
-            | DoWhile { .. }
-            | Drop
-            | Dup { .. }
-            | DupPair
-            | Elif { .. }
-            | Else { .. }
-            | End { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
-            | Equal
-            | Ident(_)
-            | If
-            | Include(_)
-            | Less
-            | LessEqual
-            | Load
-            | Load64
-            | Greater
-            | GreaterEqual
-            | Mem { .. }
-            | Multiply
-            | NotEq
-            | Print
-            | PushBool(_)
-            | PushInt(_)
-            | PushStr(_)
-            | Rot
-            | Store { .. }
-            | Store64 { .. }
-            | Swap
-            | SysCall(_)
-            | While { .. } => false,
-        }
-    }
-
     pub fn is_compare(self) -> bool {
         use OpCode::*;
         match self {

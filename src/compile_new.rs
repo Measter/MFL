@@ -1,6 +1,4 @@
-use std::{
-    borrow::Cow, collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, path::Path,
-};
+use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, path::Path};
 
 use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
@@ -14,6 +12,8 @@ use crate::{
 
 mod assembly;
 use assembly::*;
+mod optimizer_passes;
+use optimizer_passes::PASSES;
 
 #[derive(Debug)]
 struct RegisterAllocator {
@@ -160,310 +160,22 @@ impl OpCode {
     }
 }
 
-fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
-    use InstructionPart::{DynamicRegister, FixedRegister};
-
+fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> Vec<Assembly> {
     let mut assembler = Assembler::default();
 
-    let dyn_reg = |reg_id| DynamicRegister {
-        reg_id,
-        is_byte: false,
-    };
-    let dyn_byte_reg = |reg_id| DynamicRegister {
-        reg_id,
-        is_byte: true,
-    };
-
-    fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
-        InstructionPart::Literal(lit.into())
-    }
-
-    for (ip, op) in program.iter().enumerate() {
-        assembler.set_op_range(ip, ip + 1);
-
-        match op.code {
-            OpCode::Add | OpCode::Subtract | OpCode::BitOr | OpCode::BitAnd => {
-                let b_id = assembler.reg_alloc_dyn_pop();
-                let a_id = assembler.reg_alloc_dyn_pop();
-
-                assembler.push_instr([
-                    str_lit(op.code.compile_arithmetic_op()),
-                    dyn_reg(a_id),
-                    str_lit(", "),
-                    dyn_reg(b_id),
-                ]);
-
-                assembler.reg_free_dyn_drop(b_id);
-                assembler.reg_free_dyn_push(a_id);
-            }
-            OpCode::ShiftLeft | OpCode::ShiftRight => {
-                assembler.reg_alloc_fixed_pop(Register::Rcx);
-                let a_id = assembler.reg_alloc_dyn_pop();
-
-                assembler.push_instr([
-                    str_lit(op.code.compile_arithmetic_op()),
-                    dyn_reg(a_id),
-                    str_lit(", "),
-                    FixedRegister(Register::Cl),
-                ]);
-
-                assembler.reg_free_fixed_drop(Register::Rcx);
-                assembler.reg_free_dyn_push(a_id);
-            }
-            OpCode::DivMod => {
-                let divisor_reg = assembler.reg_alloc_dyn_pop();
-                assembler.reg_alloc_fixed_pop(Register::Rax);
-                assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
-
-                assembler.push_instr([str_lit("    div "), dyn_reg(divisor_reg)]);
-
-                assembler.reg_free_dyn_drop(divisor_reg);
-                assembler.reg_free_fixed_push(Register::Rax);
-                assembler.reg_free_fixed_push(Register::Rdx);
-            }
-            OpCode::Multiply => {
-                assembler.reg_alloc_fixed_pop(Register::Rax);
-                assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
-                let mult_reg = assembler.reg_alloc_dyn_pop();
-
-                assembler.push_instr([str_lit("    mul "), dyn_reg(mult_reg)]);
-
-                assembler.reg_free_dyn_drop(mult_reg);
-                assembler.reg_free_fixed_drop(Register::Rdx);
-                assembler.reg_free_fixed_push(Register::Rax);
-            }
-
-            OpCode::Equal
-            | OpCode::NotEq
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Greater
-            | OpCode::GreaterEqual => {
-                let b_id = assembler.reg_alloc_dyn_pop();
-                let a_id = assembler.reg_alloc_dyn_pop();
-                let dst_id = assembler.reg_alloc_dyn_literal("0");
-
-                assembler.push_instr([
-                    str_lit("    cmp "),
-                    dyn_reg(a_id),
-                    str_lit(", "),
-                    dyn_reg(b_id),
-                ]);
-
-                assembler.push_instr([
-                    str_lit(format!("    set{} ", op.code.compile_compare_op_suffix())),
-                    dyn_byte_reg(dst_id),
-                ]);
-
-                assembler.reg_free_dyn_drop(b_id);
-                assembler.reg_free_dyn_drop(a_id);
-                assembler.reg_free_dyn_push(dst_id);
-            }
-
-            OpCode::ArgC => assembler.push_instr([str_lit("    push QWORD [__argc]")]),
-            OpCode::ArgV => assembler.push_instr([str_lit("    push QWORD [__argv]")]),
-            OpCode::PushBool(val) => {
-                let reg = assembler.reg_alloc_dyn_literal((val as u64).to_string());
-                assembler.reg_free_dyn_push(reg);
-            }
-            OpCode::PushInt(val) => {
-                let reg = assembler.reg_alloc_dyn_literal(val.to_string());
-                assembler.reg_free_dyn_push(reg);
-            }
-            OpCode::PushStr(id) => {
-                let literal = interner.resolve_literal(id);
-                let id = id.into_inner().get();
-
-                let len_reg = assembler.reg_alloc_dyn_literal(literal.len().to_string());
-                let ptr_reg = assembler.reg_alloc_dyn_literal(format!("__string_literal{}", id));
-                assembler.reg_free_dyn_push(len_reg);
-                assembler.reg_free_dyn_push(ptr_reg);
-            }
-            OpCode::Mem { offset } => {
-                let reg = assembler.reg_alloc_dyn_literal(format!("__memory + {}", offset));
-                assembler.reg_free_dyn_push(reg);
-            }
-
-            OpCode::Drop => {
-                let reg = assembler.reg_alloc_dyn_pop();
-                assembler.reg_free_dyn_drop(reg);
-            }
-            OpCode::Dup { depth } => {
-                let reg = assembler.reg_alloc_dyn_dup(depth);
-                assembler.reg_free_dyn_push(reg);
-            }
-            OpCode::DupPair => {
-                let reg_top = assembler.reg_alloc_dyn_literal("QWORD [rsp]");
-                let reg_lower = assembler.reg_alloc_dyn_literal("QWORD [rsp+8]");
-                assembler.reg_free_dyn_push(reg_lower);
-                assembler.reg_free_dyn_push(reg_top);
-            }
-            OpCode::Print => {
-                assembler.reg_alloc_fixed_pop(Register::Rdi);
-                assembler.push_instr([str_lit("    call dump")]);
-                assembler.reg_free_fixed_drop(Register::Rdi);
-            }
-            OpCode::Rot => {
-                let a_reg = assembler.reg_alloc_dyn_pop();
-                let b_reg = assembler.reg_alloc_dyn_pop();
-                let c_reg = assembler.reg_alloc_dyn_pop();
-
-                assembler.reg_free_dyn_push(b_reg);
-                assembler.reg_free_dyn_push(a_reg);
-                assembler.reg_free_dyn_push(c_reg);
-            }
-            OpCode::Swap => {
-                let a_id = assembler.reg_alloc_dyn_pop();
-                let b_id = assembler.reg_alloc_dyn_pop();
-                assembler.reg_free_dyn_push(a_id);
-                assembler.reg_free_dyn_push(b_id);
-            }
-
-            OpCode::Load => {
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                let val_reg = assembler.reg_alloc_dyn_literal("0");
-
-                assembler.push_instr([
-                    str_lit("    mov "),
-                    dyn_byte_reg(val_reg),
-                    str_lit(", BYTE ["),
-                    dyn_reg(addr_reg),
-                    str_lit("]"),
-                ]);
-
-                assembler.reg_free_dyn_drop(addr_reg);
-                assembler.reg_free_dyn_push(val_reg);
-            }
-            OpCode::Load64 => {
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                let val_reg = assembler.reg_alloc_dyn_nop();
-
-                assembler.push_instr([
-                    str_lit("    mov "),
-                    dyn_reg(val_reg),
-                    str_lit(", QWORD ["),
-                    dyn_reg(addr_reg),
-                    str_lit("]"),
-                ]);
-
-                assembler.reg_free_dyn_drop(addr_reg);
-                assembler.reg_free_dyn_push(val_reg);
-            }
-            OpCode::Store { forth_style } => {
-                #[allow(clippy::branches_sharing_code)]
-                let (val_reg, addr_reg) = if forth_style {
-                    let addr_reg = assembler.reg_alloc_dyn_pop();
-                    let val_reg = assembler.reg_alloc_dyn_pop();
-                    (val_reg, addr_reg)
-                } else {
-                    let val_reg = assembler.reg_alloc_dyn_pop();
-                    let addr_reg = assembler.reg_alloc_dyn_pop();
-                    (val_reg, addr_reg)
-                };
-                assembler.push_instr([
-                    str_lit("    mov BYTE ["),
-                    dyn_reg(addr_reg),
-                    str_lit("], "),
-                    dyn_byte_reg(val_reg),
-                ]);
-
-                assembler.reg_free_dyn_drop(val_reg);
-                assembler.reg_free_dyn_drop(addr_reg);
-            }
-            OpCode::Store64 { forth_style } => {
-                #[allow(clippy::branches_sharing_code)]
-                let (val_reg, addr_reg) = if forth_style {
-                    let addr_reg = assembler.reg_alloc_dyn_pop();
-                    let val_reg = assembler.reg_alloc_dyn_pop();
-                    (val_reg, addr_reg)
-                } else {
-                    let val_reg = assembler.reg_alloc_dyn_pop();
-                    let addr_reg = assembler.reg_alloc_dyn_pop();
-                    (val_reg, addr_reg)
-                };
-                assembler.push_instr([
-                    str_lit("    mov QWORD ["),
-                    dyn_reg(addr_reg),
-                    str_lit("], "),
-                    dyn_reg(val_reg),
-                ]);
-
-                assembler.reg_free_dyn_drop(val_reg);
-                assembler.reg_free_dyn_drop(addr_reg);
-            }
-
-            OpCode::DoWhile { end_ip, .. } | OpCode::DoIf { end_ip, .. } => {
-                let reg_id = assembler.reg_alloc_dyn_pop();
-
-                assembler.push_instr([
-                    str_lit("    test "),
-                    dyn_reg(reg_id),
-                    str_lit(", "),
-                    dyn_reg(reg_id),
-                ]);
-                assembler.push_instr([str_lit(format!("    jz .LBL{}", end_ip))]);
-
-                assembler.reg_free_dyn_drop(reg_id);
-                assembler.block_boundry();
-            }
-            OpCode::While { ip } => {
-                assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
-                assembler.block_boundry();
-            }
-            OpCode::EndWhile {
-                condition_ip,
-                end_ip,
-            } => {
-                assembler.push_instr([str_lit(format!("    jmp .LBL{}", condition_ip))]);
-                assembler.push_instr([str_lit(format!(".LBL{}:", end_ip))]);
-                assembler.block_boundry();
-            }
-
-            OpCode::If => {
-                assembler.block_boundry();
-            }
-            OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
-                assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
-                assembler.push_instr([str_lit(format!(".LBL{}:", else_start))]);
-                assembler.block_boundry();
-            }
-            OpCode::EndIf { ip } => {
-                assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
-                assembler.block_boundry();
-            }
-
-            OpCode::SysCall(a @ 0..=6) => {
-                let regs = [
-                    Register::Rax,
-                    Register::Rdi,
-                    Register::Rsi,
-                    Register::Rdx,
-                    Register::R10,
-                    Register::R8,
-                    Register::R9,
-                ];
-
-                for &reg in &regs[..=a] {
-                    assembler.reg_alloc_fixed_pop(reg);
-                }
-
-                assembler.push_instr([str_lit("    syscall")]);
-
-                for &reg in &regs[1..=a] {
-                    assembler.reg_free_fixed_drop(reg);
-                }
-                assembler.reg_free_fixed_push(Register::Rax);
-            }
-
-            OpCode::CastPtr => {}
-
-            OpCode::SysCall(arg_count) => {
-                panic!("ICE: Invalid syscall argument count: {}", arg_count)
-            }
-            OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
-                panic!("ICE: Encountered: {:?}", op.code)
-            }
+    let mut ip = 0;
+    while !program.is_empty() {
+        let len_compiled = if optimize {
+            PASSES
+                .iter()
+                .filter_map(|pass| pass(program, ip, &mut assembler, interner))
+                .next()
+        } else {
+            optimizer_passes::compile_single_instruction(program, ip, &mut assembler, interner)
         }
+        .expect("ICE: Failed to compile single instruction");
+        program = &program[len_compiled..];
+        ip += len_compiled;
     }
 
     assembler.into_assembly()
@@ -606,9 +318,11 @@ pub(crate) fn compile_program(
     out_file_path: &Path,
     optimize: bool,
 ) -> Result<()> {
-    let mut assembly = build_assembly(program, interner);
+    let mut assembly = build_assembly(program, interner, optimize);
 
-    combine_stack_ops(&mut assembly);
+    if optimize {
+        combine_stack_ops(&mut assembly);
+    }
 
     write_assembly(out_file_path, source_store, interner, program, &assembly)?;
 
