@@ -128,15 +128,15 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Alloc Nop {} > {:?}", reg_id, reg);
+                eprintln!("Reg Allocate Nop {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
             }
-            Self::RegAllocDynamicDup { reg_id, depth } => {
+            AsmInstruction::RegAllocDynamicDup { reg_id, depth } => {
                 let reg = match allocator.allocate() {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Alloc Dup({}) {} > {:?}", depth, reg_id, reg);
+                eprintln!("Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(out_file, "    mov {}, QWORD [rsp + 8*{}]", reg, depth)?;
             }
@@ -145,11 +145,8 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                // eprintln!("Reg Alloc Pop {} > {:?}", reg_id, reg);
+                eprintln!("Reg Allocate Pop {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
-                writeln!(out_file, "    pop {}", reg)?;
-            }
-            AsmInstruction::RegAllocFixedPop(reg) => {
                 writeln!(out_file, "    pop {}", reg)?;
             }
             AsmInstruction::RegAllocDynamicLiteral(reg_id, literal) => {
@@ -157,21 +154,29 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Alloc Lit {} > {:?}", reg_id, reg);
+                eprintln!("Reg Allocate Lit {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(out_file, "    mov {}, {}", reg, literal)?;
+            }
+            AsmInstruction::RegAllocFixedPop(reg) => {
+                writeln!(out_file, "    pop {}", reg)?;
             }
             AsmInstruction::RegAllocFixedLiteral(reg, literal) => {
                 writeln!(out_file, "    mov {}, {}", reg, literal)?;
             }
+
             AsmInstruction::RegFreeDynamic { reg_id, push } => {
                 let reg = map
                     .remove(reg_id)
                     .expect("ICE: Attempted to remove unallocated register");
-                eprintln!("Reg Free {} > {:?}", reg_id, reg);
-                if *push {
+
+                let kind = if *push {
                     writeln!(out_file, "    push {}", reg)?;
-                }
+                    "Push"
+                } else {
+                    "Drop"
+                };
+                eprintln!("Reg Free {} {} > {:?}", kind, reg_id, reg);
                 allocator.free(reg);
             }
             AsmInstruction::RegFreeFixed { reg_id, push } => {
@@ -179,6 +184,7 @@ impl AsmInstruction {
                     writeln!(out_file, "    push {}", reg_id)?;
                 }
             }
+
             AsmInstruction::Instruction(parts) => {
                 for part in parts {
                     match part {
