@@ -233,12 +233,12 @@ fn merge_dyn_dyn_registers(
     }
 }
 
-fn combine_stack_ops(asm: &mut [Assembly]) {
+fn combine_stack_ops(program: &mut [Assembly]) {
     loop {
         let mut did_change = false;
 
-        'start_search: for mut start_idx in 0..asm.len() {
-            let start_reg_id = match &asm[start_idx].asm {
+        'start_search: for mut start_idx in 0..program.len() {
+            let start_reg_id = match &program[start_idx].asm {
                 AsmInstruction::RegFreeDynamic { push: true, reg_id } => *reg_id,
                 _ => continue,
             };
@@ -248,13 +248,38 @@ fn combine_stack_ops(asm: &mut [Assembly]) {
             // If we find any other kind of stack operation, then we have to abort.
 
             let mut end_idx = start_idx + 1;
-            let mut replaced_reg_id = None;
-            for (search_idx, asm) in asm.iter().enumerate().skip(end_idx) {
+            for (search_idx, asm) in program.iter().enumerate().skip(end_idx) {
                 end_idx = search_idx;
                 match &asm.asm {
                     AsmInstruction::RegAllocDynamicPop(id) => {
-                        replaced_reg_id = Some(*id);
-                        break;
+                        let replaced_reg_id = *id;
+
+                        // Now we need to search backwards for the beginning of the start register's operation.
+                        let start_op_range = program[start_idx].merged_range.clone();
+                        while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
+                        {
+                            start_idx -= 1;
+                        }
+
+                        // Now search the other direction to find the end of the replaced registers operation.
+                        let end_op_range = program[end_idx].merged_range.clone();
+                        while end_idx < program.len() - 1
+                            && program[end_idx + 1].merged_range == end_op_range
+                        {
+                            end_idx += 1;
+                        }
+
+                        let range_to_merge = &mut program[start_idx..=end_idx];
+                        let new_op_range = start_op_range.start..end_op_range.end;
+
+                        merge_dyn_dyn_registers(
+                            range_to_merge,
+                            new_op_range,
+                            start_reg_id,
+                            replaced_reg_id,
+                        );
+                        did_change = true;
+                        continue 'start_search;
                     }
 
                     // These access the stack in an unsupported way, so we have to abandon
@@ -279,30 +304,6 @@ fn combine_stack_ops(asm: &mut [Assembly]) {
                     | AsmInstruction::Nop => {}
                 }
             }
-
-            // We need to handle running off the end of the assembly.
-            let replaced_reg_id = match replaced_reg_id {
-                Some(id) => id,
-                None => break,
-            };
-
-            // Now we need to search backwards for the beginning of the start register's operation.
-            let start_op_range = asm[start_idx].merged_range.clone();
-            while start_idx > 0 && asm[start_idx - 1].merged_range == start_op_range {
-                start_idx -= 1;
-            }
-
-            // Now search the other direction to find the end of the replaced registers operation.
-            let end_op_range = asm[end_idx].merged_range.clone();
-            while end_idx < asm.len() - 1 && asm[end_idx + 1].merged_range == end_op_range {
-                end_idx += 1;
-            }
-
-            let range_to_merge = &mut asm[start_idx..=end_idx];
-            let new_op_range = start_op_range.start..end_op_range.end;
-
-            merge_dyn_dyn_registers(range_to_merge, new_op_range, start_reg_id, replaced_reg_id);
-            did_change = true;
         }
 
         if !did_change {
