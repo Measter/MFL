@@ -11,7 +11,7 @@ use derive_more::Display;
 
 use super::{OpRange, RegisterAllocator};
 
-#[derive(Debug, Clone, Copy, Display)]
+#[derive(Debug, Clone, Copy, Display, Eq)]
 pub enum Register {
     #[display(fmt = "r8")]
     R8,
@@ -71,8 +71,30 @@ pub enum Register {
     Sil,
 }
 
+impl PartialEq for Register {
+    fn eq(&self, other: &Self) -> bool {
+        use Register::*;
+        match self {
+            R8 | R8b => matches!(other, R8 | R8b),
+            R9 | R9b => matches!(other, R9 | R9b),
+            R10 | R10b => matches!(other, R10 | R10b),
+            R11 | R11b => matches!(other, R11 | R11b),
+            R12 | R12b => matches!(other, R12 | R12b),
+            R13 | R13b => matches!(other, R13 | R13b),
+            R14 | R14b => matches!(other, R14 | R14b),
+            R15 | R15b => matches!(other, R15 | R15b),
+            Rax | Al => matches!(other, Rax | Al),
+            Rbx | Bl => matches!(other, Rbx | Bl),
+            Rcx | Cl => matches!(other, Rcx | Cl),
+            Rdx | Dl => matches!(other, Rdx | Dl),
+            Rdi | Dil => matches!(other, Rdi | Dil),
+            Rsi | Sil => matches!(other, Rsi | Sil),
+        }
+    }
+}
+
 impl Register {
-    fn to_byte_reg(self) -> Self {
+    pub(super) fn to_byte_reg(self) -> Self {
         match self {
             Register::R8 => Register::R8b,
             Register::R9 => Register::R9b,
@@ -103,10 +125,12 @@ pub enum InstructionPart {
 #[derive(Debug)]
 pub enum AsmInstruction {
     RegAllocDynamicPop(usize),
-    RegAllocFixedPop(Register),
     RegAllocDynamicNop(usize),
     RegAllocDynamicDup { reg_id: usize, depth: usize },
     RegAllocDynamicLiteral(usize, Cow<'static, str>),
+    RegAllocFixedPop(Register),
+    RegAllocFixedNop(Register),
+    RegAllocFixedDup { reg: Register, depth: usize },
     RegAllocFixedLiteral(Register, Cow<'static, str>),
     RegFreeDynamic { reg_id: usize, push: bool },
     RegFreeFixed { reg_id: Register, push: bool },
@@ -158,6 +182,10 @@ impl AsmInstruction {
                 map.insert(*reg_id, reg);
                 writeln!(out_file, "    mov {}, {}", reg, literal)?;
             }
+            AsmInstruction::RegAllocFixedDup { reg, depth } => {
+                writeln!(out_file, "    mov {}, QWORD [rsp + 8*{}]", reg, depth)?;
+            }
+            AsmInstruction::RegAllocFixedNop(_) => {}
             AsmInstruction::RegAllocFixedPop(reg) => {
                 writeln!(out_file, "    pop {}", reg)?;
             }

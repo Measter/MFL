@@ -188,7 +188,7 @@ fn merge_dyn_dyn_registers(
     end_reg_id: usize,
 ) {
     eprintln!(
-        "--- Merge {} and {} in range {}..={}",
+        "--- Dyn/Dyn Merge {} and {} in range {}..={}",
         start_reg_id,
         end_reg_id,
         new_range.start,
@@ -221,6 +221,8 @@ fn merge_dyn_dyn_registers(
             }
             AsmInstruction::RegAllocDynamicDup { .. }
             | AsmInstruction::RegAllocDynamicPop(_)
+            | AsmInstruction::RegAllocFixedDup { .. }
+            | AsmInstruction::RegAllocFixedNop(_)
             | AsmInstruction::RegAllocFixedPop(_)
             | AsmInstruction::RegAllocDynamicNop(_)
             | AsmInstruction::RegAllocDynamicLiteral(_, _)
@@ -233,27 +235,122 @@ fn merge_dyn_dyn_registers(
     }
 }
 
+fn merge_dyn_fixed_registers(
+    asm: &mut [Assembly],
+    new_range: Range<usize>,
+    old_reg_id: usize,
+    fixed_reg: Register,
+) {
+    eprintln!(
+        "--- Dyn/Fixed Merge {} and {} in range {}..={}",
+        old_reg_id,
+        fixed_reg,
+        new_range.start,
+        new_range.end - 1
+    );
+
+    for asm in asm {
+        asm.merged_range = new_range.clone();
+        match &mut asm.asm {
+            &mut AsmInstruction::RegAllocDynamicPop(id) if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocFixedPop(fixed_reg);
+            }
+            &mut AsmInstruction::RegAllocDynamicNop(id) if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocFixedNop(fixed_reg);
+            }
+            &mut AsmInstruction::RegAllocDynamicDup { reg_id, depth } if reg_id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocFixedDup {
+                    reg: fixed_reg,
+                    depth,
+                };
+            }
+            AsmInstruction::RegAllocDynamicLiteral(id, value) if *id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocFixedLiteral(fixed_reg, value.clone());
+            }
+
+            &mut AsmInstruction::RegAllocFixedPop(reg) if reg == fixed_reg => {
+                asm.asm = AsmInstruction::Nop;
+            }
+            &mut AsmInstruction::RegFreeDynamic { reg_id, push: true } if reg_id == old_reg_id => {
+                asm.asm = AsmInstruction::Nop;
+            }
+
+            AsmInstruction::Instruction(instructions) => {
+                for instr in instructions {
+                    match *instr {
+                        InstructionPart::DynamicRegister {
+                            reg_id,
+                            is_byte: true,
+                        } if reg_id == old_reg_id => {
+                            *instr = InstructionPart::FixedRegister(fixed_reg.to_byte_reg())
+                        }
+                        InstructionPart::DynamicRegister {
+                            reg_id,
+                            is_byte: false,
+                        } if reg_id == old_reg_id => {
+                            *instr = InstructionPart::FixedRegister(fixed_reg)
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+
+            AsmInstruction::RegAllocDynamicPop(_)
+            | AsmInstruction::RegAllocDynamicNop(_)
+            | AsmInstruction::RegAllocDynamicLiteral { .. }
+            | AsmInstruction::RegAllocDynamicDup { .. }
+            | AsmInstruction::RegAllocFixedDup { .. }
+            | AsmInstruction::RegAllocFixedPop(_)
+            | AsmInstruction::RegAllocFixedNop(_)
+            | AsmInstruction::RegAllocFixedLiteral(_, _)
+            | AsmInstruction::RegFreeFixed { .. }
+            | AsmInstruction::RegFreeDynamic { .. }
+            | AsmInstruction::BlockBoundry
+            | AsmInstruction::Nop => continue,
+        }
+    }
+}
+
+fn uses_fixed_reg(asm: &[Assembly], fixed_reg: Register) -> bool {
+    for op in asm {
+        match &op.asm {
+            AsmInstruction::RegAllocFixedPop(reg_id)
+            | AsmInstruction::RegFreeFixed { reg_id, .. }
+            | AsmInstruction::RegAllocFixedLiteral(reg_id, _)
+                if *reg_id == fixed_reg =>
+            {
+                return true
+            }
+            AsmInstruction::Instruction(instrs) => {
+                for instr in instrs {
+                    match instr {
+                        InstructionPart::FixedRegister(reg_id) if *reg_id == fixed_reg => {
+                            return true
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    false
+}
+
 fn combine_stack_ops(program: &mut [Assembly]) {
     loop {
         let mut did_change = false;
 
-        'start_search: for mut start_idx in 0..program.len() {
+        for mut start_idx in 0..program.len() {
             let start_reg_id = match &program[start_idx].asm {
                 AsmInstruction::RegFreeDynamic { push: true, reg_id } => *reg_id,
                 _ => continue,
             };
 
-            // The current instruction is a dynamic free-push. We'll search forward for the next
-            // stack operation. If it's a RegAllocDynamicPop then we can merge the two operations.
-            // If we find any other kind of stack operation, then we have to abort.
-
-            let mut end_idx = start_idx + 1;
-            for (search_idx, asm) in program.iter().enumerate().skip(end_idx) {
-                end_idx = search_idx;
+            for (mut end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
                 match &asm.asm {
-                    AsmInstruction::RegAllocDynamicPop(id) => {
-                        let replaced_reg_id = *id;
-
+                    &AsmInstruction::RegAllocDynamicPop(replaced_reg_id) => {
                         // Now we need to search backwards for the beginning of the start register's operation.
                         let start_op_range = program[start_idx].merged_range.clone();
                         while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
@@ -279,26 +376,58 @@ fn combine_stack_ops(program: &mut [Assembly]) {
                             replaced_reg_id,
                         );
                         did_change = true;
-                        continue 'start_search;
+                        break;
+                    }
+
+                    &AsmInstruction::RegAllocFixedPop(new_reg) => {
+                        // Now we need to search backwards for the beginning of the start register's operation.
+                        let start_op_range = program[start_idx].merged_range.clone();
+                        while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
+                        {
+                            start_idx -= 1;
+                        }
+
+                        if uses_fixed_reg(&program[start_idx..end_idx - 1], new_reg) {
+                            break;
+                        }
+
+                        // Now search the other direction to find the end of the replaced registers operation.
+                        let end_op_range = program[end_idx].merged_range.clone();
+                        while end_idx < program.len() - 1
+                            && program[end_idx + 1].merged_range == end_op_range
+                        {
+                            end_idx += 1;
+                        }
+
+                        let range_to_merge = &mut program[start_idx..=end_idx];
+                        let new_op_range = start_op_range.start..end_op_range.end;
+
+                        merge_dyn_fixed_registers(
+                            range_to_merge,
+                            new_op_range,
+                            start_reg_id,
+                            new_reg,
+                        );
+                        did_change = true;
+                        break;
                     }
 
                     // These access the stack in an unsupported way, so we have to abandon
                     // the search for the current op.
                     AsmInstruction::RegFreeDynamic { push: true, .. }
                     | AsmInstruction::RegFreeFixed { push: true, .. }
-                    | AsmInstruction::RegAllocFixedPop(_)
-                    | AsmInstruction::RegAllocDynamicDup { .. } => continue 'start_search,
+                    | AsmInstruction::RegAllocFixedDup { .. }
+                    | AsmInstruction::RegAllocDynamicDup { .. } => break,
 
                     // We can't optimize past the end of a block.
-                    AsmInstruction::BlockBoundry => {
-                        continue 'start_search;
-                    }
+                    AsmInstruction::BlockBoundry => break,
 
                     // These don't alter the stack, so we can ignore these.
                     AsmInstruction::RegFreeDynamic { push: false, .. }
                     | AsmInstruction::RegFreeFixed { push: false, .. }
                     | AsmInstruction::RegAllocDynamicNop(_)
                     | AsmInstruction::RegAllocDynamicLiteral(_, _)
+                    | AsmInstruction::RegAllocFixedNop(_)
                     | AsmInstruction::RegAllocFixedLiteral(_, _)
                     | AsmInstruction::Instruction(_)
                     | AsmInstruction::Nop => {}

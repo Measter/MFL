@@ -329,8 +329,8 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::DupPair => {
-            let reg_top = assembler.reg_alloc_dyn_literal("QWORD [rsp]");
-            let reg_lower = assembler.reg_alloc_dyn_literal("QWORD [rsp+8]");
+            let reg_top = assembler.reg_alloc_dyn_dup(0);
+            let reg_lower = assembler.reg_alloc_dyn_dup(1);
             assembler.reg_free_dyn_push(reg_lower);
             assembler.reg_free_dyn_push(reg_top);
         }
