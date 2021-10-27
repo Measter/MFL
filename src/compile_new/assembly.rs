@@ -105,6 +105,7 @@ pub enum AsmInstruction {
     RegAllocDynamicPop(usize),
     RegAllocFixedPop(Register),
     RegAllocDynamicNop(usize),
+    RegAllocDynamicDup { reg_id: usize, depth: usize },
     RegAllocDynamicLiteral(usize, Cow<'static, str>),
     RegAllocFixedLiteral(Register, Cow<'static, str>),
     RegFreeDynamic { reg_id: usize, push: bool },
@@ -127,13 +128,24 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
+                eprintln!("Reg Alloc Nop {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
+            }
+            Self::RegAllocDynamicDup { reg_id, depth } => {
+                let reg = match allocator.allocate() {
+                    Some(reg) => reg,
+                    None => panic!("ICE: Register exhaustion. {:?}", self),
+                };
+                eprintln!("Reg Alloc Dup({}) {} > {:?}", depth, reg_id, reg);
+                map.insert(*reg_id, reg);
+                writeln!(out_file, "    mov {}, QWORD [rsp + 8*{}]", reg, depth)?;
             }
             AsmInstruction::RegAllocDynamicPop(reg_id) => {
                 let reg = match allocator.allocate() {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
+                // eprintln!("Reg Alloc Pop {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(out_file, "    pop {}", reg)?;
             }
@@ -145,6 +157,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
+                eprintln!("Reg Alloc Lit {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(out_file, "    mov {}, {}", reg, literal)?;
             }
@@ -155,6 +168,7 @@ impl AsmInstruction {
                 let reg = map
                     .remove(reg_id)
                     .expect("ICE: Attempted to remove unallocated register");
+                eprintln!("Reg Free {} > {:?}", reg_id, reg);
                 if *push {
                     writeln!(out_file, "    push {}", reg)?;
                 }
@@ -170,9 +184,9 @@ impl AsmInstruction {
                     match part {
                         InstructionPart::Literal(lit) => out_file.write_all(lit.as_bytes())?,
                         InstructionPart::DynamicRegister { reg_id, is_byte } => {
-                            let mut reg = *map
-                                .get(reg_id)
-                                .expect("ICE: Attempted to fetch unallocated register");
+                            let mut reg = *map.get(reg_id).unwrap_or_else(|| {
+                                panic!("ICE: Attempted to fetch unallocated register {}", reg_id)
+                            });
                             if *is_byte {
                                 reg = reg.to_byte_reg();
                             }
@@ -197,6 +211,7 @@ impl AsmInstruction {
 pub struct Assembly {
     pub asm: AsmInstruction,
     pub op_range: Range<usize>,
+    pub merged_range: Range<usize>,
 }
 
 impl Assembly {
@@ -204,6 +219,7 @@ impl Assembly {
         Self {
             asm,
             op_range: range.start..range.end,
+            merged_range: range.start..range.end,
         }
     }
 }
@@ -252,6 +268,15 @@ impl Assembler {
         let id = self.next_register();
         self.assembly.push(Assembly::new(
             AsmInstruction::RegAllocDynamicNop(id),
+            self.op_range,
+        ));
+        id
+    }
+
+    pub fn reg_alloc_dyn_dup(&mut self, depth: usize) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocDynamicDup { depth, reg_id: id },
             self.op_range,
         ));
         id

@@ -35,13 +35,10 @@ impl RegisterAllocator {
     }
 
     fn allocate(&mut self) -> Option<Register> {
-        let reg = self.available_registers.pop();
-        eprintln!("Allocating {:?}", reg);
-        reg
+        self.available_registers.pop()
     }
 
     fn free(&mut self, reg: Register) {
-        eprintln!("Freeing {:?}", reg);
         self.available_registers.push(reg);
     }
 }
@@ -292,7 +289,7 @@ fn build_assembly(program: &[Op], interner: &Interners) -> Vec<Assembly> {
                 assembler.reg_free_dyn_drop(reg);
             }
             OpCode::Dup { depth } => {
-                let reg = assembler.reg_alloc_dyn_literal(format!("QWORD [rsp + 8*{}]", depth));
+                let reg = assembler.reg_alloc_dyn_dup(depth);
                 assembler.reg_free_dyn_push(reg);
             }
             OpCode::DupPair => {
@@ -485,8 +482,9 @@ fn merge_dyn_dyn_registers(
         new_range.start,
         new_range.end - 1
     );
-    for asm in asm {
-        asm.op_range = new_range.clone();
+
+    for asm in &mut *asm {
+        asm.merged_range = new_range.clone();
         match &mut asm.asm {
             AsmInstruction::RegAllocDynamicPop(id) if *id == end_reg_id => {
                 asm.asm = AsmInstruction::Nop;
@@ -509,7 +507,8 @@ fn merge_dyn_dyn_registers(
                     }
                 }
             }
-            AsmInstruction::RegAllocDynamicPop(_)
+            AsmInstruction::RegAllocDynamicDup { .. }
+            | AsmInstruction::RegAllocDynamicPop(_)
             | AsmInstruction::RegAllocFixedPop(_)
             | AsmInstruction::RegAllocDynamicNop(_)
             | AsmInstruction::RegAllocDynamicLiteral(_, _)
@@ -546,11 +545,12 @@ fn combine_stack_ops(asm: &mut [Assembly]) {
                         break;
                     }
 
-                    // These alter the stack in an unsupported way, so we have to abandon
+                    // These access the stack in an unsupported way, so we have to abandon
                     // the search for the current op.
                     AsmInstruction::RegFreeDynamic { push: true, .. }
                     | AsmInstruction::RegFreeFixed { push: true, .. }
-                    | AsmInstruction::RegAllocFixedPop(_) => continue 'start_search,
+                    | AsmInstruction::RegAllocFixedPop(_)
+                    | AsmInstruction::RegAllocDynamicDup { .. } => continue 'start_search,
 
                     // We can't optimize past the end of a block.
                     AsmInstruction::BlockBoundry => {
@@ -575,14 +575,14 @@ fn combine_stack_ops(asm: &mut [Assembly]) {
             };
 
             // Now we need to search backwards for the beginning of the start register's operation.
-            let start_op_range = asm[start_idx].op_range.clone();
-            while start_idx > 0 && asm[start_idx - 1].op_range == start_op_range {
+            let start_op_range = asm[start_idx].merged_range.clone();
+            while start_idx > 0 && asm[start_idx - 1].merged_range == start_op_range {
                 start_idx -= 1;
             }
 
             // Now search the other direction to find the end of the replaced registers operation.
-            let end_op_range = asm[end_idx].op_range.clone();
-            while end_idx < asm.len() - 1 && asm[end_idx + 1].op_range == end_op_range {
+            let end_op_range = asm[end_idx].merged_range.clone();
+            while end_idx < asm.len() - 1 && asm[end_idx + 1].merged_range == end_op_range {
                 end_idx += 1;
             }
 
