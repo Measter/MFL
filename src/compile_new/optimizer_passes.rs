@@ -11,6 +11,8 @@ use super::assembly::{Assembler, InstructionPart};
 type OptimizerFunction = for<'a> fn(&[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
+    push_compare,
+    push_shift,
     push_arithmetic,
     mem_push_store,
     mem_load,
@@ -40,6 +42,74 @@ impl OpCode {
         use OpCode::*;
         matches!(self, Add | BitAnd | BitOr | Subtract)
     }
+
+    fn is_compiler_opt_shift(self) -> bool {
+        use OpCode::*;
+        matches!(self, ShiftLeft | ShiftRight)
+    }
+
+    pub fn is_compare(self) -> bool {
+        use OpCode::*;
+        matches!(
+            self,
+            Equal | Greater | GreaterEqual | Less | LessEqual | NotEq
+        )
+    }
+}
+
+/// Optimize a Push-Compare
+fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
+    let (push, op) = match ops {
+        [push, op, ..]
+            if op.code.is_compare() && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX)) =>
+        {
+            (push, op)
+        }
+        _ => return None,
+    };
+
+    let push_val = push.code.unwrap_push_int();
+
+    assembler.set_op_range(ip, ip + 2);
+    let reg = assembler.reg_alloc_dyn_pop();
+    let op_suffix = op.code.compile_compare_op_suffix();
+
+    assembler.push_instr([
+        str_lit("    cmp "),
+        dyn_reg(reg),
+        str_lit(format!(", {}", push_val)),
+    ]);
+    assembler.push_instr([str_lit(format!("    set{} ", op_suffix)), dyn_byte_reg(reg)]);
+    assembler.reg_free_dyn_push(reg);
+
+    Some(2)
+}
+
+/// Optimize a Push-ShiftOp
+fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
+    let (push, op) = match ops {
+        [push, op, ..]
+            if op.code.is_compiler_opt_shift() && matches!(push.code, OpCode::PushInt(0..=255)) =>
+        {
+            (push, op)
+        }
+        _ => return None,
+    };
+
+    let push_val = push.code.unwrap_push_int();
+
+    assembler.set_op_range(ip, ip + 2);
+    let reg = assembler.reg_alloc_dyn_pop();
+
+    assembler.push_instr([
+        str_lit(op.code.compile_arithmetic_op()),
+        dyn_reg(reg),
+        str_lit(format!(", {}", push_val)),
+    ]);
+
+    assembler.reg_free_dyn_push(reg);
+
+    Some(2)
 }
 
 /// Optimize a Push-ArithBinOp

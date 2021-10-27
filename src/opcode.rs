@@ -308,52 +308,6 @@ impl OpCode {
         }
     }
 
-    pub fn is_compare(self) -> bool {
-        use OpCode::*;
-        match self {
-            Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
-
-            Add
-            | ArgC
-            | ArgV
-            | CastPtr
-            | BitOr
-            | BitAnd
-            | DivMod
-            | Drop
-            | Do
-            | DoIf { .. }
-            | DoWhile { .. }
-            | Dup { .. }
-            | DupPair
-            | Elif { .. }
-            | Else { .. }
-            | End { .. }
-            | EndIf { .. }
-            | EndWhile { .. }
-            | Ident(_)
-            | If
-            | Include(_)
-            | Load
-            | Load64
-            | Mem { .. }
-            | Multiply
-            | Print
-            | PushBool(_)
-            | PushInt(_)
-            | PushStr(_)
-            | Rot
-            | ShiftLeft
-            | ShiftRight
-            | Store { .. }
-            | Store64 { .. }
-            | Subtract
-            | Swap
-            | SysCall(_)
-            | While { .. } => false,
-        }
-    }
-
     pub fn unwrap_mem(self) -> usize {
         match self {
             Self::Mem { offset } => offset,
