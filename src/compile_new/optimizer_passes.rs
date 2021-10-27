@@ -296,8 +296,14 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(dst_id);
         }
 
-        OpCode::ArgC => assembler.push_instr([str_lit("    push QWORD [__argc]")]),
-        OpCode::ArgV => assembler.push_instr([str_lit("    push QWORD [__argv]")]),
+        OpCode::ArgC => {
+            let reg = assembler.reg_alloc_dyn_literal("QWORD [__argc]");
+            assembler.reg_free_dyn_push(reg);
+        }
+        OpCode::ArgV => {
+            let reg = assembler.reg_alloc_dyn_literal("QWORD [__argv]");
+            assembler.reg_free_dyn_push(reg);
+        }
         OpCode::PushBool(val) => {
             let reg = assembler.reg_alloc_dyn_literal((val as u64).to_string());
             assembler.reg_free_dyn_push(reg);
