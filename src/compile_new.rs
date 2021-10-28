@@ -197,14 +197,23 @@ fn merge_dyn_dyn_registers(
 
     for asm in &mut *asm {
         asm.merged_range = new_range.clone();
+        use RegisterType::*;
         match &mut asm.asm {
-            AsmInstruction::RegAllocDynamicPop(id) if *id == end_reg_id => {
+            &mut AsmInstruction::RegAllocPop {
+                reg: Dynamic(id), ..
+            } if id == end_reg_id => {
                 asm.asm = AsmInstruction::Nop;
             }
-            AsmInstruction::RegFreeDynamic { reg_id, push: true } if *reg_id == start_reg_id => {
+            &mut AsmInstruction::RegFree {
+                reg: Dynamic(reg_id),
+                push: true,
+            } if reg_id == start_reg_id => {
                 asm.asm = AsmInstruction::Nop;
             }
-            AsmInstruction::RegFreeDynamic { reg_id, .. } if *reg_id == end_reg_id => {
+            AsmInstruction::RegFree {
+                reg: Dynamic(reg_id),
+                ..
+            } if *reg_id == end_reg_id => {
                 *reg_id = start_reg_id;
             }
             AsmInstruction::Instruction(instrs) => {
@@ -218,16 +227,12 @@ fn merge_dyn_dyn_registers(
                     }
                 }
             }
-            AsmInstruction::RegAllocDynamicDup { .. }
-            | AsmInstruction::RegAllocDynamicPop(_)
-            | AsmInstruction::RegAllocFixedDup { .. }
-            | AsmInstruction::RegAllocFixedNop(_)
-            | AsmInstruction::RegAllocFixedPop(_)
-            | AsmInstruction::RegAllocDynamicNop(_)
-            | AsmInstruction::RegAllocDynamicLiteral(_, _)
-            | AsmInstruction::RegAllocFixedLiteral(_, _)
-            | AsmInstruction::RegFreeDynamic { .. }
-            | AsmInstruction::RegFreeFixed { .. }
+
+            AsmInstruction::RegAllocDup { .. }
+            | AsmInstruction::RegAllocPop { .. }
+            | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
             | AsmInstruction::Nop => continue,
         }
@@ -249,28 +254,45 @@ fn merge_dyn_fixed_registers(
     );
 
     for asm in asm {
+        use RegisterType::*;
         asm.merged_range = new_range.clone();
         match &mut asm.asm {
-            &mut AsmInstruction::RegAllocDynamicPop(id) if id == old_reg_id => {
-                asm.asm = AsmInstruction::RegAllocFixedPop(fixed_reg);
-            }
-            &mut AsmInstruction::RegAllocDynamicNop(id) if id == old_reg_id => {
-                asm.asm = AsmInstruction::RegAllocFixedNop(fixed_reg);
-            }
-            &mut AsmInstruction::RegAllocDynamicDup { reg_id, depth } if reg_id == old_reg_id => {
-                asm.asm = AsmInstruction::RegAllocFixedDup {
-                    reg: fixed_reg,
-                    depth,
+            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocPop {
+                    reg: Fixed(fixed_reg),
                 };
             }
-            AsmInstruction::RegAllocDynamicLiteral(id, value) if *id == old_reg_id => {
-                asm.asm = AsmInstruction::RegAllocFixedLiteral(fixed_reg, value.clone());
+            &mut AsmInstruction::RegAllocNop { reg: Dynamic(id) } if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocNop {
+                    reg: Fixed(fixed_reg),
+                };
+            }
+            &mut AsmInstruction::RegAllocDup {
+                reg: Dynamic(id),
+                depth,
+            } if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocDup {
+                    reg: Fixed(fixed_reg),
+                    depth,
+                }
+            }
+            AsmInstruction::RegAllocLiteral {
+                reg: Dynamic(id),
+                value,
+            } if *id == old_reg_id => {
+                asm.asm = AsmInstruction::RegAllocLiteral {
+                    reg: Fixed(fixed_reg),
+                    value: value.clone(),
+                }
             }
 
-            &mut AsmInstruction::RegAllocFixedPop(reg) if reg == fixed_reg => {
+            &mut AsmInstruction::RegAllocPop { reg: Fixed(reg) } if reg == fixed_reg => {
                 asm.asm = AsmInstruction::Nop;
             }
-            &mut AsmInstruction::RegFreeDynamic { reg_id, push: true } if reg_id == old_reg_id => {
+            &mut AsmInstruction::RegFree {
+                reg: Dynamic(reg_id),
+                push: true,
+            } if reg_id == old_reg_id => {
                 asm.asm = AsmInstruction::Nop;
             }
 
@@ -291,16 +313,11 @@ fn merge_dyn_fixed_registers(
                 }
             }
 
-            AsmInstruction::RegAllocDynamicPop(_)
-            | AsmInstruction::RegAllocDynamicNop(_)
-            | AsmInstruction::RegAllocDynamicLiteral { .. }
-            | AsmInstruction::RegAllocDynamicDup { .. }
-            | AsmInstruction::RegAllocFixedDup { .. }
-            | AsmInstruction::RegAllocFixedPop(_)
-            | AsmInstruction::RegAllocFixedNop(_)
-            | AsmInstruction::RegAllocFixedLiteral(_, _)
-            | AsmInstruction::RegFreeFixed { .. }
-            | AsmInstruction::RegFreeDynamic { .. }
+            AsmInstruction::RegAllocPop { .. }
+            | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocDup { .. }
+            | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
             | AsmInstruction::Nop => continue,
         }
@@ -309,21 +326,23 @@ fn merge_dyn_fixed_registers(
 
 fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
     for op in asm {
+        use RegisterType::*;
         match &op.asm {
-            AsmInstruction::RegAllocFixedPop(reg_id)
-            | AsmInstruction::RegFreeFixed { reg_id, .. }
-            | AsmInstruction::RegAllocFixedLiteral(reg_id, _)
-                if *reg_id == fixed_reg =>
-            {
-                return true
+            &AsmInstruction::RegAllocPop { reg: Fixed(reg_id) }
+            | &AsmInstruction::RegFree {
+                reg: Fixed(reg_id), ..
             }
+            | &AsmInstruction::RegAllocLiteral {
+                reg: Fixed(reg_id), ..
+            } if reg_id == fixed_reg => return true,
+
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
-                    match instr {
+                    match *instr {
                         InstructionPart::Register {
                             reg: RegisterType::Fixed(reg_id),
                             ..
-                        } if *reg_id == fixed_reg => return true,
+                        } if reg_id == fixed_reg => return true,
                         _ => continue,
                     }
                 }
@@ -340,14 +359,20 @@ fn combine_stack_ops(program: &mut [Assembly]) {
         let mut did_change = false;
 
         for mut start_idx in 0..program.len() {
+            use RegisterType::*;
             let start_reg_id = match &program[start_idx].asm {
-                AsmInstruction::RegFreeDynamic { push: true, reg_id } => *reg_id,
+                AsmInstruction::RegFree {
+                    push: true,
+                    reg: Dynamic(reg_id),
+                } => *reg_id,
                 _ => continue,
             };
 
             for (mut end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
                 match &asm.asm {
-                    &AsmInstruction::RegAllocDynamicPop(replaced_reg_id) => {
+                    &AsmInstruction::RegAllocPop {
+                        reg: Dynamic(replaced_reg_id),
+                    } => {
                         // Now we need to search backwards for the beginning of the start register's operation.
                         let start_op_range = program[start_idx].merged_range.clone();
                         while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
@@ -376,7 +401,9 @@ fn combine_stack_ops(program: &mut [Assembly]) {
                         break;
                     }
 
-                    &AsmInstruction::RegAllocFixedPop(new_reg) => {
+                    &AsmInstruction::RegAllocPop {
+                        reg: Fixed(new_reg),
+                    } => {
                         // Now we need to search backwards for the beginning of the start register's operation.
                         let start_op_range = program[start_idx].merged_range.clone();
                         while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
@@ -411,21 +438,16 @@ fn combine_stack_ops(program: &mut [Assembly]) {
 
                     // These access the stack in an unsupported way, so we have to abandon
                     // the search for the current op.
-                    AsmInstruction::RegFreeDynamic { push: true, .. }
-                    | AsmInstruction::RegFreeFixed { push: true, .. }
-                    | AsmInstruction::RegAllocFixedDup { .. }
-                    | AsmInstruction::RegAllocDynamicDup { .. } => break,
+                    AsmInstruction::RegFree { push: true, .. }
+                    | AsmInstruction::RegAllocDup { .. } => break,
 
                     // We can't optimize past the end of a block.
                     AsmInstruction::BlockBoundry => break,
 
                     // These don't alter the stack, so we can ignore these.
-                    AsmInstruction::RegFreeDynamic { push: false, .. }
-                    | AsmInstruction::RegFreeFixed { push: false, .. }
-                    | AsmInstruction::RegAllocDynamicNop(_)
-                    | AsmInstruction::RegAllocDynamicLiteral(_, _)
-                    | AsmInstruction::RegAllocFixedNop(_)
-                    | AsmInstruction::RegAllocFixedLiteral(_, _)
+                    AsmInstruction::RegFree { push: false, .. }
+                    | AsmInstruction::RegAllocNop { .. }
+                    | AsmInstruction::RegAllocLiteral { .. }
                     | AsmInstruction::Instruction(_)
                     | AsmInstruction::Nop => {}
                 }
