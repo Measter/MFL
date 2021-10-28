@@ -115,11 +115,16 @@ impl X86Register {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RegisterType {
+    Dynamic(usize),
+    Fixed(X86Register),
+}
+
 #[derive(Debug)]
 pub enum InstructionPart {
     Literal(Cow<'static, str>),
-    DynamicRegister { reg_id: usize, is_byte: bool },
-    FixedRegister(X86Register),
+    Register { reg: RegisterType, is_byte: bool },
 }
 
 #[derive(Debug)]
@@ -217,7 +222,10 @@ impl AsmInstruction {
                 for part in parts {
                     match part {
                         InstructionPart::Literal(lit) => out_file.write_all(lit.as_bytes())?,
-                        InstructionPart::DynamicRegister { reg_id, is_byte } => {
+                        InstructionPart::Register {
+                            reg: RegisterType::Dynamic(reg_id),
+                            is_byte,
+                        } => {
                             let mut reg = *map.get(reg_id).unwrap_or_else(|| {
                                 panic!("ICE: Attempted to fetch unallocated register {}", reg_id)
                             });
@@ -226,8 +234,15 @@ impl AsmInstruction {
                             }
                             write!(out_file, "{}", reg)?;
                         }
-                        InstructionPart::FixedRegister(reg) => {
-                            write!(out_file, "{}", reg)?;
+                        InstructionPart::Register {
+                            reg: RegisterType::Fixed(reg),
+                            is_byte,
+                        } => {
+                            if *is_byte {
+                                write!(out_file, "{}", reg.to_byte_reg())?;
+                            } else {
+                                write!(out_file, "{}", reg)?;
+                            }
                         }
                     }
                 }

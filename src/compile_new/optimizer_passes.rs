@@ -7,7 +7,7 @@ use crate::{
     opcode::{Op, OpCode},
 };
 
-use super::assembly::{Assembler, InstructionPart};
+use super::assembly::{Assembler, InstructionPart, RegisterType};
 
 type OptimizerFunction = for<'a> fn(&[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
@@ -21,14 +21,14 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
 ];
 
 fn dyn_reg(reg_id: usize) -> InstructionPart {
-    InstructionPart::DynamicRegister {
-        reg_id,
+    InstructionPart::Register {
+        reg: RegisterType::Dynamic(reg_id),
         is_byte: false,
     }
 }
 fn dyn_byte_reg(reg_id: usize) -> InstructionPart {
-    InstructionPart::DynamicRegister {
-        reg_id,
+    InstructionPart::Register {
+        reg: RegisterType::Dynamic(reg_id),
         is_byte: true,
     }
 }
@@ -220,7 +220,7 @@ pub(super) fn compile_single_instruction(
     assembler: &mut Assembler,
     interner: &Interners,
 ) -> Option<usize> {
-    use super::InstructionPart::FixedRegister;
+    use super::{InstructionPart::Register, RegisterType::Fixed};
 
     let op = ops.get(0)?;
     assembler.set_op_range(ip, ip + 1);
@@ -247,7 +247,10 @@ pub(super) fn compile_single_instruction(
                 str_lit(op.code.compile_arithmetic_op()),
                 dyn_reg(a_id),
                 str_lit(", "),
-                FixedRegister(X86Register::Cl),
+                Register {
+                    reg: Fixed(X86Register::Rcx),
+                    is_byte: true,
+                },
             ]);
 
             assembler.reg_free_fixed_drop(X86Register::Rcx);

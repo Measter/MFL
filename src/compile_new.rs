@@ -210,11 +210,10 @@ fn merge_dyn_dyn_registers(
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
                     match instr {
-                        InstructionPart::DynamicRegister { reg_id, .. }
-                            if *reg_id == end_reg_id =>
-                        {
-                            *reg_id = start_reg_id
-                        }
+                        InstructionPart::Register {
+                            reg: RegisterType::Dynamic(reg_id),
+                            ..
+                        } if *reg_id == end_reg_id => *reg_id = start_reg_id,
                         _ => continue,
                     }
                 }
@@ -278,17 +277,14 @@ fn merge_dyn_fixed_registers(
             AsmInstruction::Instruction(instructions) => {
                 for instr in instructions {
                     match *instr {
-                        InstructionPart::DynamicRegister {
-                            reg_id,
-                            is_byte: true,
+                        InstructionPart::Register {
+                            reg: RegisterType::Dynamic(reg_id),
+                            is_byte,
                         } if reg_id == old_reg_id => {
-                            *instr = InstructionPart::FixedRegister(fixed_reg.to_byte_reg())
-                        }
-                        InstructionPart::DynamicRegister {
-                            reg_id,
-                            is_byte: false,
-                        } if reg_id == old_reg_id => {
-                            *instr = InstructionPart::FixedRegister(fixed_reg)
+                            *instr = InstructionPart::Register {
+                                reg: RegisterType::Fixed(fixed_reg),
+                                is_byte,
+                            }
                         }
                         _ => continue,
                     }
@@ -324,9 +320,10 @@ fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
                     match instr {
-                        InstructionPart::FixedRegister(reg_id) if *reg_id == fixed_reg => {
-                            return true
-                        }
+                        InstructionPart::Register {
+                            reg: RegisterType::Fixed(reg_id),
+                            ..
+                        } if *reg_id == fixed_reg => return true,
                         _ => continue,
                     }
                 }
