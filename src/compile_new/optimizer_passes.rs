@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    compile_new::assembly::Register,
+    compile_new::assembly::X86Register,
     interners::Interners,
     n_ops::FirstN,
     opcode::{Op, OpCode},
@@ -240,40 +240,40 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(a_id);
         }
         OpCode::ShiftLeft | OpCode::ShiftRight => {
-            assembler.reg_alloc_fixed_pop(Register::Rcx);
+            assembler.reg_alloc_fixed_pop(X86Register::Rcx);
             let a_id = assembler.reg_alloc_dyn_pop();
 
             assembler.push_instr([
                 str_lit(op.code.compile_arithmetic_op()),
                 dyn_reg(a_id),
                 str_lit(", "),
-                FixedRegister(Register::Cl),
+                FixedRegister(X86Register::Cl),
             ]);
 
-            assembler.reg_free_fixed_drop(Register::Rcx);
+            assembler.reg_free_fixed_drop(X86Register::Rcx);
             assembler.reg_free_dyn_push(a_id);
         }
         OpCode::DivMod => {
             let divisor_reg = assembler.reg_alloc_dyn_pop();
-            assembler.reg_alloc_fixed_pop(Register::Rax);
-            assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
+            assembler.reg_alloc_fixed_pop(X86Register::Rax);
+            assembler.reg_alloc_fixed_literal(X86Register::Rdx, "0");
 
             assembler.push_instr([str_lit("    div "), dyn_reg(divisor_reg)]);
 
             assembler.reg_free_dyn_drop(divisor_reg);
-            assembler.reg_free_fixed_push(Register::Rax);
-            assembler.reg_free_fixed_push(Register::Rdx);
+            assembler.reg_free_fixed_push(X86Register::Rax);
+            assembler.reg_free_fixed_push(X86Register::Rdx);
         }
         OpCode::Multiply => {
-            assembler.reg_alloc_fixed_pop(Register::Rax);
-            assembler.reg_alloc_fixed_literal(Register::Rdx, "0");
+            assembler.reg_alloc_fixed_pop(X86Register::Rax);
+            assembler.reg_alloc_fixed_literal(X86Register::Rdx, "0");
             let mult_reg = assembler.reg_alloc_dyn_pop();
 
             assembler.push_instr([str_lit("    mul "), dyn_reg(mult_reg)]);
 
             assembler.reg_free_dyn_drop(mult_reg);
-            assembler.reg_free_fixed_drop(Register::Rdx);
-            assembler.reg_free_fixed_push(Register::Rax);
+            assembler.reg_free_fixed_drop(X86Register::Rdx);
+            assembler.reg_free_fixed_push(X86Register::Rax);
         }
 
         OpCode::Equal
@@ -348,9 +348,9 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg_top);
         }
         OpCode::Print => {
-            assembler.reg_alloc_fixed_pop(Register::Rdi);
+            assembler.reg_alloc_fixed_pop(X86Register::Rdi);
             assembler.push_instr([str_lit("    call dump")]);
-            assembler.reg_free_fixed_drop(Register::Rdi);
+            assembler.reg_free_fixed_drop(X86Register::Rdi);
         }
         OpCode::Rot => {
             let a_reg = assembler.reg_alloc_dyn_pop();
@@ -483,13 +483,13 @@ pub(super) fn compile_single_instruction(
 
         OpCode::SysCall(a @ 0..=6) => {
             let regs = [
-                Register::Rax,
-                Register::Rdi,
-                Register::Rsi,
-                Register::Rdx,
-                Register::R10,
-                Register::R8,
-                Register::R9,
+                X86Register::Rax,
+                X86Register::Rdi,
+                X86Register::Rsi,
+                X86Register::Rdx,
+                X86Register::R10,
+                X86Register::R8,
+                X86Register::R9,
             ];
 
             for &reg in &regs[..=a] {
@@ -501,7 +501,7 @@ pub(super) fn compile_single_instruction(
             for &reg in &regs[1..=a] {
                 assembler.reg_free_fixed_drop(reg);
             }
-            assembler.reg_free_fixed_push(Register::Rax);
+            assembler.reg_free_fixed_push(X86Register::Rax);
         }
 
         OpCode::CastPtr => {}

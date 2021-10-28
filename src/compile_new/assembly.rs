@@ -12,7 +12,7 @@ use derive_more::Display;
 use super::{OpRange, RegisterAllocator};
 
 #[derive(Debug, Clone, Copy, Display, Eq)]
-pub enum Register {
+pub enum X86Register {
     #[display(fmt = "r8")]
     R8,
     #[display(fmt = "r8b")]
@@ -71,9 +71,9 @@ pub enum Register {
     Sil,
 }
 
-impl PartialEq for Register {
+impl PartialEq for X86Register {
     fn eq(&self, other: &Self) -> bool {
-        use Register::*;
+        use X86Register::*;
         match self {
             R8 | R8b => matches!(other, R8 | R8b),
             R9 | R9b => matches!(other, R9 | R9b),
@@ -93,23 +93,23 @@ impl PartialEq for Register {
     }
 }
 
-impl Register {
+impl X86Register {
     pub(super) fn to_byte_reg(self) -> Self {
         match self {
-            Register::R8 => Register::R8b,
-            Register::R9 => Register::R9b,
-            Register::R10 => Register::R10b,
-            Register::R11 => Register::R11b,
-            Register::R12 => Register::R12b,
-            Register::R13 => Register::R13b,
-            Register::R14 => Register::R14b,
-            Register::R15 => Register::R15b,
-            Register::Rax => Register::Al,
-            Register::Rbx => Register::Bl,
-            Register::Rcx => Register::Cl,
-            Register::Rdx => Register::Dl,
-            Register::Rdi => Register::Dil,
-            Register::Rsi => Register::Sil,
+            X86Register::R8 => X86Register::R8b,
+            X86Register::R9 => X86Register::R9b,
+            X86Register::R10 => X86Register::R10b,
+            X86Register::R11 => X86Register::R11b,
+            X86Register::R12 => X86Register::R12b,
+            X86Register::R13 => X86Register::R13b,
+            X86Register::R14 => X86Register::R14b,
+            X86Register::R15 => X86Register::R15b,
+            X86Register::Rax => X86Register::Al,
+            X86Register::Rbx => X86Register::Bl,
+            X86Register::Rcx => X86Register::Cl,
+            X86Register::Rdx => X86Register::Dl,
+            X86Register::Rdi => X86Register::Dil,
+            X86Register::Rsi => X86Register::Sil,
             _ => panic!("ICE: Cannot get byte version of {:?}", self),
         }
     }
@@ -119,7 +119,7 @@ impl Register {
 pub enum InstructionPart {
     Literal(Cow<'static, str>),
     DynamicRegister { reg_id: usize, is_byte: bool },
-    FixedRegister(Register),
+    FixedRegister(X86Register),
 }
 
 #[derive(Debug)]
@@ -128,12 +128,12 @@ pub enum AsmInstruction {
     RegAllocDynamicNop(usize),
     RegAllocDynamicDup { reg_id: usize, depth: usize },
     RegAllocDynamicLiteral(usize, Cow<'static, str>),
-    RegAllocFixedPop(Register),
-    RegAllocFixedNop(Register),
-    RegAllocFixedDup { reg: Register, depth: usize },
-    RegAllocFixedLiteral(Register, Cow<'static, str>),
+    RegAllocFixedPop(X86Register),
+    RegAllocFixedNop(X86Register),
+    RegAllocFixedDup { reg: X86Register, depth: usize },
+    RegAllocFixedLiteral(X86Register, Cow<'static, str>),
     RegFreeDynamic { reg_id: usize, push: bool },
-    RegFreeFixed { reg_id: Register, push: bool },
+    RegFreeFixed { reg_id: X86Register, push: bool },
     Instruction(Vec<InstructionPart>),
     BlockBoundry,
     Nop,
@@ -144,7 +144,7 @@ impl AsmInstruction {
         &self,
         out_file: &mut BufWriter<File>,
         allocator: &mut RegisterAllocator,
-        map: &mut HashMap<usize, Register>,
+        map: &mut HashMap<usize, X86Register>,
     ) -> Result<()> {
         match self {
             AsmInstruction::RegAllocDynamicNop(reg_id) => {
@@ -325,14 +325,18 @@ impl Assembler {
         id
     }
 
-    pub fn reg_alloc_fixed_pop(&mut self, reg: Register) {
+    pub fn reg_alloc_fixed_pop(&mut self, reg: X86Register) {
         self.assembly.push(Assembly::new(
             AsmInstruction::RegAllocFixedPop(reg),
             self.op_range,
         ));
     }
 
-    pub fn reg_alloc_fixed_literal(&mut self, reg: Register, value: impl Into<Cow<'static, str>>) {
+    pub fn reg_alloc_fixed_literal(
+        &mut self,
+        reg: X86Register,
+        value: impl Into<Cow<'static, str>>,
+    ) {
         self.assembly.push(Assembly::new(
             AsmInstruction::RegAllocFixedLiteral(reg, value.into()),
             self.op_range,
@@ -356,14 +360,14 @@ impl Assembler {
         ));
     }
 
-    pub fn reg_free_fixed_push(&mut self, reg_id: Register) {
+    pub fn reg_free_fixed_push(&mut self, reg_id: X86Register) {
         self.assembly.push(Assembly::new(
             AsmInstruction::RegFreeFixed { reg_id, push: true },
             self.op_range,
         ));
     }
 
-    pub fn reg_free_fixed_drop(&mut self, reg_id: Register) {
+    pub fn reg_free_fixed_drop(&mut self, reg_id: X86Register) {
         self.assembly.push(Assembly::new(
             AsmInstruction::RegFreeFixed {
                 reg_id,

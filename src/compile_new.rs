@@ -17,28 +17,28 @@ use optimizer_passes::PASSES;
 
 #[derive(Debug)]
 struct RegisterAllocator {
-    available_registers: Vec<Register>,
+    available_registers: Vec<X86Register>,
 }
 
 impl RegisterAllocator {
     fn new() -> Self {
         Self {
             available_registers: vec![
-                Register::Rbx,
-                Register::R11,
-                Register::R12,
-                Register::R13,
-                Register::R14,
-                Register::R15,
+                X86Register::Rbx,
+                X86Register::R11,
+                X86Register::R12,
+                X86Register::R13,
+                X86Register::R14,
+                X86Register::R15,
             ],
         }
     }
 
-    fn allocate(&mut self) -> Option<Register> {
+    fn allocate(&mut self) -> Option<X86Register> {
         self.available_registers.pop()
     }
 
-    fn free(&mut self, reg: Register) {
+    fn free(&mut self, reg: X86Register) {
         self.available_registers.push(reg);
     }
 }
@@ -239,7 +239,7 @@ fn merge_dyn_fixed_registers(
     asm: &mut [Assembly],
     new_range: Range<usize>,
     old_reg_id: usize,
-    fixed_reg: Register,
+    fixed_reg: X86Register,
 ) {
     eprintln!(
         "--- Dyn/Fixed Merge {} and {} in range {}..={}",
@@ -311,7 +311,7 @@ fn merge_dyn_fixed_registers(
     }
 }
 
-fn uses_fixed_reg(asm: &[Assembly], fixed_reg: Register) -> bool {
+fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
     for op in asm {
         match &op.asm {
             AsmInstruction::RegAllocFixedPop(reg_id)
