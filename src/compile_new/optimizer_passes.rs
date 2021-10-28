@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use crate::{
     compile_new::assembly::Register,
     interners::Interners,
+    n_ops::FirstN,
     opcode::{Op, OpCode},
 };
 
@@ -59,8 +60,9 @@ impl OpCode {
 
 /// Optimize a Push-Compare
 fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
-    let (push, op) = match ops {
-        [push, op, ..]
+    let (start, _) = ops.firstn()?;
+    let (push, op) = match start {
+        [push, op]
             if op.code.is_compare() && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX)) =>
         {
             (push, op)
@@ -70,7 +72,7 @@ fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners)
 
     let push_val = push.code.unwrap_push_int();
 
-    assembler.set_op_range(ip, ip + 2);
+    assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
     let op_suffix = op.code.compile_compare_op_suffix();
 
@@ -82,13 +84,14 @@ fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners)
     assembler.push_instr([str_lit(format!("    set{} ", op_suffix)), dyn_byte_reg(reg)]);
     assembler.reg_free_dyn_push(reg);
 
-    Some(2)
+    Some(start.len())
 }
 
 /// Optimize a Push-ShiftOp
 fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
-    let (push, op) = match ops {
-        [push, op, ..]
+    let (start, _) = ops.firstn()?;
+    let (push, op) = match start {
+        [push, op]
             if op.code.is_compiler_opt_shift() && matches!(push.code, OpCode::PushInt(0..=255)) =>
         {
             (push, op)
@@ -98,7 +101,7 @@ fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -
 
     let push_val = push.code.unwrap_push_int();
 
-    assembler.set_op_range(ip, ip + 2);
+    assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
 
     assembler.push_instr([
@@ -109,7 +112,7 @@ fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -
 
     assembler.reg_free_dyn_push(reg);
 
-    Some(2)
+    Some(start.len())
 }
 
 /// Optimize a Push-ArithBinOp
@@ -119,8 +122,9 @@ fn push_arithmetic(
     assembler: &mut Assembler,
     _: &Interners,
 ) -> Option<usize> {
-    let (push, op) = match ops {
-        [push, op, ..]
+    let (start, _) = ops.firstn()?;
+    let (push, op) = match start {
+        [push, op]
             if op.code.is_compiler_opt_arithmetic()
                 && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX)) =>
         {
@@ -131,7 +135,7 @@ fn push_arithmetic(
 
     let push_val = push.code.unwrap_push_int();
 
-    assembler.set_op_range(ip, ip + 2);
+    assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
 
     assembler.push_instr([
@@ -142,7 +146,7 @@ fn push_arithmetic(
 
     assembler.reg_free_dyn_push(reg);
 
-    Some(2)
+    Some(start.len())
 }
 
 // Optimizes a Mem-Push-Store sequence.
@@ -152,8 +156,9 @@ fn mem_push_store(
     assembler: &mut Assembler,
     _: &Interners,
 ) -> Option<usize> {
-    let (mem, push) = match ops {
-        [mem, push, store, ..]
+    let (start, _) = ops.firstn()?;
+    let (mem, push) = match start {
+        [mem, push, store]
             if mem.code.is_mem()
                 && push.code.is_push_int()
                 && store.code.is_store()
@@ -161,7 +166,7 @@ fn mem_push_store(
         {
             (mem, push)
         }
-        [push, mem, store, ..]
+        [push, mem, store]
             if mem.code.is_mem()
                 && push.code.is_push_int()
                 && store.code.is_store()
@@ -175,25 +180,27 @@ fn mem_push_store(
     let mem_val = mem.code.unwrap_mem();
     let push_val = push.code.unwrap_push_int() & 0xFF;
 
-    assembler.set_op_range(ip, ip + 3);
+    assembler.set_op_range(ip, ip + start.len());
 
     assembler.push_instr([str_lit(format!(
         "    mov BYTE [__memory + {}], {}",
         mem_val, push_val
     ))]);
 
-    Some(3)
+    Some(start.len())
 }
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
-    let mem = match ops {
-        [mem, load, ..] if mem.code.is_mem() && load.code.is_load() => mem,
+    let (start, _) = ops.firstn()?;
+    let mem = match start {
+        [mem, load] if mem.code.is_mem() && load.code.is_load() => mem,
         _ => return None,
     };
 
     let mem_val = mem.code.unwrap_mem();
-    assembler.set_op_range(ip, ip + 2);
+
+    assembler.set_op_range(ip, ip + start.len());
 
     let reg = assembler.reg_alloc_dyn_literal("0");
     assembler.push_instr([
@@ -203,7 +210,7 @@ fn mem_load(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> 
     ]);
     assembler.reg_free_dyn_push(reg);
 
-    Some(2)
+    Some(start.len())
 }
 
 /// Compiles a single instruction in isolation. Doesn't actually optimize.

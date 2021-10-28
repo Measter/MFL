@@ -5,8 +5,8 @@ use codespan_reporting::diagnostic::Diagnostic;
 use crate::{
     generate_error,
     interners::Interners,
+    n_ops::PopN,
     opcode::{Op, OpCode},
-    popn::PopN,
     source_file::FileId,
     MEMORY_CAPACITY,
 };

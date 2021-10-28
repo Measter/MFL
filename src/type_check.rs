@@ -7,8 +7,8 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
     interners::Interners,
+    n_ops::PopN,
     opcode::{Op, OpCode},
-    popn::PopN,
     source_file::{FileId, SourceLocation},
 };
 
