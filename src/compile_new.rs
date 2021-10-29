@@ -181,7 +181,7 @@ fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> V
     assembler.into_assembly()
 }
 
-fn merge_dyn_dyn_registers(
+fn merge_dyn_to_dyn_registers(
     asm: &mut [Assembly],
     new_range: Range<usize>,
     start_reg_id: usize,
@@ -239,7 +239,7 @@ fn merge_dyn_dyn_registers(
     }
 }
 
-fn merge_dyn_fixed_registers(
+fn merge_dyn_to_fixed_registers(
     asm: &mut [Assembly],
     new_range: Range<usize>,
     old_reg_id: usize,
@@ -293,6 +293,72 @@ fn merge_dyn_fixed_registers(
                 reg: Dynamic(reg_id),
                 push: true,
             } if reg_id == old_reg_id => {
+                asm.asm = AsmInstruction::Nop;
+            }
+
+            AsmInstruction::Instruction(instructions) => {
+                for instr in instructions {
+                    match *instr {
+                        InstructionPart::Register {
+                            reg: RegisterType::Dynamic(reg_id),
+                            is_byte,
+                        } if reg_id == old_reg_id => {
+                            *instr = InstructionPart::Register {
+                                reg: RegisterType::Fixed(fixed_reg),
+                                is_byte,
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+
+            AsmInstruction::RegAllocPop { .. }
+            | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocDup { .. }
+            | AsmInstruction::RegFree { .. }
+            | AsmInstruction::BlockBoundry
+            | AsmInstruction::Nop => continue,
+        }
+    }
+}
+
+fn merge_fixed_to_dyn_registers(
+    asm: &mut [Assembly],
+    new_range: Range<usize>,
+    old_reg_id: usize,
+    fixed_reg: X86Register,
+) {
+    eprintln!(
+        "--- Dyn/Fixed Merge {} and {} in range {}..={}",
+        old_reg_id,
+        fixed_reg,
+        new_range.start,
+        new_range.end - 1
+    );
+
+    for asm in asm {
+        use RegisterType::*;
+        asm.merged_range = new_range.clone();
+        match &mut asm.asm {
+            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == old_reg_id => {
+                asm.asm = AsmInstruction::Nop;
+            }
+            &mut AsmInstruction::RegFree {
+                reg: Dynamic(id),
+                push,
+            } if id == old_reg_id => {
+                asm.asm = AsmInstruction::RegFree {
+                    reg: Fixed(fixed_reg),
+                    push,
+                };
+            }
+
+            &mut AsmInstruction::RegFree {
+                reg: Fixed(reg_id),
+                push: true,
+            } if reg_id == fixed_reg => {
                 asm.asm = AsmInstruction::Nop;
             }
 
@@ -402,7 +468,7 @@ fn find_dynamic_first_merge(
                 let (range_to_merge, new_op_range) =
                     get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
 
-                merge_dyn_dyn_registers(
+                merge_dyn_to_dyn_registers(
                     range_to_merge,
                     new_op_range,
                     start_reg_id,
@@ -421,7 +487,7 @@ fn find_dynamic_first_merge(
                 let (range_to_merge, new_op_range) =
                     get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
 
-                merge_dyn_fixed_registers(range_to_merge, new_op_range, start_reg_id, new_reg);
+                merge_dyn_to_fixed_registers(range_to_merge, new_op_range, start_reg_id, new_reg);
                 return true;
             }
 
@@ -430,6 +496,57 @@ fn find_dynamic_first_merge(
             AsmInstruction::RegFree { push: true, .. } | AsmInstruction::RegAllocDup { .. } => {
                 break
             }
+
+            // We can't optimize past the end of a block.
+            AsmInstruction::BlockBoundry => break,
+
+            // These don't alter the stack, so we can ignore these.
+            AsmInstruction::RegFree { push: false, .. }
+            | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::Instruction(_)
+            | AsmInstruction::Nop => {}
+        }
+    }
+
+    false
+}
+
+fn find_fixed_first_merge(
+    program: &mut [Assembly],
+    start_idx: usize,
+    fixed_reg: X86Register,
+) -> bool {
+    use RegisterType::*;
+
+    let start_asm_range = find_op_bounds(start_idx, program);
+    let start_op_range = program[start_idx].merged_range.clone();
+    for (end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
+        match asm.asm {
+            AsmInstruction::RegAllocPop {
+                reg: Dynamic(replaced_reg_id),
+            } => {
+                if uses_fixed_reg(&program[start_asm_range.clone()], fixed_reg) {
+                    break;
+                }
+
+                let (range_to_merge, new_op_range) =
+                    get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
+
+                merge_fixed_to_dyn_registers(
+                    range_to_merge,
+                    new_op_range,
+                    replaced_reg_id,
+                    fixed_reg,
+                );
+                return true;
+            }
+
+            // These access the stack in an unsupported way, so we have to abandon
+            // the search for the current op.
+            AsmInstruction::RegAllocPop { .. }
+            | AsmInstruction::RegFree { push: true, .. }
+            | AsmInstruction::RegAllocDup { .. } => break,
 
             // We can't optimize past the end of a block.
             AsmInstruction::BlockBoundry => break,
@@ -456,9 +573,11 @@ fn combine_stack_ops(program: &mut [Assembly]) {
                 AsmInstruction::RegFree {
                     push: true,
                     reg: Dynamic(start_reg_id),
-                } => {
-                    did_change |= find_dynamic_first_merge(program, start_idx, start_reg_id);
-                }
+                } => did_change |= find_dynamic_first_merge(program, start_idx, start_reg_id),
+                AsmInstruction::RegFree {
+                    push: true,
+                    reg: Fixed(start_reg_id),
+                } => did_change |= find_fixed_first_merge(program, start_idx, start_reg_id),
                 _ => continue,
             };
         }
