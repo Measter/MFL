@@ -242,12 +242,12 @@ fn merge_dyn_to_dyn_registers(
 fn merge_dyn_to_fixed_registers(
     asm: &mut [Assembly],
     new_range: Range<usize>,
-    old_reg_id: usize,
+    dynamic_reg_id: usize,
     fixed_reg: X86Register,
 ) {
     eprintln!(
         "--- Dyn/Fixed Merge {} and {} in range {}..={}",
-        old_reg_id,
+        dynamic_reg_id,
         fixed_reg,
         new_range.start,
         new_range.end - 1
@@ -257,12 +257,12 @@ fn merge_dyn_to_fixed_registers(
         use RegisterType::*;
         asm.merged_range = new_range.clone();
         match &mut asm.asm {
-            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == old_reg_id => {
+            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::RegAllocPop {
                     reg: Fixed(fixed_reg),
                 };
             }
-            &mut AsmInstruction::RegAllocNop { reg: Dynamic(id) } if id == old_reg_id => {
+            &mut AsmInstruction::RegAllocNop { reg: Dynamic(id) } if id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::RegAllocNop {
                     reg: Fixed(fixed_reg),
                 };
@@ -270,7 +270,7 @@ fn merge_dyn_to_fixed_registers(
             &mut AsmInstruction::RegAllocDup {
                 reg: Dynamic(id),
                 depth,
-            } if id == old_reg_id => {
+            } if id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::RegAllocDup {
                     reg: Fixed(fixed_reg),
                     depth,
@@ -279,7 +279,7 @@ fn merge_dyn_to_fixed_registers(
             AsmInstruction::RegAllocLiteral {
                 reg: Dynamic(id),
                 value,
-            } if *id == old_reg_id => {
+            } if *id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::RegAllocLiteral {
                     reg: Fixed(fixed_reg),
                     value: value.clone(),
@@ -292,7 +292,7 @@ fn merge_dyn_to_fixed_registers(
             &mut AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
                 push: true,
-            } if reg_id == old_reg_id => {
+            } if reg_id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::Nop;
             }
 
@@ -302,7 +302,7 @@ fn merge_dyn_to_fixed_registers(
                         InstructionPart::Register {
                             reg: RegisterType::Dynamic(reg_id),
                             is_byte,
-                        } if reg_id == old_reg_id => {
+                        } if reg_id == dynamic_reg_id => {
                             *instr = InstructionPart::Register {
                                 reg: RegisterType::Fixed(fixed_reg),
                                 is_byte,
@@ -327,12 +327,12 @@ fn merge_dyn_to_fixed_registers(
 fn merge_fixed_to_dyn_registers(
     asm: &mut [Assembly],
     new_range: Range<usize>,
-    old_reg_id: usize,
+    dynamic_reg_id: usize,
     fixed_reg: X86Register,
 ) {
     eprintln!(
         "--- Dyn/Fixed Merge {} and {} in range {}..={}",
-        old_reg_id,
+        dynamic_reg_id,
         fixed_reg,
         new_range.start,
         new_range.end - 1
@@ -342,13 +342,13 @@ fn merge_fixed_to_dyn_registers(
         use RegisterType::*;
         asm.merged_range = new_range.clone();
         match &mut asm.asm {
-            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == old_reg_id => {
+            &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::Nop;
             }
             &mut AsmInstruction::RegFree {
                 reg: Dynamic(id),
                 push,
-            } if id == old_reg_id => {
+            } if id == dynamic_reg_id => {
                 asm.asm = AsmInstruction::RegFree {
                     reg: Fixed(fixed_reg),
                     push,
@@ -368,7 +368,7 @@ fn merge_fixed_to_dyn_registers(
                         InstructionPart::Register {
                             reg: RegisterType::Dynamic(reg_id),
                             is_byte,
-                        } if reg_id == old_reg_id => {
+                        } if reg_id == dynamic_reg_id => {
                             *instr = InstructionPart::Register {
                                 reg: RegisterType::Fixed(fixed_reg),
                                 is_byte,
