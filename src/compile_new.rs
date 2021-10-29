@@ -526,7 +526,8 @@ fn find_fixed_first_merge(
             AsmInstruction::RegAllocPop {
                 reg: Dynamic(replaced_reg_id),
             } => {
-                if uses_fixed_reg(&program[start_asm_range.clone()], fixed_reg) {
+                let end_asm_range = find_op_bounds(end_idx, program);
+                if uses_fixed_reg(&program[end_asm_range], fixed_reg) {
                     break;
                 }
 
