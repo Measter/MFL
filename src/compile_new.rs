@@ -429,7 +429,7 @@ fn find_op_bounds(idx: usize, program: &[Assembly]) -> Range<usize> {
         start_idx -= 1;
     }
 
-    while end_idx < program.len() && program[end_idx + 1].merged_range == op_range {
+    while end_idx < program.len() - 1 && program[end_idx + 1].merged_range == op_range {
         end_idx += 1;
     }
 
