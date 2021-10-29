@@ -143,6 +143,10 @@ pub enum AsmInstruction {
         reg: RegisterType,
         value: Cow<'static, str>,
     },
+    RegAllocMov {
+        src: RegisterType,
+        dst: RegisterType,
+    },
     RegFree {
         reg: RegisterType,
         push: bool,
@@ -221,6 +225,60 @@ impl AsmInstruction {
                 value,
             } => {
                 writeln!(out_file, "    mov {}, {}", reg, value)?;
+            }
+
+            &AsmInstruction::RegAllocMov {
+                src: Dynamic(src_id),
+                dst: Dynamic(dst_id),
+            } => {
+                let (src_reg, dst_reg) = match allocator.allocate().zip(allocator.allocate()) {
+                    Some(regs) => regs,
+                    None => panic!("ICE: Register exhaustion. {:?}", self),
+                };
+                eprintln!(
+                    "Reg Allocate Mov Src {} > {}, Dst {} > {}",
+                    src_id, src_reg, dst_id, dst_reg
+                );
+                map.insert(src_id, src_reg);
+                map.insert(dst_id, dst_reg);
+                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+            }
+            &AsmInstruction::RegAllocMov {
+                src: Dynamic(src_id),
+                dst: Fixed(dst_reg),
+            } => {
+                let src_reg = match allocator.allocate() {
+                    Some(regs) => regs,
+                    None => panic!("ICE: Register exhaustion. {:?}", self),
+                };
+                eprintln!(
+                    "Reg Allocate Mov Src {} > {}, Dst {}",
+                    src_id, src_reg, dst_reg
+                );
+                map.insert(src_id, src_reg);
+                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+            }
+            &AsmInstruction::RegAllocMov {
+                src: Fixed(src_reg),
+                dst: Dynamic(dst_id),
+            } => {
+                let dst_reg = match allocator.allocate() {
+                    Some(regs) => regs,
+                    None => panic!("ICE: Register exhaustion. {:?}", self),
+                };
+                eprintln!(
+                    "Reg Allocate Mov Src {}, Dst {} > {}",
+                    src_reg, dst_id, dst_reg
+                );
+                map.insert(dst_id, dst_reg);
+                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+            }
+            &AsmInstruction::RegAllocMov {
+                src: Fixed(src_reg),
+                dst: Fixed(dst_reg),
+            } => {
+                eprintln!("Reg Allocate Mov Src {}, Dst {}", src_reg, dst_reg);
+                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
             }
 
             &AsmInstruction::RegFree {

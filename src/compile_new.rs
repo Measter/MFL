@@ -232,6 +232,7 @@ fn merge_dyn_to_dyn_registers(
             | AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
             | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
             | AsmInstruction::Nop => continue,
@@ -316,6 +317,7 @@ fn merge_dyn_to_fixed_registers(
             AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
             | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegAllocDup { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
@@ -382,6 +384,7 @@ fn merge_fixed_to_dyn_registers(
             AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
             | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegAllocDup { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
@@ -395,12 +398,29 @@ fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
         use RegisterType::*;
         match &op.asm {
             &AsmInstruction::RegAllocPop { reg: Fixed(reg_id) }
+            | &AsmInstruction::RegAllocNop { reg: Fixed(reg_id) }
+            | &AsmInstruction::RegAllocDup {
+                reg: Fixed(reg_id), ..
+            }
+            | &AsmInstruction::RegAllocMov {
+                src: Fixed(reg_id), ..
+            }
+            | &AsmInstruction::RegAllocMov {
+                dst: Fixed(reg_id), ..
+            }
             | &AsmInstruction::RegFree {
                 reg: Fixed(reg_id), ..
             }
             | &AsmInstruction::RegAllocLiteral {
                 reg: Fixed(reg_id), ..
             } if reg_id == fixed_reg => return true,
+
+            &AsmInstruction::RegAllocMov {
+                src: Fixed(src_reg),
+                dst: Fixed(dst_reg),
+            } if src_reg == fixed_reg || dst_reg == fixed_reg => {
+                return true;
+            }
 
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
@@ -504,6 +524,7 @@ fn find_dynamic_first_merge(
             AsmInstruction::RegFree { push: false, .. }
             | AsmInstruction::RegAllocNop { .. }
             | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::Instruction(_)
             | AsmInstruction::Nop => {}
         }
@@ -543,11 +564,50 @@ fn find_fixed_first_merge(
                 return true;
             }
 
+            // This one's pretty simple: We've pushed a register, then immediately popped back into it.
+            // Can just Nop both the push and pop.
+            AsmInstruction::RegAllocPop {
+                reg: Fixed(replaced_reg),
+            } if replaced_reg == fixed_reg => {
+                program[start_idx].asm = AsmInstruction::Nop;
+                program[end_idx].asm = AsmInstruction::Nop;
+
+                let (range_to_merge, new_op_range) =
+                    get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
+
+                for asm in range_to_merge {
+                    asm.merged_range = new_op_range.clone();
+                }
+
+                return true;
+            }
+
+            // This is for pushing fixed register A, then popping into fixed register B.
+            // We can replace this with a simple MOV.
+            AsmInstruction::RegAllocPop {
+                reg: Fixed(new_reg),
+            } => {
+                program[start_idx].asm = AsmInstruction::Nop; // Nop the push.
+                program[end_idx].asm = AsmInstruction::RegAllocMov {
+                    src: Fixed(fixed_reg),
+                    dst: Fixed(new_reg),
+                };
+
+                let (range_to_merge, new_op_range) =
+                    get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
+
+                for asm in range_to_merge {
+                    asm.merged_range = new_op_range.clone();
+                }
+
+                return true;
+            }
+
             // These access the stack in an unsupported way, so we have to abandon
             // the search for the current op.
-            AsmInstruction::RegAllocPop { .. }
-            | AsmInstruction::RegFree { push: true, .. }
-            | AsmInstruction::RegAllocDup { .. } => break,
+            AsmInstruction::RegFree { push: true, .. } | AsmInstruction::RegAllocDup { .. } => {
+                break
+            }
 
             // We can't optimize past the end of a block.
             AsmInstruction::BlockBoundry => break,
@@ -556,6 +616,7 @@ fn find_fixed_first_merge(
             AsmInstruction::RegFree { push: false, .. }
             | AsmInstruction::RegAllocNop { .. }
             | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::Instruction(_)
             | AsmInstruction::Nop => {}
         }
