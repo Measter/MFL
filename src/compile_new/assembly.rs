@@ -448,6 +448,15 @@ impl Assembler {
         ));
     }
 
+    pub fn reg_alloc_fixed_nop(&mut self, reg: X86Register) {
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocNop {
+                reg: RegisterType::Fixed(reg),
+            },
+            self.op_range,
+        ));
+    }
+
     pub fn reg_alloc_fixed_literal(
         &mut self,
         reg: X86Register,

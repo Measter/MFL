@@ -269,7 +269,7 @@ pub(super) fn compile_single_instruction(
         }
         OpCode::Multiply => {
             assembler.reg_alloc_fixed_pop(X86Register::Rax);
-            assembler.reg_alloc_fixed_literal(X86Register::Rdx, "0");
+            assembler.reg_alloc_fixed_nop(X86Register::Rdx);
             let mult_reg = assembler.reg_alloc_dyn_pop();
 
             assembler.push_instr([str_lit("    mul "), dyn_reg(mult_reg)]);
