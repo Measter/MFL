@@ -354,104 +354,113 @@ fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
     false
 }
 
+fn find_op_bounds(idx: usize, program: &[Assembly]) -> Range<usize> {
+    let op_range = program[idx].merged_range.clone();
+    let mut start_idx = idx;
+    let mut end_idx = idx;
+
+    while start_idx > 0 && program[start_idx - 1].merged_range == op_range {
+        start_idx -= 1;
+    }
+
+    while end_idx < program.len() && program[end_idx + 1].merged_range == op_range {
+        end_idx += 1;
+    }
+
+    start_idx..end_idx + 1
+}
+
+fn get_op_asm_ranges(
+    program: &mut [Assembly],
+    end_idx: usize,
+    start_asm_range: Range<usize>,
+    start_op_range: Range<usize>,
+) -> (&mut [Assembly], Range<usize>) {
+    let end_asm_range = find_op_bounds(end_idx, program);
+    let end_op_range = program[end_idx].merged_range.clone();
+
+    let asm_idx_range = start_asm_range.start..end_asm_range.end;
+    let range_to_merge = &mut program[asm_idx_range];
+    let new_op_range = start_op_range.start..end_op_range.end;
+    (range_to_merge, new_op_range)
+}
+
+fn find_dynamic_first_merge(
+    program: &mut [Assembly],
+    start_idx: usize,
+    start_reg_id: usize,
+) -> bool {
+    use RegisterType::*;
+
+    let start_asm_range = find_op_bounds(start_idx, program);
+    let start_op_range = program[start_idx].merged_range.clone();
+    for (end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
+        match asm.asm {
+            AsmInstruction::RegAllocPop {
+                reg: Dynamic(replaced_reg_id),
+            } => {
+                let (range_to_merge, new_op_range) =
+                    get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
+
+                merge_dyn_dyn_registers(
+                    range_to_merge,
+                    new_op_range,
+                    start_reg_id,
+                    replaced_reg_id,
+                );
+                return true;
+            }
+
+            AsmInstruction::RegAllocPop {
+                reg: Fixed(new_reg),
+            } => {
+                if uses_fixed_reg(&program[start_asm_range.clone()], new_reg) {
+                    break;
+                }
+
+                let (range_to_merge, new_op_range) =
+                    get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
+
+                merge_dyn_fixed_registers(range_to_merge, new_op_range, start_reg_id, new_reg);
+                return true;
+            }
+
+            // These access the stack in an unsupported way, so we have to abandon
+            // the search for the current op.
+            AsmInstruction::RegFree { push: true, .. } | AsmInstruction::RegAllocDup { .. } => {
+                break
+            }
+
+            // We can't optimize past the end of a block.
+            AsmInstruction::BlockBoundry => break,
+
+            // These don't alter the stack, so we can ignore these.
+            AsmInstruction::RegFree { push: false, .. }
+            | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLiteral { .. }
+            | AsmInstruction::Instruction(_)
+            | AsmInstruction::Nop => {}
+        }
+    }
+
+    false
+}
+
 fn combine_stack_ops(program: &mut [Assembly]) {
     loop {
         let mut did_change = false;
 
-        for mut start_idx in 0..program.len() {
+        for start_idx in 0..program.len() {
             use RegisterType::*;
-            let start_reg_id = match &program[start_idx].asm {
+            match program[start_idx].asm {
                 AsmInstruction::RegFree {
                     push: true,
-                    reg: Dynamic(reg_id),
-                } => *reg_id,
+                    reg: Dynamic(start_reg_id),
+                } => {
+                    did_change |= find_dynamic_first_merge(program, start_idx, start_reg_id);
+                }
                 _ => continue,
             };
-
-            for (mut end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
-                match &asm.asm {
-                    &AsmInstruction::RegAllocPop {
-                        reg: Dynamic(replaced_reg_id),
-                    } => {
-                        // Now we need to search backwards for the beginning of the start register's operation.
-                        let start_op_range = program[start_idx].merged_range.clone();
-                        while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
-                        {
-                            start_idx -= 1;
-                        }
-
-                        // Now search the other direction to find the end of the replaced registers operation.
-                        let end_op_range = program[end_idx].merged_range.clone();
-                        while end_idx < program.len() - 1
-                            && program[end_idx + 1].merged_range == end_op_range
-                        {
-                            end_idx += 1;
-                        }
-
-                        let range_to_merge = &mut program[start_idx..=end_idx];
-                        let new_op_range = start_op_range.start..end_op_range.end;
-
-                        merge_dyn_dyn_registers(
-                            range_to_merge,
-                            new_op_range,
-                            start_reg_id,
-                            replaced_reg_id,
-                        );
-                        did_change = true;
-                        break;
-                    }
-
-                    &AsmInstruction::RegAllocPop {
-                        reg: Fixed(new_reg),
-                    } => {
-                        // Now we need to search backwards for the beginning of the start register's operation.
-                        let start_op_range = program[start_idx].merged_range.clone();
-                        while start_idx > 0 && program[start_idx - 1].merged_range == start_op_range
-                        {
-                            start_idx -= 1;
-                        }
-
-                        if uses_fixed_reg(&program[start_idx..end_idx - 1], new_reg) {
-                            break;
-                        }
-
-                        // Now search the other direction to find the end of the replaced registers operation.
-                        let end_op_range = program[end_idx].merged_range.clone();
-                        while end_idx < program.len() - 1
-                            && program[end_idx + 1].merged_range == end_op_range
-                        {
-                            end_idx += 1;
-                        }
-
-                        let range_to_merge = &mut program[start_idx..=end_idx];
-                        let new_op_range = start_op_range.start..end_op_range.end;
-
-                        merge_dyn_fixed_registers(
-                            range_to_merge,
-                            new_op_range,
-                            start_reg_id,
-                            new_reg,
-                        );
-                        did_change = true;
-                        break;
-                    }
-
-                    // These access the stack in an unsupported way, so we have to abandon
-                    // the search for the current op.
-                    AsmInstruction::RegFree { push: true, .. }
-                    | AsmInstruction::RegAllocDup { .. } => break,
-
-                    // We can't optimize past the end of a block.
-                    AsmInstruction::BlockBoundry => break,
-
-                    // These don't alter the stack, so we can ignore these.
-                    AsmInstruction::RegFree { push: false, .. }
-                    | AsmInstruction::RegAllocNop { .. }
-                    | AsmInstruction::RegAllocLiteral { .. }
-                    | AsmInstruction::Instruction(_)
-                    | AsmInstruction::Nop => {}
-                }
-            }
         }
 
         if !did_change {
