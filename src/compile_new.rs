@@ -182,7 +182,7 @@ fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> V
 }
 
 fn merge_dyn_to_dyn_registers(
-    asm: &mut [Assembly],
+    program_chunk: &mut [Assembly],
     new_range: Range<usize>,
     start_reg_id: usize,
     end_reg_id: usize,
@@ -195,20 +195,20 @@ fn merge_dyn_to_dyn_registers(
         new_range.end - 1
     );
 
-    for asm in &mut *asm {
-        asm.merged_range = new_range.clone();
+    for asm_info in &mut *program_chunk {
+        asm_info.merged_range = new_range.clone();
         use RegisterType::*;
-        match &mut asm.asm {
+        match &mut asm_info.asm {
             &mut AsmInstruction::RegAllocPop {
                 reg: Dynamic(id), ..
             } if id == end_reg_id => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
             &mut AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
                 push: true,
             } if reg_id == start_reg_id => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
             AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
@@ -241,7 +241,7 @@ fn merge_dyn_to_dyn_registers(
 }
 
 fn merge_dyn_to_fixed_registers(
-    asm: &mut [Assembly],
+    program_chunk: &mut [Assembly],
     new_range: Range<usize>,
     dynamic_reg_id: usize,
     fixed_reg: X86Register,
@@ -254,17 +254,17 @@ fn merge_dyn_to_fixed_registers(
         new_range.end - 1
     );
 
-    for asm in asm {
+    for asm_info in program_chunk {
         use RegisterType::*;
-        asm.merged_range = new_range.clone();
-        match &mut asm.asm {
+        asm_info.merged_range = new_range.clone();
+        match &mut asm_info.asm {
             &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::RegAllocPop {
+                asm_info.asm = AsmInstruction::RegAllocPop {
                     reg: Fixed(fixed_reg),
                 };
             }
             &mut AsmInstruction::RegAllocNop { reg: Dynamic(id) } if id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::RegAllocNop {
+                asm_info.asm = AsmInstruction::RegAllocNop {
                     reg: Fixed(fixed_reg),
                 };
             }
@@ -272,7 +272,7 @@ fn merge_dyn_to_fixed_registers(
                 reg: Dynamic(id),
                 depth,
             } if id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::RegAllocDup {
+                asm_info.asm = AsmInstruction::RegAllocDup {
                     reg: Fixed(fixed_reg),
                     depth,
                 }
@@ -281,20 +281,20 @@ fn merge_dyn_to_fixed_registers(
                 reg: Dynamic(id),
                 value,
             } if *id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::RegAllocLiteral {
+                asm_info.asm = AsmInstruction::RegAllocLiteral {
                     reg: Fixed(fixed_reg),
                     value: value.clone(),
                 }
             }
 
             &mut AsmInstruction::RegAllocPop { reg: Fixed(reg) } if reg == fixed_reg => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
             &mut AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
                 push: true,
             } if reg_id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
 
             AsmInstruction::Instruction(instructions) => {
@@ -327,7 +327,7 @@ fn merge_dyn_to_fixed_registers(
 }
 
 fn merge_fixed_to_dyn_registers(
-    asm: &mut [Assembly],
+    program_chunk: &mut [Assembly],
     new_range: Range<usize>,
     dynamic_reg_id: usize,
     fixed_reg: X86Register,
@@ -340,18 +340,18 @@ fn merge_fixed_to_dyn_registers(
         new_range.end - 1
     );
 
-    for asm in asm {
+    for asm_info in program_chunk {
         use RegisterType::*;
-        asm.merged_range = new_range.clone();
-        match &mut asm.asm {
+        asm_info.merged_range = new_range.clone();
+        match &mut asm_info.asm {
             &mut AsmInstruction::RegAllocPop { reg: Dynamic(id) } if id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
             &mut AsmInstruction::RegFree {
                 reg: Dynamic(id),
                 push,
             } if id == dynamic_reg_id => {
-                asm.asm = AsmInstruction::RegFree {
+                asm_info.asm = AsmInstruction::RegFree {
                     reg: Fixed(fixed_reg),
                     push,
                 };
@@ -361,7 +361,7 @@ fn merge_fixed_to_dyn_registers(
                 reg: Fixed(reg_id),
                 push: true,
             } if reg_id == fixed_reg => {
-                asm.asm = AsmInstruction::Nop;
+                asm_info.asm = AsmInstruction::Nop;
             }
 
             AsmInstruction::Instruction(instructions) => {
@@ -393,10 +393,10 @@ fn merge_fixed_to_dyn_registers(
     }
 }
 
-fn uses_fixed_reg(asm: &[Assembly], fixed_reg: X86Register) -> bool {
-    for op in asm {
+fn uses_fixed_reg(program_chunk: &[Assembly], fixed_reg: X86Register) -> bool {
+    for asm_info in program_chunk {
         use RegisterType::*;
-        match &op.asm {
+        match &asm_info.asm {
             &AsmInstruction::RegAllocPop { reg: Fixed(reg_id) }
             | &AsmInstruction::RegAllocNop { reg: Fixed(reg_id) }
             | &AsmInstruction::RegAllocDup {
