@@ -115,7 +115,7 @@ impl X86Register {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterType {
     Dynamic(usize),
     Fixed(X86Register),
@@ -124,7 +124,15 @@ pub enum RegisterType {
 #[derive(Debug)]
 pub enum InstructionPart {
     Literal(Cow<'static, str>),
-    Register { reg: RegisterType, is_byte: bool },
+    /// Used to actually emit a register as part of an instruction.
+    EmitRegister {
+        reg: RegisterType,
+        is_byte: bool,
+    },
+    /// Marks a register as used for the allocation optimizer, but doesn't emit anything when rendered.
+    UseRegister {
+        reg: RegisterType,
+    },
 }
 
 #[derive(Debug)]
@@ -152,6 +160,7 @@ pub enum AsmInstruction {
         push: bool,
     },
     Instruction(Vec<InstructionPart>),
+    /// Designates a boundry that stops the allocation optimizer's search.
     BlockBoundry,
     Nop,
 }
@@ -311,7 +320,7 @@ impl AsmInstruction {
                 for part in parts {
                     match part {
                         InstructionPart::Literal(lit) => out_file.write_all(lit.as_bytes())?,
-                        &InstructionPart::Register {
+                        &InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
                             is_byte,
                         } => {
@@ -323,7 +332,7 @@ impl AsmInstruction {
                             }
                             write!(out_file, "{}", reg)?;
                         }
-                        &InstructionPart::Register {
+                        &InstructionPart::EmitRegister {
                             reg: RegisterType::Fixed(reg),
                             is_byte,
                         } => {
@@ -333,6 +342,7 @@ impl AsmInstruction {
                                 write!(out_file, "{}", reg)?;
                             }
                         }
+                        InstructionPart::UseRegister { .. } => {}
                     }
                 }
 

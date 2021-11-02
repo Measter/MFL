@@ -217,7 +217,7 @@ fn merge_dyn_to_dyn_registers(
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
                     match instr {
-                        InstructionPart::Register {
+                        InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
                             ..
                         } if *reg_id == end_reg_id => *reg_id = start_reg_id,
@@ -298,11 +298,11 @@ fn merge_dyn_to_fixed_registers(
             AsmInstruction::Instruction(instructions) => {
                 for instr in instructions {
                     match *instr {
-                        InstructionPart::Register {
+                        InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
                             is_byte,
                         } if reg_id == dynamic_reg_id => {
-                            *instr = InstructionPart::Register {
+                            *instr = InstructionPart::EmitRegister {
                                 reg: RegisterType::Fixed(fixed_reg),
                                 is_byte,
                             }
@@ -365,11 +365,11 @@ fn merge_fixed_to_dyn_registers(
             AsmInstruction::Instruction(instructions) => {
                 for instr in instructions {
                     match *instr {
-                        InstructionPart::Register {
+                        InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
                             is_byte,
                         } if reg_id == dynamic_reg_id => {
-                            *instr = InstructionPart::Register {
+                            *instr = InstructionPart::EmitRegister {
                                 reg: RegisterType::Fixed(fixed_reg),
                                 is_byte,
                             }
@@ -423,7 +423,7 @@ fn uses_fixed_reg(program_chunk: &[Assembly], fixed_reg: X86Register) -> bool {
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
                     match *instr {
-                        InstructionPart::Register {
+                        InstructionPart::EmitRegister {
                             reg: RegisterType::Fixed(reg_id),
                             ..
                         } if reg_id == fixed_reg => return true,
@@ -651,7 +651,46 @@ fn find_fixed_first_merge(
     false
 }
 
-fn combine_stack_ops(program: &mut [Assembly]) {
+fn find_unused_reg(program: &mut [Assembly], start_idx: usize, reg: RegisterType) -> bool {
+    for end_idx in start_idx + 1..program.len() {
+        match &program[end_idx].asm {
+            AsmInstruction::RegFree {
+                reg: freed_reg,
+                push: false,
+            } if *freed_reg == reg => {
+                // If we get here, we haven't used the register, so Nop it.
+                program[start_idx].asm = AsmInstruction::Nop;
+                program[end_idx].asm = AsmInstruction::Nop;
+                return true;
+            }
+            AsmInstruction::RegFree {
+                reg: freed_reg,
+                push: true,
+            } if *freed_reg == reg => {
+                // The result is actually used, so we need to *not* Nop it.
+                return false;
+            }
+            AsmInstruction::Instruction(instrs) => {
+                for instr in instrs {
+                    match instr {
+                        InstructionPart::EmitRegister { reg: used_reg, .. }
+                        | InstructionPart::UseRegister { reg: used_reg }
+                            if *used_reg == reg =>
+                        {
+                            return false;
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    false
+}
+
+fn optimize_allocation(program: &mut [Assembly]) {
     loop {
         let mut did_change = false;
 
@@ -666,6 +705,14 @@ fn combine_stack_ops(program: &mut [Assembly]) {
                     push: true,
                     reg: Fixed(start_reg_id),
                 } => did_change |= find_fixed_first_merge(program, start_idx, start_reg_id),
+
+                // We can also optimize other forms of allocation, by checking if the register is actually
+                // used. If it isn't, just Nop both the alloc and free.
+                AsmInstruction::RegAllocDup { reg, .. }
+                | AsmInstruction::RegAllocLiteral { reg, .. }
+                | AsmInstruction::RegAllocMov { dst: reg, .. } => {
+                    did_change |= find_unused_reg(program, start_idx, reg);
+                }
                 _ => continue,
             };
         }
@@ -686,7 +733,7 @@ pub(crate) fn compile_program(
     let mut assembly = build_assembly(program, interner, optimize);
 
     if optimize {
-        combine_stack_ops(&mut assembly);
+        optimize_allocation(&mut assembly);
     }
 
     write_assembly(out_file_path, source_store, interner, program, &assembly)?;
