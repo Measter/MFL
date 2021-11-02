@@ -80,8 +80,6 @@ fn write_assembly(
     writeln!(&mut out_file, "_start:")?;
     writeln!(&mut out_file, "    pop QWORD [__argc]")?;
     writeln!(&mut out_file, "    mov QWORD [__argv], rsp")?;
-    // R15 is used for single-byte handling, so we ideally do not want to touch the upper bytes.
-    writeln!(&mut out_file, "    xor r15, r15")?;
 
     let mut register_allocator = RegisterAllocator::new();
     let mut register_map = HashMap::new();
