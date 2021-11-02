@@ -500,10 +500,16 @@ fn find_dynamic_first_merge(
             AsmInstruction::RegAllocPop {
                 reg: Fixed(new_reg),
             } => {
-                if uses_fixed_reg(&program[start_asm_range.clone()], new_reg) {
+                let end_asm_range = find_op_bounds(end_idx, program);
+                // We also need to check between the starting op and the ending op in case any of the
+                // ops in there use the register.
+                let between_asm_range = start_asm_range.end..end_asm_range.start;
+
+                if uses_fixed_reg(&program[start_asm_range.clone()], new_reg)
+                    || uses_fixed_reg(&program[between_asm_range], new_reg)
+                {
                     break;
                 }
-
                 let (range_to_merge, new_op_range) =
                     get_op_asm_ranges(program, end_idx, start_asm_range, start_op_range);
 
@@ -548,7 +554,12 @@ fn find_fixed_first_merge(
                 reg: Dynamic(replaced_reg_id),
             } => {
                 let end_asm_range = find_op_bounds(end_idx, program);
-                if uses_fixed_reg(&program[end_asm_range], fixed_reg) {
+                // We also need to check between the starting op and the ending op in case any of the
+                // ops in there use the register.
+                let between_asm_range = start_asm_range.end..end_asm_range.start;
+                if uses_fixed_reg(&program[end_asm_range], fixed_reg)
+                    || uses_fixed_reg(&program[between_asm_range], fixed_reg)
+                {
                     break;
                 }
 
@@ -569,6 +580,14 @@ fn find_fixed_first_merge(
             AsmInstruction::RegAllocPop {
                 reg: Fixed(replaced_reg),
             } if replaced_reg == fixed_reg => {
+                let end_asm_range = find_op_bounds(end_idx, program);
+                // We need to check between the starting op and the ending op in case any of the
+                // ops in there use the register.
+                let between_asm_range = start_asm_range.end..end_asm_range.start;
+                if uses_fixed_reg(&program[between_asm_range], fixed_reg) {
+                    break;
+                }
+
                 program[start_idx].asm = AsmInstruction::Nop;
                 program[end_idx].asm = AsmInstruction::Nop;
 
@@ -587,6 +606,15 @@ fn find_fixed_first_merge(
             AsmInstruction::RegAllocPop {
                 reg: Fixed(new_reg),
             } => {
+                let end_asm_range = find_op_bounds(end_idx, program);
+                // We need to check between the starting op and the ending op in case any of the
+                // ops in there use either register.
+                let between_asm_range = start_asm_range.end..end_asm_range.start;
+                let chunk = &program[between_asm_range];
+                if uses_fixed_reg(chunk, fixed_reg) || uses_fixed_reg(chunk, new_reg) {
+                    break;
+                }
+
                 program[start_idx].asm = AsmInstruction::Nop; // Nop the push.
                 program[end_idx].asm = AsmInstruction::RegAllocMov {
                     src: Fixed(fixed_reg),
