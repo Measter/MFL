@@ -303,37 +303,16 @@ impl<'source> Scanner<'source> {
                 ))
             }
 
-            // Need to make sure we don't have a collision with the "2dup"
-            // keyword
-            ('0'..='9', c) if c != 'd' => {
-                while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
-                    self.advance();
-                }
-
-                let lexeme = self.lexeme(input);
-                let range = self.lexeme_range();
-                let value = match lexeme.parse() {
-                    Ok(num) => num,
-                    Err(_) => {
-                        let diag = Diagnostic::error()
-                            .with_message("invalid number literal")
-                            .with_labels(vec![Label::primary(self.file_id, range)]);
-                        return Err(diag);
-                    }
-                };
-
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    TokenKind::Integer(value),
-                    lexeme,
-                    self.file_id,
-                    range,
-                ))
-            }
-
             _ => {
+                self.string_buf.clear();
+                self.string_buf.push(ch);
+                let mut is_all_num = ch.is_ascii_digit();
                 while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
-                    self.advance();
+                    let c = self.advance();
+                    is_all_num &= matches!(c, '0'..='9' | '_');
+                    if c.is_ascii_digit() {
+                        self.string_buf.push(c);
+                    }
                 }
 
                 let lexeme = self.lexeme(input);
@@ -393,6 +372,11 @@ impl<'source> Scanner<'source> {
                     "syscall5" => TokenKind::SysCall(5),
                     "syscall6" => TokenKind::SysCall(6),
                     "while" => TokenKind::While,
+                    _ if is_all_num => {
+                        // We only put numbers in here, so it can't fail.
+                        let value = self.string_buf.parse().unwrap();
+                        TokenKind::Integer(value)
+                    }
                     _ => TokenKind::Ident,
                 };
 
