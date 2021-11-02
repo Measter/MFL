@@ -631,6 +631,26 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             OpCode::ArgC => stack.push(PorthType::new(PorthTypeKind::Int, op.token.location)),
             OpCode::ArgV => stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location)),
 
+            OpCode::CastBool => {
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Bool] | [PorthTypeKind::Int])
+                );
+                stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
+            }
+            OpCode::CastInt => {
+                stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Int] | [PorthTypeKind::Ptr] | [PorthTypeKind::Bool])
+                );
+                stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
+            }
             OpCode::CastPtr => {
                 stack_check!(
                     diags,

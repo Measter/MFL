@@ -498,7 +498,7 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_fixed_push(X86Register::Rax);
         }
 
-        OpCode::CastPtr => {}
+        OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
 
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
