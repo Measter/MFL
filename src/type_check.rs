@@ -326,6 +326,26 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
                     }
                 }
             }
+            OpCode::BitNot => {
+                let res = stack_check!(
+                    diags,
+                    stack,
+                    interner,
+                    op,
+                    kind_pat!([PorthTypeKind::Int] | [PorthTypeKind::Bool])
+                );
+                match res {
+                    Some(kind_pat!([PorthTypeKind::Int])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
+                    }
+                    Some(kind_pat!([PorthTypeKind::Bool])) => {
+                        stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
+                    }
+                    _ => {
+                        stack.push(PorthType::new(PorthTypeKind::Unknown, op.token.location));
+                    }
+                }
+            }
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
                 stack_check!(
                     diags,

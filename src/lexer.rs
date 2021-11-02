@@ -15,8 +15,9 @@ use crate::{
 pub enum TokenKind {
     ArgC,
     ArgV,
-    BitOr,
     BitAnd,
+    BitNot,
+    BitOr,
     CastPtr,
     DivMod,
     Do,
@@ -61,8 +62,9 @@ impl TokenKind {
         match self {
             TokenKind::ArgC
             | TokenKind::ArgV
-            | TokenKind::BitOr
             | TokenKind::BitAnd
+            | TokenKind::BitNot
+            | TokenKind::BitOr
             | TokenKind::CastPtr
             | TokenKind::DivMod
             | TokenKind::Do
@@ -327,8 +329,7 @@ impl<'source> Scanner<'source> {
                     "!64" => TokenKind::Store64 { forth_style: true },
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
-                    "band" => TokenKind::BitAnd,
-                    "bor" => TokenKind::BitOr,
+                    "and" => TokenKind::BitAnd,
                     "cast(ptr)" => TokenKind::CastPtr,
                     "divmod" => TokenKind::DivMod,
                     "do" => TokenKind::Do,
@@ -359,6 +360,8 @@ impl<'source> Scanner<'source> {
                     "include" => TokenKind::Include,
                     "macro" => TokenKind::Macro,
                     "mem" => TokenKind::Mem,
+                    "not" => TokenKind::BitNot,
+                    "or" => TokenKind::BitOr,
                     "over" => TokenKind::Dup(1),
                     "print" => TokenKind::Print,
                     "rot" => TokenKind::Rot,

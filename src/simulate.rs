@@ -99,7 +99,7 @@ pub(crate) fn simulate_execute_program(
     program_args: &[String],
 ) -> Result<(), Diagnostic<FileId>> {
     let mut ip = 0;
-    let mut stack = Vec::new();
+    let mut stack: Vec<u64> = Vec::new();
 
     let mut memory: Vec<u8> = Vec::new();
     let literal_addresses = allocate_string_literals(interner, &mut memory);
@@ -135,6 +135,10 @@ pub(crate) fn simulate_execute_program(
             OpCode::BitOr => {
                 let ([b], a) = stack.popn_last_mut().unwrap();
                 *a |= b;
+            }
+            OpCode::BitNot => {
+                let a = stack.last_mut().unwrap();
+                *a = !*a;
             }
             OpCode::BitAnd => {
                 let ([b], a) = stack.popn_last_mut().unwrap();

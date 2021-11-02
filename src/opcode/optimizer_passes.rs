@@ -1,6 +1,7 @@
 use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
+    n_ops::FirstN,
     source_file::SourceStorage,
 };
 
@@ -12,8 +13,13 @@ use OpCode::*;
 type PassFunction =
     for<'a> fn(&'a [Op], &mut Interners, &SourceStorage) -> Option<(Vec<Op>, &'a [Op])>;
 
-pub(super) const PASSES: &[PassFunction] =
-    &[over_over, push_push_divmod, binary_ops, memory_offset];
+pub(super) const PASSES: &[PassFunction] = &[
+    over_over,
+    push_not,
+    push_push_divmod,
+    binary_ops,
+    memory_offset,
+];
 
 /// [Over, Over] -> [DupPair]
 fn over_over<'a>(
@@ -51,6 +57,41 @@ fn over_over<'a>(
     };
 
     Some((vec![op], xs))
+}
+
+/// [PushInt(a), BitNot] -> [PushInt(!a)]
+fn push_not<'a>(
+    ops: &'a [Op],
+    interners: &mut Interners,
+    sources: &SourceStorage,
+) -> Option<(Vec<Op>, &'a [Op])> {
+    let (start, rest) = ops.firstn()?;
+    let (int, not) = match start {
+        [int, not] if int.code.is_push_int() && not.code.is_bit_not() => (int, not),
+        _ => return None,
+    };
+
+    let int_val = !int.code.unwrap_push_int();
+    let location = if int.token.location.file_id != not.token.location.file_id {
+        not.token.location
+    } else {
+        int.token.location.merge(not.token.location)
+    };
+    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = interners.intern_lexeme(lexeme);
+
+    let token = Token {
+        kind: TokenKind::Integer(int_val),
+        lexeme,
+        location,
+    };
+    let op = Op {
+        code: PushInt(int_val),
+        token,
+        expansions: Vec::new(),
+    };
+
+    Some((vec![op], rest))
 }
 
 /// [PushInt(a), PushInt(b) DivMod] -> [PushInt(a / b), PushInt(a % b)]

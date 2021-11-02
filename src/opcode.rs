@@ -19,8 +19,9 @@ pub enum OpCode {
     Add,
     ArgC,
     ArgV,
-    BitOr,
     BitAnd,
+    BitNot,
+    BitOr,
     CastPtr,
     DivMod,
     Do,
@@ -84,7 +85,8 @@ impl OpCode {
             | OpCode::Store64 { .. }
             | OpCode::Subtract => 2,
 
-            OpCode::CastPtr
+            OpCode::BitNot
+            | OpCode::CastPtr
             | OpCode::Do
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
@@ -126,6 +128,7 @@ impl OpCode {
 
             ArgC
             | ArgV
+            | BitNot
             | CastPtr
             | DivMod
             | Do
@@ -167,6 +170,7 @@ impl OpCode {
             | ArgC
             | ArgV
             | BitAnd
+            | BitNot
             | BitOr
             | CastPtr
             | DivMod
@@ -223,6 +227,7 @@ impl OpCode {
 
             ArgC
             | ArgV
+            | BitNot
             | CastPtr
             | DivMod
             | Do
@@ -499,6 +504,7 @@ pub fn parse_token(
             TokenKind::DivMod => OpCode::DivMod,
 
             TokenKind::BitAnd => OpCode::BitAnd,
+            TokenKind::BitNot => OpCode::BitNot,
             TokenKind::BitOr => OpCode::BitOr,
             TokenKind::ShiftLeft => OpCode::ShiftLeft,
             TokenKind::ShiftRight => OpCode::ShiftRight,

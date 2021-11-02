@@ -242,6 +242,11 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(b_id);
             assembler.reg_free_dyn_push(a_id);
         }
+        OpCode::BitNot => {
+            let a_id = assembler.reg_alloc_dyn_pop();
+            assembler.push_instr([str_lit("    not "), dyn_reg(a_id)]);
+            assembler.reg_free_dyn_push(a_id);
+        }
         OpCode::ShiftLeft | OpCode::ShiftRight => {
             assembler.reg_alloc_fixed_pop(X86Register::Rcx);
             let a_id = assembler.reg_alloc_dyn_pop();
