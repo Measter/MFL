@@ -50,8 +50,8 @@ pub enum TokenKind {
     ShiftRight,
     Star,
     String(Spur),
-    Store { forth_style: bool },
-    Store64 { forth_style: bool },
+    Store,
+    Store64,
     Swap,
     SysCall(usize),
     While,
@@ -95,8 +95,8 @@ impl TokenKind {
             | TokenKind::ShiftRight
             | TokenKind::Star
             | TokenKind::String(_)
-            | TokenKind::Store { .. }
-            | TokenKind::Store64 { .. }
+            | TokenKind::Store
+            | TokenKind::Store64
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
@@ -135,7 +135,7 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '.' | '=' | '>' | '<' | ',' | '*' | '!' | '@') || c.is_whitespace()
+    matches!(c, '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -319,14 +319,10 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
-                    "." => TokenKind::Store { forth_style: false },
-                    "," => TokenKind::Load,
-                    ".64" => TokenKind::Store64 { forth_style: false },
-                    ",64" => TokenKind::Load64,
                     "@" => TokenKind::Load,
-                    "!" => TokenKind::Store { forth_style: true },
+                    "!" => TokenKind::Store,
                     "@64" => TokenKind::Load64,
-                    "!64" => TokenKind::Store64 { forth_style: true },
+                    "!64" => TokenKind::Store64,
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
                     "and" => TokenKind::BitAnd,

@@ -161,19 +161,8 @@ fn mem_push_store(
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (mem, push) = match start {
-        [mem, push, store]
-            if mem.code.is_mem()
-                && push.code.is_push_int()
-                && store.code.is_store()
-                && !store.code.unwrap_store() =>
-        {
-            (mem, push)
-        }
         [push, mem, store]
-            if mem.code.is_mem()
-                && push.code.is_push_int()
-                && store.code.is_store()
-                && store.code.unwrap_store() =>
+            if mem.code.is_mem() && push.code.is_push_int() && store.code.is_store() =>
         {
             (mem, push)
         }
@@ -409,17 +398,9 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(addr_reg);
             assembler.reg_free_dyn_push(val_reg);
         }
-        OpCode::Store { forth_style } => {
-            #[allow(clippy::branches_sharing_code)]
-            let (val_reg, addr_reg) = if forth_style {
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                let val_reg = assembler.reg_alloc_dyn_pop();
-                (val_reg, addr_reg)
-            } else {
-                let val_reg = assembler.reg_alloc_dyn_pop();
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                (val_reg, addr_reg)
-            };
+        OpCode::Store => {
+            let addr_reg = assembler.reg_alloc_dyn_pop();
+            let val_reg = assembler.reg_alloc_dyn_pop();
             assembler.push_instr([
                 str_lit("    mov BYTE ["),
                 dyn_reg(addr_reg),
@@ -430,17 +411,9 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(val_reg);
             assembler.reg_free_dyn_drop(addr_reg);
         }
-        OpCode::Store64 { forth_style } => {
-            #[allow(clippy::branches_sharing_code)]
-            let (val_reg, addr_reg) = if forth_style {
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                let val_reg = assembler.reg_alloc_dyn_pop();
-                (val_reg, addr_reg)
-            } else {
-                let val_reg = assembler.reg_alloc_dyn_pop();
-                let addr_reg = assembler.reg_alloc_dyn_pop();
-                (val_reg, addr_reg)
-            };
+        OpCode::Store64 => {
+            let addr_reg = assembler.reg_alloc_dyn_pop();
+            let val_reg = assembler.reg_alloc_dyn_pop();
             assembler.push_instr([
                 str_lit("    mov QWORD ["),
                 dyn_reg(addr_reg),

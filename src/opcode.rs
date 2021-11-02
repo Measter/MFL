@@ -55,8 +55,8 @@ pub enum OpCode {
     Rot,
     ShiftLeft,
     ShiftRight,
-    Store { forth_style: bool },
-    Store64 { forth_style: bool },
+    Store,
+    Store64,
     Subtract,
     Swap,
     SysCall(usize),
@@ -268,13 +268,6 @@ impl OpCode {
             _ => panic!("expected OpCode::Mem"),
         }
     }
-
-    pub fn unwrap_store(self) -> bool {
-        match self {
-            Self::Store { forth_style } | Self::Store64 { forth_style } => forth_style,
-            _ => panic!("expected OpCode::Store or OpCode::Store64"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -410,8 +403,8 @@ pub fn parse_token(
             TokenKind::Mem => OpCode::Mem { offset: 0 },
             TokenKind::Load => OpCode::Load,
             TokenKind::Load64 => OpCode::Load64,
-            TokenKind::Store { forth_style } => OpCode::Store { forth_style },
-            TokenKind::Store64 { forth_style } => OpCode::Store64 { forth_style },
+            TokenKind::Store => OpCode::Store,
+            TokenKind::Store64 => OpCode::Store64,
 
             TokenKind::Equal => OpCode::Equal,
             TokenKind::Greater => OpCode::Greater,
