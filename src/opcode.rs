@@ -117,57 +117,6 @@ impl OpCode {
         }
     }
 
-    pub fn push_count(self) -> usize {
-        match self {
-            OpCode::Rot => 3,
-
-            OpCode::Dup { depth } => depth + 2,
-
-            OpCode::Add
-            | OpCode::ArgC
-            | OpCode::ArgV
-            | OpCode::BitOr
-            | OpCode::BitAnd
-            | OpCode::CastPtr
-            | OpCode::Equal
-            | OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Load
-            | OpCode::Load64
-            | OpCode::Mem { .. }
-            | OpCode::Multiply
-            | OpCode::NotEq
-            | OpCode::PushBool(_)
-            | OpCode::PushInt(_)
-            | OpCode::ShiftLeft
-            | OpCode::ShiftRight
-            | OpCode::Subtract
-            | OpCode::SysCall(_) => 1,
-
-            OpCode::DivMod | OpCode::DupPair | OpCode::PushStr(_) => 2,
-
-            OpCode::Do
-            | OpCode::Drop
-            | OpCode::DoIf { .. }
-            | OpCode::DoWhile { .. }
-            | OpCode::Elif { .. }
-            | OpCode::Else { .. }
-            | OpCode::End { .. }
-            | OpCode::EndIf { .. }
-            | OpCode::EndWhile { .. }
-            | OpCode::Ident(_)
-            | OpCode::If
-            | OpCode::Include(_)
-            | OpCode::Print
-            | OpCode::Store { .. }
-            | OpCode::Store64 { .. }
-            | OpCode::Swap
-            | OpCode::While { .. } => 0,
-        }
-    }
-
     // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
     fn is_binary_op(self) -> bool {
         use OpCode::*;
@@ -312,13 +261,6 @@ impl OpCode {
         match self {
             Self::Mem { offset } => offset,
             _ => panic!("expected OpCode::Mem"),
-        }
-    }
-
-    pub fn unwrap_dup(self) -> usize {
-        match self {
-            Self::Dup { depth } => depth,
-            _ => panic!("expected OpCode::Dup"),
         }
     }
 
