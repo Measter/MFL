@@ -377,15 +377,15 @@ fn parse_macro<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(macros, body_tokens, interner, include_list)?;
+    let body_ops = parse_token(body_tokens, interner, macros, include_list)?;
 
     Ok((ident_token, body_ops))
 }
 
 pub fn parse_token(
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
     tokens: &[Token],
     interner: &Interners,
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
     include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();

@@ -113,7 +113,7 @@ fn load_program(
     let mut macros = HashMap::new();
     let mut include_list = Vec::new();
 
-    let mut ops = match opcode::parse_token(&mut macros, &tokens, interner, &mut include_list) {
+    let mut ops = match opcode::parse_token(&tokens, interner, &mut macros, &mut include_list) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
@@ -161,7 +161,7 @@ fn load_program(
             Err(diag) => return Ok(Err(vec![diag])),
         };
 
-        let ops = match opcode::parse_token(&mut macros, &tokens, interner, &mut include_list) {
+        let ops = match opcode::parse_token(&tokens, interner, &mut macros, &mut include_list) {
             Ok(ops) => ops,
             Err(diags) => return Ok(Err(diags)),
         };
