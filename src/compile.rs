@@ -130,8 +130,8 @@ fn write_assembly(
     writeln!(&mut out_file, "    __argv: resq {}", 1)?;
 
     for (&id, &size) in static_allocs {
-        let id = interner.resolve_lexeme(id);
-        writeln!(&mut out_file, "    __{}: resb {}", id, size)?;
+        let name = interner.resolve_lexeme(id);
+        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }
 
     Ok(())
