@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, process::Command};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    process::Command,
+};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
@@ -6,6 +10,8 @@ use codespan_reporting::{
 };
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
+use lasso::Spur;
+use lexer::Token;
 use source_file::{FileId, SourceLocation, SourceStorage};
 use structopt::StructOpt;
 
@@ -21,7 +27,7 @@ mod type_check;
 
 use opcode::Op;
 
-const MEMORY_CAPACITY: usize = 2usize.pow(19);
+use crate::simulate::simulate_execute_program;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Width {
@@ -73,7 +79,12 @@ fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnosti
         .with_labels(vec![Label::primary(location.file_id, location.range())])
 }
 
-type LoadProgramResult = Result<Vec<Op>, Vec<Diagnostic<FileId>>>;
+struct Program {
+    ops: Vec<Op>,
+    static_allocs: HashMap<Spur, (Token, Vec<Op>)>,
+}
+
+type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
 
 fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     // Stupidly innefficient, but whatever...
@@ -90,6 +101,68 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     }
 
     None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_include(
+    source_store: &mut SourceStorage,
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    include_list: &mut Vec<(Token, Spur)>,
+    included_files: &mut HashMap<Spur, Vec<Op>>,
+    interner: &mut Interners,
+    include_paths: &[String],
+    include_token: Token,
+    file: Spur,
+) -> Result<(), Vec<Diagnostic<FileId>>> {
+    if included_files.contains_key(&file) {
+        return Ok(());
+    }
+
+    let file_name = interner.resolve_literal(file);
+
+    let include_path = match search_includes(include_paths, file_name) {
+        Some(path) => path,
+        None => {
+            let diag = Diagnostic::error()
+                .with_message(format!("include not found: `{}`", file_name))
+                .with_labels(vec![Label::primary(
+                    include_token.location.file_id,
+                    include_token.location.range(),
+                )]);
+            return Err(vec![diag]);
+        }
+    };
+
+    let contents = match std::fs::read_to_string(&include_path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            let diag = Diagnostic::error()
+                .with_message(format!("error opening `{}`", include_path))
+                .with_labels(vec![Label::primary(
+                    include_token.location.file_id,
+                    include_token.location.range(),
+                )])
+                .with_notes(vec![format!("{}", e)]);
+            return Err(vec![diag]);
+        }
+    };
+
+    let file_id = source_store.add(&include_path, &contents);
+
+    let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
+        Ok(program) => program,
+        Err(diag) => return Err(vec![diag]),
+    };
+
+    let ops = match opcode::parse_token(&tokens, interner, macros, static_allocs, include_list) {
+        Ok(ops) => ops,
+        Err(diags) => return Err(diags),
+    };
+
+    included_files.insert(file, ops);
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -111,9 +184,16 @@ fn load_program(
     };
 
     let mut macros = HashMap::new();
+    let mut static_allocs = HashMap::new();
     let mut include_list = Vec::new();
 
-    let mut ops = match opcode::parse_token(&tokens, interner, &mut macros, &mut include_list) {
+    let mut ops = match opcode::parse_token(
+        &tokens,
+        interner,
+        &mut macros,
+        &mut static_allocs,
+        &mut include_list,
+    ) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
@@ -121,60 +201,41 @@ fn load_program(
     let mut included_files = HashMap::new();
 
     while let Some((include_token, file)) = include_list.pop() {
-        if included_files.contains_key(&file) {
-            continue;
+        if let Err(diags) = load_include(
+            source_store,
+            &mut macros,
+            &mut static_allocs,
+            &mut include_list,
+            &mut included_files,
+            interner,
+            include_paths,
+            include_token,
+            file,
+        ) {
+            return Ok(Err(diags));
         }
-
-        let file_name = interner.resolve_literal(file);
-
-        let include_path = match search_includes(include_paths, file_name) {
-            Some(path) => path,
-            None => {
-                let diag = Diagnostic::error()
-                    .with_message(format!("include not found: `{}`", file_name))
-                    .with_labels(vec![Label::primary(
-                        include_token.location.file_id,
-                        include_token.location.range(),
-                    )]);
-                return Ok(Err(vec![diag]));
-            }
-        };
-
-        let contents = match std::fs::read_to_string(&include_path) {
-            Ok(contents) => contents,
-            Err(e) => {
-                let diag = Diagnostic::error()
-                    .with_message(format!("error opening `{}`", include_path))
-                    .with_labels(vec![Label::primary(
-                        include_token.location.file_id,
-                        include_token.location.range(),
-                    )])
-                    .with_notes(vec![format!("{}", e)]);
-                return Ok(Err(vec![diag]));
-            }
-        };
-
-        let file_id = source_store.add(&include_path, &contents);
-
-        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
-            Ok(program) => program,
-            Err(diag) => return Ok(Err(vec![diag])),
-        };
-
-        let ops = match opcode::parse_token(&tokens, interner, &mut macros, &mut include_list) {
-            Ok(ops) => ops,
-            Err(diags) => return Ok(Err(diags)),
-        };
-
-        included_files.insert(file, ops);
     }
 
     ops = opcode::expand_includes(&included_files, &ops);
 
-    ops = match opcode::expand_macros(&macros, &ops) {
+    // We don't need the entry allocation data just for the expansion, so we'll just use a
+    // HashSet here.
+    let static_alloc_names: HashSet<_> = static_allocs.keys().copied().collect();
+
+    ops = match opcode::expand_macros_and_allocs(&macros, &static_alloc_names, &ops) {
         Ok(ops) => ops,
         Err(diags) => return Ok(Err(diags)),
     };
+
+    // Memory allocations may also contain macros, so we need to expand those as well.
+    for (_, body) in static_allocs.values_mut() {
+        let new_body = match opcode::expand_macros_and_allocs(&macros, &static_alloc_names, body) {
+            Ok(ops) => ops,
+            Err(diags) => return Ok(Err(diags)),
+        };
+
+        *body = new_body;
+    }
 
     if optimize {
         ops = opcode::optimize(&ops, interner, source_store);
@@ -188,7 +249,45 @@ fn load_program(
         return Ok(Err(diags));
     }
 
-    Ok(Ok(ops))
+    let program = Program { ops, static_allocs };
+
+    Ok(Ok(program))
+}
+
+fn evaluate_allocation_sizes(
+    static_allocs: &HashMap<Spur, (Token, Vec<Op>)>,
+    interner: &Interners,
+) -> Result<HashMap<Spur, usize>, Vec<Diagnostic<FileId>>> {
+    let mut alloc_sizes = HashMap::new();
+    let mut diags = Vec::new();
+
+    for (&id, (token, body)) in static_allocs {
+        let stack = match simulate_execute_program(body, &HashMap::new(), interner, &[], true) {
+            Err(diag) => {
+                diags.push(diag);
+                continue;
+            }
+            Ok(stack) => stack,
+        };
+
+        match &*stack {
+            [size] => {
+                alloc_sizes.insert(id, *size as usize);
+            }
+            [] | [..] => {
+                let mut diag =
+                    generate_error("memory size must evaluate to single value", token.location);
+
+                diag.labels.push(
+                    Label::primary(token.location.file_id, token.location.range())
+                        .with_message(format!("{} items on stack", stack.len())),
+                );
+                diags.push(diag);
+            }
+        }
+    }
+
+    diags.is_empty().then(|| alloc_sizes).ok_or(diags)
 }
 
 fn run_simulate(
@@ -222,7 +321,23 @@ fn run_simulate(
         }
     };
 
-    if let Err(diag) = simulate::simulate_execute_program(&program, &interner, &program_args) {
+    let alloc_sizes = match evaluate_allocation_sizes(&program.static_allocs, &interner) {
+        Ok(sizes) => sizes,
+        Err(diags) => {
+            for diag in diags {
+                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            }
+            std::process::exit(-1);
+        }
+    };
+
+    if let Err(diag) = simulate::simulate_execute_program(
+        &program.ops,
+        &alloc_sizes,
+        &interner,
+        &program_args,
+        false,
+    ) {
         codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
     }
 
@@ -260,8 +375,27 @@ fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Resu
         }
     };
 
+    println!("Evaluating static allocations...");
+
+    let alloc_sizes = match evaluate_allocation_sizes(&program.static_allocs, &interner) {
+        Ok(sizes) => sizes,
+        Err(diags) => {
+            for diag in diags {
+                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
+            }
+            std::process::exit(-1);
+        }
+    };
+
     println!("Compiling... to {}", output_asm.display());
-    compile::compile_program(&program, &source_storage, &interner, &output_asm, optimise)?;
+    compile::compile_program(
+        &program.ops,
+        &alloc_sizes,
+        &source_storage,
+        &interner,
+        &output_asm,
+        optimise,
+    )?;
 
     println!("Assembling... to {}", output_obj.display());
     let nasm = Command::new("nasm")

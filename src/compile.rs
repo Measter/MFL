@@ -2,12 +2,13 @@ use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, 
 
 use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
+use lasso::Spur;
 
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
     source_file::SourceStorage,
-    Width, MEMORY_CAPACITY,
+    Width,
 };
 
 mod assembly;
@@ -54,6 +55,7 @@ fn write_assembly(
     source_store: &SourceStorage,
     interner: &Interners,
     ops: &[Op],
+    static_allocs: &HashMap<Spur, usize>,
     asm: &[Assembly],
 ) -> Result<()> {
     let mut cur_exe_dur =
@@ -126,7 +128,11 @@ fn write_assembly(
     writeln!(&mut out_file, "segment .bss")?;
     writeln!(&mut out_file, "    __argc: resq {}", 1)?;
     writeln!(&mut out_file, "    __argv: resq {}", 1)?;
-    writeln!(&mut out_file, "    __memory: resb {}", MEMORY_CAPACITY)?;
+
+    for (&id, &size) in static_allocs {
+        let id = interner.resolve_lexeme(id);
+        writeln!(&mut out_file, "    __{}: resb {}", id, size)?;
+    }
 
     Ok(())
 }
@@ -725,6 +731,7 @@ fn optimize_allocation(program: &mut [Assembly]) {
 
 pub(crate) fn compile_program(
     program: &[Op],
+    static_allocs: &HashMap<Spur, usize>,
     source_store: &SourceStorage,
     interner: &Interners,
     out_file_path: &Path,
@@ -736,7 +743,14 @@ pub(crate) fn compile_program(
         optimize_allocation(&mut assembly);
     }
 
-    write_assembly(out_file_path, source_store, interner, program, &assembly)?;
+    write_assembly(
+        out_file_path,
+        source_store,
+        interner,
+        program,
+        static_allocs,
+        &assembly,
+    )?;
 
     Ok(())
 }

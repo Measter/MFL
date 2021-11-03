@@ -197,57 +197,59 @@ fn binary_ops<'a>(
     Some((vec![opt], xs))
 }
 
-///   [Mem(a), PushInt(b), Add/Sub]
-/// | [PushInt(a), Mem(b), Add/Sub] -> [Mem(a Add/Sub b)]
+///   [Memory(a), PushInt(b), Add/Sub]
+/// | [PushInt(a), Memory(b), Add/Sub] -> [Memory(a Add/Sub b)]
 fn memory_offset<'a>(
     ops: &'a [Op],
     interners: &mut Interners,
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
-    let (a, b, op, xs) = match ops {
-        [a, b, op, xs @ ..]
-            if a.code.is_push_int() && b.code.is_mem() && matches!(op.code, Add | Subtract) =>
+    let (start, rest) = ops.firstn()?;
+    let (int, mem, op) = match start {
+        [int, mem, op]
+            if int.code.is_push_int()
+                && mem.code.is_memory()
+                && matches!(op.code, Add | Subtract) =>
         {
-            (a, b, op, xs)
+            (int, mem, op)
         }
-        [a, b, op, xs @ ..]
-            if a.code.is_mem() && b.code.is_push_int() && matches!(op.code, Add | Subtract) =>
+        [mem, int, op]
+            if mem.code.is_memory()
+                && int.code.is_push_int()
+                && matches!(op.code, Add | Subtract) =>
         {
-            (a, b, op, xs)
+            (int, mem, op)
         }
         _ => return None,
     };
 
-    let a_val = a
-        .code
-        .push_int()
-        .unwrap_or_else(|| a.code.unwrap_mem() as u64);
-    let b_val = b
-        .code
-        .push_int()
-        .unwrap_or_else(|| b.code.unwrap_mem() as u64);
-    let res = op.code.get_binary_op()(a_val, b_val);
+    let int_val = int.code.unwrap_push_int();
+    let (mem_id, mem_offset) = mem.code.unwrap_memory();
+    let res = op.code.get_binary_op()(int_val, mem_offset as u64);
 
-    let location = if a.token.location.file_id != op.token.location.file_id {
+    let location = if int.token.location.file_id != op.token.location.file_id {
         op.token.location
     } else {
-        a.token.location.merge(op.token.location)
+        int.token.location.merge(op.token.location)
     };
 
     let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let token = Token {
-        kind: TokenKind::Mem,
+        kind: TokenKind::Memory,
         lexeme,
         location,
     };
 
     let opt = Op {
-        code: Mem { offset: res as _ },
+        code: Memory {
+            name: mem_id,
+            offset: res as _,
+        },
         token,
         expansions: Vec::new(),
     };
 
-    Some((vec![opt], xs))
+    Some((vec![opt], rest))
 }

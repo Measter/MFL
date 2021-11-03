@@ -1,6 +1,7 @@
-use std::{convert::TryInto, io::Write, iter::repeat, ops::Range};
+use std::{collections::HashMap, convert::TryInto, io::Write, iter::repeat, ops::Range};
 
 use codespan_reporting::diagnostic::Diagnostic;
+use lasso::Spur;
 
 use crate::{
     generate_error,
@@ -8,7 +9,7 @@ use crate::{
     n_ops::PopN,
     opcode::{Op, OpCode},
     source_file::FileId,
-    Width, MEMORY_CAPACITY,
+    Width,
 };
 
 impl Width {
@@ -104,25 +105,45 @@ fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
     (argc as u64, argv as u64)
 }
 
+fn build_static_allocations(
+    memory: &mut Vec<u8>,
+    allocs: &HashMap<Spur, usize>,
+) -> HashMap<Spur, usize> {
+    let mut lookup = HashMap::new();
+
+    for (&id, &size) in allocs {
+        let base = memory.len();
+        memory.resize(base + size, 0);
+        lookup.insert(id, base);
+    }
+
+    lookup
+}
+
 pub(crate) fn simulate_execute_program(
     program: &[Op],
+    static_allocs: &HashMap<Spur, usize>,
     interner: &Interners,
     program_args: &[String],
-) -> Result<(), Diagnostic<FileId>> {
+    is_const: bool,
+) -> Result<Vec<u64>, Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack: Vec<u64> = Vec::new();
 
     let mut memory: Vec<u8> = Vec::new();
+    let static_allocation_lookup = build_static_allocations(&mut memory, static_allocs);
     let literal_addresses = allocate_string_literals(interner, &mut memory);
     let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
 
-    let mem_base = memory.len() as u64;
-
-    let new_memory_len = memory.len() + MEMORY_CAPACITY;
-    memory.resize(new_memory_len, 0);
-
     while let Some(op) = program.get(ip) {
         // eprintln!("{:?}", op.code);
+        if is_const && !op.code.is_const() {
+            generate_error(
+                "Operation not support during const evaluation",
+                op.token.location,
+            );
+        }
+
         match op.code {
             OpCode::Add => {
                 let ([b], a) = stack.popn_last_mut().unwrap();
@@ -247,7 +268,10 @@ pub(crate) fn simulate_execute_program(
                 }
             }
 
-            OpCode::Mem { offset } => stack.push(mem_base + offset as u64),
+            OpCode::Memory { name, offset } => {
+                let base = static_allocation_lookup[&name];
+                stack.push((base + offset) as u64)
+            }
             OpCode::Load(width) => {
                 let address = stack.pop().unwrap() as usize;
 
@@ -300,5 +324,5 @@ pub(crate) fn simulate_execute_program(
         ip += 1;
     }
 
-    Ok(())
+    Ok(stack)
 }

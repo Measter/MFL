@@ -42,7 +42,7 @@ pub enum TokenKind {
     LessEqual,
     Load(Width),
     Macro,
-    Mem,
+    Memory,
     Minus,
     NotEqual,
     Plus,
@@ -87,7 +87,6 @@ impl TokenKind {
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load(_)
-            | TokenKind::Mem
             | TokenKind::Minus
             | TokenKind::NotEqual
             | TokenKind::Plus
@@ -101,7 +100,7 @@ impl TokenKind {
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
-            TokenKind::If | TokenKind::While | TokenKind::Macro => true,
+            TokenKind::If | TokenKind::While | TokenKind::Macro | TokenKind::Memory => true,
         }
     }
 
@@ -362,7 +361,7 @@ impl<'source> Scanner<'source> {
                     "if" => TokenKind::If,
                     "include" => TokenKind::Include,
                     "macro" => TokenKind::Macro,
-                    "mem" => TokenKind::Mem,
+                    "memory" => TokenKind::Memory,
                     "not" => TokenKind::BitNot,
                     "or" => TokenKind::BitOr,
                     "over" => TokenKind::Dup(1),

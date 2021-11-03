@@ -172,40 +172,47 @@ fn mem_push_store(
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    _: &Interners,
+    interner: &Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (mem, push) = match start {
         [push, mem, store]
-            if mem.code.is_mem() && push.code.is_push_int() && store.code.is_store() =>
+            if mem.code.is_memory() && push.code.is_push_int() && store.code.is_store() =>
         {
             (mem, push)
         }
         _ => return None,
     };
 
-    let mem_val = mem.code.unwrap_mem();
+    let (mem_id, mem_val) = mem.code.unwrap_memory();
     let push_val = push.code.unwrap_push_int() & 0xFF;
+    let mem_id = interner.resolve_lexeme(mem_id);
 
     assembler.set_op_range(ip, ip + start.len());
 
     assembler.push_instr([str_lit(format!(
-        "    mov BYTE [__memory + {}], {}",
-        mem_val, push_val
+        "    mov BYTE [__{} + {}], {}",
+        mem_id, mem_val, push_val
     ))]);
 
     Some(start.len())
 }
 
 /// Optimises the Mem-Load sequence.
-fn mem_load(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
+fn mem_load(
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    interner: &Interners,
+) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let mem = match start {
-        [mem, load] if mem.code.is_mem() && load.code.is_load() => mem,
+        [mem, load] if mem.code.is_memory() && load.code.is_load() => mem,
         _ => return None,
     };
 
-    let mem_val = mem.code.unwrap_mem();
+    let (mem_id, mem_val) = mem.code.unwrap_memory();
+    let mem_id = interner.resolve_lexeme(mem_id);
 
     assembler.set_op_range(ip, ip + start.len());
 
@@ -213,7 +220,7 @@ fn mem_load(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> 
     assembler.push_instr([
         str_lit("    mov "),
         dyn_sized_reg(reg, Width::Byte),
-        str_lit(format!(", BYTE [__memory + {}]", mem_val)),
+        str_lit(format!(", BYTE [__{} + {}]", mem_id, mem_val)),
     ]);
     assembler.reg_free_dyn_push(reg);
 
@@ -343,8 +350,9 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(len_reg);
             assembler.reg_free_dyn_push(ptr_reg);
         }
-        OpCode::Mem { offset } => {
-            let reg = assembler.reg_alloc_dyn_literal(format!("__memory + {}", offset));
+        OpCode::Memory { name, offset } => {
+            let alloc_name = interner.resolve_lexeme(name);
+            let reg = assembler.reg_alloc_dyn_literal(format!("__{} + {}", alloc_name, offset));
             assembler.reg_free_dyn_push(reg);
         }
 

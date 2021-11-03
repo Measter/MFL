@@ -47,7 +47,7 @@ pub enum OpCode {
     Load(Width),
     Greater,
     GreaterEqual,
-    Mem { offset: usize },
+    Memory { name: Spur, offset: usize },
     Multiply,
     NotEq,
     Print,
@@ -109,7 +109,7 @@ impl OpCode {
             | OpCode::Ident(_)
             | OpCode::If
             | OpCode::Include(_)
-            | OpCode::Mem { .. }
+            | OpCode::Memory { .. }
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr(_)
@@ -117,6 +117,57 @@ impl OpCode {
             | OpCode::While { .. } => 0,
 
             OpCode::SysCall(a) => a + 1,
+        }
+    }
+
+    pub fn is_const(self) -> bool {
+        match self {
+            OpCode::Add
+            | OpCode::BitAnd
+            | OpCode::BitNot
+            | OpCode::BitOr
+            | OpCode::CastBool
+            | OpCode::CastInt
+            | OpCode::CastPtr
+            | OpCode::DivMod
+            | OpCode::Do
+            | OpCode::DoIf { .. }
+            | OpCode::DoWhile { .. }
+            | OpCode::Dup { .. }
+            | OpCode::DupPair
+            | OpCode::Drop
+            | OpCode::Elif { .. }
+            | OpCode::Else { .. }
+            | OpCode::End
+            | OpCode::EndIf { .. }
+            | OpCode::EndWhile { .. }
+            | OpCode::Equal
+            | OpCode::Ident(_)
+            | OpCode::If
+            | OpCode::Include(_)
+            | OpCode::Less
+            | OpCode::LessEqual
+            | OpCode::Greater
+            | OpCode::GreaterEqual
+            | OpCode::Multiply
+            | OpCode::NotEq
+            | OpCode::PushBool(_)
+            | OpCode::PushInt(_)
+            | OpCode::PushStr(_)
+            | OpCode::Rot
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight
+            | OpCode::Subtract
+            | OpCode::Swap
+            | OpCode::While { .. } => true,
+
+            OpCode::ArgC
+            | OpCode::ArgV
+            | OpCode::Load(_)
+            | OpCode::Memory { .. }
+            | OpCode::Print
+            | OpCode::Store(_)
+            | OpCode::SysCall(_) => false,
         }
     }
 
@@ -149,7 +200,7 @@ impl OpCode {
             | If
             | Include(_)
             | Load(_)
-            | Mem { .. }
+            | Memory { .. }
             | Print
             | PushBool(_)
             | PushInt(_)
@@ -192,7 +243,7 @@ impl OpCode {
             | If
             | Include(_)
             | Load(_)
-            | Mem { .. }
+            | Memory { .. }
             | Multiply
             | Print
             | PushBool(_)
@@ -248,7 +299,7 @@ impl OpCode {
             | If
             | Include { .. }
             | Load(_)
-            | Mem { .. }
+            | Memory { .. }
             | Print
             | PushBool(_)
             | PushInt(_)
@@ -263,10 +314,10 @@ impl OpCode {
         }
     }
 
-    pub fn unwrap_mem(self) -> usize {
+    pub fn unwrap_memory(self) -> (Spur, usize) {
         match self {
-            Self::Mem { offset } => offset,
-            _ => panic!("expected OpCode::Mem"),
+            Self::Memory { name, offset } => (name, offset),
+            _ => panic!("expected OpCode::Memory"),
         }
     }
 }
@@ -324,12 +375,13 @@ fn expect_token<'a>(
     }
 }
 
-fn parse_macro<'a>(
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+fn parse_macro_or_alloc<'a>(
     token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
+    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
     include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
     let (ident_idx, ident_token) = match expect_token(
@@ -377,7 +429,7 @@ fn parse_macro<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(body_tokens, interner, macros, include_list)?;
+    let body_ops = parse_token(body_tokens, interner, macros, static_allocs, include_list)?;
 
     Ok((ident_token, body_ops))
 }
@@ -386,6 +438,7 @@ pub fn parse_token(
     tokens: &[Token],
     interner: &Interners,
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
     include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
@@ -401,7 +454,6 @@ pub fn parse_token(
             TokenKind::Rot => OpCode::Rot,
             TokenKind::Swap => OpCode::Swap,
 
-            TokenKind::Mem => OpCode::Mem { offset: 0 },
             TokenKind::Load(width) => OpCode::Load(width),
             TokenKind::Store(width) => OpCode::Store(width),
 
@@ -423,12 +475,13 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Macro => {
-                let (name, body) = match parse_macro(
-                    macros,
+                let (name, body) = match parse_macro_or_alloc(
                     &mut token_iter,
                     tokens,
                     *token,
                     interner,
+                    macros,
+                    static_allocs,
                     include_list,
                 ) {
                     Ok(a) => a,
@@ -441,6 +494,40 @@ pub fn parse_token(
                 if let Some((prev_name, _)) = macros.insert(name.lexeme, (name, body)) {
                     let diag = Diagnostic::error()
                         .with_message("macro defined multiple times")
+                        .with_labels(vec![
+                            Label::primary(name.location.file_id, name.location.range())
+                                .with_message("defined here"),
+                            Label::secondary(
+                                prev_name.location.file_id,
+                                prev_name.location.range(),
+                            )
+                            .with_message("also defined here"),
+                        ]);
+                    diags.push(diag);
+                }
+
+                continue;
+            }
+            TokenKind::Memory => {
+                let (name, body) = match parse_macro_or_alloc(
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    interner,
+                    macros,
+                    static_allocs,
+                    include_list,
+                ) {
+                    Ok(a) => a,
+                    Err(mut e) => {
+                        diags.append(&mut e);
+                        continue;
+                    }
+                };
+
+                if let Some((prev_name, _)) = static_allocs.insert(name.lexeme, (name, body)) {
+                    let diag = Diagnostic::error()
+                        .with_message("multiple allocations defined with the same name")
                         .with_labels(vec![
                             Label::primary(name.location.file_id, name.location.range())
                                 .with_message("defined here"),
@@ -804,8 +891,9 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
     dst_vec
 }
 
-pub fn expand_macros(
+pub fn expand_macros_and_allocs(
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &HashSet<Spur>,
     ops: &[Op],
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
@@ -821,28 +909,35 @@ pub fn expand_macros(
 
         for op in src_vec.drain(..) {
             match op.code {
-                OpCode::Ident(id) => {
+                OpCode::Ident(id) if macros.contains_key(&id) => {
                     changed = true;
-                    match macros.get(&id) {
-                        Some((name, body)) => {
-                            last_changed_macros.push(*name);
-                            dst_vec.extend(body.iter().map(|new_op| {
-                                let mut new_op = new_op.clone();
-                                new_op.expansions.push(op.token.location);
-                                new_op.expansions.extend_from_slice(&op.expansions);
-                                new_op
-                            }));
-                        }
-                        None => {
-                            let diag = Diagnostic::error()
-                                .with_message("unknown macro")
-                                .with_labels(vec![Label::primary(
-                                    op.token.location.file_id,
-                                    op.token.location.range(),
-                                )]);
-                            diags.push(diag);
-                        }
-                    }
+                    let (name, body) = macros.get(&id).unwrap();
+                    last_changed_macros.push(*name);
+                    dst_vec.extend(body.iter().map(|new_op| {
+                        let mut new_op = new_op.clone();
+                        new_op.expansions.push(op.token.location);
+                        new_op.expansions.extend_from_slice(&op.expansions);
+                        new_op
+                    }));
+                }
+                OpCode::Ident(id) if static_allocs.contains(&id) => {
+                    dst_vec.push(Op {
+                        code: OpCode::Memory {
+                            name: id,
+                            offset: 0,
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
+                }
+                OpCode::Ident(_) => {
+                    let diag = Diagnostic::error()
+                        .with_message("unknown macro or memory allocation")
+                        .with_labels(vec![Label::primary(
+                            op.token.location.file_id,
+                            op.token.location.range(),
+                        )]);
+                    diags.push(diag);
                 }
                 _ => dst_vec.push(op),
             }
