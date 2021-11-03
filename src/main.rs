@@ -245,8 +245,23 @@ fn load_program(
         return Ok(Err(diags));
     }
 
-    if let Err(diags) = type_check::type_check(&ops, interner) {
+    if let Err(diags) = type_check::type_check(&ops, interner, false) {
         return Ok(Err(diags));
+    }
+
+    // Also need to generate labels and type check the memory allocation bodies.
+    let mut all_alloc_diags = Vec::new();
+    for (_, body) in static_allocs.values_mut() {
+        if let Err(mut diags) = opcode::generate_jump_labels(body) {
+            all_alloc_diags.append(&mut diags);
+        }
+
+        if let Err(mut diags) = type_check::type_check(body, interner, true) {
+            all_alloc_diags.append(&mut diags);
+        }
+    }
+    if !all_alloc_diags.is_empty() {
+        return Ok(Err(all_alloc_diags));
     }
 
     let program = Program { ops, static_allocs };
@@ -261,8 +276,8 @@ fn evaluate_allocation_sizes(
     let mut alloc_sizes = HashMap::new();
     let mut diags = Vec::new();
 
-    for (&id, (token, body)) in static_allocs {
-        let stack = match simulate_execute_program(body, &HashMap::new(), interner, &[], true) {
+    for (&id, (_, body)) in static_allocs {
+        let mut stack = match simulate_execute_program(body, &HashMap::new(), interner, &[], true) {
             Err(diag) => {
                 diags.push(diag);
                 continue;
@@ -270,21 +285,8 @@ fn evaluate_allocation_sizes(
             Ok(stack) => stack,
         };
 
-        match &*stack {
-            [size] => {
-                alloc_sizes.insert(id, *size as usize);
-            }
-            [] | [..] => {
-                let mut diag =
-                    generate_error("memory size must evaluate to single value", token.location);
-
-                diag.labels.push(
-                    Label::primary(token.location.file_id, token.location.range())
-                        .with_message(format!("{} items on stack", stack.len())),
-                );
-                diags.push(diag);
-            }
-        }
+        // The type checker enforces a single stack item here.
+        alloc_sizes.insert(id, stack.pop().unwrap() as usize);
     }
 
     diags.is_empty().then(|| alloc_sizes).ok_or(diags)

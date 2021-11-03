@@ -240,7 +240,11 @@ struct BlockStackState {
     true_stack: Option<Vec<PorthType>>,
 }
 
-pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
+pub fn type_check(
+    ops: &[Op],
+    interner: &Interners,
+    is_const_eval: bool,
+) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut stack: Vec<PorthType> = Vec::new();
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
     let mut diags = Vec::new();
@@ -686,7 +690,7 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
         }
     }
 
-    if !stack.is_empty() {
+    if (is_const_eval && stack.len() != 1) || (!is_const_eval && !stack.is_empty()) {
         let label = ops
             .last()
             .map(|op| {
