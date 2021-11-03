@@ -23,6 +23,14 @@ use opcode::Op;
 
 const MEMORY_CAPACITY: usize = 2usize.pow(19);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Width {
+    Byte,
+    Word,
+    Dword,
+    Qword,
+}
+
 #[derive(Debug, StructOpt)]
 enum Mode {
     /// Simulate the program

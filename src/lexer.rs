@@ -9,6 +9,7 @@ use lasso::Spur;
 use crate::{
     interners::Interners,
     source_file::{FileId, SourceLocation, SourceStorage},
+    Width,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,8 +40,7 @@ pub enum TokenKind {
     Integer(u64),
     Less,
     LessEqual,
-    Load,
-    Load64,
+    Load(Width),
     Macro,
     Mem,
     Minus,
@@ -52,8 +52,7 @@ pub enum TokenKind {
     ShiftRight,
     Star,
     String(Spur),
-    Store,
-    Store64,
+    Store(Width),
     Swap,
     SysCall(usize),
     While,
@@ -87,8 +86,7 @@ impl TokenKind {
             | TokenKind::Integer(_)
             | TokenKind::Less
             | TokenKind::LessEqual
-            | TokenKind::Load
-            | TokenKind::Load64
+            | TokenKind::Load(_)
             | TokenKind::Mem
             | TokenKind::Minus
             | TokenKind::NotEqual
@@ -99,8 +97,7 @@ impl TokenKind {
             | TokenKind::ShiftRight
             | TokenKind::Star
             | TokenKind::String(_)
-            | TokenKind::Store
-            | TokenKind::Store64
+            | TokenKind::Store(_)
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
@@ -323,10 +320,14 @@ impl<'source> Scanner<'source> {
 
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
-                    "@" => TokenKind::Load,
-                    "!" => TokenKind::Store,
-                    "@64" => TokenKind::Load64,
-                    "!64" => TokenKind::Store64,
+                    "@8" => TokenKind::Load(Width::Byte),
+                    "@16" => TokenKind::Load(Width::Word),
+                    "@32" => TokenKind::Load(Width::Dword),
+                    "@64" => TokenKind::Load(Width::Qword),
+                    "!8" => TokenKind::Store(Width::Byte),
+                    "!16" => TokenKind::Store(Width::Word),
+                    "!32" => TokenKind::Store(Width::Dword),
+                    "!64" => TokenKind::Store(Width::Qword),
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
                     "and" => TokenKind::BitAnd,

@@ -5,6 +5,7 @@ use crate::{
     interners::Interners,
     n_ops::FirstN,
     opcode::{Op, OpCode},
+    Width,
 };
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
@@ -23,13 +24,13 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
 fn dyn_reg(reg_id: usize) -> InstructionPart {
     InstructionPart::EmitRegister {
         reg: RegisterType::Dynamic(reg_id),
-        is_byte: false,
+        width: Width::Qword,
     }
 }
-fn dyn_byte_reg(reg_id: usize) -> InstructionPart {
+fn dyn_sized_reg(reg_id: usize, width: Width) -> InstructionPart {
     InstructionPart::EmitRegister {
         reg: RegisterType::Dynamic(reg_id),
-        is_byte: true,
+        width,
     }
 }
 fn use_reg(reg: RegisterType) -> InstructionPart {
@@ -40,6 +41,17 @@ fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
 }
 
 const ARITH_OP_MAX: u64 = u32::MAX as u64;
+
+impl Width {
+    fn to_asm(self) -> &'static str {
+        match self {
+            Width::Byte => "BYTE",
+            Width::Word => "WORD",
+            Width::Dword => "DWORD",
+            Width::Qword => "QWORD",
+        }
+    }
+}
 
 impl OpCode {
     fn is_compiler_opt_arithmetic(self) -> bool {
@@ -84,7 +96,10 @@ fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners)
         dyn_reg(reg),
         str_lit(format!(", {}", push_val)),
     ]);
-    assembler.push_instr([str_lit(format!("    set{} ", op_suffix)), dyn_byte_reg(reg)]);
+    assembler.push_instr([
+        str_lit(format!("    set{} ", op_suffix)),
+        dyn_sized_reg(reg, Width::Byte),
+    ]);
     assembler.reg_free_dyn_push(reg);
 
     Some(start.len())
@@ -197,7 +212,7 @@ fn mem_load(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> 
     let reg = assembler.reg_alloc_dyn_literal("0");
     assembler.push_instr([
         str_lit("    mov "),
-        dyn_byte_reg(reg),
+        dyn_sized_reg(reg, Width::Byte),
         str_lit(format!(", BYTE [__memory + {}]", mem_val)),
     ]);
     assembler.reg_free_dyn_push(reg);
@@ -246,7 +261,7 @@ pub(super) fn compile_single_instruction(
                 str_lit(", "),
                 EmitRegister {
                     reg: Fixed(X86Register::Rcx),
-                    is_byte: true,
+                    width: Width::Byte,
                 },
             ]);
 
@@ -295,7 +310,7 @@ pub(super) fn compile_single_instruction(
 
             assembler.push_instr([
                 str_lit(format!("    set{} ", op.code.compile_compare_op_suffix())),
-                dyn_byte_reg(dst_id),
+                dyn_sized_reg(dst_id, Width::Byte),
             ]);
 
             assembler.reg_free_dyn_drop(b_id);
@@ -368,14 +383,18 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(b_id);
         }
 
-        OpCode::Load => {
+        OpCode::Load(width) => {
             let addr_reg = assembler.reg_alloc_dyn_pop();
-            let val_reg = assembler.reg_alloc_dyn_literal("0");
+            let val_reg = if width == Width::Qword {
+                assembler.reg_alloc_dyn_nop()
+            } else {
+                assembler.reg_alloc_dyn_literal("0")
+            };
 
             assembler.push_instr([
                 str_lit("    mov "),
-                dyn_byte_reg(val_reg),
-                str_lit(", BYTE ["),
+                dyn_sized_reg(val_reg, width),
+                str_lit(format!(", {} [", width.to_asm())),
                 dyn_reg(addr_reg),
                 str_lit("]"),
             ]);
@@ -383,42 +402,14 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(addr_reg);
             assembler.reg_free_dyn_push(val_reg);
         }
-        OpCode::Load64 => {
-            let addr_reg = assembler.reg_alloc_dyn_pop();
-            let val_reg = assembler.reg_alloc_dyn_nop();
-
-            assembler.push_instr([
-                str_lit("    mov "),
-                dyn_reg(val_reg),
-                str_lit(", QWORD ["),
-                dyn_reg(addr_reg),
-                str_lit("]"),
-            ]);
-
-            assembler.reg_free_dyn_drop(addr_reg);
-            assembler.reg_free_dyn_push(val_reg);
-        }
-        OpCode::Store => {
+        OpCode::Store(width) => {
             let addr_reg = assembler.reg_alloc_dyn_pop();
             let val_reg = assembler.reg_alloc_dyn_pop();
             assembler.push_instr([
-                str_lit("    mov BYTE ["),
+                str_lit(format!("    mov {} [", width.to_asm())),
                 dyn_reg(addr_reg),
                 str_lit("], "),
-                dyn_byte_reg(val_reg),
-            ]);
-
-            assembler.reg_free_dyn_drop(val_reg);
-            assembler.reg_free_dyn_drop(addr_reg);
-        }
-        OpCode::Store64 => {
-            let addr_reg = assembler.reg_alloc_dyn_pop();
-            let val_reg = assembler.reg_alloc_dyn_pop();
-            assembler.push_instr([
-                str_lit("    mov QWORD ["),
-                dyn_reg(addr_reg),
-                str_lit("], "),
-                dyn_reg(val_reg),
+                dyn_sized_reg(val_reg, width),
             ]);
 
             assembler.reg_free_dyn_drop(val_reg);

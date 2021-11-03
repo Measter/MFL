@@ -7,110 +7,101 @@ use std::{
 };
 
 use color_eyre::eyre::Result;
-use derive_more::Display;
+
+use crate::Width;
 
 use super::{OpRange, RegisterAllocator};
 
-#[derive(Debug, Clone, Copy, Display, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum X86Register {
-    #[display(fmt = "r8")]
     R8,
-    #[display(fmt = "r8b")]
-    R8b,
-    #[display(fmt = "r9")]
     R9,
-    #[display(fmt = "r9b")]
-    R9b,
-    #[display(fmt = "r10")]
     R10,
-    #[display(fmt = "r10b")]
-    R10b,
-    #[display(fmt = "r11")]
     R11,
-    #[display(fmt = "r11b")]
-    R11b,
-    #[display(fmt = "r12")]
     R12,
-    #[display(fmt = "r12b")]
-    R12b,
-    #[display(fmt = "r13")]
     R13,
-    #[display(fmt = "r13b")]
-    R13b,
-    #[display(fmt = "r14")]
     R14,
-    #[display(fmt = "r14b")]
-    R14b,
-    #[display(fmt = "r15")]
     R15,
-    #[display(fmt = "r15b")]
-    R15b,
-    #[display(fmt = "rax")]
     Rax,
-    #[display(fmt = "al")]
-    Al,
-    #[display(fmt = "rbx")]
     Rbx,
-    #[display(fmt = "bl")]
-    Bl,
-    #[display(fmt = "rcx")]
     Rcx,
-    #[display(fmt = "cl")]
-    Cl,
-    #[display(fmt = "rdx")]
     Rdx,
-    #[display(fmt = "dl")]
-    Dl,
-    #[display(fmt = "rdi")]
     Rdi,
-    #[display(fmt = "dil")]
-    Dil,
-    #[display(fmt = "rsi")]
     Rsi,
-    #[display(fmt = "sil")]
-    Sil,
-}
-
-impl PartialEq for X86Register {
-    fn eq(&self, other: &Self) -> bool {
-        use X86Register::*;
-        match self {
-            R8 | R8b => matches!(other, R8 | R8b),
-            R9 | R9b => matches!(other, R9 | R9b),
-            R10 | R10b => matches!(other, R10 | R10b),
-            R11 | R11b => matches!(other, R11 | R11b),
-            R12 | R12b => matches!(other, R12 | R12b),
-            R13 | R13b => matches!(other, R13 | R13b),
-            R14 | R14b => matches!(other, R14 | R14b),
-            R15 | R15b => matches!(other, R15 | R15b),
-            Rax | Al => matches!(other, Rax | Al),
-            Rbx | Bl => matches!(other, Rbx | Bl),
-            Rcx | Cl => matches!(other, Rcx | Cl),
-            Rdx | Dl => matches!(other, Rdx | Dl),
-            Rdi | Dil => matches!(other, Rdi | Dil),
-            Rsi | Sil => matches!(other, Rsi | Sil),
-        }
-    }
 }
 
 impl X86Register {
-    pub(super) fn to_byte_reg(self) -> Self {
-        match self {
-            X86Register::R8 => X86Register::R8b,
-            X86Register::R9 => X86Register::R9b,
-            X86Register::R10 => X86Register::R10b,
-            X86Register::R11 => X86Register::R11b,
-            X86Register::R12 => X86Register::R12b,
-            X86Register::R13 => X86Register::R13b,
-            X86Register::R14 => X86Register::R14b,
-            X86Register::R15 => X86Register::R15b,
-            X86Register::Rax => X86Register::Al,
-            X86Register::Rbx => X86Register::Bl,
-            X86Register::Rcx => X86Register::Cl,
-            X86Register::Rdx => X86Register::Dl,
-            X86Register::Rdi => X86Register::Dil,
-            X86Register::Rsi => X86Register::Sil,
-            _ => panic!("ICE: Cannot get byte version of {:?}", self),
+    pub(super) fn as_width(self, width: Width) -> &'static str {
+        match (self, width) {
+            (X86Register::R8, Width::Byte) => "R8B",
+            (X86Register::R8, Width::Word) => "R8W",
+            (X86Register::R8, Width::Dword) => "R8D",
+            (X86Register::R8, Width::Qword) => "R8",
+
+            (X86Register::R9, Width::Byte) => "R9B",
+            (X86Register::R9, Width::Word) => "R9W",
+            (X86Register::R9, Width::Dword) => "R9D",
+            (X86Register::R9, Width::Qword) => "R9",
+
+            (X86Register::R10, Width::Byte) => "R10B",
+            (X86Register::R10, Width::Word) => "R10W",
+            (X86Register::R10, Width::Dword) => "R10D",
+            (X86Register::R10, Width::Qword) => "R10",
+
+            (X86Register::R11, Width::Byte) => "R11B",
+            (X86Register::R11, Width::Word) => "R11W",
+            (X86Register::R11, Width::Dword) => "R11D",
+            (X86Register::R11, Width::Qword) => "R11",
+
+            (X86Register::R12, Width::Byte) => "R12B",
+            (X86Register::R12, Width::Word) => "R12W",
+            (X86Register::R12, Width::Dword) => "R12D",
+            (X86Register::R12, Width::Qword) => "R12",
+
+            (X86Register::R13, Width::Byte) => "R13B",
+            (X86Register::R13, Width::Word) => "R13W",
+            (X86Register::R13, Width::Dword) => "R13D",
+            (X86Register::R13, Width::Qword) => "R13",
+
+            (X86Register::R14, Width::Byte) => "R14B",
+            (X86Register::R14, Width::Word) => "R14W",
+            (X86Register::R14, Width::Dword) => "R14D",
+            (X86Register::R14, Width::Qword) => "R14",
+
+            (X86Register::R15, Width::Byte) => "R15B",
+            (X86Register::R15, Width::Word) => "R15W",
+            (X86Register::R15, Width::Dword) => "R15D",
+            (X86Register::R15, Width::Qword) => "R15",
+
+            (X86Register::Rax, Width::Byte) => "AL",
+            (X86Register::Rax, Width::Word) => "AX",
+            (X86Register::Rax, Width::Dword) => "EAX",
+            (X86Register::Rax, Width::Qword) => "RAX",
+
+            (X86Register::Rbx, Width::Byte) => "BL",
+            (X86Register::Rbx, Width::Word) => "BX",
+            (X86Register::Rbx, Width::Dword) => "EBX",
+            (X86Register::Rbx, Width::Qword) => "RBX",
+
+            (X86Register::Rcx, Width::Byte) => "CL",
+            (X86Register::Rcx, Width::Word) => "CX",
+            (X86Register::Rcx, Width::Dword) => "ECX",
+            (X86Register::Rcx, Width::Qword) => "RCX",
+
+            (X86Register::Rdx, Width::Byte) => "DL",
+            (X86Register::Rdx, Width::Word) => "DX",
+            (X86Register::Rdx, Width::Dword) => "EDX",
+            (X86Register::Rdx, Width::Qword) => "RDX",
+
+            (X86Register::Rdi, Width::Byte) => "DIL",
+            (X86Register::Rdi, Width::Word) => "DI",
+            (X86Register::Rdi, Width::Dword) => "EDI",
+            (X86Register::Rdi, Width::Qword) => "RDI",
+
+            (X86Register::Rsi, Width::Byte) => "SIL",
+            (X86Register::Rsi, Width::Word) => "SI",
+            (X86Register::Rsi, Width::Dword) => "ESI",
+            (X86Register::Rsi, Width::Qword) => "RSI",
         }
     }
 }
@@ -127,7 +118,7 @@ pub enum InstructionPart {
     /// Used to actually emit a register as part of an instruction.
     EmitRegister {
         reg: RegisterType,
-        is_byte: bool,
+        width: Width,
     },
     /// Marks a register as used for the allocation optimizer, but doesn't emit anything when rendered.
     UseRegister {
@@ -194,7 +185,12 @@ impl AsmInstruction {
                 };
                 eprintln!("Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
                 map.insert(reg_id, reg);
-                writeln!(out_file, "    mov {}, QWORD [rsp + 8*{}]", reg, depth)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, QWORD [rsp + 8*{}]",
+                    reg.as_width(Width::Qword),
+                    depth
+                )?;
             }
             &AsmInstruction::RegAllocPop {
                 reg: Dynamic(reg_id),
@@ -205,7 +201,7 @@ impl AsmInstruction {
                 };
                 eprintln!("Reg Allocate Pop {} > {:?}", reg_id, reg);
                 map.insert(reg_id, reg);
-                writeln!(out_file, "    pop {}", reg)?;
+                writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
             AsmInstruction::RegAllocLiteral {
                 reg: Dynamic(reg_id),
@@ -217,23 +213,38 @@ impl AsmInstruction {
                 };
                 eprintln!("Reg Allocate Lit {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
-                writeln!(out_file, "    mov {}, {}", reg, value)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    reg.as_width(Width::Qword),
+                    value
+                )?;
             }
             &AsmInstruction::RegAllocDup {
                 reg: Fixed(reg),
                 depth,
             } => {
-                writeln!(out_file, "    mov {}, QWORD [rsp + 8*{}]", reg, depth)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, QWORD [rsp + 8*{}]",
+                    reg.as_width(Width::Qword),
+                    depth
+                )?;
             }
             AsmInstruction::RegAllocNop { .. } => {}
             &AsmInstruction::RegAllocPop { reg: Fixed(reg) } => {
-                writeln!(out_file, "    pop {}", reg)?;
+                writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
             AsmInstruction::RegAllocLiteral {
                 reg: Fixed(reg),
                 value,
             } => {
-                writeln!(out_file, "    mov {}, {}", reg, value)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    reg.as_width(Width::Qword),
+                    value
+                )?;
             }
 
             &AsmInstruction::RegAllocMov {
@@ -246,11 +257,19 @@ impl AsmInstruction {
                 };
                 eprintln!(
                     "Reg Allocate Mov Src {} > {}, Dst {} > {}",
-                    src_id, src_reg, dst_id, dst_reg
+                    src_id,
+                    src_reg.as_width(Width::Qword),
+                    dst_id,
+                    dst_reg.as_width(Width::Qword)
                 );
                 map.insert(src_id, src_reg);
                 map.insert(dst_id, dst_reg);
-                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    dst_reg.as_width(Width::Qword),
+                    src_reg.as_width(Width::Qword)
+                )?;
             }
             &AsmInstruction::RegAllocMov {
                 src: Dynamic(src_id),
@@ -262,10 +281,17 @@ impl AsmInstruction {
                 };
                 eprintln!(
                     "Reg Allocate Mov Src {} > {}, Dst {}",
-                    src_id, src_reg, dst_reg
+                    src_id,
+                    src_reg.as_width(Width::Qword),
+                    dst_reg.as_width(Width::Qword)
                 );
                 map.insert(src_id, src_reg);
-                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    dst_reg.as_width(Width::Qword),
+                    src_reg.as_width(Width::Qword)
+                )?;
             }
             &AsmInstruction::RegAllocMov {
                 src: Fixed(src_reg),
@@ -277,17 +303,33 @@ impl AsmInstruction {
                 };
                 eprintln!(
                     "Reg Allocate Mov Src {}, Dst {} > {}",
-                    src_reg, dst_id, dst_reg
+                    src_reg.as_width(Width::Qword),
+                    dst_id,
+                    dst_reg.as_width(Width::Qword)
                 );
                 map.insert(dst_id, dst_reg);
-                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    dst_reg.as_width(Width::Qword),
+                    src_reg.as_width(Width::Qword)
+                )?;
             }
             &AsmInstruction::RegAllocMov {
                 src: Fixed(src_reg),
                 dst: Fixed(dst_reg),
             } => {
-                eprintln!("Reg Allocate Mov Src {}, Dst {}", src_reg, dst_reg);
-                writeln!(out_file, "    mov {}, {}", dst_reg, src_reg)?;
+                eprintln!(
+                    "Reg Allocate Mov Src {}, Dst {}",
+                    src_reg.as_width(Width::Qword),
+                    dst_reg.as_width(Width::Qword)
+                );
+                writeln!(
+                    out_file,
+                    "    mov {}, {}",
+                    dst_reg.as_width(Width::Qword),
+                    src_reg.as_width(Width::Qword)
+                )?;
             }
 
             &AsmInstruction::RegFree {
@@ -299,7 +341,7 @@ impl AsmInstruction {
                     .expect("ICE: Attempted to remove unallocated register");
 
                 let kind = if push {
-                    writeln!(out_file, "    push {}", reg)?;
+                    writeln!(out_file, "    push {}", reg.as_width(Width::Qword))?;
                     "Push"
                 } else {
                     "Drop"
@@ -312,7 +354,7 @@ impl AsmInstruction {
                 push,
             } => {
                 if push {
-                    writeln!(out_file, "    push {}", reg_id)?;
+                    writeln!(out_file, "    push {}", reg_id.as_width(Width::Qword))?;
                 }
             }
 
@@ -322,25 +364,18 @@ impl AsmInstruction {
                         InstructionPart::Literal(lit) => out_file.write_all(lit.as_bytes())?,
                         &InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
-                            is_byte,
+                            width,
                         } => {
-                            let mut reg = *map.get(&reg_id).unwrap_or_else(|| {
+                            let reg = *map.get(&reg_id).unwrap_or_else(|| {
                                 panic!("ICE: Attempted to fetch unallocated register {}", reg_id)
                             });
-                            if is_byte {
-                                reg = reg.to_byte_reg();
-                            }
-                            write!(out_file, "{}", reg)?;
+                            write!(out_file, "{}", reg.as_width(width))?;
                         }
                         &InstructionPart::EmitRegister {
                             reg: RegisterType::Fixed(reg),
-                            is_byte,
+                            width,
                         } => {
-                            if is_byte {
-                                write!(out_file, "{}", reg.to_byte_reg())?;
-                            } else {
-                                write!(out_file, "{}", reg)?;
-                            }
+                            write!(out_file, "{}", reg.as_width(width))?;
                         }
                         InstructionPart::UseRegister { .. } => {}
                     }

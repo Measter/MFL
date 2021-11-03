@@ -8,6 +8,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation, SourceStorage},
+    Width,
 };
 
 use self::optimizer_passes::PASSES;
@@ -43,8 +44,7 @@ pub enum OpCode {
     Include(Spur),
     Less,
     LessEqual,
-    Load,
-    Load64,
+    Load(Width),
     Greater,
     GreaterEqual,
     Mem { offset: usize },
@@ -57,8 +57,7 @@ pub enum OpCode {
     Rot,
     ShiftLeft,
     ShiftRight,
-    Store,
-    Store64,
+    Store(Width),
     Subtract,
     Swap,
     SysCall(usize),
@@ -83,8 +82,7 @@ impl OpCode {
             | OpCode::NotEq
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
-            | OpCode::Store { .. }
-            | OpCode::Store64 { .. }
+            | OpCode::Store(_)
             | OpCode::Subtract => 2,
 
             OpCode::BitNot
@@ -95,8 +93,7 @@ impl OpCode {
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
             | OpCode::Drop
-            | OpCode::Load
-            | OpCode::Load64
+            | OpCode::Load(_)
             | OpCode::Print => 1,
 
             OpCode::Dup { depth } => depth + 1,
@@ -151,16 +148,14 @@ impl OpCode {
             | Ident(_)
             | If
             | Include(_)
-            | Load
-            | Load64
+            | Load(_)
             | Mem { .. }
             | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot
-            | Store { .. }
-            | Store64 { .. }
+            | Store(_)
             | Swap
             | SysCall(_)
             | While { .. } => false,
@@ -196,8 +191,7 @@ impl OpCode {
             | Ident(_)
             | If
             | Include(_)
-            | Load
-            | Load64
+            | Load(_)
             | Mem { .. }
             | Multiply
             | Print
@@ -207,8 +201,7 @@ impl OpCode {
             | Rot
             | ShiftLeft
             | ShiftRight
-            | Store { .. }
-            | Store64 { .. }
+            | Store(_)
             | Subtract
             | Swap
             | SysCall(_)
@@ -254,16 +247,14 @@ impl OpCode {
             | Ident(_)
             | If
             | Include { .. }
-            | Load
-            | Load64
+            | Load(_)
             | Mem { .. }
             | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr(_)
             | Rot
-            | Store { .. }
-            | Store64 { .. }
+            | Store(_)
             | Swap
             | SysCall(_)
             | While { .. } => {
@@ -411,10 +402,8 @@ pub fn parse_token(
             TokenKind::Swap => OpCode::Swap,
 
             TokenKind::Mem => OpCode::Mem { offset: 0 },
-            TokenKind::Load => OpCode::Load,
-            TokenKind::Load64 => OpCode::Load64,
-            TokenKind::Store => OpCode::Store,
-            TokenKind::Store64 => OpCode::Store64,
+            TokenKind::Load(width) => OpCode::Load(width),
+            TokenKind::Store(width) => OpCode::Store(width),
 
             TokenKind::Equal => OpCode::Equal,
             TokenKind::Greater => OpCode::Greater,

@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
     source_file::SourceStorage,
-    MEMORY_CAPACITY,
+    Width, MEMORY_CAPACITY,
 };
 
 mod assembly;
@@ -247,7 +247,7 @@ fn merge_dyn_to_fixed_registers(
     eprintln!(
         "--- Dyn/Fixed Merge {} and {} in range {}..={}",
         dynamic_reg_id,
-        fixed_reg,
+        fixed_reg.as_width(Width::Qword),
         new_range.start,
         new_range.end - 1
     );
@@ -300,11 +300,11 @@ fn merge_dyn_to_fixed_registers(
                     match *instr {
                         InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
-                            is_byte,
+                            width,
                         } if reg_id == dynamic_reg_id => {
                             *instr = InstructionPart::EmitRegister {
                                 reg: RegisterType::Fixed(fixed_reg),
-                                is_byte,
+                                width,
                             }
                         }
                         _ => continue,
@@ -333,7 +333,7 @@ fn merge_fixed_to_dyn_registers(
     eprintln!(
         "--- Dyn/Fixed Merge {} and {} in range {}..={}",
         dynamic_reg_id,
-        fixed_reg,
+        fixed_reg.as_width(Width::Qword),
         new_range.start,
         new_range.end - 1
     );
@@ -367,11 +367,11 @@ fn merge_fixed_to_dyn_registers(
                     match *instr {
                         InstructionPart::EmitRegister {
                             reg: RegisterType::Dynamic(reg_id),
-                            is_byte,
+                            width,
                         } if reg_id == dynamic_reg_id => {
                             *instr = InstructionPart::EmitRegister {
                                 reg: RegisterType::Fixed(fixed_reg),
-                                is_byte,
+                                width,
                             }
                         }
                         _ => continue,

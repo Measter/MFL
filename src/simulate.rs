@@ -1,4 +1,4 @@
-use std::{convert::TryInto, io::Write, iter::repeat};
+use std::{convert::TryInto, io::Write, iter::repeat, ops::Range};
 
 use codespan_reporting::diagnostic::Diagnostic;
 
@@ -8,8 +8,19 @@ use crate::{
     n_ops::PopN,
     opcode::{Op, OpCode},
     source_file::FileId,
-    MEMORY_CAPACITY,
+    Width, MEMORY_CAPACITY,
 };
+
+impl Width {
+    fn addr_range(self, start: usize) -> Range<usize> {
+        match self {
+            Width::Byte => start..start + 1,
+            Width::Word => start..start + 2,
+            Width::Dword => start..start + 4,
+            Width::Qword => start..start + 8,
+        }
+    }
+}
 
 fn make_syscall3(
     id: u64,
@@ -237,39 +248,32 @@ pub(crate) fn simulate_execute_program(
             }
 
             OpCode::Mem { offset } => stack.push(mem_base + offset as u64),
-            OpCode::Load => {
-                let address = stack.pop().unwrap();
-
-                let value = *memory
-                    .get(address as usize)
-                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
-                stack.push(value as u64);
-            }
-            OpCode::Load64 => {
+            OpCode::Load(width) => {
                 let address = stack.pop().unwrap() as usize;
-                let value_bytes = memory
-                    .get(address..address + 8)
+
+                let bytes = memory
+                    .get(width.addr_range(address))
                     .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
 
-                let value = u64::from_le_bytes(value_bytes.try_into().unwrap());
+                let value = match width {
+                    Width::Byte => bytes[0] as u64,
+                    Width::Word => u16::from_le_bytes(bytes.try_into().unwrap()) as u64,
+                    Width::Dword => u32::from_le_bytes(bytes.try_into().unwrap()) as u64,
+                    Width::Qword => u64::from_le_bytes(bytes.try_into().unwrap()) as u64,
+                };
                 stack.push(value);
             }
-            OpCode::Store => {
+            OpCode::Store(width) => {
                 let [value, address] = stack.popn().unwrap();
-
                 let dest = memory
-                    .get_mut(address as usize)
+                    .get_mut(width.addr_range(address as usize))
                     .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
-                *dest = value as u8;
-            }
-            OpCode::Store64 => {
-                let [value, address] = stack.popn().unwrap();
-                let address = address as usize;
-                let value_bytes = value.to_le_bytes();
-                let dst_bytes = memory
-                    .get_mut(address..address + 8)
-                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
-                dst_bytes.copy_from_slice(&value_bytes);
+                match width {
+                    Width::Byte => dest[0] = value as u8,
+                    Width::Word => dest.copy_from_slice(&u16::to_le_bytes(value as _)),
+                    Width::Dword => dest.copy_from_slice(&u32::to_le_bytes(value as _)),
+                    Width::Qword => dest.copy_from_slice(&u64::to_le_bytes(value)),
+                }
             }
 
             OpCode::ArgC => stack.push(program_args.len() as _),

@@ -610,11 +610,11 @@ pub fn type_check(ops: &[Op], interner: &Interners) -> Result<(), Vec<Diagnostic
             },
 
             OpCode::Mem { .. } => stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location)),
-            OpCode::Load | OpCode::Load64 => {
+            OpCode::Load(_) => {
                 stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Ptr]));
                 stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
             }
-            OpCode::Store | OpCode::Store64 => {
+            OpCode::Store(_) => {
                 stack_check!(
                     diags,
                     stack,
