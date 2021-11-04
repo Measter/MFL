@@ -205,27 +205,29 @@ fn memory_offset<'a>(
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
     let (start, rest) = ops.firstn()?;
-    let (int, mem, op) = match start {
+    let (int, mem, op, mem_first) = match start {
         [int, mem, op]
             if int.code.is_push_int()
                 && mem.code.is_memory()
                 && matches!(op.code, Add | Subtract) =>
         {
-            (int, mem, op)
+            (int, mem, op, false)
         }
         [mem, int, op]
             if mem.code.is_memory()
                 && int.code.is_push_int()
                 && matches!(op.code, Add | Subtract) =>
         {
-            (int, mem, op)
+            (int, mem, op, true)
         }
         _ => return None,
     };
 
     let int_val = int.code.unwrap_push_int();
     let (mem_id, mem_offset) = mem.code.unwrap_memory();
-    let res = op.code.get_binary_op()(int_val, mem_offset as u64);
+    let res = mem_first
+        .then(|| op.code.get_binary_op()(mem_offset as u64, int_val))
+        .unwrap_or_else(|| op.code.get_binary_op()(int_val, mem_offset as u64));
 
     let location = if int.token.location.file_id != op.token.location.file_id {
         op.token.location
