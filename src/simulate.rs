@@ -51,9 +51,9 @@ fn make_syscall3(
         1 => {
             let start = arg2 as usize;
             let end = start + arg3 as usize;
-            let buffer = memory
-                .get(start..end)
-                .ok_or_else(|| generate_error("invalid memory range", op))?;
+            let buffer = memory.get(start..end).ok_or_else(|| {
+                generate_error(format!("invalid memory range {:?}", start..end), op)
+            })?;
 
             // Not my problem if this isn't valid output data.
             let _ = match arg1 {
@@ -300,7 +300,9 @@ pub(crate) fn simulate_execute_program(
                 let [value, address] = stack.popn().unwrap();
                 let dest = memory
                     .get_mut(width.addr_range(address as usize))
-                    .ok_or_else(|| generate_error("invalid memory address", op))?;
+                    .ok_or_else(|| {
+                        generate_error(format!("invalid memory address {:?}", address), op)
+                    })?;
                 match width {
                     Width::Byte => dest[0] = value as u8,
                     Width::Word => dest.copy_from_slice(&u16::to_le_bytes(value as _)),
