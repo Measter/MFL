@@ -512,8 +512,9 @@ fn find_dynamic_first_merge(
                 // ops in there use the register.
                 let between_asm_range = start_asm_range.end..end_asm_range.start;
 
-                if uses_fixed_reg(&program[start_asm_range.clone()], new_reg)
-                    || uses_fixed_reg(&program[between_asm_range], new_reg)
+                if start_asm_range != end_asm_range
+                    && (uses_fixed_reg(&program[start_asm_range.clone()], new_reg)
+                        || uses_fixed_reg(&program[between_asm_range], new_reg))
                 {
                     break;
                 }
@@ -564,8 +565,9 @@ fn find_fixed_first_merge(
                 // We also need to check between the starting op and the ending op in case any of the
                 // ops in there use the register.
                 let between_asm_range = start_asm_range.end..end_asm_range.start;
-                if uses_fixed_reg(&program[end_asm_range], fixed_reg)
-                    || uses_fixed_reg(&program[between_asm_range], fixed_reg)
+                if start_asm_range != end_asm_range
+                    && (uses_fixed_reg(&program[end_asm_range], fixed_reg)
+                        || uses_fixed_reg(&program[between_asm_range], fixed_reg))
                 {
                     break;
                 }
@@ -591,7 +593,9 @@ fn find_fixed_first_merge(
                 // We need to check between the starting op and the ending op in case any of the
                 // ops in there use the register.
                 let between_asm_range = start_asm_range.end..end_asm_range.start;
-                if uses_fixed_reg(&program[between_asm_range], fixed_reg) {
+                if start_asm_range != end_asm_range
+                    && uses_fixed_reg(&program[between_asm_range], fixed_reg)
+                {
                     break;
                 }
 
@@ -618,7 +622,9 @@ fn find_fixed_first_merge(
                 // ops in there use either register.
                 let between_asm_range = start_asm_range.end..end_asm_range.start;
                 let chunk = &program[between_asm_range];
-                if uses_fixed_reg(chunk, fixed_reg) || uses_fixed_reg(chunk, new_reg) {
+                if start_asm_range != end_asm_range && uses_fixed_reg(chunk, fixed_reg)
+                    || uses_fixed_reg(chunk, new_reg)
+                {
                     break;
                 }
 
