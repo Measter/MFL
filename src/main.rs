@@ -14,7 +14,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
 use lasso::Spur;
 use lexer::Token;
-use source_file::{FileId, SourceLocation, SourceStorage};
+use source_file::{FileId, SourceStorage};
 use structopt::StructOpt;
 
 // mod compile;
@@ -73,12 +73,6 @@ struct Args {
 
     #[structopt(subcommand)]
     mode: Mode,
-}
-
-fn generate_error(msg: impl Into<String>, location: SourceLocation) -> Diagnostic<FileId> {
-    Diagnostic::error()
-        .with_message(msg)
-        .with_labels(vec![Label::primary(location.file_id, location.range())])
 }
 
 struct Program {

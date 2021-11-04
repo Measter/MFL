@@ -1,10 +1,9 @@
 use std::{collections::HashMap, convert::TryInto, io::Write, iter::repeat, ops::Range};
 
-use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 use lasso::Spur;
 
 use crate::{
-    generate_error,
     interners::Interners,
     n_ops::PopN,
     opcode::{Op, OpCode},
@@ -23,6 +22,21 @@ impl Width {
     }
 }
 
+fn generate_error(msg: impl Into<String>, op: &Op) -> Diagnostic<FileId> {
+    let mut labels = vec![Label::primary(
+        op.token.location.file_id,
+        op.token.location.range(),
+    )];
+
+    for source in &op.expansions {
+        labels.push(
+            Label::secondary(source.file_id, source.range()).with_message("expanded from here"),
+        );
+    }
+
+    Diagnostic::error().with_message(msg).with_labels(labels)
+}
+
 fn make_syscall3(
     id: u64,
     arg1: u64,
@@ -39,23 +53,18 @@ fn make_syscall3(
             let end = start + arg3 as usize;
             let buffer = memory
                 .get(start..end)
-                .ok_or_else(|| generate_error("invalid memory range", op.token.location))?;
+                .ok_or_else(|| generate_error("invalid memory range", op))?;
 
             // Not my problem if this isn't valid output data.
             let _ = match arg1 {
                 1 => std::io::stdout().write_all(buffer),
                 2 => std::io::stderr().write_all(buffer),
-                _ => {
-                    return Err(generate_error(
-                        "unsupported file descriptor",
-                        op.token.location,
-                    ))
-                }
+                _ => return Err(generate_error("unsupported file descriptor", op)),
             };
 
             stack.push(arg3);
         }
-        _ => return Err(generate_error("unsupported syscall ID", op.token.location)),
+        _ => return Err(generate_error("unsupported syscall ID", op)),
     }
 
     Ok(())
@@ -66,7 +75,7 @@ fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: &Op) -> Result<(), Diagno
         // Exit
         60 => std::process::exit(arg1 as _),
 
-        _ => Err(generate_error("unsupported syscall ID", op.token.location)),
+        _ => Err(generate_error("unsupported syscall ID", op)),
     }
 }
 
@@ -138,10 +147,10 @@ pub(crate) fn simulate_execute_program(
     while let Some(op) = program.get(ip) {
         // eprintln!("{:?}", op.code);
         if is_const && !op.code.is_const() {
-            generate_error(
-                "Operation not support during const evaluation",
-                op.token.location,
-            );
+            return Err(generate_error(
+                "Operation not supported during const evaluation",
+                op,
+            ));
         }
 
         match op.code {
@@ -277,7 +286,7 @@ pub(crate) fn simulate_execute_program(
 
                 let bytes = memory
                     .get(width.addr_range(address))
-                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op))?;
 
                 let value = match width {
                     Width::Byte => bytes[0] as u64,
@@ -291,7 +300,7 @@ pub(crate) fn simulate_execute_program(
                 let [value, address] = stack.popn().unwrap();
                 let dest = memory
                     .get_mut(width.addr_range(address as usize))
-                    .ok_or_else(|| generate_error("invalid memory address", op.token.location))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op))?;
                 match width {
                     Width::Byte => dest[0] = value as u8,
                     Width::Word => dest.copy_from_slice(&u16::to_le_bytes(value as _)),
@@ -314,7 +323,7 @@ pub(crate) fn simulate_execute_program(
                 make_syscall1(syscall_id, arg1, &mut memory, op)?;
             }
             OpCode::SysCall(_) => {
-                return Err(generate_error("unsupported syscall", op.token.location));
+                return Err(generate_error("unsupported syscall", op));
             }
             OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
                 panic!("ICE: Encountered {:?}", op.code)
