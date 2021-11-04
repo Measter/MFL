@@ -7,6 +7,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
     interners::Interners,
+    lexer::Token,
     n_ops::PopN,
     opcode::{Op, OpCode},
     source_file::{FileId, SourceLocation},
@@ -234,6 +235,67 @@ macro_rules! kind_pat {
     };
 }
 
+fn final_stack_check(
+    ops: &[Op],
+    const_context: Option<Token>,
+    stack: &[PorthType],
+    diags: &mut Vec<Diagnostic<FileId>>,
+) {
+    if let Some(context_token) = const_context {
+        match &*stack {
+            kind_pat!([PorthTypeKind::Int]) => {} // Success!
+
+            [t] => {
+                diags.push(
+                    Diagnostic::error()
+                        .with_message(format!("const requires an integer, found {:?}", t.kind))
+                        .with_labels(vec![Label::primary(
+                            context_token.location.file_id,
+                            context_token.location.range(),
+                        )]),
+                );
+            }
+            [..] => {
+                diags.push(
+                    Diagnostic::error()
+                        .with_message(format!(
+                            "const requires 1 item left on stack, found {}",
+                            stack.len()
+                        ))
+                        .with_labels(vec![Label::primary(
+                            context_token.location.file_id,
+                            context_token.location.range(),
+                        )]),
+                );
+            }
+        }
+    } else if !stack.is_empty() {
+        let label = ops
+            .last()
+            .map(|op| {
+                let mut labels = vec![Label::primary(
+                    op.token.location.file_id,
+                    op.token.location.range(),
+                )];
+
+                for source in op.expansions.iter() {
+                    labels.push(
+                        Label::secondary(source.file_id, source.range())
+                            .with_message("expanded from here"),
+                    );
+                }
+
+                labels
+            })
+            .unwrap_or_else(Vec::new);
+
+        diags.push(
+            Diagnostic::error()
+                .with_message(format!("{} elements left on the stack", stack.len()))
+                .with_labels(label),
+        );
+    }
+}
 struct BlockStackState {
     open_location: SourceLocation,
     entry_stack: Vec<PorthType>,
@@ -243,7 +305,7 @@ struct BlockStackState {
 pub fn type_check(
     ops: &[Op],
     interner: &Interners,
-    is_const_eval: bool,
+    const_context: Option<Token>,
 ) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut stack: Vec<PorthType> = Vec::new();
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
@@ -690,32 +752,7 @@ pub fn type_check(
         }
     }
 
-    if (is_const_eval && stack.len() != 1) || (!is_const_eval && !stack.is_empty()) {
-        let label = ops
-            .last()
-            .map(|op| {
-                let mut labels = vec![Label::primary(
-                    op.token.location.file_id,
-                    op.token.location.range(),
-                )];
-
-                for source in op.expansions.iter() {
-                    labels.push(
-                        Label::secondary(source.file_id, source.range())
-                            .with_message("expanded from here"),
-                    );
-                }
-
-                labels
-            })
-            .unwrap_or_else(Vec::new);
-
-        diags.push(
-            Diagnostic::error()
-                .with_message(format!("{} elements left on the stack", stack.len()))
-                .with_labels(label),
-        );
-    }
+    final_stack_check(ops, const_context, &stack, &mut diags);
 
     diags.is_empty().then(|| ()).ok_or(diags)
 }

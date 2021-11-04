@@ -174,7 +174,7 @@ fn process_ops(
     static_alloc_names: &HashSet<Spur>,
     source_store: &SourceStorage,
     optimize: bool,
-    is_const_context: bool,
+    const_context: Option<Token>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     program = opcode::expand_includes(included_files, &program);
     program = opcode::expand_macros_and_allocs(macros, static_alloc_names, &program)?;
@@ -184,7 +184,7 @@ fn process_ops(
     }
 
     opcode::generate_jump_labels(&mut program)?;
-    type_check::type_check(&program, interner, is_const_context)?;
+    type_check::type_check(&program, interner, const_context)?;
 
     Ok(program)
 }
@@ -251,7 +251,7 @@ fn load_program(
         &static_alloc_names,
         source_store,
         optimize,
-        false,
+        None,
     ) {
         Ok(program) => program,
         Err(diags) => return Ok(Err(diags)),
@@ -259,7 +259,7 @@ fn load_program(
 
     // We also need to expand, generate labels and type check the memory allocation bodies.
     let mut all_alloc_diags = Vec::new();
-    for (_, body) in static_allocs.values_mut() {
+    for (token, body) in static_allocs.values_mut() {
         match process_ops(
             std::mem::take(body),
             interner,
@@ -268,7 +268,7 @@ fn load_program(
             &static_alloc_names,
             source_store,
             false,
-            true,
+            Some(*token),
         ) {
             Ok(program) => *body = program,
             Err(mut diags) => {
