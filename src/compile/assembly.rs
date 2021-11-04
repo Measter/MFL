@@ -1,12 +1,13 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{BufWriter, Write},
     ops::Range,
 };
 
 use color_eyre::eyre::Result;
+use lasso::Spur;
 
 use crate::Width;
 
@@ -412,6 +413,8 @@ pub struct Assembler {
     assembly: Vec<Assembly>,
     register_id: usize,
     op_range: OpRange,
+    used_memory: HashSet<Spur>,
+    used_literals: HashSet<Spur>,
 }
 
 impl Assembler {
@@ -420,8 +423,20 @@ impl Assembler {
         self.register_id
     }
 
-    pub fn into_assembly(self) -> Vec<Assembly> {
-        self.assembly
+    pub fn assembly(&self) -> &[Assembly] {
+        &self.assembly
+    }
+
+    pub fn assembly_mut(&mut self) -> &mut [Assembly] {
+        &mut self.assembly
+    }
+
+    pub fn used_strings(&self) -> &HashSet<Spur> {
+        &self.used_literals
+    }
+
+    pub fn used_allocs(&self) -> &HashSet<Spur> {
+        &self.used_memory
     }
 
     pub fn block_boundry(&mut self) {
@@ -554,5 +569,13 @@ impl Assembler {
             },
             self.op_range,
         ));
+    }
+
+    pub fn use_string(&mut self, id: Spur) {
+        self.used_literals.insert(id);
+    }
+
+    pub fn use_memory_alloc(&mut self, id: Spur) {
+        self.used_memory.insert(id);
     }
 }

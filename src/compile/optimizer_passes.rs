@@ -185,6 +185,7 @@ fn mem_push_store(
     };
 
     let (mem_id, mem_val) = mem.code.unwrap_memory();
+    assembler.use_memory_alloc(mem_id);
     let push_val = push.code.unwrap_push_int() & 0xFF;
     let mem_id = interner.resolve_lexeme(mem_id);
 
@@ -212,6 +213,7 @@ fn mem_load(
     };
 
     let (mem_id, mem_val) = mem.code.unwrap_memory();
+    assembler.use_memory_alloc(mem_id);
     let mem_id = interner.resolve_lexeme(mem_id);
 
     assembler.set_op_range(ip, ip + start.len());
@@ -342,6 +344,8 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::PushStr(id) => {
+            assembler.use_string(id);
+
             let literal = interner.resolve_literal(id);
             let id = id.into_inner().get();
 
@@ -351,6 +355,8 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(ptr_reg);
         }
         OpCode::Memory { name, offset } => {
+            assembler.use_memory_alloc(name);
+
             let alloc_name = interner.resolve_lexeme(name);
             let reg = assembler.reg_alloc_dyn_literal(format!("__{} + {}", alloc_name, offset));
             assembler.reg_free_dyn_push(reg);

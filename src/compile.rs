@@ -56,7 +56,7 @@ fn write_assembly(
     interner: &Interners,
     ops: &[Op],
     static_allocs: &HashMap<Spur, usize>,
-    asm: &[Assembly],
+    assembler: Assembler,
 ) -> Result<()> {
     let mut cur_exe_dur =
         std::env::current_exe().with_context(|| eyre!("Failed to get compiler exe path"))?;
@@ -87,7 +87,7 @@ fn write_assembly(
     let mut register_map = HashMap::new();
 
     let mut last_op_range = usize::MAX..usize::MAX; // Intentinally invalid.
-    for asm in asm {
+    for asm in assembler.assembly() {
         if last_op_range != asm.op_range {
             last_op_range = asm.op_range.clone();
             for (op, ip) in ops[asm.op_range.clone()].iter().zip(asm.op_range.clone()) {
@@ -114,8 +114,10 @@ fn write_assembly(
     writeln!(&mut out_file, "    syscall")?;
 
     writeln!(&mut out_file, "segment .rodata")?;
-    for (id, literal) in interner.iter_literals() {
+    for &id in assembler.used_strings() {
+        let literal = interner.resolve_literal(id);
         let id = id.into_inner().get();
+        writeln!(&mut out_file, "    ; {:?}", literal)?;
         write!(&mut out_file, "    __string_literal{}: db ", id)?;
 
         for b in literal.as_bytes() {
@@ -129,7 +131,8 @@ fn write_assembly(
     writeln!(&mut out_file, "    __argc: resq {}", 1)?;
     writeln!(&mut out_file, "    __argv: resq {}", 1)?;
 
-    for (&id, &size) in static_allocs {
+    for &id in assembler.used_allocs() {
+        let size = static_allocs[&id];
         let name = interner.resolve_lexeme(id);
         writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }
@@ -164,7 +167,7 @@ impl OpCode {
     }
 }
 
-fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> Vec<Assembly> {
+fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> Assembler {
     let mut assembler = Assembler::default();
 
     let mut ip = 0;
@@ -182,7 +185,7 @@ fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> V
         ip += len_compiled;
     }
 
-    assembler.into_assembly()
+    assembler
 }
 
 fn merge_dyn_to_dyn_registers(
@@ -740,7 +743,7 @@ pub(crate) fn compile_program(
     let mut assembly = build_assembly(program, interner, optimize);
 
     if optimize {
-        optimize_allocation(&mut assembly);
+        optimize_allocation(assembly.assembly_mut());
     }
 
     write_assembly(
@@ -749,7 +752,7 @@ pub(crate) fn compile_program(
         interner,
         program,
         static_allocs,
-        &assembly,
+        assembly,
     )?;
 
     Ok(())
