@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -103,7 +105,6 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     None
 }
 
-#[allow(clippy::too_many_arguments)]
 fn load_include(
     source_store: &mut SourceStorage,
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
@@ -165,7 +166,29 @@ fn load_include(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+fn process_ops(
+    mut program: Vec<Op>,
+    interner: &mut Interners,
+    included_files: &HashMap<Spur, Vec<Op>>,
+    macros: &HashMap<Spur, (Token, Vec<Op>)>,
+    static_alloc_names: &HashSet<Spur>,
+    source_store: &SourceStorage,
+    optimize: bool,
+    is_const_context: bool,
+) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+    program = opcode::expand_includes(included_files, &program);
+    program = opcode::expand_macros_and_allocs(macros, static_alloc_names, &program)?;
+
+    if optimize {
+        program = opcode::optimize(&program, interner, source_store);
+    }
+
+    opcode::generate_jump_labels(&mut program)?;
+    type_check::type_check(&program, interner, is_const_context)?;
+
+    Ok(program)
+}
+
 fn load_program(
     source_store: &mut SourceStorage,
     interner: &mut Interners,
@@ -187,7 +210,7 @@ fn load_program(
     let mut static_allocs = HashMap::new();
     let mut include_list = Vec::new();
 
-    let mut ops = match opcode::parse_token(
+    let mut program = match opcode::parse_token(
         &tokens,
         interner,
         &mut macros,
@@ -216,55 +239,51 @@ fn load_program(
         }
     }
 
-    ops = opcode::expand_includes(&included_files, &ops);
-
     // We don't need the entry allocation data just for the expansion, so we'll just use a
     // HashSet here.
     let static_alloc_names: HashSet<_> = static_allocs.keys().copied().collect();
 
-    ops = match opcode::expand_macros_and_allocs(&macros, &static_alloc_names, &ops) {
-        Ok(ops) => ops,
+    program = match process_ops(
+        program,
+        interner,
+        &included_files,
+        &macros,
+        &static_alloc_names,
+        source_store,
+        optimize,
+        false,
+    ) {
+        Ok(program) => program,
         Err(diags) => return Ok(Err(diags)),
     };
 
-    // Memory allocations may also contain macros, so we need to expand those as well.
-    for (_, body) in static_allocs.values_mut() {
-        let new_body = match opcode::expand_macros_and_allocs(&macros, &static_alloc_names, body) {
-            Ok(ops) => ops,
-            Err(diags) => return Ok(Err(diags)),
-        };
-
-        *body = new_body;
-    }
-
-    if optimize {
-        ops = opcode::optimize(&ops, interner, source_store);
-    }
-
-    if let Err(diags) = opcode::generate_jump_labels(&mut ops) {
-        return Ok(Err(diags));
-    }
-
-    if let Err(diags) = type_check::type_check(&ops, interner, false) {
-        return Ok(Err(diags));
-    }
-
-    // Also need to generate labels and type check the memory allocation bodies.
+    // We also need to expand, generate labels and type check the memory allocation bodies.
     let mut all_alloc_diags = Vec::new();
     for (_, body) in static_allocs.values_mut() {
-        if let Err(mut diags) = opcode::generate_jump_labels(body) {
-            all_alloc_diags.append(&mut diags);
-        }
-
-        if let Err(mut diags) = type_check::type_check(body, interner, true) {
-            all_alloc_diags.append(&mut diags);
-        }
+        match process_ops(
+            std::mem::take(body),
+            interner,
+            &included_files,
+            &macros,
+            &static_alloc_names,
+            source_store,
+            false,
+            true,
+        ) {
+            Ok(program) => *body = program,
+            Err(mut diags) => {
+                all_alloc_diags.append(&mut diags);
+            }
+        };
     }
     if !all_alloc_diags.is_empty() {
         return Ok(Err(all_alloc_diags));
     }
 
-    let program = Program { ops, static_allocs };
+    let program = Program {
+        ops: program,
+        static_allocs,
+    };
 
     Ok(Ok(program))
 }
