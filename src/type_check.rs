@@ -620,7 +620,7 @@ pub fn type_check(
             }
 
             OpCode::Print => {
-                stack_check!(diags, stack, interner, op, kind_pat!([PorthTypeKind::Int]));
+                stack_check!(diags, stack, interner, op, kind_pat!([_]));
             }
             OpCode::Dup { depth } => {
                 if stack.len() < (depth + 1) {
