@@ -53,7 +53,7 @@ pub enum OpCode {
     Print,
     PushBool(bool),
     PushInt(u64),
-    PushStr(Spur),
+    PushStr { id: Spur, is_c_str: bool },
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -112,7 +112,7 @@ impl OpCode {
             | OpCode::Memory { .. }
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
-            | OpCode::PushStr(_)
+            | OpCode::PushStr { .. }
             | OpCode::Swap
             | OpCode::While { .. } => 0,
 
@@ -153,7 +153,7 @@ impl OpCode {
             | OpCode::NotEq
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
-            | OpCode::PushStr(_)
+            | OpCode::PushStr { .. }
             | OpCode::Rot
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
@@ -204,7 +204,7 @@ impl OpCode {
             | Print
             | PushBool(_)
             | PushInt(_)
-            | PushStr(_)
+            | PushStr { .. }
             | Rot
             | Store(_)
             | Swap
@@ -248,7 +248,7 @@ impl OpCode {
             | Print
             | PushBool(_)
             | PushInt(_)
-            | PushStr(_)
+            | PushStr { .. }
             | Rot
             | ShiftLeft
             | ShiftRight
@@ -303,7 +303,7 @@ impl OpCode {
             | Print
             | PushBool(_)
             | PushInt(_)
-            | PushStr(_)
+            | PushStr { .. }
             | Rot
             | Store(_)
             | Swap
@@ -466,8 +466,11 @@ pub fn parse_token(
 
             TokenKind::Ident => OpCode::Ident(token.lexeme),
             TokenKind::Integer(value) => OpCode::PushInt(value),
-            TokenKind::String(id) => OpCode::PushStr(id),
-            TokenKind::Here(id) => OpCode::PushStr(id),
+            TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
+            TokenKind::Here(id) => OpCode::PushStr {
+                id,
+                is_c_str: false,
+            },
             TokenKind::ArgC => OpCode::ArgC,
             TokenKind::ArgV => OpCode::ArgV,
 
@@ -546,7 +549,7 @@ pub fn parse_token(
                 let (_, path_token) = match expect_token(
                     &mut token_iter,
                     "string",
-                    |k| matches!(k, TokenKind::String(_)),
+                    |k| matches!(k, TokenKind::String { .. }),
                     *token,
                     interner,
                 ) {
@@ -558,7 +561,7 @@ pub fn parse_token(
                 };
 
                 let literal = match path_token.kind {
-                    TokenKind::String(id) => id,
+                    TokenKind::String { id, .. } => id,
                     _ => unreachable!(),
                 };
 

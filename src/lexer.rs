@@ -51,7 +51,7 @@ pub enum TokenKind {
     ShiftLeft,
     ShiftRight,
     Star,
-    String(Spur),
+    String { id: Spur, is_c_str: bool },
     Store(Width),
     Swap,
     SysCall(usize),
@@ -95,7 +95,7 @@ impl TokenKind {
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
             | TokenKind::Star
-            | TokenKind::String(_)
+            | TokenKind::String { .. }
             | TokenKind::Store(_)
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
@@ -217,6 +217,11 @@ impl<'source> Scanner<'source> {
             return Err(diag);
         }
 
+        if close_char == '\"' {
+            // Make sure to always null-terminate the strings. Makes it easier to support C-strings.
+            self.string_buf.push('\0');
+        }
+
         Ok(())
     }
 
@@ -272,11 +277,21 @@ impl<'source> Scanner<'source> {
             ('"', _) => {
                 self.consume_string_or_char_literal('"', "string")?;
 
+                let is_c_str = if let Some('c') = self.peek() {
+                    self.advance();
+                    true
+                } else {
+                    false
+                };
+
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
                 let literal = interner.intern_literal(&self.string_buf);
 
                 Some(Token::new(
-                    TokenKind::String(literal),
+                    TokenKind::String {
+                        id: literal,
+                        is_c_str,
+                    },
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),

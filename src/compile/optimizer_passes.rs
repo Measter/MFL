@@ -343,15 +343,21 @@ pub(super) fn compile_single_instruction(
             let reg = assembler.reg_alloc_dyn_literal(val.to_string());
             assembler.reg_free_dyn_push(reg);
         }
-        OpCode::PushStr(id) => {
+        OpCode::PushStr { id, is_c_str } => {
             assembler.use_string(id);
 
             let literal = interner.resolve_literal(id);
             let id = id.into_inner().get();
 
-            let len_reg = assembler.reg_alloc_dyn_literal(literal.len().to_string());
+            if !is_c_str {
+                // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
+                // include that character.
+                let len = literal.len() - 1;
+
+                let len_reg = assembler.reg_alloc_dyn_literal(len.to_string());
+                assembler.reg_free_dyn_push(len_reg);
+            }
             let ptr_reg = assembler.reg_alloc_dyn_literal(format!("__string_literal{}", id));
-            assembler.reg_free_dyn_push(len_reg);
             assembler.reg_free_dyn_push(ptr_reg);
         }
         OpCode::Memory { name, offset } => {

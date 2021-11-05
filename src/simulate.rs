@@ -196,9 +196,13 @@ pub(crate) fn simulate_execute_program(
 
             OpCode::PushBool(val) => stack.push(val as _),
             OpCode::PushInt(val) => stack.push(val),
-            OpCode::PushStr(id) => {
+            OpCode::PushStr { id, is_c_str } => {
                 let literal = interner.resolve_literal(id);
-                stack.push(literal.len() as u64);
+                if !is_c_str {
+                    // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
+                    // include that character.
+                    stack.push(literal.len() as u64 - 1);
+                }
                 stack.push(literal_addresses[id.into_inner().get() as usize]);
             }
             OpCode::Drop => {

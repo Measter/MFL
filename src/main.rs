@@ -119,6 +119,8 @@ fn load_include(
     }
 
     let file_name = interner.resolve_literal(file);
+    // String literals are always null-terminated, so we need to trim that off.
+    let file_name = &file_name[..file_name.len() - 1];
 
     let include_path = match search_includes(include_paths, file_name) {
         Some(path) => path,
