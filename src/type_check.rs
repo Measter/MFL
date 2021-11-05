@@ -1,13 +1,15 @@
 use std::{
     cmp::Ordering,
+    collections::HashMap,
     fmt::{self, Write},
 };
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use lasso::Spur;
 
 use crate::{
     interners::Interners,
-    n_ops::PopN,
+    n_ops::{NOps, PopN},
     opcode::{Op, OpCode, Procedure},
     source_file::{FileId, SourceLocation},
 };
@@ -21,17 +23,14 @@ pub enum PorthTypeKind {
 }
 
 #[derive(Debug, Clone, Copy, Eq)]
-struct PorthType {
-    kind: PorthTypeKind,
-    location: Option<SourceLocation>,
+pub struct PorthType {
+    pub kind: PorthTypeKind,
+    pub location: SourceLocation,
 }
 
 impl PorthType {
-    fn new(kind: PorthTypeKind, location: impl Into<Option<SourceLocation>>) -> Self {
-        Self {
-            kind,
-            location: location.into(),
-        }
+    fn new(kind: PorthTypeKind, location: SourceLocation) -> Self {
+        Self { kind, location }
     }
 }
 
@@ -84,12 +83,10 @@ fn generate_type_mismatch(
     }
 
     for ty in types {
-        if let Some(location) = ty.location {
-            labels.push(
-                Label::secondary(location.file_id, location.range())
-                    .with_message(format!("{}", ty.kind)),
-            )
-        }
+        labels.push(
+            Label::secondary(ty.location.file_id, ty.location.range())
+                .with_message(format!("{}", ty.kind)),
+        )
     }
 
     let diag = Diagnostic::error()
@@ -142,6 +139,47 @@ fn generate_block_depth_mismatch(
     diags.push(diag);
 }
 
+fn failed_compare_stack_types(
+    expected_stack: &[PorthType],
+    actual_stack: &[PorthType],
+    diags: &mut Vec<Diagnostic<FileId>>,
+    open_block_loc: SourceLocation,
+    op: &Op,
+    msg: &str,
+) {
+    let mut diag = Diagnostic::error().with_message(msg).with_labels(vec![
+        Label::primary(open_block_loc.file_id, open_block_loc.range()),
+        Label::primary(op.token.location.file_id, op.token.location.range()),
+    ]);
+
+    diag.notes.push("IDX  | Expected |   Actual".to_owned());
+    diag.notes.push("_____|__________|_________".to_owned());
+
+    if expected_stack[0] == actual_stack[0] {
+        diag.notes.push("...".to_owned());
+    }
+
+    let mut pairs = expected_stack
+        .iter()
+        .zip(actual_stack)
+        .enumerate()
+        .peekable();
+    while matches!(pairs.peek(), Some((_, (a, b))) if a == b) {
+        pairs.next();
+    }
+
+    for (idx, (a, b)) in pairs {
+        diag.notes.push(format!(
+            "{:<4} | {:<8} | {:>8}",
+            actual_stack.len() - idx - 1,
+            a.kind,
+            b.kind
+        ));
+    }
+
+    diags.push(diag);
+}
+
 fn compare_expected_stacks(
     expected_stack: &[PorthType],
     actual_stack: &[PorthType],
@@ -162,37 +200,7 @@ fn compare_expected_stacks(
             );
         }
         Ordering::Equal if expected_stack != actual_stack => {
-            let mut diag = Diagnostic::error().with_message(msg).with_labels(vec![
-                Label::primary(open_loc.file_id, open_loc.range()),
-                Label::primary(op.token.location.file_id, op.token.location.range()),
-            ]);
-
-            diag.notes.push("IDX  | Expected |   Actual".to_owned());
-            diag.notes.push("_____|__________|_________".to_owned());
-
-            if expected_stack[0] == actual_stack[0] {
-                diag.notes.push("...".to_owned());
-            }
-
-            let mut pairs = expected_stack
-                .iter()
-                .zip(actual_stack)
-                .enumerate()
-                .peekable();
-            while matches!(pairs.peek(), Some((_, (a, b))) if a == b) {
-                pairs.next();
-            }
-
-            for (idx, (a, b)) in pairs {
-                diag.notes.push(format!(
-                    "{:<4} | {:<8} | {:>8}",
-                    actual_stack.len() - idx - 1,
-                    a.kind,
-                    b.kind
-                ));
-            }
-
-            diags.push(diag);
+            failed_compare_stack_types(expected_stack, actual_stack, diags, open_loc, op, msg);
         }
         _ => {}
     }
@@ -285,17 +293,15 @@ fn final_stack_check(
         return;
     }
 
-    let stack_types = stack.iter().map(|t| t.kind);
-    if stack_types.ne(procedure.expected_exit_stack.iter().copied()) {
-        let diag = Diagnostic::error()
-            .with_message(format!(
-                "expected {} elements on stack, found {}",
-                procedure.expected_exit_stack.len(),
-                stack.len()
-            ))
-            .with_labels(make_labels());
-
-        diags.push(diag);
+    if stack != procedure.expected_exit_stack {
+        failed_compare_stack_types(
+            &procedure.expected_exit_stack,
+            stack,
+            diags,
+            procedure.name.location,
+            procedure.body.last().unwrap(),
+            "procedure return stack mismatch",
+        );
     }
 }
 struct BlockStackState {
@@ -305,18 +311,15 @@ struct BlockStackState {
 }
 
 pub fn type_check(
-    procedure: &Procedure,
+    cur_proc: &Procedure,
+    all_procs: &HashMap<Spur, Procedure>,
     interner: &Interners,
 ) -> Result<(), Vec<Diagnostic<FileId>>> {
-    let mut stack: Vec<PorthType> = procedure
-        .expected_entry_stack
-        .iter()
-        .map(|&ty| PorthType::new(ty, None))
-        .collect();
+    let mut stack: Vec<PorthType> = cur_proc.expected_entry_stack.clone();
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
     let mut diags = Vec::new();
 
-    for op in &procedure.body {
+    for op in &cur_proc.body {
         match op.code {
             OpCode::Add => {
                 let res = stack_check!(
@@ -737,6 +740,39 @@ pub fn type_check(
                 stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
             }
 
+            OpCode::CallProc(id) => {
+                let callee = &all_procs[&id];
+
+                if stack.len() < callee.expected_entry_stack.len() {
+                    generate_stack_exhaustion(
+                        &mut diags,
+                        op,
+                        stack.len(),
+                        callee.expected_entry_stack.len(),
+                    );
+                    stack.clear();
+                } else {
+                    let last_n = stack.lastn(callee.expected_entry_stack.len()).unwrap();
+                    if last_n != callee.expected_entry_stack {
+                        failed_compare_stack_types(
+                            &callee.expected_entry_stack,
+                            last_n,
+                            &mut diags,
+                            callee.name.location,
+                            op,
+                            "incorrect types on stack",
+                        );
+                    }
+
+                    stack.truncate(stack.len() - callee.expected_entry_stack.len());
+                }
+
+                stack.extend_from_slice(&callee.expected_exit_stack);
+            }
+            OpCode::Return => {
+                final_stack_check(cur_proc, &stack, &mut diags);
+            }
+
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
                 if stack.len() < required {
@@ -759,7 +795,7 @@ pub fn type_check(
         }
     }
 
-    final_stack_check(procedure, &stack, &mut diags);
+    final_stack_check(cur_proc, &stack, &mut diags);
 
     diags.is_empty().then(|| ()).ok_or(diags)
 }

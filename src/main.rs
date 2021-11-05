@@ -193,7 +193,6 @@ fn process_ops(
     }
 
     opcode::generate_jump_labels(&mut procedure.body)?;
-    type_check::type_check(procedure, interner)?;
 
     Ok(())
 }
@@ -284,6 +283,22 @@ fn load_program(
         ) {
             all_proc_diags.append(&mut diags);
         };
+    }
+
+    if !all_proc_diags.is_empty() {
+        return Ok(Err(all_proc_diags));
+    }
+
+    // Type checking requires seeing the entire program, so we have to iterate again
+    // to avoid mutable aliasing.
+    let to_check = std::iter::once(&main_proc)
+        .chain(static_allocs.values())
+        .chain(procedures.values());
+
+    for proc in to_check {
+        if let Err(mut diags) = type_check::type_check(proc, &procedures, interner) {
+            all_proc_diags.append(&mut diags);
+        }
     }
 
     if !all_proc_diags.is_empty() {

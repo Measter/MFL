@@ -8,7 +8,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation, SourceStorage},
-    type_check::PorthTypeKind,
+    type_check::{PorthType, PorthTypeKind},
     Width,
 };
 
@@ -338,8 +338,8 @@ impl OpCode {
 pub struct Procedure {
     pub name: Token,
     pub body: Vec<Op>,
-    pub expected_exit_stack: Vec<PorthTypeKind>,
-    pub expected_entry_stack: Vec<PorthTypeKind>,
+    pub expected_exit_stack: Vec<PorthType>,
+    pub expected_entry_stack: Vec<PorthType>,
     pub is_const: bool,
 }
 
@@ -574,7 +574,10 @@ pub fn parse_token(
                 let new_alloc = Procedure {
                     name,
                     body,
-                    expected_exit_stack: vec![PorthTypeKind::Int],
+                    expected_exit_stack: vec![PorthType {
+                        kind: PorthTypeKind::Int,
+                        location: name.location,
+                    }],
                     expected_entry_stack: Vec::new(),
                     is_const: true,
                 };

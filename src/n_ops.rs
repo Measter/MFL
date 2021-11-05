@@ -36,11 +36,12 @@ impl<T> PopN<T> for Vec<T> {
     }
 }
 
-pub trait FirstN<T> {
+pub trait NOps<T> {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)>;
+    fn lastn(&self, n: usize) -> Option<&Self>;
 }
 
-impl<T> FirstN<T> for [T] {
+impl<T> NOps<T> for [T] {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)> {
         assert!(N > 0);
         if self.len() < N {
@@ -49,5 +50,12 @@ impl<T> FirstN<T> for [T] {
 
         let (start, rest) = self.split_at(N);
         Some((start.try_into().ok()?, rest))
+    }
+
+    fn lastn(&self, n: usize) -> Option<&Self> {
+        if self.len() < n {
+            return None;
+        }
+        Some(&self[self.len() - n..])
     }
 }
