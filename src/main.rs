@@ -31,6 +31,10 @@ use opcode::Op;
 
 use crate::simulate::simulate_execute_program;
 
+const OPT_OPCODE: u8 = 1;
+const OPT_INSTR: u8 = 2;
+const OPT_STACK: u8 = 3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Width {
     Byte,
@@ -46,9 +50,9 @@ enum Mode {
     Simulate {
         file: String,
 
-        /// Enable optimizations
-        #[structopt(short)]
-        optimise: bool,
+        /// Set optimization level
+        #[structopt(short, parse(from_occurrences))]
+        opt_level: u8,
 
         /// Arguments to pass to the executed Porth program
         args: Vec<String>,
@@ -59,9 +63,9 @@ enum Mode {
     Compile {
         file: String,
 
-        /// Enable optimizations
-        #[structopt(short)]
-        optimise: bool,
+        /// Set optimization level
+        #[structopt(short, parse(from_occurrences))]
+        opt_level: u8,
     },
 }
 
@@ -167,13 +171,13 @@ fn process_ops(
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
     static_alloc_names: &HashSet<Spur>,
     source_store: &SourceStorage,
-    optimize: bool,
+    opt_level: u8,
     const_context: Option<Token>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     program = opcode::expand_includes(included_files, &program);
     program = opcode::expand_macros_and_allocs(macros, static_alloc_names, &program)?;
 
-    if optimize {
+    if opt_level >= OPT_OPCODE {
         program = opcode::optimize(&program, interner, source_store);
     }
 
@@ -187,7 +191,7 @@ fn load_program(
     source_store: &mut SourceStorage,
     interner: &mut Interners,
     file: &str,
-    optimize: bool,
+    opt_level: u8,
     include_paths: &[String],
 ) -> Result<LoadProgramResult> {
     let contents =
@@ -244,7 +248,7 @@ fn load_program(
         &macros,
         &static_alloc_names,
         source_store,
-        optimize,
+        opt_level,
         None,
     ) {
         Ok(program) => program,
@@ -261,7 +265,7 @@ fn load_program(
             &macros,
             &static_alloc_names,
             source_store,
-            false,
+            0,
             Some(*token),
         ) {
             Ok(program) => *body = program,
@@ -307,7 +311,7 @@ fn evaluate_allocation_sizes(
 
 fn run_simulate(
     file: String,
-    optimise: bool,
+    opt_level: u8,
     mut program_args: Vec<String>,
     include_paths: Vec<String>,
 ) -> Result<()> {
@@ -324,7 +328,7 @@ fn run_simulate(
         &mut source_storage,
         &mut interner,
         &file,
-        optimise,
+        opt_level,
         &include_paths,
     )? {
         Ok(program) => program,
@@ -359,7 +363,7 @@ fn run_simulate(
     Ok(())
 }
 
-fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Result<()> {
+fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
     let cfg = codespan_reporting::term::Config::default();
     let stderr = StandardStream::stderr(ColorChoice::Always);
     let mut stderr = stderr.lock();
@@ -378,7 +382,7 @@ fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Resu
         &mut source_storage,
         &mut interner,
         &file,
-        optimise,
+        opt_level,
         &include_paths,
     )? {
         Ok(program) => program,
@@ -409,7 +413,7 @@ fn run_compile(file: String, optimise: bool, include_paths: Vec<String>) -> Resu
         &source_storage,
         &interner,
         &output_asm,
-        optimise,
+        opt_level,
     )?;
 
     println!("Assembling... to {}", output_obj.display());
@@ -444,10 +448,10 @@ fn main() -> Result<()> {
     match args.mode {
         Mode::Simulate {
             file,
-            optimise,
+            opt_level,
             args: program_args,
-        } => run_simulate(file, optimise, program_args, args.include_paths)?,
-        Mode::Compile { file, optimise } => run_compile(file, optimise, args.include_paths)?,
+        } => run_simulate(file, opt_level, program_args, args.include_paths)?,
+        Mode::Compile { file, opt_level } => run_compile(file, opt_level, args.include_paths)?,
     }
 
     Ok(())

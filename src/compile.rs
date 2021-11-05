@@ -8,7 +8,7 @@ use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
     source_file::SourceStorage,
-    Width,
+    Width, OPT_INSTR, OPT_STACK,
 };
 
 mod assembly;
@@ -167,12 +167,12 @@ impl OpCode {
     }
 }
 
-fn build_assembly(mut program: &[Op], interner: &Interners, optimize: bool) -> Assembler {
+fn build_assembly(mut program: &[Op], interner: &Interners, opt_level: u8) -> Assembler {
     let mut assembler = Assembler::default();
 
     let mut ip = 0;
     while !program.is_empty() {
-        let len_compiled = if optimize {
+        let len_compiled = if opt_level >= OPT_INSTR {
             PASSES
                 .iter()
                 .filter_map(|pass| pass(program, ip, &mut assembler, interner))
@@ -744,11 +744,11 @@ pub(crate) fn compile_program(
     source_store: &SourceStorage,
     interner: &Interners,
     out_file_path: &Path,
-    optimize: bool,
+    opt_level: u8,
 ) -> Result<()> {
-    let mut assembly = build_assembly(program, interner, optimize);
+    let mut assembly = build_assembly(program, interner, opt_level);
 
-    if optimize {
+    if opt_level >= OPT_STACK {
         optimize_allocation(assembly.assembly_mut());
     }
 
