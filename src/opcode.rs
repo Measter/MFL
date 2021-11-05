@@ -86,6 +86,7 @@ impl OpCode {
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
             | OpCode::Store(_)
+            | OpCode::Swap
             | OpCode::Subtract => 2,
 
             OpCode::BitNot
@@ -116,7 +117,6 @@ impl OpCode {
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr { .. }
-            | OpCode::Swap
             | OpCode::While { .. } => 0,
 
             OpCode::CallProc(_) | OpCode::Return => todo!(),
