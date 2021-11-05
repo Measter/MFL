@@ -800,6 +800,9 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "segment .rodata")?;
     for &id in assembler.used_strings() {
         let literal = interner.resolve_literal(id);
+        // Strip the last null char, as we output a null anyway to simplify the loop,
+        // and it'll clean up the comment.
+        let literal = &literal[..literal.len() - 1];
         let id = id.into_inner().get();
         writeln!(out_file, "    ; {:?}", literal)?;
         write!(out_file, "    __string_literal{}: db ", id)?;
