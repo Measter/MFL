@@ -56,6 +56,7 @@ pub enum OpCode {
     PushBool(bool),
     PushInt(u64),
     PushStr { id: Spur, is_c_str: bool },
+    Return,
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -118,7 +119,7 @@ impl OpCode {
             | OpCode::Swap
             | OpCode::While { .. } => 0,
 
-            OpCode::CallProc(_) => todo!(),
+            OpCode::CallProc(_) | OpCode::Return => todo!(),
 
             OpCode::SysCall(a) => a + 1,
         }
@@ -159,6 +160,7 @@ impl OpCode {
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr { .. }
+            | OpCode::Return
             | OpCode::Rot
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
@@ -211,6 +213,7 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | Return
             | Rot
             | Store(_)
             | Swap
@@ -256,6 +259,7 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | Return
             | Rot
             | ShiftLeft
             | ShiftRight
@@ -312,6 +316,7 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | Return
             | Rot
             | Store(_)
             | Swap
@@ -615,7 +620,7 @@ pub fn parse_token(
                 OpCode::Include(literal)
             }
             TokenKind::Proc => {
-                let (name, body) = match parse_sub_block(
+                let (name, mut body) = match parse_sub_block(
                     &mut token_iter,
                     tokens,
                     *token,
@@ -631,6 +636,25 @@ pub fn parse_token(
                         continue;
                     }
                 };
+
+                // Makes later logic a bit easier if we always have a return opcode.
+                match body.last() {
+                    Some(op) => {
+                        if op.code != OpCode::Return {
+                            let ret_op = Op {
+                                code: OpCode::Return,
+                                token: op.token,
+                                expansions: op.expansions.clone(),
+                            };
+                            body.push(ret_op);
+                        }
+                    }
+                    None => body.push(Op {
+                        code: OpCode::Return,
+                        token: name,
+                        expansions: Vec::new(),
+                    }),
+                }
 
                 let new_proc = Procedure {
                     name,

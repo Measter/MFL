@@ -137,15 +137,18 @@ pub(crate) fn simulate_execute_program(
     program_args: &[String],
 ) -> Result<Vec<u64>, Diagnostic<FileId>> {
     let mut ip = 0;
-    let mut stack: Vec<u64> = Vec::new();
+    let mut value_stack: Vec<u64> = Vec::new();
+    let mut call_stack: Vec<(&Procedure, usize)> = Vec::new();
+    let mut current_procedure = main_proc;
 
     let mut memory: Vec<u8> = Vec::new();
     let static_allocation_lookup = build_static_allocations(&mut memory, static_allocs);
     let literal_addresses = allocate_string_literals(interner, &mut memory);
     let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
 
-    while let Some(op) = main_proc.body.get(ip) {
+    while let Some(op) = current_procedure.body.get(ip) {
         // eprintln!("{:?}", op.code);
+        // Note: We should still check main_proc for const, as it may call non-const procs.
         if main_proc.is_const && !op.code.is_const() {
             return Err(generate_error(
                 "Operation not supported during const evaluation",
@@ -155,63 +158,63 @@ pub(crate) fn simulate_execute_program(
 
         match op.code {
             OpCode::Add => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a += b;
             }
             OpCode::Subtract => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a -= b;
             }
             OpCode::Multiply => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a *= b;
             }
             OpCode::DivMod => {
-                let [a, b] = stack.popn().unwrap();
+                let [a, b] = value_stack.popn().unwrap();
                 let (rem, quot) = (a % b, a / b);
-                stack.push(quot);
-                stack.push(rem);
+                value_stack.push(quot);
+                value_stack.push(rem);
             }
 
             OpCode::BitOr => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a |= b;
             }
             OpCode::BitNot => {
-                let a = stack.last_mut().unwrap();
+                let a = value_stack.last_mut().unwrap();
                 *a = !*a;
             }
             OpCode::BitAnd => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a &= b;
             }
             OpCode::ShiftLeft => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a <<= b;
             }
             OpCode::ShiftRight => {
-                let ([b], a) = stack.popn_last_mut().unwrap();
+                let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a >>= b;
             }
 
-            OpCode::PushBool(val) => stack.push(val as _),
-            OpCode::PushInt(val) => stack.push(val),
+            OpCode::PushBool(val) => value_stack.push(val as _),
+            OpCode::PushInt(val) => value_stack.push(val),
             OpCode::PushStr { id, is_c_str } => {
                 let literal = interner.resolve_literal(id);
                 if !is_c_str {
                     // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
                     // include that character.
-                    stack.push(literal.len() as u64 - 1);
+                    value_stack.push(literal.len() as u64 - 1);
                 }
-                stack.push(literal_addresses[id.into_inner().get() as usize]);
+                value_stack.push(literal_addresses[id.into_inner().get() as usize]);
             }
             OpCode::Drop => {
-                stack.pop().unwrap();
+                value_stack.pop().unwrap();
             }
 
             OpCode::While { .. } => {}
             OpCode::DoWhile { end_ip, .. } => {
-                let a = stack.pop().unwrap();
+                let a = value_stack.pop().unwrap();
 
                 if a == 0 {
                     ip = end_ip + 1;
@@ -223,7 +226,7 @@ pub(crate) fn simulate_execute_program(
             }
             OpCode::If => {}
             OpCode::DoIf { end_ip, .. } => {
-                let a = stack.pop().unwrap();
+                let a = value_stack.pop().unwrap();
 
                 if a == 0 {
                     ip = end_ip + 1;
@@ -234,59 +237,59 @@ pub(crate) fn simulate_execute_program(
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a > b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a > b) as u64);
             }
             OpCode::GreaterEqual => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a >= b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a >= b) as u64);
             }
             OpCode::Less => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a < b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a < b) as u64);
             }
             OpCode::LessEqual => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a <= b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a <= b) as u64);
             }
             OpCode::Equal => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a == b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a == b) as u64);
             }
             OpCode::NotEq => {
-                let [a, b] = stack.popn().unwrap();
-                stack.push((a != b) as u64);
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push((a != b) as u64);
             }
 
             OpCode::Print => {
-                let val = stack.pop().unwrap();
+                let val = value_stack.pop().unwrap();
                 println!("{}", val);
             }
             OpCode::Dup { depth } => {
-                let a = stack[stack.len() - 1 - depth];
-                stack.push(a);
+                let a = value_stack[value_stack.len() - 1 - depth];
+                value_stack.push(a);
             }
             OpCode::DupPair => {
-                if let [.., _, _] = &*stack {
-                    stack.extend_from_within(stack.len() - 2..);
+                if let [.., _, _] = &*value_stack {
+                    value_stack.extend_from_within(value_stack.len() - 2..);
                 }
             }
             OpCode::Rot => {
-                let start = stack.len() - 3;
-                stack[start..].rotate_left(1);
+                let start = value_stack.len() - 3;
+                value_stack[start..].rotate_left(1);
             }
             OpCode::Swap => {
-                if let [.., a, b] = &mut *stack {
+                if let [.., a, b] = &mut *value_stack {
                     std::mem::swap(a, b);
                 }
             }
 
             OpCode::Memory { name, offset } => {
                 let base = static_allocation_lookup[&name];
-                stack.push((base + offset) as u64)
+                value_stack.push((base + offset) as u64)
             }
             OpCode::Load(width) => {
-                let address = stack.pop().unwrap() as usize;
+                let address = value_stack.pop().unwrap() as usize;
 
                 let bytes = memory
                     .get(width.addr_range(address))
@@ -298,10 +301,10 @@ pub(crate) fn simulate_execute_program(
                     Width::Dword => u32::from_le_bytes(bytes.try_into().unwrap()) as u64,
                     Width::Qword => u64::from_le_bytes(bytes.try_into().unwrap()) as u64,
                 };
-                stack.push(value);
+                value_stack.push(value);
             }
             OpCode::Store(width) => {
-                let [value, address] = stack.popn().unwrap();
+                let [value, address] = value_stack.popn().unwrap();
                 let dest = memory
                     .get_mut(width.addr_range(address as usize))
                     .ok_or_else(|| {
@@ -315,19 +318,41 @@ pub(crate) fn simulate_execute_program(
                 }
             }
 
-            OpCode::ArgC => stack.push(program_args.len() as _),
-            OpCode::ArgV => stack.push(argv_ptr),
+            OpCode::ArgC => value_stack.push(program_args.len() as _),
+            OpCode::ArgV => value_stack.push(argv_ptr),
 
             OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
 
-            OpCode::CallProc(_) => todo!(),
+            OpCode::CallProc(id) => {
+                let return_address = ip + 1; // The instruction after.
+                call_stack.push((current_procedure, return_address));
+                current_procedure = &program.procedures[&id];
+                ip = 0;
+                continue;
+            }
+            OpCode::Return => match call_stack.pop() {
+                None => break,
+                Some((proc, return_ip)) => {
+                    current_procedure = proc;
+                    ip = return_ip;
+                    continue;
+                }
+            },
 
             OpCode::SysCall(3) => {
-                let [arg3, arg2, arg1, syscall_id] = stack.popn().unwrap();
-                make_syscall3(syscall_id, arg1, arg2, arg3, &mut memory, &mut stack, op)?;
+                let [arg3, arg2, arg1, syscall_id] = value_stack.popn().unwrap();
+                make_syscall3(
+                    syscall_id,
+                    arg1,
+                    arg2,
+                    arg3,
+                    &mut memory,
+                    &mut value_stack,
+                    op,
+                )?;
             }
             OpCode::SysCall(1) => {
-                let [arg1, syscall_id] = stack.popn().unwrap();
+                let [arg1, syscall_id] = value_stack.popn().unwrap();
                 make_syscall1(syscall_id, arg1, &mut memory, op)?;
             }
             OpCode::SysCall(_) => {
@@ -341,5 +366,5 @@ pub(crate) fn simulate_execute_program(
         ip += 1;
     }
 
-    Ok(stack)
+    Ok(value_stack)
 }
