@@ -14,9 +14,9 @@ use crate::{
 mod assembly;
 use assembly::*;
 mod optimizer_passes;
-use optimizer_passes::PASSES;
+use optimizer_passes::{str_lit, use_reg, PASSES};
 
-use self::optimizer_passes::{str_lit, use_reg};
+const CALL_STACK_LEN: usize = usize::pow(2, 10); // 1024 depths
 
 #[derive(Debug)]
 struct RegisterAllocator {
@@ -665,33 +665,30 @@ fn assemble_procedure(
         Some(id) => {
             let name = interner.resolve_lexeme(id);
             println!("Compiling {}...", name);
-            assembler.push_instr([str_lit(format!("__proc_{}:", name))]);
+            assembler.push_instr([str_lit(format!("proc_{}:", name))]);
+            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
         }
         None => {
             println!("Compiling main...");
             assembler.push_instr([str_lit("_start:")]);
             assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
             assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
+            assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
         }
     }
 
     build_assembly(proc, interner, opt_level, assembler);
 
-    match proc_name {
-        Some(_) => {
-            assembler.push_instr([str_lit("    ret")]);
-        }
-        None => {
-            assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
-            assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
-            assembler.push_instr([
-                str_lit("    syscall"),
-                use_reg(RegisterType::Fixed(X86Register::Rax)),
-                use_reg(RegisterType::Fixed(X86Register::Rdi)),
-            ]);
-            assembler.reg_free_fixed_drop(X86Register::Rax);
-            assembler.reg_free_fixed_drop(X86Register::Rdi);
-        }
+    if proc_name.is_none() {
+        assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
+        assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
+        assembler.push_instr([
+            str_lit("    syscall"),
+            use_reg(RegisterType::Fixed(X86Register::Rax)),
+            use_reg(RegisterType::Fixed(X86Register::Rdi)),
+        ]);
+        assembler.reg_free_fixed_drop(X86Register::Rax);
+        assembler.reg_free_fixed_drop(X86Register::Rdi);
     }
 
     if opt_level >= OPT_STACK {
@@ -788,6 +785,18 @@ pub(crate) fn compile_program(
         writeln!(&mut out_file)?;
     }
 
+    writeln!(&mut out_file, "segment .bss")?;
+    writeln!(&mut out_file, "    __argc: resq {}", 1)?;
+    writeln!(&mut out_file, "    __argv: resq {}", 1)?;
+    writeln!(&mut out_file, "    __call_stack: resq {}", CALL_STACK_LEN)?;
+    writeln!(&mut out_file, "    __call_stack_end:")?;
+
+    for &id in assembler.used_allocs() {
+        let size = static_alloc_sizes[&id];
+        let name = interner.resolve_lexeme(id);
+        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
+    }
+
     writeln!(&mut out_file, "segment .rodata")?;
     for &id in assembler.used_strings() {
         let literal = interner.resolve_literal(id);
@@ -800,16 +809,6 @@ pub(crate) fn compile_program(
         }
 
         out_file.write_all(b"0\n")?;
-    }
-
-    writeln!(&mut out_file, "segment .bss")?;
-    writeln!(&mut out_file, "    __argc: resq {}", 1)?;
-    writeln!(&mut out_file, "    __argv: resq {}", 1)?;
-
-    for &id in assembler.used_allocs() {
-        let size = static_alloc_sizes[&id];
-        let name = interner.resolve_lexeme(id);
-        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }
 
     Ok(())

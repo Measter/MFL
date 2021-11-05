@@ -476,6 +476,21 @@ pub(super) fn compile_single_instruction(
             assembler.block_boundry();
         }
 
+        OpCode::CallProc(id) => {
+            let proc_name = interner.resolve_lexeme(id);
+
+            assembler.block_boundry();
+            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
+            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.block_boundry()
+        }
+        OpCode::Return => {
+            assembler.block_boundry();
+            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.push_instr([str_lit("    ret")]);
+        }
+
         OpCode::SysCall(a @ 0..=6) => {
             let regs = [
                 X86Register::Rax,
