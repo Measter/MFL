@@ -423,6 +423,12 @@ impl Assembler {
         self.register_id
     }
 
+    pub fn reset(&mut self) {
+        self.assembly.clear();
+        self.register_id = 0;
+        self.op_range = Default::default();
+    }
+
     pub fn assembly(&self) -> &[Assembly] {
         &self.assembly
     }

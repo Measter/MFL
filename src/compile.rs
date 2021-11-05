@@ -6,15 +6,17 @@ use lasso::Spur;
 
 use crate::{
     interners::Interners,
-    opcode::{Op, OpCode},
+    opcode::{OpCode, Procedure},
     source_file::SourceStorage,
-    Width, OPT_INSTR, OPT_STACK,
+    Program, Width, OPT_INSTR, OPT_STACK,
 };
 
 mod assembly;
 use assembly::*;
 mod optimizer_passes;
 use optimizer_passes::PASSES;
+
+use self::optimizer_passes::{str_lit, use_reg};
 
 #[derive(Debug)]
 struct RegisterAllocator {
@@ -50,96 +52,6 @@ struct OpRange {
     end: usize,
 }
 
-fn write_assembly(
-    out_file_path: &Path,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    ops: &[Op],
-    static_allocs: &HashMap<Spur, usize>,
-    assembler: Assembler,
-) -> Result<()> {
-    let mut cur_exe_dur =
-        std::env::current_exe().with_context(|| eyre!("Failed to get compiler exe path"))?;
-    cur_exe_dur.set_file_name("std_asm.asm");
-    let mut std_asm = File::open(&cur_exe_dur)
-        .with_context(|| eyre!("Failed to open {}", cur_exe_dur.display()))?;
-
-    let out_file = File::create(out_file_path)
-        .with_context(|| eyre!("Failed to create file: {}", out_file_path.display()))?;
-    let mut out_file = BufWriter::new(out_file);
-
-    writeln!(&mut out_file, "BITS 64")?;
-    writeln!(&mut out_file, "segment .text")?;
-    writeln!(&mut out_file, "global _start")?;
-
-    std::io::copy(&mut std_asm, &mut out_file).with_context(|| {
-        eyre!(
-            "Failed to copy std_asm.asm contents to {}",
-            out_file_path.display()
-        )
-    })?;
-
-    writeln!(&mut out_file, "_start:")?;
-    writeln!(&mut out_file, "    pop QWORD [__argc]")?;
-    writeln!(&mut out_file, "    mov QWORD [__argv], rsp")?;
-
-    let mut register_allocator = RegisterAllocator::new();
-    let mut register_map = HashMap::new();
-
-    let mut last_op_range = usize::MAX..usize::MAX; // Intentinally invalid.
-    for asm in assembler.assembly() {
-        if last_op_range != asm.op_range {
-            last_op_range = asm.op_range.clone();
-            for (op, ip) in ops[asm.op_range.clone()].iter().zip(asm.op_range.clone()) {
-                let location = source_store
-                    .location(op.token.location.file_id, op.token.location.source_start)?;
-                writeln!(
-                    &mut out_file,
-                    ";; IP{} -- {}:{}:{} -- {:?}",
-                    ip,
-                    source_store.name(op.token.location.file_id)?,
-                    location.line_number,
-                    location.column_number,
-                    op.code,
-                )?;
-            }
-        }
-
-        asm.asm
-            .render(&mut out_file, &mut register_allocator, &mut register_map)?;
-    }
-
-    writeln!(&mut out_file, "    mov rax, 60")?;
-    writeln!(&mut out_file, "    mov rdi, 0")?;
-    writeln!(&mut out_file, "    syscall")?;
-
-    writeln!(&mut out_file, "segment .rodata")?;
-    for &id in assembler.used_strings() {
-        let literal = interner.resolve_literal(id);
-        let id = id.into_inner().get();
-        writeln!(&mut out_file, "    ; {:?}", literal)?;
-        write!(&mut out_file, "    __string_literal{}: db ", id)?;
-
-        for b in literal.as_bytes() {
-            write!(&mut out_file, "{},", b)?;
-        }
-
-        out_file.write_all(b"0\n")?;
-    }
-
-    writeln!(&mut out_file, "segment .bss")?;
-    writeln!(&mut out_file, "    __argc: resq {}", 1)?;
-    writeln!(&mut out_file, "    __argv: resq {}", 1)?;
-
-    for &id in assembler.used_allocs() {
-        let size = static_allocs[&id];
-        let name = interner.resolve_lexeme(id);
-        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
-    }
-
-    Ok(())
-}
-
 impl OpCode {
     fn compile_arithmetic_op(self) -> &'static str {
         match self {
@@ -167,25 +79,27 @@ impl OpCode {
     }
 }
 
-fn build_assembly(mut program: &[Op], interner: &Interners, opt_level: u8) -> Assembler {
-    let mut assembler = Assembler::default();
-
+fn build_assembly(
+    program: &Procedure,
+    interner: &Interners,
+    opt_level: u8,
+    assembler: &mut Assembler,
+) {
+    let mut program = &*program.body;
     let mut ip = 0;
     while !program.is_empty() {
         let len_compiled = if opt_level >= OPT_INSTR {
             PASSES
                 .iter()
-                .filter_map(|pass| pass(program, ip, &mut assembler, interner))
+                .filter_map(|pass| pass(program, ip, assembler, interner))
                 .next()
         } else {
-            optimizer_passes::compile_single_instruction(program, ip, &mut assembler, interner)
+            optimizer_passes::compile_single_instruction(program, ip, assembler, interner)
         }
         .expect("ICE: Failed to compile single instruction");
         program = &program[len_compiled..];
         ip += len_compiled;
     }
-
-    assembler
 }
 
 fn merge_dyn_to_dyn_registers(
@@ -738,28 +652,165 @@ fn optimize_allocation(program: &mut [Assembly]) {
     }
 }
 
+fn assemble_procedure(
+    assembler: &mut Assembler,
+    proc: &Procedure,
+    proc_name: Option<Spur>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    out_file: &mut BufWriter<File>,
+    opt_level: u8,
+) -> Result<()> {
+    match proc_name {
+        Some(id) => {
+            let name = interner.resolve_lexeme(id);
+            println!("Compiling {}...", name);
+            assembler.push_instr([str_lit(format!("__proc_{}:", name))]);
+        }
+        None => {
+            println!("Compiling main...");
+            assembler.push_instr([str_lit("_start:")]);
+            assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
+            assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
+        }
+    }
+
+    build_assembly(proc, interner, opt_level, assembler);
+
+    match proc_name {
+        Some(_) => {
+            assembler.push_instr([str_lit("    ret")]);
+        }
+        None => {
+            assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
+            assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
+            assembler.push_instr([
+                str_lit("    syscall"),
+                use_reg(RegisterType::Fixed(X86Register::Rax)),
+                use_reg(RegisterType::Fixed(X86Register::Rdi)),
+            ]);
+            assembler.reg_free_fixed_drop(X86Register::Rax);
+            assembler.reg_free_fixed_drop(X86Register::Rdi);
+        }
+    }
+
+    if opt_level >= OPT_STACK {
+        optimize_allocation(assembler.assembly_mut());
+    }
+
+    let mut register_allocator = RegisterAllocator::new();
+    let mut register_map = HashMap::new();
+
+    let mut last_op_range = usize::MAX..usize::MAX; // Intentinally invalid.
+    for asm in assembler.assembly() {
+        if last_op_range != asm.op_range {
+            last_op_range = asm.op_range.clone();
+            for (op, ip) in proc.body[asm.op_range.clone()]
+                .iter()
+                .zip(asm.op_range.clone())
+            {
+                let location = source_store
+                    .location(op.token.location.file_id, op.token.location.source_start)?;
+                writeln!(
+                    out_file,
+                    ";; IP{} -- {}:{}:{} -- {:?}",
+                    ip,
+                    source_store.name(op.token.location.file_id)?,
+                    location.line_number,
+                    location.column_number,
+                    op.code,
+                )?;
+            }
+        }
+
+        asm.asm
+            .render(out_file, &mut register_allocator, &mut register_map)?;
+    }
+
+    Ok(())
+}
+
 pub(crate) fn compile_program(
-    program: &[Op],
-    static_allocs: &HashMap<Spur, usize>,
+    program: &Program,
+    static_alloc_sizes: &HashMap<Spur, usize>,
     source_store: &SourceStorage,
     interner: &Interners,
     out_file_path: &Path,
     opt_level: u8,
 ) -> Result<()> {
-    let mut assembly = build_assembly(program, interner, opt_level);
+    let mut cur_exe_dur =
+        std::env::current_exe().with_context(|| eyre!("Failed to get compiler exe path"))?;
+    cur_exe_dur.set_file_name("std_asm.asm");
+    let mut std_asm = File::open(&cur_exe_dur)
+        .with_context(|| eyre!("Failed to open {}", cur_exe_dur.display()))?;
 
-    if opt_level >= OPT_STACK {
-        optimize_allocation(assembly.assembly_mut());
-    }
+    let out_file = File::create(out_file_path)
+        .with_context(|| eyre!("Failed to create file: {}", out_file_path.display()))?;
+    let mut out_file = BufWriter::new(out_file);
 
-    write_assembly(
-        out_file_path,
+    writeln!(&mut out_file, "BITS 64")?;
+    writeln!(&mut out_file, "segment .text")?;
+    writeln!(&mut out_file, "global _start")?;
+
+    std::io::copy(&mut std_asm, &mut out_file).with_context(|| {
+        eyre!(
+            "Failed to copy std_asm.asm contents to {}",
+            out_file_path.display()
+        )
+    })?;
+
+    let mut assembler = Assembler::default();
+
+    assemble_procedure(
+        &mut assembler,
+        &program.main,
+        None,
         source_store,
         interner,
-        program,
-        static_allocs,
-        assembly,
+        &mut out_file,
+        opt_level,
     )?;
+
+    writeln!(&mut out_file)?;
+
+    for (id, proc) in &program.procedures {
+        assembler.reset();
+        assemble_procedure(
+            &mut assembler,
+            proc,
+            Some(*id),
+            source_store,
+            interner,
+            &mut out_file,
+            opt_level,
+        )?;
+
+        writeln!(&mut out_file)?;
+    }
+
+    writeln!(&mut out_file, "segment .rodata")?;
+    for &id in assembler.used_strings() {
+        let literal = interner.resolve_literal(id);
+        let id = id.into_inner().get();
+        writeln!(out_file, "    ; {:?}", literal)?;
+        write!(out_file, "    __string_literal{}: db ", id)?;
+
+        for b in literal.as_bytes() {
+            write!(out_file, "{},", b)?;
+        }
+
+        out_file.write_all(b"0\n")?;
+    }
+
+    writeln!(&mut out_file, "segment .bss")?;
+    writeln!(&mut out_file, "    __argc: resq {}", 1)?;
+    writeln!(&mut out_file, "    __argv: resq {}", 1)?;
+
+    for &id in assembler.used_allocs() {
+        let size = static_alloc_sizes[&id];
+        let name = interner.resolve_lexeme(id);
+        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
+    }
 
     Ok(())
 }

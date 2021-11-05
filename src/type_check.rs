@@ -7,14 +7,13 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{
     interners::Interners,
-    lexer::Token,
     n_ops::PopN,
-    opcode::{Op, OpCode},
+    opcode::{Op, OpCode, Procedure},
     source_file::{FileId, SourceLocation},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PorthTypeKind {
+pub enum PorthTypeKind {
     Int,
     Ptr,
     Bool,
@@ -24,12 +23,15 @@ enum PorthTypeKind {
 #[derive(Debug, Clone, Copy, Eq)]
 struct PorthType {
     kind: PorthTypeKind,
-    location: SourceLocation,
+    location: Option<SourceLocation>,
 }
 
 impl PorthType {
-    fn new(kind: PorthTypeKind, location: SourceLocation) -> Self {
-        Self { kind, location }
+    fn new(kind: PorthTypeKind, location: impl Into<Option<SourceLocation>>) -> Self {
+        Self {
+            kind,
+            location: location.into(),
+        }
     }
 }
 
@@ -82,10 +84,12 @@ fn generate_type_mismatch(
     }
 
     for ty in types {
-        labels.push(
-            Label::secondary(ty.location.file_id, ty.location.range())
-                .with_message(format!("{}", ty.kind)),
-        )
+        if let Some(location) = ty.location {
+            labels.push(
+                Label::secondary(location.file_id, location.range())
+                    .with_message(format!("{}", ty.kind)),
+            )
+        }
     }
 
     let diag = Diagnostic::error()
@@ -236,41 +240,13 @@ macro_rules! kind_pat {
 }
 
 fn final_stack_check(
-    ops: &[Op],
-    const_context: Option<Token>,
+    procedure: &Procedure,
     stack: &[PorthType],
     diags: &mut Vec<Diagnostic<FileId>>,
 ) {
-    if let Some(context_token) = const_context {
-        match &*stack {
-            kind_pat!([PorthTypeKind::Int]) => {} // Success!
-
-            [t] => {
-                diags.push(
-                    Diagnostic::error()
-                        .with_message(format!("const requires an integer, found {:?}", t.kind))
-                        .with_labels(vec![Label::primary(
-                            context_token.location.file_id,
-                            context_token.location.range(),
-                        )]),
-                );
-            }
-            [..] => {
-                diags.push(
-                    Diagnostic::error()
-                        .with_message(format!(
-                            "const requires 1 item left on stack, found {}",
-                            stack.len()
-                        ))
-                        .with_labels(vec![Label::primary(
-                            context_token.location.file_id,
-                            context_token.location.range(),
-                        )]),
-                );
-            }
-        }
-    } else if !stack.is_empty() {
-        let label = ops
+    let make_labels = || {
+        procedure
+            .body
             .last()
             .map(|op| {
                 let mut labels = vec![Label::primary(
@@ -287,13 +263,39 @@ fn final_stack_check(
 
                 labels
             })
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_else(|| {
+                vec![Label::primary(
+                    procedure.name.location.file_id,
+                    procedure.name.location.range(),
+                )]
+            })
+    };
 
-        diags.push(
-            Diagnostic::error()
-                .with_message(format!("{} elements left on the stack", stack.len()))
-                .with_labels(label),
-        );
+    if stack.len() != procedure.expected_exit_stack.len() {
+        let diag = Diagnostic::error()
+            .with_message(format!(
+                "expected {} elements on stack, found {}",
+                procedure.expected_exit_stack.len(),
+                stack.len()
+            ))
+            .with_labels(make_labels());
+
+        diags.push(diag);
+
+        return;
+    }
+
+    let stack_types = stack.iter().map(|t| t.kind);
+    if stack_types.ne(procedure.expected_exit_stack.iter().copied()) {
+        let diag = Diagnostic::error()
+            .with_message(format!(
+                "expected {} elements on stack, found {}",
+                procedure.expected_exit_stack.len(),
+                stack.len()
+            ))
+            .with_labels(make_labels());
+
+        diags.push(diag);
     }
 }
 struct BlockStackState {
@@ -303,15 +305,18 @@ struct BlockStackState {
 }
 
 pub fn type_check(
-    ops: &[Op],
+    procedure: &Procedure,
     interner: &Interners,
-    const_context: Option<Token>,
 ) -> Result<(), Vec<Diagnostic<FileId>>> {
-    let mut stack: Vec<PorthType> = Vec::new();
+    let mut stack: Vec<PorthType> = procedure
+        .expected_entry_stack
+        .iter()
+        .map(|&ty| PorthType::new(ty, None))
+        .collect();
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
     let mut diags = Vec::new();
 
-    for op in ops {
+    for op in &procedure.body {
         match op.code {
             OpCode::Add => {
                 let res = stack_check!(
@@ -754,7 +759,7 @@ pub fn type_check(
         }
     }
 
-    final_stack_check(ops, const_context, &stack, &mut diags);
+    final_stack_check(procedure, &stack, &mut diags);
 
     diags.is_empty().then(|| ()).ok_or(diags)
 }

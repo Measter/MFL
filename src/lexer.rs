@@ -47,6 +47,7 @@ pub enum TokenKind {
     NotEqual,
     Plus,
     Print,
+    Proc,
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -100,7 +101,11 @@ impl TokenKind {
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
-            TokenKind::If | TokenKind::While | TokenKind::Macro | TokenKind::Memory => true,
+            TokenKind::If
+            | TokenKind::While
+            | TokenKind::Macro
+            | TokenKind::Memory
+            | TokenKind::Proc => true,
         }
     }
 
@@ -381,6 +386,7 @@ impl<'source> Scanner<'source> {
                     "or" => TokenKind::BitOr,
                     "over" => TokenKind::Dup(1),
                     "print" => TokenKind::Print,
+                    "proc" => TokenKind::Proc,
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,

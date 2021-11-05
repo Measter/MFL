@@ -33,10 +33,10 @@ fn dyn_sized_reg(reg_id: usize, width: Width) -> InstructionPart {
         width,
     }
 }
-fn use_reg(reg: RegisterType) -> InstructionPart {
+pub(super) fn use_reg(reg: RegisterType) -> InstructionPart {
     InstructionPart::UseRegister { reg }
 }
-fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
+pub(super) fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
     InstructionPart::Literal(lit.into())
 }
 

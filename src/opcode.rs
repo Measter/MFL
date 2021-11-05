@@ -8,6 +8,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation, SourceStorage},
+    type_check::PorthTypeKind,
     Width,
 };
 
@@ -23,6 +24,7 @@ pub enum OpCode {
     BitAnd,
     BitNot,
     BitOr,
+    CallProc(Spur),
     CastBool,
     CastInt,
     CastPtr,
@@ -116,6 +118,8 @@ impl OpCode {
             | OpCode::Swap
             | OpCode::While { .. } => 0,
 
+            OpCode::CallProc(_) => todo!(),
+
             OpCode::SysCall(a) => a + 1,
         }
     }
@@ -126,6 +130,7 @@ impl OpCode {
             | OpCode::BitAnd
             | OpCode::BitNot
             | OpCode::BitOr
+            | OpCode::CallProc(_)
             | OpCode::CastBool
             | OpCode::CastInt
             | OpCode::CastPtr
@@ -181,6 +186,7 @@ impl OpCode {
             ArgC
             | ArgV
             | BitNot
+            | CallProc(_)
             | CastBool
             | CastInt
             | CastPtr
@@ -224,6 +230,7 @@ impl OpCode {
             | BitAnd
             | BitNot
             | BitOr
+            | CallProc(_)
             | CastBool
             | CastInt
             | CastPtr
@@ -280,6 +287,7 @@ impl OpCode {
             ArgC
             | ArgV
             | BitNot
+            | CallProc(_)
             | CastBool
             | CastInt
             | CastPtr
@@ -320,6 +328,13 @@ impl OpCode {
             _ => panic!("expected OpCode::Memory"),
         }
     }
+}
+
+pub struct Procedure {
+    pub name: Token,
+    pub body: Vec<Op>,
+    pub expected_exit_stack: Vec<PorthTypeKind>,
+    pub expected_entry_stack: Vec<PorthTypeKind>,
 }
 
 #[derive(Debug, Clone)]
@@ -375,13 +390,14 @@ fn expect_token<'a>(
     }
 }
 
-fn parse_macro_or_alloc<'a>(
+fn parse_sub_block<'a>(
     token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, Procedure>,
+    procedures: &mut HashMap<Spur, Procedure>,
     include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
     let (ident_idx, ident_token) = match expect_token(
@@ -403,6 +419,17 @@ fn parse_macro_or_alloc<'a>(
     // We need to keep track of whether we're in an if or while block, because they
     // should be usable inside a macro block.
     for (idx, token) in token_iter {
+        if keyword.kind == TokenKind::Proc && token.kind == TokenKind::Proc {
+            let diag = Diagnostic::error()
+                .with_message("cannot define a procedure inside another procedure")
+                .with_labels(vec![Label::primary(
+                    token.location.file_id,
+                    token.location.range(),
+                )]);
+
+            return Err(vec![diag]);
+        }
+
         if token.kind.new_block() {
             block_depth += 1;
         } else if token.kind.end_block() {
@@ -429,7 +456,14 @@ fn parse_macro_or_alloc<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(body_tokens, interner, macros, static_allocs, include_list)?;
+    let body_ops = parse_token(
+        body_tokens,
+        interner,
+        macros,
+        static_allocs,
+        procedures,
+        include_list,
+    )?;
 
     Ok((ident_token, body_ops))
 }
@@ -438,7 +472,8 @@ pub fn parse_token(
     tokens: &[Token],
     interner: &Interners,
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, Procedure>,
+    procedures: &mut HashMap<Spur, Procedure>,
     include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
@@ -478,13 +513,14 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Macro => {
-                let (name, body) = match parse_macro_or_alloc(
+                let (name, body) = match parse_sub_block(
                     &mut token_iter,
                     tokens,
                     *token,
                     interner,
                     macros,
                     static_allocs,
+                    procedures,
                     include_list,
                 ) {
                     Ok(a) => a,
@@ -512,13 +548,14 @@ pub fn parse_token(
                 continue;
             }
             TokenKind::Memory => {
-                let (name, body) = match parse_macro_or_alloc(
+                let (name, body) = match parse_sub_block(
                     &mut token_iter,
                     tokens,
                     *token,
                     interner,
                     macros,
                     static_allocs,
+                    procedures,
                     include_list,
                 ) {
                     Ok(a) => a,
@@ -528,15 +565,22 @@ pub fn parse_token(
                     }
                 };
 
-                if let Some((prev_name, _)) = static_allocs.insert(name.lexeme, (name, body)) {
+                let new_alloc = Procedure {
+                    name,
+                    body,
+                    expected_exit_stack: vec![PorthTypeKind::Int],
+                    expected_entry_stack: Vec::new(),
+                };
+
+                if let Some(prev_def) = static_allocs.insert(name.lexeme, new_alloc) {
                     let diag = Diagnostic::error()
                         .with_message("multiple allocations defined with the same name")
                         .with_labels(vec![
                             Label::primary(name.location.file_id, name.location.range())
                                 .with_message("defined here"),
                             Label::secondary(
-                                prev_name.location.file_id,
-                                prev_name.location.range(),
+                                prev_def.name.location.file_id,
+                                prev_def.name.location.range(),
                             )
                             .with_message("also defined here"),
                         ]);
@@ -567,6 +611,48 @@ pub fn parse_token(
 
                 include_list.push((path_token, literal));
                 OpCode::Include(literal)
+            }
+            TokenKind::Proc => {
+                let (name, body) = match parse_sub_block(
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    interner,
+                    macros,
+                    static_allocs,
+                    procedures,
+                    include_list,
+                ) {
+                    Ok(a) => a,
+                    Err(mut e) => {
+                        diags.append(&mut e);
+                        continue;
+                    }
+                };
+
+                let new_proc = Procedure {
+                    name,
+                    body,
+                    expected_entry_stack: Vec::new(),
+                    expected_exit_stack: Vec::new(),
+                };
+
+                if let Some(prev_def) = procedures.insert(name.lexeme, new_proc) {
+                    let diag = Diagnostic::error()
+                        .with_message("procedure defined multiple times")
+                        .with_labels(vec![
+                            Label::primary(name.location.file_id, name.location.range())
+                                .with_message("defined here"),
+                            Label::secondary(
+                                prev_def.name.location.file_id,
+                                prev_def.name.location.range(),
+                            )
+                            .with_message("also defined here"),
+                        ]);
+                    diags.push(diag);
+                }
+
+                continue;
             }
 
             TokenKind::If => OpCode::If,
@@ -894,9 +980,10 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
     dst_vec
 }
 
-pub fn expand_macros_and_allocs(
+pub fn expand_sub_blocks(
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
     static_allocs: &HashSet<Spur>,
+    procudure_names: &HashSet<Spur>,
     ops: &[Op],
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
@@ -933,6 +1020,11 @@ pub fn expand_macros_and_allocs(
                         expansions: op.expansions,
                     });
                 }
+                OpCode::Ident(id) if procudure_names.contains(&id) => dst_vec.push(Op {
+                    code: OpCode::CallProc(id),
+                    token: op.token,
+                    expansions: op.expansions,
+                }),
                 OpCode::Ident(_) => {
                     let diag = Diagnostic::error()
                         .with_message("unknown macro or memory allocation")

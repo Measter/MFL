@@ -6,9 +6,9 @@ use lasso::Spur;
 use crate::{
     interners::Interners,
     n_ops::PopN,
-    opcode::{Op, OpCode},
+    opcode::{Op, OpCode, Procedure},
     source_file::FileId,
-    Width,
+    Program, Width,
 };
 
 impl Width {
@@ -130,7 +130,8 @@ fn build_static_allocations(
 }
 
 pub(crate) fn simulate_execute_program(
-    program: &[Op],
+    program: &Program,
+    main_proc: &Procedure,
     static_allocs: &HashMap<Spur, usize>,
     interner: &Interners,
     program_args: &[String],
@@ -144,7 +145,7 @@ pub(crate) fn simulate_execute_program(
     let literal_addresses = allocate_string_literals(interner, &mut memory);
     let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
 
-    while let Some(op) = program.get(ip) {
+    while let Some(op) = main_proc.body.get(ip) {
         // eprintln!("{:?}", op.code);
         if is_const && !op.code.is_const() {
             return Err(generate_error(
@@ -319,6 +320,8 @@ pub(crate) fn simulate_execute_program(
             OpCode::ArgV => stack.push(argv_ptr),
 
             OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
+
+            OpCode::CallProc(_) => todo!(),
 
             OpCode::SysCall(3) => {
                 let [arg3, arg2, arg1, syscall_id] = stack.popn().unwrap();

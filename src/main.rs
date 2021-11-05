@@ -27,9 +27,8 @@ mod simulate;
 mod source_file;
 mod type_check;
 
-use opcode::Op;
-
-use crate::simulate::simulate_execute_program;
+use opcode::{Op, Procedure};
+use simulate::simulate_execute_program;
 
 const OPT_OPCODE: u8 = 1;
 const OPT_INSTR: u8 = 2;
@@ -80,8 +79,9 @@ struct Args {
 }
 
 struct Program {
-    ops: Vec<Op>,
-    static_allocs: HashMap<Spur, (Token, Vec<Op>)>,
+    main: Procedure,
+    static_allocs: HashMap<Spur, Procedure>,
+    procedures: HashMap<Spur, Procedure>,
 }
 
 type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
@@ -106,7 +106,8 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
 fn load_include(
     source_store: &mut SourceStorage,
     macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, (Token, Vec<Op>)>,
+    static_allocs: &mut HashMap<Spur, Procedure>,
+    procedures: &mut HashMap<Spur, Procedure>,
     include_list: &mut Vec<(Token, Spur)>,
     included_files: &mut HashMap<Spur, Vec<Op>>,
     interner: &mut Interners,
@@ -156,7 +157,14 @@ fn load_include(
         Err(diag) => return Err(vec![diag]),
     };
 
-    let ops = match opcode::parse_token(&tokens, interner, macros, static_allocs, include_list) {
+    let ops = match opcode::parse_token(
+        &tokens,
+        interner,
+        macros,
+        static_allocs,
+        procedures,
+        include_list,
+    ) {
         Ok(ops) => ops,
         Err(diags) => return Err(diags),
     };
@@ -167,26 +175,27 @@ fn load_include(
 }
 
 fn process_ops(
-    mut program: Vec<Op>,
+    procedure: &mut Procedure,
     interner: &mut Interners,
     included_files: &HashMap<Spur, Vec<Op>>,
     macros: &HashMap<Spur, (Token, Vec<Op>)>,
     static_alloc_names: &HashSet<Spur>,
+    procedures: &HashSet<Spur>,
     source_store: &SourceStorage,
     opt_level: u8,
-    const_context: Option<Token>,
-) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
-    program = opcode::expand_includes(included_files, &program);
-    program = opcode::expand_macros_and_allocs(macros, static_alloc_names, &program)?;
+) -> Result<(), Vec<Diagnostic<FileId>>> {
+    procedure.body = opcode::expand_includes(included_files, &procedure.body);
+    procedure.body =
+        opcode::expand_sub_blocks(macros, static_alloc_names, procedures, &procedure.body)?;
 
     if opt_level >= OPT_OPCODE {
-        program = opcode::optimize(&program, interner, source_store);
+        procedure.body = opcode::optimize(&procedure.body, interner, source_store);
     }
 
-    opcode::generate_jump_labels(&mut program)?;
-    type_check::type_check(&program, interner, const_context)?;
+    opcode::generate_jump_labels(&mut procedure.body)?;
+    type_check::type_check(procedure, interner)?;
 
-    Ok(program)
+    Ok(())
 }
 
 fn load_program(
@@ -208,13 +217,15 @@ fn load_program(
 
     let mut macros = HashMap::new();
     let mut static_allocs = HashMap::new();
+    let mut procedures = HashMap::new();
     let mut include_list = Vec::new();
 
-    let mut program = match opcode::parse_token(
+    let program = match opcode::parse_token(
         &tokens,
         interner,
         &mut macros,
         &mut static_allocs,
+        &mut procedures,
         &mut include_list,
     ) {
         Ok(ops) => ops,
@@ -228,6 +239,7 @@ fn load_program(
             source_store,
             &mut macros,
             &mut static_allocs,
+            &mut procedures,
             &mut include_list,
             &mut included_files,
             interner,
@@ -239,70 +251,69 @@ fn load_program(
         }
     }
 
-    // We don't need the entry allocation data just for the expansion, so we'll just use a
-    // HashSet here.
+    // We don't need the entire allocation or procedure data just for the expansion, so we'll just use
+    // HashSets here.
     let static_alloc_names: HashSet<_> = static_allocs.keys().copied().collect();
+    let procedure_names: HashSet<_> = procedures.keys().copied().collect();
+    let mut all_proc_diags = Vec::new();
 
-    program = match process_ops(
-        program,
-        interner,
-        &included_files,
-        &macros,
-        &static_alloc_names,
-        source_store,
-        opt_level,
-        None,
-    ) {
-        Ok(program) => program,
-        Err(diags) => return Ok(Err(diags)),
+    let mut main_proc = Procedure {
+        name: tokens[0],
+        body: program,
+        expected_entry_stack: Vec::new(),
+        expected_exit_stack: Vec::new(),
     };
 
-    // We also need to expand, generate labels and type check the memory allocation bodies.
-    let mut all_alloc_diags = Vec::new();
-    for (token, body) in static_allocs.values_mut() {
-        match process_ops(
-            std::mem::take(body),
+    // We're applying the same process to the global procedure, defined procedures, and memory defs,
+    // so do them all in one loop instead of separately.
+    let to_check = std::iter::once(&mut main_proc)
+        .chain(static_allocs.values_mut())
+        .chain(procedures.values_mut());
+
+    for proc in to_check {
+        if let Err(mut diags) = process_ops(
+            proc,
             interner,
             &included_files,
             &macros,
             &static_alloc_names,
+            &procedure_names,
             source_store,
-            0,
-            Some(*token),
+            opt_level,
         ) {
-            Ok(program) => *body = program,
-            Err(mut diags) => {
-                all_alloc_diags.append(&mut diags);
-            }
+            all_proc_diags.append(&mut diags);
         };
     }
-    if !all_alloc_diags.is_empty() {
-        return Ok(Err(all_alloc_diags));
+
+    if !all_proc_diags.is_empty() {
+        return Ok(Err(all_proc_diags));
     }
 
     let program = Program {
-        ops: program,
+        main: main_proc,
         static_allocs,
+        procedures,
     };
 
     Ok(Ok(program))
 }
 
 fn evaluate_allocation_sizes(
-    static_allocs: &HashMap<Spur, (Token, Vec<Op>)>,
+    program: &Program,
     interner: &Interners,
 ) -> Result<HashMap<Spur, usize>, Vec<Diagnostic<FileId>>> {
     let mut alloc_sizes = HashMap::new();
     let mut diags = Vec::new();
 
-    for (&id, (_, body)) in static_allocs {
-        let mut stack = match simulate_execute_program(body, &HashMap::new(), interner, &[], true) {
-            Err(diag) => {
-                diags.push(diag);
-                continue;
-            }
-            Ok(stack) => stack,
-        };
+    for (&id, proc) in &program.static_allocs {
+        let mut stack =
+            match simulate_execute_program(program, proc, &HashMap::new(), interner, &[], true) {
+                Err(diag) => {
+                    diags.push(diag);
+                    continue;
+                }
+                Ok(stack) => stack,
+            };
 
         // The type checker enforces a single stack item here.
         alloc_sizes.insert(id, stack.pop().unwrap() as usize);
@@ -342,7 +353,7 @@ fn run_simulate(
         }
     };
 
-    let alloc_sizes = match evaluate_allocation_sizes(&program.static_allocs, &interner) {
+    let alloc_sizes = match evaluate_allocation_sizes(&program, &interner) {
         Ok(sizes) => sizes,
         Err(diags) => {
             for diag in diags {
@@ -353,7 +364,8 @@ fn run_simulate(
     };
 
     if let Err(diag) = simulate::simulate_execute_program(
-        &program.ops,
+        &program,
+        &program.main,
         &alloc_sizes,
         &interner,
         &program_args,
@@ -398,7 +410,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 
     println!("Evaluating static allocations...");
 
-    let alloc_sizes = match evaluate_allocation_sizes(&program.static_allocs, &interner) {
+    let alloc_sizes = match evaluate_allocation_sizes(&program, &interner) {
         Ok(sizes) => sizes,
         Err(diags) => {
             for diag in diags {
@@ -410,7 +422,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 
     println!("Compiling... to {}", output_asm.display());
     compile::compile_program(
-        &program.ops,
+        &program,
         &alloc_sizes,
         &source_storage,
         &interner,
