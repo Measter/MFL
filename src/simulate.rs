@@ -135,7 +135,6 @@ pub(crate) fn simulate_execute_program(
     static_allocs: &HashMap<Spur, usize>,
     interner: &Interners,
     program_args: &[String],
-    is_const: bool,
 ) -> Result<Vec<u64>, Diagnostic<FileId>> {
     let mut ip = 0;
     let mut stack: Vec<u64> = Vec::new();
@@ -147,7 +146,7 @@ pub(crate) fn simulate_execute_program(
 
     while let Some(op) = main_proc.body.get(ip) {
         // eprintln!("{:?}", op.code);
-        if is_const && !op.code.is_const() {
+        if main_proc.is_const && !op.code.is_const() {
             return Err(generate_error(
                 "Operation not supported during const evaluation",
                 op,

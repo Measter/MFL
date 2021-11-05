@@ -262,6 +262,7 @@ fn load_program(
         body: program,
         expected_entry_stack: Vec::new(),
         expected_exit_stack: Vec::new(),
+        is_const: false,
     };
 
     // We're applying the same process to the global procedure, defined procedures, and memory defs,
@@ -307,7 +308,7 @@ fn evaluate_allocation_sizes(
 
     for (&id, proc) in &program.static_allocs {
         let mut stack =
-            match simulate_execute_program(program, proc, &HashMap::new(), interner, &[], true) {
+            match simulate_execute_program(program, proc, &HashMap::new(), interner, &[]) {
                 Err(diag) => {
                     diags.push(diag);
                     continue;
@@ -369,7 +370,6 @@ fn run_simulate(
         &alloc_sizes,
         &interner,
         &program_args,
-        false,
     ) {
         codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
     }

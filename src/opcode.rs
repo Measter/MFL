@@ -335,6 +335,7 @@ pub struct Procedure {
     pub body: Vec<Op>,
     pub expected_exit_stack: Vec<PorthTypeKind>,
     pub expected_entry_stack: Vec<PorthTypeKind>,
+    pub is_const: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -570,6 +571,7 @@ pub fn parse_token(
                     body,
                     expected_exit_stack: vec![PorthTypeKind::Int],
                     expected_entry_stack: Vec::new(),
+                    is_const: true,
                 };
 
                 if let Some(prev_def) = static_allocs.insert(name.lexeme, new_alloc) {
@@ -635,6 +637,7 @@ pub fn parse_token(
                     body,
                     expected_entry_stack: Vec::new(),
                     expected_exit_stack: Vec::new(),
+                    is_const: false,
                 };
 
                 if let Some(prev_def) = procedures.insert(name.lexeme, new_proc) {
