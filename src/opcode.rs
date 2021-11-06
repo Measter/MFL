@@ -131,7 +131,6 @@ impl OpCode {
             | OpCode::BitAnd
             | OpCode::BitNot
             | OpCode::BitOr
-            | OpCode::CallProc(_)
             | OpCode::CastBool
             | OpCode::CastInt
             | OpCode::CastPtr
@@ -170,6 +169,7 @@ impl OpCode {
 
             OpCode::ArgC
             | OpCode::ArgV
+            | OpCode::CallProc(_)
             | OpCode::Load(_)
             | OpCode::Memory { .. }
             | OpCode::Print
