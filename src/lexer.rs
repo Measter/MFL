@@ -140,7 +140,7 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@') || c.is_whitespace()
+    matches!(c, '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@' | '/') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
