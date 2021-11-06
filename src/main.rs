@@ -30,6 +30,8 @@ mod type_check;
 use opcode::{Op, Procedure};
 use simulate::simulate_execute_program;
 
+use crate::opcode::OpCode;
+
 const OPT_OPCODE: u8 = 1;
 const OPT_INSTR: u8 = 2;
 const OPT_STACK: u8 = 3;
@@ -80,11 +82,12 @@ struct Args {
 
 type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
 
-struct Program {
+pub struct Program {
     main: Procedure,
-    macros: HashMap<Spur, (Token, Vec<Op>)>,
+    macros: HashMap<Spur, Procedure>,
     static_allocs: HashMap<Spur, Procedure>,
     procedures: HashMap<Spur, Procedure>,
+    const_values: HashMap<Spur, Procedure>,
     included_files: HashMap<Spur, Vec<Op>>,
     include_queue: Vec<(Token, Spur)>,
 }
@@ -140,14 +143,7 @@ impl Program {
             Err(diag) => return Err(vec![diag]),
         };
 
-        let ops = match opcode::parse_token(
-            &tokens,
-            interner,
-            &mut self.macros,
-            &mut self.static_allocs,
-            &mut self.procedures,
-            &mut self.include_queue,
-        ) {
+        let ops = match opcode::parse_token(self, &tokens, interner) {
             Ok(ops) => ops,
             Err(diags) => return Err(diags),
         };
@@ -180,27 +176,32 @@ impl Program {
         procedure: &mut Procedure,
         interner: &mut Interners,
         source_store: &SourceStorage,
-        macros: &HashMap<Spur, (Token, Vec<Op>)>,
+        macros: &HashMap<Spur, Procedure>,
+        const_values: &HashMap<Spur, Procedure>,
         included_files: &HashMap<Spur, Vec<Op>>,
         static_alloc_names: &HashSet<Spur>,
         procedure_names: &HashSet<Spur>,
         opt_level: u8,
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+    ) -> Result<bool, Vec<Diagnostic<FileId>>> {
         procedure.body = opcode::expand_includes(included_files, &procedure.body);
-        procedure.body = opcode::expand_sub_blocks(
+        let (new_body, failed_const_eval) = opcode::expand_sub_blocks(
             macros,
+            const_values,
             static_alloc_names,
             procedure_names,
             &procedure.body,
         )?;
+        procedure.body = new_body;
 
-        if opt_level >= OPT_OPCODE {
-            procedure.body = opcode::optimize(&procedure.body, interner, source_store);
+        if !failed_const_eval {
+            if opt_level >= OPT_OPCODE {
+                procedure.body = opcode::optimize(&procedure.body, interner, source_store);
+            }
+
+            opcode::generate_jump_labels(&mut procedure.body)?;
         }
 
-        opcode::generate_jump_labels(&mut procedure.body)?;
-
-        Ok(())
+        Ok(failed_const_eval)
     }
 
     fn post_process(
@@ -227,6 +228,7 @@ impl Program {
                 interner,
                 source_store,
                 &self.macros,
+                &self.const_values,
                 &self.included_files,
                 &static_alloc_names,
                 &procedure_names,
@@ -234,6 +236,105 @@ impl Program {
             ) {
                 all_diags.append(&mut diags);
             };
+        }
+
+        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+    }
+
+    fn post_process_consts(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &mut SourceStorage,
+        opt_level: u8,
+    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+        let mut all_diags = Vec::new();
+
+        let mut const_names: Vec<_> = self.const_values.keys().copied().collect();
+        let mut next_run_names = Vec::new();
+        let static_alloc_names: HashSet<_> = self.static_allocs.keys().copied().collect();
+        let procedure_names: HashSet<_> = self.procedures.keys().copied().collect();
+
+        let mut num_loops = 0;
+        const MAX_EXPANSIONS: usize = 128;
+        let mut last_changed_consts: Vec<Token> = Vec::new();
+
+        loop {
+            for const_id in const_names.drain(..) {
+                let mut procedure = self.const_values.remove(&const_id).unwrap();
+
+                match Program::post_process_procedure(
+                    &mut procedure,
+                    interner,
+                    source_store,
+                    &self.macros,
+                    &self.const_values,
+                    &self.included_files,
+                    &static_alloc_names,
+                    &procedure_names,
+                    opt_level,
+                ) {
+                    // We failed expansion. This would be because it needed the value of another,
+                    // as yet un-evaluated constant.
+                    Ok(true) => {
+                        last_changed_consts.push(procedure.name);
+                        self.const_values.insert(const_id, procedure);
+                        next_run_names.push(const_id);
+                    }
+                    // We succeeded in fully expanding the constant.
+                    // Now we type check then evaluate it.
+                    Ok(false) => {
+                        if let Err(mut diags) =
+                            type_check::type_check(&procedure, &self.procedures, interner)
+                        {
+                            all_diags.append(&mut diags);
+                            continue;
+                        }
+
+                        let mut stack = match simulate_execute_program(
+                            self,
+                            &procedure,
+                            &HashMap::new(),
+                            interner,
+                            &[],
+                        ) {
+                            Err(diag) => {
+                                all_diags.push(diag);
+                                continue;
+                            }
+                            Ok(stack) => stack,
+                        };
+
+                        // The type checker enforces a single stack item here.
+                        procedure.const_val = stack.pop();
+                        self.const_values.insert(const_id, procedure);
+                    }
+                    Err(mut diags) => {
+                        all_diags.append(&mut diags);
+                    }
+                }
+            }
+
+            // No more constants left to evaluate.
+            if next_run_names.is_empty() {
+                break;
+            }
+
+            num_loops += 1;
+            if num_loops > MAX_EXPANSIONS {
+                let mut labels = Vec::new();
+
+                for con in last_changed_consts {
+                    labels.push(Label::primary(con.location.file_id, con.location.range()));
+                }
+                let diag = Diagnostic::error()
+                    .with_message("depth of const expansion exceeded 128")
+                    .with_labels(labels);
+
+                all_diags.push(diag);
+                break;
+            }
+
+            std::mem::swap(&mut const_names, &mut next_run_names);
         }
 
         all_diags.is_empty().then(|| ()).ok_or(all_diags)
@@ -251,6 +352,27 @@ impl Program {
         for proc in to_check {
             if let Err(mut diags) = type_check::type_check(proc, &self.procedures, interner) {
                 all_diags.append(&mut diags);
+            }
+        }
+
+        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+    }
+
+    fn check_const_for_self(&self) -> Result<(), Vec<Diagnostic<FileId>>> {
+        let mut all_diags = Vec::new();
+        // Consts cannot reference themselves, so we should check that here.
+        for (id, proc) in &self.const_values {
+            for op in &proc.body {
+                if matches!(op.code, OpCode::Ident(ref_id) if ref_id == *id) {
+                    let diag = Diagnostic::error()
+                        .with_message("self referencing const")
+                        .with_labels(vec![Label::primary(
+                            op.token.location.file_id,
+                            op.token.location.range(),
+                        )]);
+                    all_diags.push(diag);
+                    break;
+                }
             }
         }
 
@@ -281,27 +403,30 @@ impl Program {
                 expected_entry_stack: Vec::new(),
                 expected_exit_stack: Vec::new(),
                 is_const: false,
+                const_val: None,
             },
             macros: HashMap::new(),
             static_allocs: HashMap::new(),
             procedures: HashMap::new(),
+            const_values: HashMap::new(),
             included_files: HashMap::new(),
             include_queue: Vec::new(),
         };
 
-        program.main.body = match opcode::parse_token(
-            &tokens,
-            interner,
-            &mut program.macros,
-            &mut program.static_allocs,
-            &mut program.procedures,
-            &mut program.include_queue,
-        ) {
+        program.main.body = match opcode::parse_token(&mut program, &tokens, interner) {
             Ok(ops) => ops,
             Err(diags) => return Ok(Err(diags)),
         };
 
         if let Err(diags) = program.process_include_queue(source_store, interner, library_paths) {
+            return Ok(Err(diags));
+        }
+
+        if let Err(diags) = program.check_const_for_self() {
+            return Ok(Err(diags));
+        }
+
+        if let Err(diags) = program.post_process_consts(interner, source_store, opt_level) {
             return Ok(Err(diags));
         }
 

@@ -9,7 +9,7 @@ use crate::{
     lexer::{Token, TokenKind},
     source_file::{FileId, SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
-    Width,
+    Program, Width,
 };
 
 use self::optimizer_passes::PASSES;
@@ -341,6 +341,7 @@ pub struct Procedure {
     pub expected_exit_stack: Vec<PorthType>,
     pub expected_entry_stack: Vec<PorthType>,
     pub is_const: bool,
+    pub const_val: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -397,14 +398,11 @@ fn expect_token<'a>(
 }
 
 fn parse_sub_block<'a>(
+    program: &mut Program,
     token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, Procedure>,
-    procedures: &mut HashMap<Spur, Procedure>,
-    include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
     let (ident_idx, ident_token) = match expect_token(
         token_iter,
@@ -462,31 +460,21 @@ fn parse_sub_block<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(
-        body_tokens,
-        interner,
-        macros,
-        static_allocs,
-        procedures,
-        include_list,
-    )?;
+    let body_ops = parse_token(program, body_tokens, interner)?;
 
     Ok((ident_token, body_ops))
 }
 
 pub fn parse_token(
+    program: &mut Program,
     tokens: &[Token],
     interner: &Interners,
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, Procedure>,
-    procedures: &mut HashMap<Spur, Procedure>,
-    include_list: &mut Vec<(Token, Spur)>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
     let mut diags = Vec::new();
 
     let mut token_iter = tokens.iter().enumerate();
-    while let Some((_, token)) = token_iter.next() {
+    'outer: while let Some((_, token)) = token_iter.next() {
         let kind = match token.kind {
             TokenKind::Drop => OpCode::Drop,
             TokenKind::Print => OpCode::Print,
@@ -518,83 +506,93 @@ pub fn parse_token(
             TokenKind::While => OpCode::While { ip: usize::MAX },
             TokenKind::Do => OpCode::Do,
 
-            TokenKind::Macro => {
-                let (name, body) = match parse_sub_block(
-                    &mut token_iter,
-                    tokens,
-                    *token,
-                    interner,
-                    macros,
-                    static_allocs,
-                    procedures,
-                    include_list,
-                ) {
-                    Ok(a) => a,
-                    Err(mut e) => {
-                        diags.append(&mut e);
-                        continue;
-                    }
-                };
+            TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
+                let (name, mut body) =
+                    match parse_sub_block(program, &mut token_iter, tokens, *token, interner) {
+                        Ok(a) => a,
+                        Err(mut e) => {
+                            diags.append(&mut e);
+                            continue;
+                        }
+                    };
 
-                if let Some((prev_name, _)) = macros.insert(name.lexeme, (name, body)) {
-                    let diag = Diagnostic::error()
-                        .with_message("macro defined multiple times")
-                        .with_labels(vec![
-                            Label::primary(name.location.file_id, name.location.range())
-                                .with_message("defined here"),
-                            Label::secondary(
-                                prev_name.location.file_id,
-                                prev_name.location.range(),
-                            )
-                            .with_message("also defined here"),
-                        ]);
-                    diags.push(diag);
+                if token.kind == TokenKind::Proc {
+                    // Makes later logic a bit easier if we always have a return opcode.
+                    match body.last() {
+                        Some(op) => {
+                            if op.code != OpCode::Return {
+                                let ret_op = Op {
+                                    code: OpCode::Return,
+                                    token: op.token,
+                                    expansions: op.expansions.clone(),
+                                };
+                                body.push(ret_op);
+                            }
+                        }
+                        None => body.push(Op {
+                            code: OpCode::Return,
+                            token: name,
+                            expansions: Vec::new(),
+                        }),
+                    }
                 }
 
-                continue;
-            }
-            TokenKind::Memory => {
-                let (name, body) = match parse_sub_block(
-                    &mut token_iter,
-                    tokens,
-                    *token,
-                    interner,
-                    macros,
-                    static_allocs,
-                    procedures,
-                    include_list,
-                ) {
-                    Ok(a) => a,
-                    Err(mut e) => {
-                        diags.append(&mut e);
-                        continue;
-                    }
-                };
+                let expected_exit_stack =
+                    if matches!(token.kind, TokenKind::Const | TokenKind::Memory) {
+                        vec![PorthType {
+                            kind: PorthTypeKind::Int,
+                            location: name.location,
+                        }]
+                    } else {
+                        Vec::new()
+                    };
 
-                let new_alloc = Procedure {
+                let new_proc = Procedure {
                     name,
                     body,
-                    expected_exit_stack: vec![PorthType {
-                        kind: PorthTypeKind::Int,
-                        location: name.location,
-                    }],
+                    expected_exit_stack,
                     expected_entry_stack: Vec::new(),
-                    is_const: true,
+                    is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
+                    const_val: None,
                 };
 
-                if let Some(prev_def) = static_allocs.insert(name.lexeme, new_alloc) {
-                    let diag = Diagnostic::error()
-                        .with_message("multiple allocations defined with the same name")
-                        .with_labels(vec![
-                            Label::primary(name.location.file_id, name.location.range())
-                                .with_message("defined here"),
-                            Label::secondary(
-                                prev_def.name.location.file_id,
-                                prev_def.name.location.range(),
-                            )
-                            .with_message("also defined here"),
-                        ]);
-                    diags.push(diag);
+                for def in [
+                    &program.macros,
+                    &program.static_allocs,
+                    &program.procedures,
+                    &program.const_values,
+                ] {
+                    if let Some(prev_def) = def.get(&name.lexeme) {
+                        let diag = Diagnostic::error()
+                            .with_message("multiple definitions of symbol")
+                            .with_labels(vec![
+                                Label::primary(name.location.file_id, name.location.range())
+                                    .with_message("defined here"),
+                                Label::secondary(
+                                    prev_def.name.location.file_id,
+                                    prev_def.name.location.range(),
+                                )
+                                .with_message("also defined here"),
+                            ]);
+                        diags.push(diag);
+                        continue 'outer;
+                    }
+                }
+
+                match token.kind {
+                    TokenKind::Const => {
+                        program.const_values.insert(name.lexeme, new_proc);
+                    }
+                    TokenKind::Proc => {
+                        program.procedures.insert(name.lexeme, new_proc);
+                    }
+                    TokenKind::Macro => {
+                        program.macros.insert(name.lexeme, new_proc);
+                    }
+                    TokenKind::Memory => {
+                        program.static_allocs.insert(name.lexeme, new_proc);
+                    }
+                    _ => unreachable!(),
                 }
 
                 continue;
@@ -619,70 +617,8 @@ pub fn parse_token(
                     _ => unreachable!(),
                 };
 
-                include_list.push((path_token, literal));
+                program.include_queue.push((path_token, literal));
                 OpCode::Include(literal)
-            }
-            TokenKind::Proc => {
-                let (name, mut body) = match parse_sub_block(
-                    &mut token_iter,
-                    tokens,
-                    *token,
-                    interner,
-                    macros,
-                    static_allocs,
-                    procedures,
-                    include_list,
-                ) {
-                    Ok(a) => a,
-                    Err(mut e) => {
-                        diags.append(&mut e);
-                        continue;
-                    }
-                };
-
-                // Makes later logic a bit easier if we always have a return opcode.
-                match body.last() {
-                    Some(op) => {
-                        if op.code != OpCode::Return {
-                            let ret_op = Op {
-                                code: OpCode::Return,
-                                token: op.token,
-                                expansions: op.expansions.clone(),
-                            };
-                            body.push(ret_op);
-                        }
-                    }
-                    None => body.push(Op {
-                        code: OpCode::Return,
-                        token: name,
-                        expansions: Vec::new(),
-                    }),
-                }
-
-                let new_proc = Procedure {
-                    name,
-                    body,
-                    expected_entry_stack: Vec::new(),
-                    expected_exit_stack: Vec::new(),
-                    is_const: false,
-                };
-
-                if let Some(prev_def) = procedures.insert(name.lexeme, new_proc) {
-                    let diag = Diagnostic::error()
-                        .with_message("procedure defined multiple times")
-                        .with_labels(vec![
-                            Label::primary(name.location.file_id, name.location.range())
-                                .with_message("defined here"),
-                            Label::secondary(
-                                prev_def.name.location.file_id,
-                                prev_def.name.location.range(),
-                            )
-                            .with_message("also defined here"),
-                        ]);
-                    diags.push(diag);
-                }
-
-                continue;
             }
 
             TokenKind::If => OpCode::If,
@@ -1011,11 +947,12 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
 }
 
 pub fn expand_sub_blocks(
-    macros: &HashMap<Spur, (Token, Vec<Op>)>,
+    macros: &HashMap<Spur, Procedure>,
+    const_values: &HashMap<Spur, Procedure>,
     static_allocs: &HashSet<Spur>,
-    procudure_names: &HashSet<Spur>,
+    procedure_names: &HashSet<Spur>,
     ops: &[Op],
-) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+) -> Result<(Vec<Op>, bool), Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec = Vec::with_capacity(ops.len());
     let mut diags = Vec::new();
@@ -1023,6 +960,7 @@ pub fn expand_sub_blocks(
     // Keep making changes until we get no changes.
     let mut num_expansions = 0;
     let mut last_changed_macros = Vec::new();
+    let mut failed_const_expansion = false;
     loop {
         let mut changed = false;
         last_changed_macros.clear();
@@ -1031,9 +969,9 @@ pub fn expand_sub_blocks(
             match op.code {
                 OpCode::Ident(id) if macros.contains_key(&id) => {
                     changed = true;
-                    let (name, body) = macros.get(&id).unwrap();
-                    last_changed_macros.push(*name);
-                    dst_vec.extend(body.iter().map(|new_op| {
+                    let macro_proc = macros.get(&id).unwrap();
+                    last_changed_macros.push(macro_proc.name);
+                    dst_vec.extend(macro_proc.body.iter().map(|new_op| {
                         let mut new_op = new_op.clone();
                         new_op.expansions.push(op.token.location);
                         new_op.expansions.extend_from_slice(&op.expansions);
@@ -1050,11 +988,24 @@ pub fn expand_sub_blocks(
                         expansions: op.expansions,
                     });
                 }
-                OpCode::Ident(id) if procudure_names.contains(&id) => dst_vec.push(Op {
+                OpCode::Ident(id) if procedure_names.contains(&id) => dst_vec.push(Op {
                     code: OpCode::CallProc(id),
                     token: op.token,
                     expansions: op.expansions,
                 }),
+                OpCode::Ident(id) if const_values.contains_key(&id) => {
+                    let val = const_values.get(&id).unwrap();
+                    if let Some(val) = val.const_val {
+                        dst_vec.push(Op {
+                            code: OpCode::PushInt(val),
+                            token: op.token,
+                            expansions: op.expansions,
+                        });
+                    } else {
+                        failed_const_expansion = true;
+                        dst_vec.push(op);
+                    }
+                }
                 OpCode::Ident(_) => {
                     let diag = Diagnostic::error()
                         .with_message("unknown macro or memory allocation")
@@ -1092,5 +1043,8 @@ pub fn expand_sub_blocks(
         std::mem::swap(&mut src_vec, &mut dst_vec);
     }
 
-    diags.is_empty().then(|| dst_vec).ok_or(diags)
+    diags
+        .is_empty()
+        .then(|| (dst_vec, failed_const_expansion))
+        .ok_or(diags)
 }

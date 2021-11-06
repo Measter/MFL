@@ -22,6 +22,7 @@ pub enum TokenKind {
     CastBool,
     CastInt,
     CastPtr,
+    Const,
     DivMod,
     Do,
     Drop,
@@ -101,11 +102,12 @@ impl TokenKind {
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
-            TokenKind::If
-            | TokenKind::While
+            TokenKind::Const
+            | TokenKind::If
             | TokenKind::Macro
             | TokenKind::Memory
-            | TokenKind::Proc => true,
+            | TokenKind::Proc
+            | TokenKind::While => true,
         }
     }
 
@@ -353,6 +355,7 @@ impl<'source> Scanner<'source> {
                     "cast(bool)" => TokenKind::CastBool,
                     "cast(int)" => TokenKind::CastInt,
                     "cast(ptr)" => TokenKind::CastPtr,
+                    "const" => TokenKind::Const,
                     "divmod" => TokenKind::DivMod,
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
