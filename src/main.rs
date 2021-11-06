@@ -72,19 +72,250 @@ enum Mode {
 struct Args {
     /// Comma-separated list of paths to search includes.
     #[structopt(short = "I", require_delimiter = true)]
-    include_paths: Vec<String>,
+    library_paths: Vec<String>,
 
     #[structopt(subcommand)]
     mode: Mode,
 }
 
+type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
+
 struct Program {
     main: Procedure,
+    macros: HashMap<Spur, (Token, Vec<Op>)>,
     static_allocs: HashMap<Spur, Procedure>,
     procedures: HashMap<Spur, Procedure>,
+    included_files: HashMap<Spur, Vec<Op>>,
+    include_queue: Vec<(Token, Spur)>,
 }
 
-type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
+impl Program {
+    fn load_include(
+        &mut self,
+        source_store: &mut SourceStorage,
+        interner: &mut Interners,
+        library_paths: &[String],
+        include_token: Token,
+        file: Spur,
+    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+        if self.included_files.contains_key(&file) {
+            return Ok(());
+        }
+
+        let file_name = interner.resolve_literal(file);
+        // String literals are always null-terminated, so we need to trim that off.
+        let file_name = &file_name[..file_name.len() - 1];
+
+        let include_path = match search_includes(library_paths, file_name) {
+            Some(path) => path,
+            None => {
+                let diag = Diagnostic::error()
+                    .with_message(format!("include not found: `{}`", file_name))
+                    .with_labels(vec![Label::primary(
+                        include_token.location.file_id,
+                        include_token.location.range(),
+                    )]);
+                return Err(vec![diag]);
+            }
+        };
+
+        let contents = match std::fs::read_to_string(&include_path) {
+            Ok(contents) => contents,
+            Err(e) => {
+                let diag = Diagnostic::error()
+                    .with_message(format!("error opening `{}`", include_path))
+                    .with_labels(vec![Label::primary(
+                        include_token.location.file_id,
+                        include_token.location.range(),
+                    )])
+                    .with_notes(vec![format!("{}", e)]);
+                return Err(vec![diag]);
+            }
+        };
+
+        let file_id = source_store.add(&include_path, &contents);
+
+        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
+            Ok(program) => program,
+            Err(diag) => return Err(vec![diag]),
+        };
+
+        let ops = match opcode::parse_token(
+            &tokens,
+            interner,
+            &mut self.macros,
+            &mut self.static_allocs,
+            &mut self.procedures,
+            &mut self.include_queue,
+        ) {
+            Ok(ops) => ops,
+            Err(diags) => return Err(diags),
+        };
+
+        self.included_files.insert(file, ops);
+
+        Ok(())
+    }
+
+    fn process_include_queue(
+        &mut self,
+        source_store: &mut SourceStorage,
+        interner: &mut Interners,
+        library_paths: &[String],
+    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+        let mut all_diags = Vec::new();
+
+        while let Some((include_token, file)) = self.include_queue.pop() {
+            if let Err(mut diags) =
+                self.load_include(source_store, interner, library_paths, include_token, file)
+            {
+                all_diags.append(&mut diags);
+            }
+        }
+
+        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+    }
+
+    fn post_process_procedure(
+        procedure: &mut Procedure,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+        macros: &HashMap<Spur, (Token, Vec<Op>)>,
+        included_files: &HashMap<Spur, Vec<Op>>,
+        static_alloc_names: &HashSet<Spur>,
+        procedure_names: &HashSet<Spur>,
+        opt_level: u8,
+    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+        procedure.body = opcode::expand_includes(included_files, &procedure.body);
+        procedure.body = opcode::expand_sub_blocks(
+            macros,
+            static_alloc_names,
+            procedure_names,
+            &procedure.body,
+        )?;
+
+        if opt_level >= OPT_OPCODE {
+            procedure.body = opcode::optimize(&procedure.body, interner, source_store);
+        }
+
+        opcode::generate_jump_labels(&mut procedure.body)?;
+
+        Ok(())
+    }
+
+    fn post_process(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &mut SourceStorage,
+        opt_level: u8,
+    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+        // We don't need the entire allocation or procedure data just for the expansion, so we'll just use
+        // HashSets here.
+        let static_alloc_names: HashSet<_> = self.static_allocs.keys().copied().collect();
+        let procedure_names: HashSet<_> = self.procedures.keys().copied().collect();
+        let mut all_diags = Vec::new();
+
+        // We're applying the same process to the global procedure, defined procedures, and memory defs,
+        // so do them all in one loop instead of separately.
+        let to_check = std::iter::once(&mut self.main)
+            .chain(self.static_allocs.values_mut())
+            .chain(self.procedures.values_mut());
+
+        for proc in to_check {
+            if let Err(mut diags) = Program::post_process_procedure(
+                proc,
+                interner,
+                source_store,
+                &self.macros,
+                &self.included_files,
+                &static_alloc_names,
+                &procedure_names,
+                opt_level,
+            ) {
+                all_diags.append(&mut diags);
+            };
+        }
+
+        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+    }
+
+    fn type_check(&self, interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
+        let mut all_diags = Vec::new();
+
+        // Type checking requires seeing the entire program, so we have to iterate again
+        // to avoid mutable aliasing.
+        let to_check = std::iter::once(&self.main)
+            .chain(self.static_allocs.values())
+            .chain(self.procedures.values());
+
+        for proc in to_check {
+            if let Err(mut diags) = type_check::type_check(proc, &self.procedures, interner) {
+                all_diags.append(&mut diags);
+            }
+        }
+
+        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+    }
+
+    fn load(
+        source_store: &mut SourceStorage,
+        interner: &mut Interners,
+        file: &str,
+        opt_level: u8,
+        library_paths: &[String],
+    ) -> Result<LoadProgramResult> {
+        let contents =
+            std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
+
+        let file_id = source_store.add(file, &contents);
+
+        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
+            Ok(program) => program,
+            Err(diag) => return Ok(Err(vec![diag])),
+        };
+
+        let mut program = Program {
+            main: Procedure {
+                name: tokens[0],
+                body: Vec::new(),
+                expected_entry_stack: Vec::new(),
+                expected_exit_stack: Vec::new(),
+                is_const: false,
+            },
+            macros: HashMap::new(),
+            static_allocs: HashMap::new(),
+            procedures: HashMap::new(),
+            included_files: HashMap::new(),
+            include_queue: Vec::new(),
+        };
+
+        program.main.body = match opcode::parse_token(
+            &tokens,
+            interner,
+            &mut program.macros,
+            &mut program.static_allocs,
+            &mut program.procedures,
+            &mut program.include_queue,
+        ) {
+            Ok(ops) => ops,
+            Err(diags) => return Ok(Err(diags)),
+        };
+
+        if let Err(diags) = program.process_include_queue(source_store, interner, library_paths) {
+            return Ok(Err(diags));
+        }
+
+        if let Err(diags) = program.post_process(interner, source_store, opt_level) {
+            return Ok(Err(diags));
+        }
+
+        if let Err(diags) = program.type_check(interner) {
+            return Ok(Err(diags));
+        }
+
+        Ok(Ok(program))
+    }
+}
 
 fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     // Stupidly innefficient, but whatever...
@@ -101,217 +332,6 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
     }
 
     None
-}
-
-fn load_include(
-    source_store: &mut SourceStorage,
-    macros: &mut HashMap<Spur, (Token, Vec<Op>)>,
-    static_allocs: &mut HashMap<Spur, Procedure>,
-    procedures: &mut HashMap<Spur, Procedure>,
-    include_list: &mut Vec<(Token, Spur)>,
-    included_files: &mut HashMap<Spur, Vec<Op>>,
-    interner: &mut Interners,
-    include_paths: &[String],
-    include_token: Token,
-    file: Spur,
-) -> Result<(), Vec<Diagnostic<FileId>>> {
-    if included_files.contains_key(&file) {
-        return Ok(());
-    }
-
-    let file_name = interner.resolve_literal(file);
-    // String literals are always null-terminated, so we need to trim that off.
-    let file_name = &file_name[..file_name.len() - 1];
-
-    let include_path = match search_includes(include_paths, file_name) {
-        Some(path) => path,
-        None => {
-            let diag = Diagnostic::error()
-                .with_message(format!("include not found: `{}`", file_name))
-                .with_labels(vec![Label::primary(
-                    include_token.location.file_id,
-                    include_token.location.range(),
-                )]);
-            return Err(vec![diag]);
-        }
-    };
-
-    let contents = match std::fs::read_to_string(&include_path) {
-        Ok(contents) => contents,
-        Err(e) => {
-            let diag = Diagnostic::error()
-                .with_message(format!("error opening `{}`", include_path))
-                .with_labels(vec![Label::primary(
-                    include_token.location.file_id,
-                    include_token.location.range(),
-                )])
-                .with_notes(vec![format!("{}", e)]);
-            return Err(vec![diag]);
-        }
-    };
-
-    let file_id = source_store.add(&include_path, &contents);
-
-    let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
-        Ok(program) => program,
-        Err(diag) => return Err(vec![diag]),
-    };
-
-    let ops = match opcode::parse_token(
-        &tokens,
-        interner,
-        macros,
-        static_allocs,
-        procedures,
-        include_list,
-    ) {
-        Ok(ops) => ops,
-        Err(diags) => return Err(diags),
-    };
-
-    included_files.insert(file, ops);
-
-    Ok(())
-}
-
-fn process_ops(
-    procedure: &mut Procedure,
-    interner: &mut Interners,
-    included_files: &HashMap<Spur, Vec<Op>>,
-    macros: &HashMap<Spur, (Token, Vec<Op>)>,
-    static_alloc_names: &HashSet<Spur>,
-    procedures: &HashSet<Spur>,
-    source_store: &SourceStorage,
-    opt_level: u8,
-) -> Result<(), Vec<Diagnostic<FileId>>> {
-    procedure.body = opcode::expand_includes(included_files, &procedure.body);
-    procedure.body =
-        opcode::expand_sub_blocks(macros, static_alloc_names, procedures, &procedure.body)?;
-
-    if opt_level >= OPT_OPCODE {
-        procedure.body = opcode::optimize(&procedure.body, interner, source_store);
-    }
-
-    opcode::generate_jump_labels(&mut procedure.body)?;
-
-    Ok(())
-}
-
-fn load_program(
-    source_store: &mut SourceStorage,
-    interner: &mut Interners,
-    file: &str,
-    opt_level: u8,
-    include_paths: &[String],
-) -> Result<LoadProgramResult> {
-    let contents =
-        std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
-
-    let file_id = source_store.add(file, &contents);
-
-    let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
-        Ok(program) => program,
-        Err(diag) => return Ok(Err(vec![diag])),
-    };
-
-    let mut macros = HashMap::new();
-    let mut static_allocs = HashMap::new();
-    let mut procedures = HashMap::new();
-    let mut include_list = Vec::new();
-
-    let program = match opcode::parse_token(
-        &tokens,
-        interner,
-        &mut macros,
-        &mut static_allocs,
-        &mut procedures,
-        &mut include_list,
-    ) {
-        Ok(ops) => ops,
-        Err(diags) => return Ok(Err(diags)),
-    };
-
-    let mut included_files = HashMap::new();
-
-    while let Some((include_token, file)) = include_list.pop() {
-        if let Err(diags) = load_include(
-            source_store,
-            &mut macros,
-            &mut static_allocs,
-            &mut procedures,
-            &mut include_list,
-            &mut included_files,
-            interner,
-            include_paths,
-            include_token,
-            file,
-        ) {
-            return Ok(Err(diags));
-        }
-    }
-
-    // We don't need the entire allocation or procedure data just for the expansion, so we'll just use
-    // HashSets here.
-    let static_alloc_names: HashSet<_> = static_allocs.keys().copied().collect();
-    let procedure_names: HashSet<_> = procedures.keys().copied().collect();
-    let mut all_proc_diags = Vec::new();
-
-    let mut main_proc = Procedure {
-        name: tokens[0],
-        body: program,
-        expected_entry_stack: Vec::new(),
-        expected_exit_stack: Vec::new(),
-        is_const: false,
-    };
-
-    // We're applying the same process to the global procedure, defined procedures, and memory defs,
-    // so do them all in one loop instead of separately.
-    let to_check = std::iter::once(&mut main_proc)
-        .chain(static_allocs.values_mut())
-        .chain(procedures.values_mut());
-
-    for proc in to_check {
-        if let Err(mut diags) = process_ops(
-            proc,
-            interner,
-            &included_files,
-            &macros,
-            &static_alloc_names,
-            &procedure_names,
-            source_store,
-            opt_level,
-        ) {
-            all_proc_diags.append(&mut diags);
-        };
-    }
-
-    if !all_proc_diags.is_empty() {
-        return Ok(Err(all_proc_diags));
-    }
-
-    // Type checking requires seeing the entire program, so we have to iterate again
-    // to avoid mutable aliasing.
-    let to_check = std::iter::once(&main_proc)
-        .chain(static_allocs.values())
-        .chain(procedures.values());
-
-    for proc in to_check {
-        if let Err(mut diags) = type_check::type_check(proc, &procedures, interner) {
-            all_proc_diags.append(&mut diags);
-        }
-    }
-
-    if !all_proc_diags.is_empty() {
-        return Ok(Err(all_proc_diags));
-    }
-
-    let program = Program {
-        main: main_proc,
-        static_allocs,
-        procedures,
-    };
-
-    Ok(Ok(program))
 }
 
 fn evaluate_allocation_sizes(
@@ -353,7 +373,7 @@ fn run_simulate(
 
     program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
-    let program = match load_program(
+    let program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -407,7 +427,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let program = match load_program(
+    let program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -479,8 +499,8 @@ fn main() -> Result<()> {
             file,
             opt_level,
             args: program_args,
-        } => run_simulate(file, opt_level, program_args, args.include_paths)?,
-        Mode::Compile { file, opt_level } => run_compile(file, opt_level, args.include_paths)?,
+        } => run_simulate(file, opt_level, program_args, args.library_paths)?,
+        Mode::Compile { file, opt_level } => run_compile(file, opt_level, args.library_paths)?,
     }
 
     Ok(())
