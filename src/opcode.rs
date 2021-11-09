@@ -30,16 +30,34 @@ pub enum OpCode {
     CastPtr,
     DivMod,
     Do,
-    DoIf { end_ip: usize },
-    DoWhile { end_ip: usize, condition_ip: usize },
-    Dup { depth: usize },
+    DoIf {
+        end_ip: usize,
+    },
+    DoWhile {
+        end_ip: usize,
+        condition_ip: usize,
+    },
+    Dup {
+        depth: usize,
+    },
     DupPair,
     Drop,
-    Elif { else_start: usize, end_ip: usize },
-    Else { else_start: usize, end_ip: usize },
+    Elif {
+        else_start: usize,
+        end_ip: usize,
+    },
+    Else {
+        else_start: usize,
+        end_ip: usize,
+    },
     End,
-    EndIf { ip: usize },
-    EndWhile { condition_ip: usize, end_ip: usize },
+    EndIf {
+        ip: usize,
+    },
+    EndWhile {
+        condition_ip: usize,
+        end_ip: usize,
+    },
     Equal,
     Ident(Spur),
     If,
@@ -49,13 +67,20 @@ pub enum OpCode {
     Load(Width),
     Greater,
     GreaterEqual,
-    Memory { name: Spur, offset: usize },
+    Memory {
+        name: Spur,
+        offset: usize,
+        global: bool,
+    },
     Multiply,
     NotEq,
     Print,
     PushBool(bool),
     PushInt(u64),
-    PushStr { id: Spur, is_c_str: bool },
+    PushStr {
+        id: Spur,
+        is_c_str: bool,
+    },
     Return,
     Rot,
     ShiftLeft,
@@ -64,7 +89,9 @@ pub enum OpCode {
     Subtract,
     Swap,
     SysCall(usize),
-    While { ip: usize },
+    While {
+        ip: usize,
+    },
 }
 
 impl OpCode {
@@ -327,9 +354,13 @@ impl OpCode {
         }
     }
 
-    pub fn unwrap_memory(self) -> (Spur, usize) {
+    pub fn unwrap_memory(self) -> (Spur, usize, bool) {
         match self {
-            Self::Memory { name, offset } => (name, offset),
+            Self::Memory {
+                name,
+                offset,
+                global,
+            } => (name, offset, global),
             _ => panic!("expected OpCode::Memory"),
         }
     }
@@ -338,6 +369,7 @@ impl OpCode {
 pub struct Procedure {
     pub name: Token,
     pub body: Vec<Op>,
+    pub allocs: HashMap<Spur, Procedure>,
     pub expected_exit_stack: Vec<PorthType>,
     pub expected_entry_stack: Vec<PorthType>,
     pub is_const: bool,
@@ -403,6 +435,7 @@ fn parse_sub_block<'a>(
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
+    current_scope: Option<&mut Procedure>,
 ) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
     let (ident_idx, ident_token) = match expect_token(
         token_iter,
@@ -423,9 +456,16 @@ fn parse_sub_block<'a>(
     // We need to keep track of whether we're in an if or while block, because they
     // should be usable inside a macro block.
     for (idx, token) in token_iter {
-        if keyword.kind == TokenKind::Proc && token.kind == TokenKind::Proc {
+        let (msg, is_nested_err) = match (keyword.kind, token.kind) {
+            (TokenKind::Proc, TokenKind::Proc) => ("procedure", true),
+            (TokenKind::Memory, TokenKind::Memory) => ("memory block", true),
+            (TokenKind::Const, TokenKind::Const) => ("const", true),
+            _ => ("", false),
+        };
+
+        if is_nested_err {
             let diag = Diagnostic::error()
-                .with_message("cannot define a procedure inside another procedure")
+                .with_message(format!("cannot define a {0} inside another {0}", msg))
                 .with_labels(vec![Label::primary(
                     token.location.file_id,
                     token.location.range(),
@@ -460,7 +500,7 @@ fn parse_sub_block<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(program, body_tokens, interner)?;
+    let body_ops = parse_token(program, body_tokens, interner, current_scope)?;
 
     Ok((ident_token, body_ops))
 }
@@ -469,6 +509,7 @@ pub fn parse_token(
     program: &mut Program,
     tokens: &[Token],
     interner: &Interners,
+    mut current_scope: Option<&mut Procedure>,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
     let mut diags = Vec::new();
@@ -507,14 +548,30 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
-                let (name, mut body) =
-                    match parse_sub_block(program, &mut token_iter, tokens, *token, interner) {
-                        Ok(a) => a,
-                        Err(mut e) => {
-                            diags.append(&mut e);
-                            continue;
-                        }
-                    };
+                let mut new_proc = Procedure {
+                    name: *token, // We'll just take the current token for now.
+                    body: Vec::new(),
+                    allocs: HashMap::new(),
+                    expected_exit_stack: Vec::new(),
+                    expected_entry_stack: Vec::new(),
+                    is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
+                    const_val: None,
+                };
+
+                let (name, mut body) = match parse_sub_block(
+                    program,
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    interner,
+                    Some(&mut new_proc),
+                ) {
+                    Ok(a) => a,
+                    Err(mut e) => {
+                        diags.append(&mut e);
+                        continue;
+                    }
+                };
 
                 if token.kind == TokenKind::Proc {
                     // Makes later logic a bit easier if we always have a return opcode.
@@ -537,7 +594,7 @@ pub fn parse_token(
                     }
                 }
 
-                let expected_exit_stack =
+                new_proc.expected_exit_stack =
                     if matches!(token.kind, TokenKind::Const | TokenKind::Memory) {
                         vec![PorthType {
                             kind: PorthTypeKind::Int,
@@ -547,21 +604,32 @@ pub fn parse_token(
                         Vec::new()
                     };
 
-                let new_proc = Procedure {
-                    name,
-                    body,
-                    expected_exit_stack,
-                    expected_entry_stack: Vec::new(),
-                    is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
-                    const_val: None,
-                };
+                new_proc.name = name;
+                new_proc.body = body;
 
-                for def in [
+                // TODO: Check local allocations too.
+                let global_names = [
                     &program.macros,
-                    &program.static_allocs,
+                    &program.global.allocs,
                     &program.procedures,
                     &program.const_values,
-                ] {
+                ];
+                let local_names: [&HashMap<Spur, Procedure>; 5];
+                let names: &[&HashMap<Spur, Procedure>] = if let Some(proc) = current_scope.as_mut()
+                {
+                    local_names = [
+                        &program.macros,
+                        &program.global.allocs,
+                        &program.procedures,
+                        &program.const_values,
+                        &proc.allocs,
+                    ];
+                    &local_names
+                } else {
+                    &global_names
+                };
+
+                for def in names {
                     if let Some(prev_def) = def.get(&name.lexeme) {
                         let diag = Diagnostic::error()
                             .with_message("multiple definitions of symbol")
@@ -579,18 +647,21 @@ pub fn parse_token(
                     }
                 }
 
-                match token.kind {
-                    TokenKind::Const => {
+                match (token.kind, current_scope.as_mut()) {
+                    (TokenKind::Const, _) => {
                         program.const_values.insert(name.lexeme, new_proc);
                     }
-                    TokenKind::Proc => {
+                    (TokenKind::Proc, _) => {
                         program.procedures.insert(name.lexeme, new_proc);
                     }
-                    TokenKind::Macro => {
+                    (TokenKind::Macro, _) => {
                         program.macros.insert(name.lexeme, new_proc);
                     }
-                    TokenKind::Memory => {
-                        program.static_allocs.insert(name.lexeme, new_proc);
+                    (TokenKind::Memory, None) => {
+                        program.global.allocs.insert(name.lexeme, new_proc);
+                    }
+                    (TokenKind::Memory, Some(proc)) => {
+                        proc.allocs.insert(name.lexeme, new_proc);
                     }
                     _ => unreachable!(),
                 }
@@ -949,9 +1020,10 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
 pub fn expand_sub_blocks(
     macros: &HashMap<Spur, Procedure>,
     const_values: &HashMap<Spur, Procedure>,
-    static_allocs: &HashSet<Spur>,
+    global_allocs: &HashSet<Spur>,
     procedure_names: &HashSet<Spur>,
     ops: &[Op],
+    local_allocs: &HashMap<Spur, Procedure>,
 ) -> Result<(Vec<Op>, bool), Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec = Vec::with_capacity(ops.len());
@@ -978,16 +1050,30 @@ pub fn expand_sub_blocks(
                         new_op
                     }));
                 }
-                OpCode::Ident(id) if static_allocs.contains(&id) => {
+
+                OpCode::Ident(id) if global_allocs.contains(&id) => {
                     dst_vec.push(Op {
                         code: OpCode::Memory {
                             name: id,
                             offset: 0,
+                            global: true,
                         },
                         token: op.token,
                         expansions: op.expansions,
                     });
                 }
+                OpCode::Ident(id) if local_allocs.contains_key(&id) => {
+                    dst_vec.push(Op {
+                        code: OpCode::Memory {
+                            name: id,
+                            offset: 0,
+                            global: false,
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
+                }
+
                 OpCode::Ident(id) if procedure_names.contains(&id) => dst_vec.push(Op {
                     code: OpCode::CallProc(id),
                     token: op.token,

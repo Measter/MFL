@@ -27,10 +27,8 @@ mod simulate;
 mod source_file;
 mod type_check;
 
-use opcode::{Op, Procedure};
+use opcode::{Op, OpCode, Procedure};
 use simulate::simulate_execute_program;
-
-use crate::opcode::OpCode;
 
 const OPT_OPCODE: u8 = 1;
 const OPT_INSTR: u8 = 2;
@@ -83,9 +81,8 @@ struct Args {
 type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
 
 pub struct Program {
-    main: Procedure,
+    global: Procedure,
     macros: HashMap<Spur, Procedure>,
-    static_allocs: HashMap<Spur, Procedure>,
     procedures: HashMap<Spur, Procedure>,
     const_values: HashMap<Spur, Procedure>,
     included_files: HashMap<Spur, Vec<Op>>,
@@ -143,7 +140,7 @@ impl Program {
             Err(diag) => return Err(vec![diag]),
         };
 
-        let ops = match opcode::parse_token(self, &tokens, interner) {
+        let ops = match opcode::parse_token(self, &tokens, interner, None) {
             Ok(ops) => ops,
             Err(diags) => return Err(diags),
         };
@@ -179,7 +176,7 @@ impl Program {
         macros: &HashMap<Spur, Procedure>,
         const_values: &HashMap<Spur, Procedure>,
         included_files: &HashMap<Spur, Vec<Op>>,
-        static_alloc_names: &HashSet<Spur>,
+        global_alloc_names: &HashSet<Spur>,
         procedure_names: &HashSet<Spur>,
         opt_level: u8,
     ) -> Result<bool, Vec<Diagnostic<FileId>>> {
@@ -187,9 +184,10 @@ impl Program {
         let (new_body, failed_const_eval) = opcode::expand_sub_blocks(
             macros,
             const_values,
-            static_alloc_names,
+            global_alloc_names,
             procedure_names,
             &procedure.body,
+            &procedure.allocs,
         )?;
         procedure.body = new_body;
 
@@ -212,15 +210,13 @@ impl Program {
     ) -> Result<(), Vec<Diagnostic<FileId>>> {
         // We don't need the entire allocation or procedure data just for the expansion, so we'll just use
         // HashSets here.
-        let static_alloc_names: HashSet<_> = self.static_allocs.keys().copied().collect();
+        let global_alloc_names: HashSet<_> = self.global.allocs.keys().copied().collect();
         let procedure_names: HashSet<_> = self.procedures.keys().copied().collect();
         let mut all_diags = Vec::new();
 
         // We're applying the same process to the global procedure, defined procedures, and memory defs,
         // so do them all in one loop instead of separately.
-        let to_check = std::iter::once(&mut self.main)
-            .chain(self.static_allocs.values_mut())
-            .chain(self.procedures.values_mut());
+        let to_check = std::iter::once(&mut self.global).chain(self.procedures.values_mut());
 
         for proc in to_check {
             if let Err(mut diags) = Program::post_process_procedure(
@@ -230,12 +226,29 @@ impl Program {
                 &self.macros,
                 &self.const_values,
                 &self.included_files,
-                &static_alloc_names,
+                &global_alloc_names,
                 &procedure_names,
                 opt_level,
             ) {
                 all_diags.append(&mut diags);
             };
+
+            // Now check the allocs
+            for alloc in proc.allocs.values_mut() {
+                if let Err(mut diags) = Program::post_process_procedure(
+                    alloc,
+                    interner,
+                    source_store,
+                    &self.macros,
+                    &self.const_values,
+                    &self.included_files,
+                    &global_alloc_names,
+                    &procedure_names,
+                    opt_level,
+                ) {
+                    all_diags.append(&mut diags);
+                };
+            }
         }
 
         all_diags.is_empty().then(|| ()).ok_or(all_diags)
@@ -251,7 +264,7 @@ impl Program {
 
         let mut const_names: Vec<_> = self.const_values.keys().copied().collect();
         let mut next_run_names = Vec::new();
-        let static_alloc_names: HashSet<_> = self.static_allocs.keys().copied().collect();
+        let static_alloc_names: HashSet<_> = self.global.allocs.keys().copied().collect();
         let procedure_names: HashSet<_> = self.procedures.keys().copied().collect();
 
         let mut num_loops = 0;
@@ -345,13 +358,17 @@ impl Program {
 
         // Type checking requires seeing the entire program, so we have to iterate again
         // to avoid mutable aliasing.
-        let to_check = std::iter::once(&self.main)
-            .chain(self.static_allocs.values())
-            .chain(self.procedures.values());
+        let to_check = std::iter::once(&self.global).chain(self.procedures.values());
 
         for proc in to_check {
             if let Err(mut diags) = type_check::type_check(proc, &self.procedures, interner) {
                 all_diags.append(&mut diags);
+            }
+
+            for alloc in proc.allocs.values() {
+                if let Err(mut diags) = type_check::type_check(alloc, &self.procedures, interner) {
+                    all_diags.append(&mut diags);
+                }
             }
         }
 
@@ -397,23 +414,23 @@ impl Program {
         };
 
         let mut program = Program {
-            main: Procedure {
+            global: Procedure {
                 name: tokens[0],
                 body: Vec::new(),
+                allocs: HashMap::new(),
                 expected_entry_stack: Vec::new(),
                 expected_exit_stack: Vec::new(),
                 is_const: false,
                 const_val: None,
             },
             macros: HashMap::new(),
-            static_allocs: HashMap::new(),
             procedures: HashMap::new(),
             const_values: HashMap::new(),
             included_files: HashMap::new(),
             include_queue: Vec::new(),
         };
 
-        program.main.body = match opcode::parse_token(&mut program, &tokens, interner) {
+        program.global.body = match opcode::parse_token(&mut program, &tokens, interner, None) {
             Ok(ops) => ops,
             Err(diags) => return Ok(Err(diags)),
         };
@@ -466,7 +483,7 @@ fn evaluate_allocation_sizes(
     let mut alloc_sizes = HashMap::new();
     let mut diags = Vec::new();
 
-    for (&id, proc) in &program.static_allocs {
+    for (&id, proc) in &program.global.allocs {
         let mut stack =
             match simulate_execute_program(program, proc, &HashMap::new(), interner, &[]) {
                 Err(diag) => {
@@ -526,7 +543,7 @@ fn run_simulate(
 
     if let Err(diag) = simulate::simulate_execute_program(
         &program,
-        &program.main,
+        &program.global,
         &alloc_sizes,
         &interner,
         &program_args,

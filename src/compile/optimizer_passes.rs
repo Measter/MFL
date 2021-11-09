@@ -184,7 +184,10 @@ fn mem_push_store(
         _ => return None,
     };
 
-    let (mem_id, mem_val) = mem.code.unwrap_memory();
+    let (mem_id, mem_val, global) = mem.code.unwrap_memory();
+    if !global {
+        return None;
+    }
     assembler.use_memory_alloc(mem_id);
     let push_val = push.code.unwrap_push_int() & 0xFF;
     let mem_id = interner.resolve_lexeme(mem_id);
@@ -212,7 +215,11 @@ fn mem_load(
         _ => return None,
     };
 
-    let (mem_id, mem_val) = mem.code.unwrap_memory();
+    let (mem_id, mem_val, global) = mem.code.unwrap_memory();
+    if !global {
+        return None;
+    }
+
     assembler.use_memory_alloc(mem_id);
     let mem_id = interner.resolve_lexeme(mem_id);
 
@@ -360,7 +367,18 @@ pub(super) fn compile_single_instruction(
             let ptr_reg = assembler.reg_alloc_dyn_literal(format!("__string_literal{}", id));
             assembler.reg_free_dyn_push(ptr_reg);
         }
-        OpCode::Memory { name, offset } => {
+        OpCode::Memory {
+            name,
+            offset,
+            global: false,
+        } => {
+            todo!()
+        }
+        OpCode::Memory {
+            name,
+            offset,
+            global: true,
+        } => {
             assembler.use_memory_alloc(name);
 
             let alloc_name = interner.resolve_lexeme(name);

@@ -760,7 +760,7 @@ pub(crate) fn compile_program(
 
     assemble_procedure(
         &mut assembler,
-        &program.main,
+        &program.global,
         None,
         source_store,
         interner,

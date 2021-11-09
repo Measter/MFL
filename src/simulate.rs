@@ -284,7 +284,18 @@ pub(crate) fn simulate_execute_program(
                 }
             }
 
-            OpCode::Memory { name, offset } => {
+            OpCode::Memory {
+                name,
+                offset,
+                global: false,
+            } => {
+                todo!()
+            }
+            OpCode::Memory {
+                name,
+                offset,
+                global: true,
+            } => {
                 let base = static_allocation_lookup[&name];
                 value_stack.push((base + offset) as u64)
             }
