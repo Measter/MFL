@@ -4,13 +4,13 @@ use crate::{
     compile::assembly::X86Register,
     interners::Interners,
     n_ops::NOps,
-    opcode::{Op, OpCode},
+    opcode::{Op, OpCode, Procedure},
     Width,
 };
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
 
-type OptimizerFunction = for<'a> fn(&[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
+type OptimizerFunction = fn(&Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     push_compare,
@@ -74,7 +74,13 @@ impl OpCode {
 }
 
 /// Optimize a Push-Compare
-fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
+fn push_compare(
+    _: &Procedure,
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    _: &Interners,
+) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (push, op) = match start {
         [push, op]
@@ -106,7 +112,13 @@ fn push_compare(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners)
 }
 
 /// Optimize a Push-ShiftOp
-fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -> Option<usize> {
+fn push_shift(
+    _: &Procedure,
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    _: &Interners,
+) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (push, op) = match start {
         [push, op]
@@ -135,6 +147,7 @@ fn push_shift(ops: &[Op], ip: usize, assembler: &mut Assembler, _: &Interners) -
 
 /// Optimize a Push-ArithBinOp
 fn push_arithmetic(
+    _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
@@ -169,6 +182,7 @@ fn push_arithmetic(
 
 // Optimizes a Mem-Push-Store sequence.
 fn mem_push_store(
+    _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
@@ -204,6 +218,7 @@ fn mem_push_store(
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(
+    _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
@@ -238,6 +253,7 @@ fn mem_load(
 
 /// Compiles a single instruction in isolation. Doesn't actually optimize.
 pub(super) fn compile_single_instruction(
+    proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
@@ -372,7 +388,9 @@ pub(super) fn compile_single_instruction(
             offset,
             global: false,
         } => {
-            todo!()
+            let total_offset = proc.alloc_offset_lookup[&name] + offset;
+            let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {}", total_offset));
+            assembler.reg_free_dyn_push(reg);
         }
         OpCode::Memory {
             name,
@@ -506,6 +524,7 @@ pub(super) fn compile_single_instruction(
         OpCode::Return => {
             assembler.block_boundry();
             assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.push_instr([str_lit(format!("    add rsp, {}", proc.total_alloc_size))]);
             assembler.push_instr([str_lit("    ret")]);
         }
 

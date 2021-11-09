@@ -16,7 +16,7 @@ use assembly::*;
 mod optimizer_passes;
 use optimizer_passes::{str_lit, use_reg, PASSES};
 
-const CALL_STACK_LEN: usize = usize::pow(2, 10); // 1024 depths
+const CALL_STACK_LEN: usize = usize::pow(2, 20); // 1 MB
 
 #[derive(Debug)]
 struct RegisterAllocator {
@@ -80,24 +80,24 @@ impl OpCode {
 }
 
 fn build_assembly(
-    program: &Procedure,
+    proc: &Procedure,
     interner: &Interners,
     opt_level: u8,
     assembler: &mut Assembler,
 ) {
-    let mut program = &*program.body;
+    let mut proc_body = &*proc.body;
     let mut ip = 0;
-    while !program.is_empty() {
+    while !proc_body.is_empty() {
         let len_compiled = if opt_level >= OPT_INSTR {
             PASSES
                 .iter()
-                .filter_map(|pass| pass(program, ip, assembler, interner))
+                .filter_map(|pass| pass(proc, proc_body, ip, assembler, interner))
                 .next()
         } else {
-            optimizer_passes::compile_single_instruction(program, ip, assembler, interner)
+            optimizer_passes::compile_single_instruction(proc, proc_body, ip, assembler, interner)
         }
         .expect("ICE: Failed to compile single instruction");
-        program = &program[len_compiled..];
+        proc_body = &proc_body[len_compiled..];
         ip += len_compiled;
     }
 }
@@ -152,6 +152,7 @@ fn merge_dyn_to_dyn_registers(
             AsmInstruction::RegAllocDup { .. }
             | AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLea { .. }
             | AsmInstruction::RegAllocLiteral { .. }
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegFree { .. }
@@ -207,6 +208,15 @@ fn merge_dyn_to_fixed_registers(
                     value: value.clone(),
                 }
             }
+            AsmInstruction::RegAllocLea {
+                reg: Dynamic(id),
+                addr,
+            } if *id == dynamic_reg_id => {
+                asm_info.asm = AsmInstruction::RegAllocLea {
+                    reg: Fixed(fixed_reg),
+                    addr: addr.clone(),
+                }
+            }
 
             &mut AsmInstruction::RegAllocPop { reg: Fixed(reg) } if reg == fixed_reg => {
                 asm_info.asm = AsmInstruction::Nop;
@@ -237,6 +247,7 @@ fn merge_dyn_to_fixed_registers(
 
             AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLea { .. }
             | AsmInstruction::RegAllocLiteral { .. }
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegAllocDup { .. }
@@ -304,6 +315,7 @@ fn merge_fixed_to_dyn_registers(
 
             AsmInstruction::RegAllocPop { .. }
             | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLea { .. }
             | AsmInstruction::RegAllocLiteral { .. }
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegAllocDup { .. }
@@ -451,6 +463,7 @@ fn find_dynamic_first_merge(
             // These don't alter the stack, so we can ignore these.
             AsmInstruction::RegFree { push: false, .. }
             | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLea { .. }
             | AsmInstruction::RegAllocLiteral { .. }
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::Instruction(_)
@@ -570,6 +583,7 @@ fn find_fixed_first_merge(
             // These don't alter the stack, so we can ignore these.
             AsmInstruction::RegFree { push: false, .. }
             | AsmInstruction::RegAllocNop { .. }
+            | AsmInstruction::RegAllocLea { .. }
             | AsmInstruction::RegAllocLiteral { .. }
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::Instruction(_)
@@ -639,6 +653,7 @@ fn optimize_allocation(program: &mut [Assembly]) {
                 // used. If it isn't, just Nop both the alloc and free.
                 AsmInstruction::RegAllocDup { reg, .. }
                 | AsmInstruction::RegAllocLiteral { reg, .. }
+                | AsmInstruction::RegAllocLea { reg, .. }
                 | AsmInstruction::RegAllocMov { dst: reg, .. } => {
                     did_change |= find_unused_reg(program, start_idx, reg);
                 }
@@ -666,6 +681,7 @@ fn assemble_procedure(
             let name = interner.resolve_lexeme(id);
             println!("Compiling {}...", name);
             assembler.push_instr([str_lit(format!("proc_{}:", name))]);
+            assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
             assembler.push_instr([str_lit("    xchg rbp, rsp")]);
         }
         None => {

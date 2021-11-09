@@ -1,7 +1,6 @@
-use std::{collections::HashMap, convert::TryInto, io::Write, iter::repeat, ops::Range};
+use std::{convert::TryInto, io::Write, iter::repeat, ops::Range};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use lasso::Spur;
 
 use crate::{
     interners::Interners,
@@ -112,21 +111,6 @@ fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
     }
 
     (argc as u64, argv as u64)
-}
-
-fn build_static_allocations(
-    memory: &mut Vec<u8>,
-    allocs: &HashMap<Spur, usize>,
-) -> HashMap<Spur, usize> {
-    let mut lookup = HashMap::new();
-
-    for (&id, &size) in allocs {
-        let base = memory.len();
-        memory.resize(base + size, 0);
-        lookup.insert(id, base);
-    }
-
-    lookup
 }
 
 pub(crate) fn simulate_execute_program(

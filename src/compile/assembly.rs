@@ -147,6 +147,10 @@ pub enum AsmInstruction {
         src: RegisterType,
         dst: RegisterType,
     },
+    RegAllocLea {
+        reg: RegisterType,
+        addr: Cow<'static, str>,
+    },
     RegFree {
         reg: RegisterType,
         push: bool,
@@ -333,6 +337,33 @@ impl AsmInstruction {
                 )?;
             }
 
+            AsmInstruction::RegAllocLea {
+                reg: Dynamic(reg_id),
+                addr,
+            } => {
+                let reg = match allocator.allocate() {
+                    Some(reg) => reg,
+                    None => panic!("ICE: Register exhaustion. {:?}", self),
+                };
+                eprintln!("Reg Allocate LEA {} > {:?}", reg_id, reg);
+                map.insert(*reg_id, reg);
+                writeln!(
+                    out_file,
+                    "    lea {}, [{}]",
+                    reg.as_width(Width::Qword),
+                    addr
+                )?;
+            }
+            AsmInstruction::RegAllocLea {
+                reg: Fixed(reg),
+                addr,
+            } => writeln!(
+                out_file,
+                "    lea {}, [{}]",
+                reg.as_width(Width::Qword),
+                addr
+            )?,
+
             &AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
                 push,
@@ -499,6 +530,18 @@ impl Assembler {
             AsmInstruction::RegAllocLiteral {
                 reg: RegisterType::Dynamic(id),
                 value: value.into(),
+            },
+            self.op_range,
+        ));
+        id
+    }
+
+    pub fn reg_alloc_dyn_lea(&mut self, addr: impl Into<Cow<'static, str>>) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocLea {
+                reg: RegisterType::Dynamic(id),
+                addr: addr.into(),
             },
             self.op_range,
         ));
