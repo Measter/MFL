@@ -303,19 +303,14 @@ impl Program {
                             continue;
                         }
 
-                        let mut stack = match simulate_execute_program(
-                            self,
-                            &procedure,
-                            &HashMap::new(),
-                            interner,
-                            &[],
-                        ) {
-                            Err(diag) => {
-                                all_diags.push(diag);
-                                continue;
-                            }
-                            Ok(stack) => stack,
-                        };
+                        let mut stack =
+                            match simulate_execute_program(self, &procedure, interner, &[]) {
+                                Err(diag) => {
+                                    all_diags.push(diag);
+                                    continue;
+                                }
+                                Ok(stack) => stack,
+                            };
 
                         // The type checker enforces a single stack item here.
                         procedure.const_val = stack.pop();
@@ -422,6 +417,8 @@ impl Program {
                 expected_exit_stack: Vec::new(),
                 is_const: false,
                 const_val: None,
+                alloc_offset_lookup: HashMap::new(),
+                total_alloc_size: 0,
             },
             macros: HashMap::new(),
             procedures: HashMap::new(),
@@ -477,15 +474,34 @@ fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
 }
 
 fn evaluate_allocation_sizes(
-    program: &Program,
+    program: &mut Program,
     interner: &Interners,
-) -> Result<HashMap<Spur, usize>, Vec<Diagnostic<FileId>>> {
-    let mut alloc_sizes = HashMap::new();
+) -> Result<(), Vec<Diagnostic<FileId>>> {
     let mut diags = Vec::new();
 
     for (&id, proc) in &program.global.allocs {
-        let mut stack =
-            match simulate_execute_program(program, proc, &HashMap::new(), interner, &[]) {
+        let mut stack = match simulate_execute_program(program, proc, interner, &[]) {
+            Err(diag) => {
+                diags.push(diag);
+                continue;
+            }
+            Ok(stack) => stack,
+        };
+
+        // The type checker enforces a single stack item here.
+        let size = stack.pop().unwrap() as usize;
+        program
+            .global
+            .alloc_offset_lookup
+            .insert(id, program.global.total_alloc_size);
+        program.global.total_alloc_size += size;
+    }
+
+    let proc_ids: Vec<_> = program.procedures.keys().copied().collect();
+    for proc_id in proc_ids {
+        let mut proc = program.procedures.remove(&proc_id).unwrap();
+        for (alloc_id, alloc) in &proc.allocs {
+            let mut stack = match simulate_execute_program(program, alloc, interner, &[]) {
                 Err(diag) => {
                     diags.push(diag);
                     continue;
@@ -493,11 +509,17 @@ fn evaluate_allocation_sizes(
                 Ok(stack) => stack,
             };
 
-        // The type checker enforces a single stack item here.
-        alloc_sizes.insert(id, stack.pop().unwrap() as usize);
+            // The type checker enforces a single stack item here.
+            let size = stack.pop().unwrap() as usize;
+            proc.alloc_offset_lookup
+                .insert(*alloc_id, proc.total_alloc_size);
+            proc.total_alloc_size += size;
+        }
+
+        program.procedures.insert(proc_id, proc);
     }
 
-    diags.is_empty().then(|| alloc_sizes).ok_or(diags)
+    diags.is_empty().then(|| ()).ok_or(diags)
 }
 
 fn run_simulate(
@@ -515,7 +537,7 @@ fn run_simulate(
 
     program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
-    let program = match Program::load(
+    let mut program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -531,23 +553,16 @@ fn run_simulate(
         }
     };
 
-    let alloc_sizes = match evaluate_allocation_sizes(&program, &interner) {
-        Ok(sizes) => sizes,
-        Err(diags) => {
-            for diag in diags {
-                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-            }
-            std::process::exit(-1);
+    if let Err(diags) = evaluate_allocation_sizes(&mut program, &interner) {
+        for diag in diags {
+            codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
         }
-    };
+        std::process::exit(-1);
+    }
 
-    if let Err(diag) = simulate::simulate_execute_program(
-        &program,
-        &program.global,
-        &alloc_sizes,
-        &interner,
-        &program_args,
-    ) {
+    if let Err(diag) =
+        simulate::simulate_execute_program(&program, &program.global, &interner, &program_args)
+    {
         codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
     }
 
@@ -569,7 +584,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let program = match Program::load(
+    let mut program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -587,25 +602,15 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 
     println!("Evaluating static allocations...");
 
-    let alloc_sizes = match evaluate_allocation_sizes(&program, &interner) {
-        Ok(sizes) => sizes,
-        Err(diags) => {
-            for diag in diags {
-                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-            }
-            std::process::exit(-1);
+    if let Err(diags) = evaluate_allocation_sizes(&mut program, &interner) {
+        for diag in diags {
+            codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
         }
-    };
+        std::process::exit(-1);
+    }
 
     println!("Compiling... to {}", output_asm.display());
-    compile::compile_program(
-        &program,
-        &alloc_sizes,
-        &source_storage,
-        &interner,
-        &output_asm,
-        opt_level,
-    )?;
+    compile::compile_program(&program, &source_storage, &interner, &output_asm, opt_level)?;
 
     println!("Assembling... to {}", output_obj.display());
     let nasm = Command::new("nasm")

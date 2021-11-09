@@ -132,7 +132,6 @@ fn build_static_allocations(
 pub(crate) fn simulate_execute_program(
     program: &Program,
     main_proc: &Procedure,
-    static_allocs: &HashMap<Spur, usize>,
     interner: &Interners,
     program_args: &[String],
 ) -> Result<Vec<u64>, Diagnostic<FileId>> {
@@ -141,10 +140,10 @@ pub(crate) fn simulate_execute_program(
     let mut call_stack: Vec<(&Procedure, usize)> = Vec::new();
     let mut current_procedure = main_proc;
 
-    let mut memory: Vec<u8> = Vec::new();
-    let static_allocation_lookup = build_static_allocations(&mut memory, static_allocs);
+    let mut memory: Vec<u8> = vec![0; program.global.total_alloc_size];
     let literal_addresses = allocate_string_literals(interner, &mut memory);
     let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
+    let mut local_memory_base = memory.len();
 
     while let Some(op) = current_procedure.body.get(ip) {
         // eprintln!("{:?}", op.code);
@@ -289,14 +288,15 @@ pub(crate) fn simulate_execute_program(
                 offset,
                 global: false,
             } => {
-                todo!()
+                let base = local_memory_base + current_procedure.alloc_offset_lookup[&name];
+                value_stack.push((base + offset) as u64)
             }
             OpCode::Memory {
                 name,
                 offset,
                 global: true,
             } => {
-                let base = static_allocation_lookup[&name];
+                let base = program.global.alloc_offset_lookup[&name];
                 value_stack.push((base + offset) as u64)
             }
             OpCode::Load(width) => {
@@ -339,13 +339,21 @@ pub(crate) fn simulate_execute_program(
                 call_stack.push((current_procedure, return_address));
                 current_procedure = &program.procedures[&id];
                 ip = 0;
+
+                local_memory_base = memory.len();
+                memory.resize(memory.len() + current_procedure.total_alloc_size, 0);
+
                 continue;
             }
             OpCode::Return => match call_stack.pop() {
                 None => break,
                 Some((proc, return_ip)) => {
+                    local_memory_base -= current_procedure.total_alloc_size;
+                    memory.truncate(memory.len() - current_procedure.total_alloc_size);
+
                     current_procedure = proc;
                     ip = return_ip;
+
                     continue;
                 }
             },

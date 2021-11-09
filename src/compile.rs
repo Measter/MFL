@@ -729,7 +729,6 @@ fn assemble_procedure(
 
 pub(crate) fn compile_program(
     program: &Program,
-    static_alloc_sizes: &HashMap<Spur, usize>,
     source_store: &SourceStorage,
     interner: &Interners,
     out_file_path: &Path,
@@ -792,7 +791,7 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    __call_stack_end:")?;
 
     for &id in assembler.used_allocs() {
-        let size = static_alloc_sizes[&id];
+        let size = program.global.alloc_offset_lookup[&id];
         let name = interner.resolve_lexeme(id);
         writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }

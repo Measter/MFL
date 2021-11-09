@@ -366,6 +366,7 @@ impl OpCode {
     }
 }
 
+#[derive(Debug)]
 pub struct Procedure {
     pub name: Token,
     pub body: Vec<Op>,
@@ -374,6 +375,8 @@ pub struct Procedure {
     pub expected_entry_stack: Vec<PorthType>,
     pub is_const: bool,
     pub const_val: Option<u64>,
+    pub alloc_offset_lookup: HashMap<Spur, usize>,
+    pub total_alloc_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -556,6 +559,8 @@ pub fn parse_token(
                     expected_entry_stack: Vec::new(),
                     is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
                     const_val: None,
+                    alloc_offset_lookup: HashMap::new(),
+                    total_alloc_size: 0,
                 };
 
                 let (name, mut body) = match parse_sub_block(
