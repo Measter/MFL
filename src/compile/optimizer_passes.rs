@@ -182,70 +182,106 @@ fn push_arithmetic(
 
 // Optimizes a Mem-Push-Store sequence.
 fn mem_push_store(
-    _: &Procedure,
+    proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
     interner: &Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let (mem, push) = match start {
+    let (mem, push, store) = match start {
         [push, mem, store]
-            if mem.code.is_memory() && push.code.is_push_int() && store.code.is_store() =>
+            if mem.code.is_memory()
+                && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX))
+                && store.code.is_store() =>
         {
-            (mem, push)
+            (mem, push, store)
         }
         _ => return None,
     };
 
-    let (mem_id, mem_val, global) = mem.code.unwrap_memory();
-    if !global {
-        return None;
-    }
-    assembler.use_memory_alloc(mem_id);
-    let push_val = push.code.unwrap_push_int() & 0xFF;
-    let mem_id = interner.resolve_lexeme(mem_id);
-
+    let (mem_id, offset, global) = mem.code.unwrap_memory();
+    let push_val = push.code.unwrap_push_int();
+    let width = store.code.unwrap_store();
     assembler.set_op_range(ip, ip + start.len());
 
-    assembler.push_instr([str_lit(format!(
-        "    mov BYTE [__{} + {}], {}",
-        mem_id, mem_val, push_val
-    ))]);
+    if global {
+        assembler.use_memory_alloc(mem_id);
+        let mem_id = interner.resolve_lexeme(mem_id);
+
+        assembler.push_instr([str_lit(format!(
+            "    mov {} [__{} + {}], {}",
+            width.to_asm(),
+            mem_id,
+            offset,
+            push_val
+        ))]);
+    } else {
+        let base_offset = proc.alloc_offset_lookup[&mem_id];
+        assembler.push_instr([str_lit(format!(
+            "    mov {} [rbp + {} + {}], {}",
+            width.to_asm(),
+            base_offset,
+            offset,
+            push_val
+        ))]);
+    }
 
     Some(start.len())
 }
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(
-    _: &Procedure,
+    proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
     interner: &Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let mem = match start {
-        [mem, load] if mem.code.is_memory() && load.code.is_load() => mem,
+    let (mem, load) = match start {
+        [mem, load] if mem.code.is_memory() && load.code.is_load() => (mem, load),
         _ => return None,
     };
 
-    let (mem_id, mem_val, global) = mem.code.unwrap_memory();
-    if !global {
-        return None;
-    }
-
-    assembler.use_memory_alloc(mem_id);
-    let mem_id = interner.resolve_lexeme(mem_id);
-
+    let (mem_id, mem_offset, global) = mem.code.unwrap_memory();
+    let width = load.code.unwrap_load();
     assembler.set_op_range(ip, ip + start.len());
 
-    let reg = assembler.reg_alloc_dyn_literal("0");
-    assembler.push_instr([
-        str_lit("    mov "),
-        dyn_sized_reg(reg, Width::Byte),
-        str_lit(format!(", BYTE [__{} + {}]", mem_id, mem_val)),
-    ]);
+    let reg = if width != Width::Qword {
+        assembler.reg_alloc_dyn_literal("0")
+    } else {
+        assembler.reg_alloc_dyn_nop()
+    };
+
+    if global {
+        assembler.use_memory_alloc(mem_id);
+        let mem_id = interner.resolve_lexeme(mem_id);
+
+        assembler.push_instr([
+            str_lit("    mov "),
+            dyn_sized_reg(reg, width),
+            str_lit(format!(
+                ", {} [__{} + {}]",
+                width.to_asm(),
+                mem_id,
+                mem_offset
+            )),
+        ]);
+    } else {
+        let base_offset = proc.alloc_offset_lookup[&mem_id];
+        assembler.push_instr([
+            str_lit("    mov "),
+            dyn_sized_reg(reg, width),
+            str_lit(format!(
+                ", {} [rbp + {} + {}]",
+                width.to_asm(),
+                base_offset,
+                mem_offset
+            )),
+        ]);
+    }
+
     assembler.reg_free_dyn_push(reg);
 
     Some(start.len())
@@ -388,8 +424,8 @@ pub(super) fn compile_single_instruction(
             offset,
             global: false,
         } => {
-            let total_offset = proc.alloc_offset_lookup[&name] + offset;
-            let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {}", total_offset));
+            let base_offset = proc.alloc_offset_lookup[&name];
+            let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {} + {}", base_offset, offset));
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::Memory {
