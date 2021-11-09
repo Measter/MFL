@@ -158,6 +158,7 @@ pub enum AsmInstruction {
     Instruction(Vec<InstructionPart>),
     /// Designates a boundry that stops the allocation optimizer's search.
     BlockBoundry,
+    SwapStacks,
     Nop,
 }
 
@@ -416,6 +417,9 @@ impl AsmInstruction {
                 writeln!(out_file)?;
             }
             AsmInstruction::BlockBoundry | AsmInstruction::Nop => {}
+            AsmInstruction::SwapStacks => {
+                writeln!(out_file, "    xchg rbp, rsp")?;
+            }
         }
 
         Ok(())
@@ -479,6 +483,11 @@ impl Assembler {
     pub fn block_boundry(&mut self) {
         self.assembly
             .push(Assembly::new(AsmInstruction::BlockBoundry, self.op_range));
+    }
+
+    pub fn swap_stacks(&mut self) {
+        self.assembly
+            .push(Assembly::new(AsmInstruction::SwapStacks, self.op_range));
     }
 
     pub fn set_op_range(&mut self, start: usize, end: usize) {

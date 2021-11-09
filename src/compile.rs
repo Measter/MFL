@@ -157,6 +157,7 @@ fn merge_dyn_to_dyn_registers(
             | AsmInstruction::RegAllocMov { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
+            | AsmInstruction::SwapStacks
             | AsmInstruction::Nop => continue,
         }
     }
@@ -253,6 +254,7 @@ fn merge_dyn_to_fixed_registers(
             | AsmInstruction::RegAllocDup { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
+            | AsmInstruction::SwapStacks
             | AsmInstruction::Nop => continue,
         }
     }
@@ -321,6 +323,7 @@ fn merge_fixed_to_dyn_registers(
             | AsmInstruction::RegAllocDup { .. }
             | AsmInstruction::RegFree { .. }
             | AsmInstruction::BlockBoundry
+            | AsmInstruction::SwapStacks
             | AsmInstruction::Nop => continue,
         }
     }
@@ -457,8 +460,8 @@ fn find_dynamic_first_merge(
                 break
             }
 
-            // We can't optimize past the end of a block.
-            AsmInstruction::BlockBoundry => break,
+            // We can't optimize past the end of a block or function call.
+            AsmInstruction::BlockBoundry | AsmInstruction::SwapStacks => break,
 
             // These don't alter the stack, so we can ignore these.
             AsmInstruction::RegFree { push: false, .. }
@@ -577,8 +580,8 @@ fn find_fixed_first_merge(
                 break
             }
 
-            // We can't optimize past the end of a block.
-            AsmInstruction::BlockBoundry => break,
+            // We can't optimize past the end of a block or a function call.
+            AsmInstruction::BlockBoundry | AsmInstruction::SwapStacks => break,
 
             // These don't alter the stack, so we can ignore these.
             AsmInstruction::RegFree { push: false, .. }
@@ -657,6 +660,17 @@ fn optimize_allocation(program: &mut [Assembly]) {
                 | AsmInstruction::RegAllocMov { dst: reg, .. } => {
                     did_change |= find_unused_reg(program, start_idx, reg);
                 }
+
+                // Also optimize sequential stack swaps
+                AsmInstruction::SwapStacks
+                    if matches![
+                        program.get(start_idx + 1).map(|p| &p.asm),
+                        Some(AsmInstruction::SwapStacks)
+                    ] =>
+                {
+                    program[start_idx].asm = AsmInstruction::Nop;
+                    program[start_idx + 1].asm = AsmInstruction::Nop;
+                }
                 _ => continue,
             };
         }
@@ -694,7 +708,7 @@ fn assemble_procedure(
                 assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
             }
 
-            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.swap_stacks();
         }
         None => {
             println!("Compiling main...");

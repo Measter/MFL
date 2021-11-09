@@ -551,15 +551,12 @@ pub(super) fn compile_single_instruction(
         OpCode::CallProc(id) => {
             let proc_name = interner.resolve_lexeme(id);
 
-            assembler.block_boundry();
-            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.swap_stacks();
             assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
-            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
-            assembler.block_boundry()
+            assembler.swap_stacks();
         }
         OpCode::Return => {
-            assembler.block_boundry();
-            assembler.push_instr([str_lit("    xchg rbp, rsp")]);
+            assembler.swap_stacks();
             if !proc.allocs.is_empty() {
                 assembler.push_instr([str_lit(format!("    add rsp, {}", proc.total_alloc_size))]);
             }
