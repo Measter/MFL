@@ -374,6 +374,7 @@ pub struct Procedure {
     pub expected_exit_stack: Vec<PorthType>,
     pub expected_entry_stack: Vec<PorthType>,
     pub is_const: bool,
+    pub is_global: bool,
     pub const_val: Option<u64>,
     pub alloc_offset_lookup: HashMap<Spur, usize>,
     pub total_alloc_size: usize,
@@ -558,6 +559,7 @@ pub fn parse_token(
                     expected_exit_stack: Vec::new(),
                     expected_entry_stack: Vec::new(),
                     is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
+                    is_global: false,
                     const_val: None,
                     alloc_offset_lookup: HashMap::new(),
                     total_alloc_size: 0,
@@ -612,26 +614,20 @@ pub fn parse_token(
                 new_proc.name = name;
                 new_proc.body = body;
 
-                // TODO: Check local allocations too.
-                let global_names = [
-                    &program.macros,
-                    &program.global.allocs,
-                    &program.procedures,
-                    &program.const_values,
-                ];
-                let local_names: [&HashMap<Spur, Procedure>; 5];
-                let names: &[&HashMap<Spur, Procedure>] = if let Some(proc) = current_scope.as_mut()
-                {
-                    local_names = [
+                let names = if let Some(proc) = current_scope.as_mut() {
+                    [
+                        &program.macros,
+                        &proc.allocs,
+                        &program.procedures,
+                        &program.const_values,
+                    ]
+                } else {
+                    [
                         &program.macros,
                         &program.global.allocs,
                         &program.procedures,
                         &program.const_values,
-                        &proc.allocs,
-                    ];
-                    &local_names
-                } else {
-                    &global_names
+                    ]
                 };
 
                 for def in names {
@@ -1028,6 +1024,7 @@ pub fn expand_sub_blocks(
     global_allocs: &HashSet<Spur>,
     procedure_names: &HashSet<Spur>,
     ops: &[Op],
+    is_global: bool,
     local_allocs: &HashMap<Spur, Procedure>,
 ) -> Result<(Vec<Op>, bool), Vec<Diagnostic<FileId>>> {
     let mut src_vec = ops.to_owned();
@@ -1056,23 +1053,23 @@ pub fn expand_sub_blocks(
                     }));
                 }
 
+                OpCode::Ident(id) if !is_global && local_allocs.contains_key(&id) => {
+                    dst_vec.push(Op {
+                        code: OpCode::Memory {
+                            name: id,
+                            offset: 0,
+                            global: false,
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
+                }
                 OpCode::Ident(id) if global_allocs.contains(&id) => {
                     dst_vec.push(Op {
                         code: OpCode::Memory {
                             name: id,
                             offset: 0,
                             global: true,
-                        },
-                        token: op.token,
-                        expansions: op.expansions,
-                    });
-                }
-                OpCode::Ident(id) if local_allocs.contains_key(&id) => {
-                    dst_vec.push(Op {
-                        code: OpCode::Memory {
-                            name: id,
-                            offset: 0,
-                            global: false,
                         },
                         token: op.token,
                         expansions: op.expansions,

@@ -187,6 +187,7 @@ impl Program {
             global_alloc_names,
             procedure_names,
             &procedure.body,
+            procedure.is_global,
             &procedure.allocs,
         )?;
         procedure.body = new_body;
@@ -416,6 +417,7 @@ impl Program {
                 expected_entry_stack: Vec::new(),
                 expected_exit_stack: Vec::new(),
                 is_const: false,
+                is_global: true,
                 const_val: None,
                 alloc_offset_lookup: HashMap::new(),
                 total_alloc_size: 0,
