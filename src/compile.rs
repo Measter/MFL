@@ -682,16 +682,18 @@ fn assemble_procedure(
             println!("Compiling {}...", name);
             assembler.push_instr([str_lit(format!("proc_{}:", name))]);
 
-            assembler.push_instr([str_lit(";; Local allocs")]);
-            // Output a list of allocs and their offsets.
-            for &alloc_id in proc.allocs.keys() {
-                let name = interner.resolve_lexeme(alloc_id);
-                let offset = proc.alloc_offset_lookup[&alloc_id];
-                assembler
-                    .push_instr([str_lit(format!(";; {:?} {} -- {}", alloc_id, name, offset))]);
+            if !proc.allocs.is_empty() {
+                assembler.push_instr([str_lit(";; Local allocs")]);
+                // Output a list of allocs and their offsets.
+                for &alloc_id in proc.allocs.keys() {
+                    let name = interner.resolve_lexeme(alloc_id);
+                    let offset = proc.alloc_offset_lookup[&alloc_id];
+                    assembler
+                        .push_instr([str_lit(format!(";; {:?} {} -- {}", alloc_id, name, offset))]);
+                }
+                assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
             }
 
-            assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
             assembler.push_instr([str_lit("    xchg rbp, rsp")]);
         }
         None => {

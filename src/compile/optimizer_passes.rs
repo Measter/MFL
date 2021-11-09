@@ -560,7 +560,9 @@ pub(super) fn compile_single_instruction(
         OpCode::Return => {
             assembler.block_boundry();
             assembler.push_instr([str_lit("    xchg rbp, rsp")]);
-            assembler.push_instr([str_lit(format!("    add rsp, {}", proc.total_alloc_size))]);
+            if !proc.allocs.is_empty() {
+                assembler.push_instr([str_lit(format!("    add rsp, {}", proc.total_alloc_size))]);
+            }
             assembler.push_instr([str_lit("    ret")]);
         }
 
