@@ -27,7 +27,7 @@ mod simulate;
 mod source_file;
 mod type_check;
 
-use opcode::{Op, OpCode, Procedure};
+use opcode::{AllocData, Op, OpCode, Procedure};
 use simulate::simulate_execute_program;
 
 const OPT_OPCODE: u8 = 1;
@@ -419,7 +419,7 @@ impl Program {
                 is_const: false,
                 is_global: true,
                 const_val: None,
-                alloc_offset_lookup: HashMap::new(),
+                alloc_size_and_offsets: HashMap::new(),
                 total_alloc_size: 0,
             },
             macros: HashMap::new(),
@@ -492,10 +492,11 @@ fn evaluate_allocation_sizes(
 
         // The type checker enforces a single stack item here.
         let size = stack.pop().unwrap() as usize;
-        program
-            .global
-            .alloc_offset_lookup
-            .insert(id, program.global.total_alloc_size);
+        let alloc_data = AllocData {
+            size,
+            offset: program.global.total_alloc_size,
+        };
+        program.global.alloc_size_and_offsets.insert(id, alloc_data);
         program.global.total_alloc_size += size;
     }
 
@@ -513,8 +514,11 @@ fn evaluate_allocation_sizes(
 
             // The type checker enforces a single stack item here.
             let size = stack.pop().unwrap() as usize;
-            proc.alloc_offset_lookup
-                .insert(*alloc_id, proc.total_alloc_size);
+            let alloc_data = AllocData {
+                size,
+                offset: proc.total_alloc_size,
+            };
+            proc.alloc_size_and_offsets.insert(*alloc_id, alloc_data);
             proc.total_alloc_size += size;
         }
 

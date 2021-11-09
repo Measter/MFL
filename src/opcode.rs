@@ -366,6 +366,12 @@ impl OpCode {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AllocData {
+    pub size: usize,
+    pub offset: usize,
+}
+
 #[derive(Debug)]
 pub struct Procedure {
     pub name: Token,
@@ -376,7 +382,7 @@ pub struct Procedure {
     pub is_const: bool,
     pub is_global: bool,
     pub const_val: Option<u64>,
-    pub alloc_offset_lookup: HashMap<Spur, usize>,
+    pub alloc_size_and_offsets: HashMap<Spur, AllocData>,
     pub total_alloc_size: usize,
 }
 
@@ -561,7 +567,7 @@ pub fn parse_token(
                     is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
                     is_global: false,
                     const_val: None,
-                    alloc_offset_lookup: HashMap::new(),
+                    alloc_size_and_offsets: HashMap::new(),
                     total_alloc_size: 0,
                 };
 

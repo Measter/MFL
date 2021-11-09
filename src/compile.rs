@@ -701,9 +701,11 @@ fn assemble_procedure(
                 // Output a list of allocs and their offsets.
                 for &alloc_id in proc.allocs.keys() {
                     let name = interner.resolve_lexeme(alloc_id);
-                    let offset = proc.alloc_offset_lookup[&alloc_id];
-                    assembler
-                        .push_instr([str_lit(format!(";; {:?} {} -- {}", alloc_id, name, offset))]);
+                    let alloc_data = proc.alloc_size_and_offsets[&alloc_id];
+                    assembler.push_instr([str_lit(format!(
+                        ";; {:?} {} -- offset: {} -- size: {}",
+                        alloc_id, name, alloc_data.offset, alloc_data.size
+                    ))]);
                 }
                 assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
             }
@@ -833,7 +835,7 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    __call_stack_end:")?;
 
     for &id in assembler.used_allocs() {
-        let size = program.global.alloc_offset_lookup[&id];
+        let size = program.global.alloc_size_and_offsets[&id].size;
         let name = interner.resolve_lexeme(id);
         writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }

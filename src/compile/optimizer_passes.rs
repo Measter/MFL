@@ -217,7 +217,7 @@ fn mem_push_store(
             push_val
         ))]);
     } else {
-        let base_offset = proc.alloc_offset_lookup[&mem_id];
+        let base_offset = proc.alloc_size_and_offsets[&mem_id].offset;
         assembler.push_instr([str_lit(format!(
             "    mov {} [rbp + {} + {}], {}",
             width.to_asm(),
@@ -269,7 +269,7 @@ fn mem_load(
             )),
         ]);
     } else {
-        let base_offset = proc.alloc_offset_lookup[&mem_id];
+        let base_offset = proc.alloc_size_and_offsets[&mem_id].offset;
         assembler.push_instr([
             str_lit("    mov "),
             dyn_sized_reg(reg, width),
@@ -424,7 +424,7 @@ pub(super) fn compile_single_instruction(
             offset,
             global: false,
         } => {
-            let base_offset = proc.alloc_offset_lookup[&name];
+            let base_offset = proc.alloc_size_and_offsets[&name].offset;
             let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {} + {}", base_offset, offset));
             assembler.reg_free_dyn_push(reg);
         }

@@ -272,7 +272,8 @@ pub(crate) fn simulate_execute_program(
                 offset,
                 global: false,
             } => {
-                let base = local_memory_base + current_procedure.alloc_offset_lookup[&name];
+                let base =
+                    local_memory_base + current_procedure.alloc_size_and_offsets[&name].offset;
                 value_stack.push((base + offset) as u64)
             }
             OpCode::Memory {
@@ -280,7 +281,7 @@ pub(crate) fn simulate_execute_program(
                 offset,
                 global: true,
             } => {
-                let base = program.global.alloc_offset_lookup[&name];
+                let base = program.global.alloc_size_and_offsets[&name].offset;
                 value_stack.push((base + offset) as u64)
             }
             OpCode::Load(width) => {
