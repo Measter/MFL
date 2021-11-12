@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    iter::Peekable,
+};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use lasso::Spur;
@@ -439,43 +442,52 @@ fn expect_token<'a>(
     }
 }
 
-fn parse_sub_block<'a>(
+fn parse_sub_block_contents<'a>(
     program: &mut Program,
-    token_iter: &mut impl Iterator<Item = (usize, &'a Token)>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
     current_scope: Option<&mut Procedure>,
-) -> Result<(Token, Vec<Op>), Vec<Diagnostic<FileId>>> {
-    let (ident_idx, ident_token) = match expect_token(
-        token_iter,
-        "ident",
-        |k| k == TokenKind::Ident,
-        keyword,
-        interner,
-    ) {
-        Ok(a) => a,
-        Err(diag) => return Err(vec![diag]),
+    mut last_token: Token,
+) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+    let body_start_idx = match token_iter.peek() {
+        Some((idx, _)) => *idx,
+        None => {
+            let diag = Diagnostic::error()
+                .with_message("unexpected end of file")
+                .with_labels(vec![Label::primary(
+                    last_token.location.file_id,
+                    last_token.location.range(),
+                )]);
+
+            return Err(vec![diag]);
+        }
     };
 
-    let body_start_idx = ident_idx + 1;
     let mut block_depth = 1;
     let mut end_idx = body_start_idx;
-    let mut last_token = ident_token;
 
     // We need to keep track of whether we're in an if or while block, because they
     // should be usable inside a macro block.
     for (idx, token) in token_iter {
-        let (msg, is_nested_err) = match (keyword.kind, token.kind) {
-            (TokenKind::Proc, TokenKind::Proc) => ("procedure", true),
-            (TokenKind::Memory, TokenKind::Memory) => ("memory block", true),
-            (TokenKind::Const, TokenKind::Const) => ("const", true),
-            _ => ("", false),
-        };
+        let is_nested_err = matches!(
+            (keyword.kind, token.kind),
+            (
+                TokenKind::Proc,
+                TokenKind::Proc | TokenKind::Macro | TokenKind::Const
+            ) | (
+                TokenKind::Memory | TokenKind::Const,
+                TokenKind::Proc | TokenKind::Macro | TokenKind::Const | TokenKind::Memory,
+            )
+        );
 
         if is_nested_err {
             let diag = Diagnostic::error()
-                .with_message(format!("cannot define a {0} inside another {0}", msg))
+                .with_message(format!(
+                    "cannot define a {:?} inside another {:?}",
+                    token.kind, keyword.kind
+                ))
                 .with_labels(vec![Label::primary(
                     token.location.file_id,
                     token.location.range(),
@@ -512,7 +524,270 @@ fn parse_sub_block<'a>(
     let body_tokens = &tokens[body_start_idx..end_idx];
     let body_ops = parse_token(program, body_tokens, interner, current_scope)?;
 
-    Ok((ident_token, body_ops))
+    Ok(body_ops)
+}
+
+fn parse_type_signature<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+) -> Result<Vec<PorthType>, Diagnostic<FileId>> {
+    expect_token(
+        token_iter,
+        "[",
+        |k| k == TokenKind::SquareBracketOpen,
+        name,
+        interner,
+    )?;
+
+    let mut type_list = Vec::new();
+
+    while token_iter.peek().map(|(_, t)| t.kind) == Some(TokenKind::Ident) {
+        let (_, token) = token_iter.next().unwrap();
+
+        let lexeme = interner.resolve_lexeme(token.lexeme);
+        let typ = match lexeme {
+            "int" => PorthTypeKind::Int,
+            "ptr" => PorthTypeKind::Ptr,
+            "bool" => PorthTypeKind::Bool,
+            _ => {
+                let diag = Diagnostic::error()
+                    .with_message(format!("unknown type {}", lexeme))
+                    .with_labels(vec![Label::primary(
+                        token.location.file_id,
+                        token.location.range(),
+                    )]);
+                return Err(diag);
+            }
+        };
+
+        type_list.push(PorthType {
+            kind: typ,
+            location: token.location,
+        })
+    }
+
+    expect_token(
+        token_iter,
+        "]",
+        |k| k == TokenKind::SquareBracketClosed,
+        name,
+        interner,
+    )?;
+
+    Ok(type_list)
+}
+
+fn parse_proc_header<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+) -> Result<(Token, Procedure), Diagnostic<FileId>> {
+    let expected_entry_stack = parse_type_signature(token_iter, interner, name)?;
+    expect_token(token_iter, "to", |k| k == TokenKind::GoesTo, name, interner)?;
+    let expected_exit_stack = parse_type_signature(token_iter, interner, name)?;
+
+    let new_proc = Procedure {
+        name,
+        body: Vec::new(),
+        allocs: HashMap::new(),
+        expected_exit_stack,
+        expected_entry_stack,
+        is_const: false,
+        is_global: false,
+        const_val: None,
+        alloc_size_and_offsets: HashMap::new(),
+        total_alloc_size: 0,
+    };
+
+    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    Ok((is_token, new_proc))
+}
+
+fn parse_memory_header<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+) -> Result<(Token, Procedure), Diagnostic<FileId>> {
+    let new_proc = Procedure {
+        name,
+        body: Vec::new(),
+        allocs: HashMap::new(),
+        expected_exit_stack: vec![PorthType {
+            kind: PorthTypeKind::Int,
+            location: name.location,
+        }],
+        expected_entry_stack: Vec::new(),
+        is_const: true,
+        is_global: false,
+        const_val: None,
+        alloc_size_and_offsets: HashMap::new(),
+        total_alloc_size: 0,
+    };
+
+    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    Ok((is_token, new_proc))
+}
+
+fn parse_macro_header<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+) -> Result<(Token, Procedure), Diagnostic<FileId>> {
+    let new_proc = Procedure {
+        name,
+        body: Vec::new(),
+        allocs: HashMap::new(),
+        expected_exit_stack: Vec::new(),
+        expected_entry_stack: Vec::new(),
+        is_const: false,
+        is_global: false,
+        const_val: None,
+        alloc_size_and_offsets: HashMap::new(),
+        total_alloc_size: 0,
+    };
+
+    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    Ok((is_token, new_proc))
+}
+
+fn parse_const_header<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+) -> Result<(Token, Procedure), Diagnostic<FileId>> {
+    let expected_exit_stack = parse_type_signature(token_iter, interner, name)?;
+
+    let new_proc = Procedure {
+        name,
+        body: Vec::new(),
+        allocs: HashMap::new(),
+        expected_exit_stack,
+        expected_entry_stack: Vec::new(),
+        is_const: true,
+        is_global: false,
+        const_val: None,
+        alloc_size_and_offsets: HashMap::new(),
+        total_alloc_size: 0,
+    };
+
+    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    Ok((is_token, new_proc))
+}
+
+fn parse_sub_block<'a>(
+    program: &mut Program,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    tokens: &'a [Token],
+    keyword: Token,
+    interner: &Interners,
+    mut current_scope: Option<&mut Procedure>,
+) -> Result<(), Vec<Diagnostic<FileId>>> {
+    let name_token = match expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+    ) {
+        Ok((_, a)) => a,
+        Err(diag) => return Err(vec![diag]),
+    };
+
+    let header_func = match keyword.kind {
+        TokenKind::Proc => parse_proc_header,
+        TokenKind::Memory => parse_memory_header,
+        TokenKind::Macro => parse_macro_header,
+        TokenKind::Const => parse_const_header,
+        _ => unreachable!(),
+    };
+
+    let (is_token, mut proc_header) = match header_func(token_iter, interner, name_token) {
+        Ok(proc) => proc,
+        Err(diag) => return Err(vec![diag]),
+    };
+
+    let mut body = parse_sub_block_contents(
+        program,
+        &mut *token_iter,
+        tokens,
+        keyword,
+        interner,
+        Some(&mut proc_header),
+        is_token,
+    )?;
+
+    if keyword.kind == TokenKind::Proc {
+        // Makes later logic a bit easier if we always have a return opcode.
+        match body.last() {
+            Some(op) => {
+                if op.code != OpCode::Return {
+                    let ret_op = Op {
+                        code: OpCode::Return,
+                        token: op.token,
+                        expansions: op.expansions.clone(),
+                    };
+                    body.push(ret_op);
+                }
+            }
+            None => body.push(Op {
+                code: OpCode::Return,
+                token: proc_header.name,
+                expansions: Vec::new(),
+            }),
+        }
+    }
+
+    proc_header.body = body;
+
+    let namespaces = if let Some(proc) = current_scope.as_deref_mut() {
+        [
+            &program.macros,
+            &proc.allocs,
+            &program.procedures,
+            &program.const_values,
+        ]
+    } else {
+        [
+            &program.macros,
+            &program.global.allocs,
+            &program.procedures,
+            &program.const_values,
+        ]
+    };
+
+    for namespace in namespaces {
+        if let Some(prev_def) = namespace.get(&proc_header.name.lexeme) {
+            let diag = Diagnostic::error()
+                .with_message("multiple definitions of symbol")
+                .with_labels(vec![
+                    Label::primary(
+                        proc_header.name.location.file_id,
+                        proc_header.name.location.range(),
+                    )
+                    .with_message("defined here"),
+                    Label::secondary(
+                        prev_def.name.location.file_id,
+                        prev_def.name.location.range(),
+                    )
+                    .with_message("also defined here"),
+                ]);
+            return Err(vec![diag]);
+        }
+    }
+
+    let namespace = match (keyword.kind, current_scope.as_deref_mut()) {
+        (TokenKind::Const, _) => &mut program.const_values,
+        (TokenKind::Proc, _) => &mut program.procedures,
+        (TokenKind::Macro, _) => &mut program.macros,
+        (TokenKind::Memory, None) => &mut program.global.allocs,
+        (TokenKind::Memory, Some(proc)) => &mut proc.allocs,
+        _ => unreachable!(),
+    };
+
+    namespace.insert(proc_header.name.lexeme, proc_header);
+
+    Ok(())
 }
 
 pub fn parse_token(
@@ -524,8 +799,8 @@ pub fn parse_token(
     let mut ops = Vec::new();
     let mut diags = Vec::new();
 
-    let mut token_iter = tokens.iter().enumerate();
-    'outer: while let Some((_, token)) = token_iter.next() {
+    let mut token_iter = tokens.iter().enumerate().peekable();
+    while let Some((_, token)) = token_iter.next() {
         let kind = match token.kind {
             TokenKind::Drop => OpCode::Drop,
             TokenKind::Print => OpCode::Print,
@@ -558,121 +833,16 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
-                let mut new_proc = Procedure {
-                    name: *token, // We'll just take the current token for now.
-                    body: Vec::new(),
-                    allocs: HashMap::new(),
-                    expected_exit_stack: Vec::new(),
-                    expected_entry_stack: Vec::new(),
-                    is_const: matches!(token.kind, TokenKind::Const | TokenKind::Memory),
-                    is_global: false,
-                    const_val: None,
-                    alloc_size_and_offsets: HashMap::new(),
-                    total_alloc_size: 0,
-                };
-
-                let (name, mut body) = match parse_sub_block(
+                if let Err(mut d) = parse_sub_block(
                     program,
                     &mut token_iter,
                     tokens,
                     *token,
                     interner,
-                    Some(&mut new_proc),
+                    current_scope.as_deref_mut(),
                 ) {
-                    Ok(a) => a,
-                    Err(mut e) => {
-                        diags.append(&mut e);
-                        continue;
-                    }
-                };
-
-                if token.kind == TokenKind::Proc {
-                    // Makes later logic a bit easier if we always have a return opcode.
-                    match body.last() {
-                        Some(op) => {
-                            if op.code != OpCode::Return {
-                                let ret_op = Op {
-                                    code: OpCode::Return,
-                                    token: op.token,
-                                    expansions: op.expansions.clone(),
-                                };
-                                body.push(ret_op);
-                            }
-                        }
-                        None => body.push(Op {
-                            code: OpCode::Return,
-                            token: name,
-                            expansions: Vec::new(),
-                        }),
-                    }
+                    diags.append(&mut d);
                 }
-
-                new_proc.expected_exit_stack =
-                    if matches!(token.kind, TokenKind::Const | TokenKind::Memory) {
-                        vec![PorthType {
-                            kind: PorthTypeKind::Int,
-                            location: name.location,
-                        }]
-                    } else {
-                        Vec::new()
-                    };
-
-                new_proc.name = name;
-                new_proc.body = body;
-
-                let names = if let Some(proc) = current_scope.as_mut() {
-                    [
-                        &program.macros,
-                        &proc.allocs,
-                        &program.procedures,
-                        &program.const_values,
-                    ]
-                } else {
-                    [
-                        &program.macros,
-                        &program.global.allocs,
-                        &program.procedures,
-                        &program.const_values,
-                    ]
-                };
-
-                for def in names {
-                    if let Some(prev_def) = def.get(&name.lexeme) {
-                        let diag = Diagnostic::error()
-                            .with_message("multiple definitions of symbol")
-                            .with_labels(vec![
-                                Label::primary(name.location.file_id, name.location.range())
-                                    .with_message("defined here"),
-                                Label::secondary(
-                                    prev_def.name.location.file_id,
-                                    prev_def.name.location.range(),
-                                )
-                                .with_message("also defined here"),
-                            ]);
-                        diags.push(diag);
-                        continue 'outer;
-                    }
-                }
-
-                match (token.kind, current_scope.as_mut()) {
-                    (TokenKind::Const, _) => {
-                        program.const_values.insert(name.lexeme, new_proc);
-                    }
-                    (TokenKind::Proc, _) => {
-                        program.procedures.insert(name.lexeme, new_proc);
-                    }
-                    (TokenKind::Macro, _) => {
-                        program.macros.insert(name.lexeme, new_proc);
-                    }
-                    (TokenKind::Memory, None) => {
-                        program.global.allocs.insert(name.lexeme, new_proc);
-                    }
-                    (TokenKind::Memory, Some(proc)) => {
-                        proc.allocs.insert(name.lexeme, new_proc);
-                    }
-                    _ => unreachable!(),
-                }
-
                 continue;
             }
             TokenKind::Include => {
@@ -726,6 +896,25 @@ pub fn parse_token(
             TokenKind::CastPtr => OpCode::CastPtr,
 
             TokenKind::SysCall(id) => OpCode::SysCall(id),
+
+            // These are only used as part of a sub-block. If they're found anywhere else,
+            // it's an error.
+            TokenKind::GoesTo
+            | TokenKind::Is
+            | TokenKind::SquareBracketClosed
+            | TokenKind::SquareBracketOpen => {
+                let diag = Diagnostic::error()
+                    .with_message(format!(
+                        "unexpected token `{}` in input",
+                        interner.resolve_lexeme(token.lexeme)
+                    ))
+                    .with_labels(vec![Label::primary(
+                        token.location.file_id,
+                        token.location.range(),
+                    )]);
+                diags.push(diag);
+                continue;
+            }
         };
 
         ops.push(Op::new(kind, *token));

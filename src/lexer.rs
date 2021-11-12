@@ -32,6 +32,7 @@ pub enum TokenKind {
     Else,
     End,
     Equal,
+    GoesTo,
     Greater,
     GreaterEqual,
     Here(Spur),
@@ -39,6 +40,7 @@ pub enum TokenKind {
     If,
     Include,
     Integer(u64),
+    Is,
     Less,
     LessEqual,
     Load(Width),
@@ -52,6 +54,8 @@ pub enum TokenKind {
     Rot,
     ShiftLeft,
     ShiftRight,
+    SquareBracketClosed,
+    SquareBracketOpen,
     Star,
     String { id: Spur, is_c_str: bool },
     Store(Width),
@@ -71,6 +75,7 @@ impl TokenKind {
             | TokenKind::CastBool
             | TokenKind::CastInt
             | TokenKind::CastPtr
+            | TokenKind::Const
             | TokenKind::DivMod
             | TokenKind::Do
             | TokenKind::Drop
@@ -80,6 +85,7 @@ impl TokenKind {
             | TokenKind::Else
             | TokenKind::End
             | TokenKind::Equal
+            | TokenKind::GoesTo
             | TokenKind::Greater
             | TokenKind::GreaterEqual
             | TokenKind::Here(_)
@@ -89,25 +95,25 @@ impl TokenKind {
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load(_)
+            | TokenKind::Macro
+            | TokenKind::Memory
             | TokenKind::Minus
             | TokenKind::NotEqual
             | TokenKind::Plus
             | TokenKind::Print
+            | TokenKind::Proc
             | TokenKind::Rot
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
+            | TokenKind::SquareBracketClosed
+            | TokenKind::SquareBracketOpen
             | TokenKind::Star
             | TokenKind::String { .. }
             | TokenKind::Store(_)
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
-            TokenKind::Const
-            | TokenKind::If
-            | TokenKind::Macro
-            | TokenKind::Memory
-            | TokenKind::Proc
-            | TokenKind::While => true,
+            TokenKind::If | TokenKind::Is | TokenKind::While => true,
         }
     }
 
@@ -142,7 +148,10 @@ struct Scanner<'a> {
 }
 
 fn end_token(c: char) -> bool {
-    matches!(c, '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@' | '/') || c.is_whitespace()
+    matches!(
+        c,
+        '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@' | '/' | '[' | ']'
+    ) || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -266,7 +275,7 @@ impl<'source> Scanner<'source> {
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
-            ('+' | '-' | '=' | '<' | '>' | '*', _) => {
+            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
@@ -274,6 +283,8 @@ impl<'source> Scanner<'source> {
                     '=' => TokenKind::Equal,
                     '<' => TokenKind::Less,
                     '>' => TokenKind::Greater,
+                    '[' => TokenKind::SquareBracketOpen,
+                    ']' => TokenKind::SquareBracketClosed,
                     _ => unreachable!(),
                 };
 
@@ -383,6 +394,7 @@ impl<'source> Scanner<'source> {
                     }
                     "if" => TokenKind::If,
                     "include" => TokenKind::Include,
+                    "is" => TokenKind::Is,
                     "macro" => TokenKind::Macro,
                     "memory" => TokenKind::Memory,
                     "not" => TokenKind::BitNot,
@@ -393,6 +405,7 @@ impl<'source> Scanner<'source> {
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
+                    "to" => TokenKind::GoesTo,
                     "swap" => TokenKind::Swap,
                     "syscall1" => TokenKind::SysCall(1),
                     "syscall2" => TokenKind::SysCall(2),
