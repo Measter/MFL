@@ -178,7 +178,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Allocate Nop {} > {:?}", reg_id, reg);
+                eprintln!("    Reg Allocate Nop {} > {:?}", reg_id, reg);
                 map.insert(reg_id, reg);
             }
             &AsmInstruction::RegAllocDup {
@@ -189,7 +189,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
+                eprintln!("    Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
                 map.insert(reg_id, reg);
                 writeln!(
                     out_file,
@@ -205,7 +205,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Allocate Pop {} > {:?}", reg_id, reg);
+                eprintln!("    Reg Allocate Pop {} > {:?}", reg_id, reg);
                 map.insert(reg_id, reg);
                 writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
@@ -217,7 +217,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Allocate Lit {} > {:?}", reg_id, reg);
+                eprintln!("    Reg Allocate Lit({}) {} > {:?}", value, reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
@@ -230,6 +230,7 @@ impl AsmInstruction {
                 reg: Fixed(reg),
                 depth,
             } => {
+                eprintln!("    Reg Allocate Dup({}) {:?}", depth, reg);
                 writeln!(
                     out_file,
                     "    mov {}, QWORD [rsp + 8*{}]",
@@ -237,14 +238,18 @@ impl AsmInstruction {
                     depth
                 )?;
             }
-            AsmInstruction::RegAllocNop { .. } => {}
+            AsmInstruction::RegAllocNop { reg: Fixed(reg) } => {
+                eprintln!("    Reg Allocate Nop {:?}", reg);
+            }
             &AsmInstruction::RegAllocPop { reg: Fixed(reg) } => {
+                eprintln!("    Reg Allocate Pop {:?}", reg);
                 writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
             AsmInstruction::RegAllocLiteral {
                 reg: Fixed(reg),
                 value,
             } => {
+                eprintln!("    Reg Allocate Lit({}) {:?}", value, reg);
                 writeln!(
                     out_file,
                     "    mov {}, {}",
@@ -262,7 +267,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!(
-                    "Reg Allocate Mov Src {} > {}, Dst {} > {}",
+                    "    Reg Allocate Mov Src {} > {}, Dst {} > {}",
                     src_id,
                     src_reg.as_width(Width::Qword),
                     dst_id,
@@ -286,7 +291,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!(
-                    "Reg Allocate Mov Src {} > {}, Dst {}",
+                    "    Reg Allocate Mov Src {} > {}, Dst {}",
                     src_id,
                     src_reg.as_width(Width::Qword),
                     dst_reg.as_width(Width::Qword)
@@ -308,7 +313,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!(
-                    "Reg Allocate Mov Src {}, Dst {} > {}",
+                    "    Reg Allocate Mov Src {}, Dst {} > {}",
                     src_reg.as_width(Width::Qword),
                     dst_id,
                     dst_reg.as_width(Width::Qword)
@@ -326,7 +331,7 @@ impl AsmInstruction {
                 dst: Fixed(dst_reg),
             } => {
                 eprintln!(
-                    "Reg Allocate Mov Src {}, Dst {}",
+                    "    Reg Allocate Mov Src {}, Dst {}",
                     src_reg.as_width(Width::Qword),
                     dst_reg.as_width(Width::Qword)
                 );
@@ -346,7 +351,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("Reg Allocate LEA {} > {:?}", reg_id, reg);
+                eprintln!("    Reg Allocate Lea {} > {:?}", reg_id, reg);
                 map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
@@ -358,12 +363,15 @@ impl AsmInstruction {
             AsmInstruction::RegAllocLea {
                 reg: Fixed(reg),
                 addr,
-            } => writeln!(
-                out_file,
-                "    lea {}, [{}]",
-                reg.as_width(Width::Qword),
-                addr
-            )?,
+            } => {
+                eprintln!("    Reg Allocate Lea {:?}", reg);
+                writeln!(
+                    out_file,
+                    "    lea {}, [{}]",
+                    reg.as_width(Width::Qword),
+                    addr
+                )?;
+            }
 
             &AsmInstruction::RegFree {
                 reg: Dynamic(reg_id),
@@ -379,16 +387,20 @@ impl AsmInstruction {
                 } else {
                     "Drop"
                 };
-                eprintln!("Reg Free {} {} > {:?}", kind, reg_id, reg);
+                eprintln!("    Reg Free {} {} > {:?}", kind, reg_id, reg);
                 allocator.free(reg);
             }
             &AsmInstruction::RegFree {
                 reg: Fixed(reg_id),
                 push,
             } => {
-                if push {
+                let kind = if push {
                     writeln!(out_file, "    push {}", reg_id.as_width(Width::Qword))?;
-                }
+                    "Push"
+                } else {
+                    "Drop"
+                };
+                eprintln!("    Reg Free {} {:?}", kind, reg_id);
             }
 
             AsmInstruction::Instruction(parts) => {

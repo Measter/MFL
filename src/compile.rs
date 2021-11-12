@@ -109,7 +109,7 @@ fn merge_dyn_to_dyn_registers(
     end_reg_id: usize,
 ) {
     eprintln!(
-        "--- Dyn/Dyn Merge {} and {} in range {}..={}",
+        "    Merge {} and {} in range {}..={}",
         start_reg_id,
         end_reg_id,
         new_range.start,
@@ -170,7 +170,7 @@ fn merge_dyn_to_fixed_registers(
     fixed_reg: X86Register,
 ) {
     eprintln!(
-        "--- Dyn/Fixed Merge {} and {} in range {}..={}",
+        "    Merge {} and {} in range {}..={}",
         dynamic_reg_id,
         fixed_reg.as_width(Width::Qword),
         new_range.start,
@@ -267,7 +267,7 @@ fn merge_fixed_to_dyn_registers(
     fixed_reg: X86Register,
 ) {
     eprintln!(
-        "--- Dyn/Fixed Merge {} and {} in range {}..={}",
+        "    Merge {} and {} in range {}..={}",
         dynamic_reg_id,
         fixed_reg.as_width(Width::Qword),
         new_range.start,
@@ -721,6 +721,7 @@ fn assemble_procedure(
         }
     }
 
+    eprintln!("  Building assembly...");
     build_assembly(proc, interner, opt_level, assembler);
 
     if proc_name.is_none() {
@@ -736,6 +737,7 @@ fn assemble_procedure(
     }
 
     if opt_level >= OPT_STACK {
+        eprintln!("  Optimizing stack ops...");
         optimize_allocation(assembler.assembly_mut());
     }
 
@@ -743,6 +745,9 @@ fn assemble_procedure(
     let mut register_map = HashMap::new();
 
     let mut last_op_range = usize::MAX..usize::MAX; // Intentinally invalid.
+
+    eprintln!();
+    eprintln!("  Rendering...");
     for asm in assembler.assembly() {
         if last_op_range != asm.op_range {
             last_op_range = asm.op_range.clone();
@@ -767,6 +772,8 @@ fn assemble_procedure(
         asm.asm
             .render(out_file, &mut register_allocator, &mut register_map)?;
     }
+
+    eprintln!();
 
     Ok(())
 }
