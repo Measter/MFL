@@ -2,17 +2,13 @@
 
 use std::{path::Path, process::Command};
 
-use codespan_reporting::{
-    diagnostic::Diagnostic,
-    term::termcolor::{ColorChoice, StandardStream},
-};
+use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
 use program::Program;
-use source_file::{FileId, SourceStorage};
+use source_file::SourceStorage;
 use structopt::StructOpt;
 
-// mod compile;
 mod compile;
 mod interners;
 mod lexer;
@@ -22,9 +18,6 @@ mod program;
 mod simulate;
 mod source_file;
 mod type_check;
-
-use opcode::AllocData;
-use simulate::simulate_execute_program;
 
 const OPT_OPCODE: u8 = 1;
 const OPT_INSTR: u8 = 2;
@@ -74,59 +67,6 @@ struct Args {
     mode: Mode,
 }
 
-fn evaluate_allocation_sizes(
-    program: &mut Program,
-    interner: &Interners,
-) -> Result<(), Vec<Diagnostic<FileId>>> {
-    let mut diags = Vec::new();
-
-    for (&id, proc) in &program.global.allocs {
-        let mut stack = match simulate_execute_program(program, proc, interner, &[]) {
-            Err(diag) => {
-                diags.push(diag);
-                continue;
-            }
-            Ok(stack) => stack,
-        };
-
-        // The type checker enforces a single stack item here.
-        let size = stack.pop().unwrap() as usize;
-        let alloc_data = AllocData {
-            size,
-            offset: program.global.total_alloc_size,
-        };
-        program.global.alloc_size_and_offsets.insert(id, alloc_data);
-        program.global.total_alloc_size += size;
-    }
-
-    let proc_ids: Vec<_> = program.procedures.keys().copied().collect();
-    for proc_id in proc_ids {
-        let mut proc = program.procedures.remove(&proc_id).unwrap();
-        for (alloc_id, alloc) in &proc.allocs {
-            let mut stack = match simulate_execute_program(program, alloc, interner, &[]) {
-                Err(diag) => {
-                    diags.push(diag);
-                    continue;
-                }
-                Ok(stack) => stack,
-            };
-
-            // The type checker enforces a single stack item here.
-            let size = stack.pop().unwrap() as usize;
-            let alloc_data = AllocData {
-                size,
-                offset: proc.total_alloc_size,
-            };
-            proc.alloc_size_and_offsets.insert(*alloc_id, alloc_data);
-            proc.total_alloc_size += size;
-        }
-
-        program.procedures.insert(proc_id, proc);
-    }
-
-    diags.is_empty().then(|| ()).ok_or(diags)
-}
-
 fn run_simulate(
     file: String,
     opt_level: u8,
@@ -142,7 +82,7 @@ fn run_simulate(
 
     program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
-    let mut program = match Program::load(
+    let program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -158,15 +98,10 @@ fn run_simulate(
         }
     };
 
-    if let Err(diags) = evaluate_allocation_sizes(&mut program, &interner) {
-        for diag in diags {
-            codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-        }
-        std::process::exit(-1);
-    }
+    let top_level_proc = program.get_proc(program.top_level_proc_id());
 
     if let Err(diag) =
-        simulate::simulate_execute_program(&program, &program.global, &interner, &program_args)
+        simulate::simulate_execute_program(&program, top_level_proc, &interner, &program_args)
     {
         codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
     }
@@ -189,7 +124,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let mut program = match Program::load(
+    let program = match Program::load(
         &mut source_storage,
         &mut interner,
         &file,
@@ -204,15 +139,6 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
             std::process::exit(-1);
         }
     };
-
-    println!("Evaluating static allocations...");
-
-    if let Err(diags) = evaluate_allocation_sizes(&mut program, &interner) {
-        for diag in diags {
-            codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-        }
-        std::process::exit(-1);
-    }
 
     println!("Compiling... to {}", output_asm.display());
     compile::compile_program(&program, &source_storage, &interner, &output_asm, opt_level)?;

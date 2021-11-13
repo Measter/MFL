@@ -4,13 +4,15 @@ use crate::{
     compile::assembly::X86Register,
     interners::Interners,
     n_ops::NOps,
-    opcode::{Op, OpCode, Procedure},
+    opcode::{Op, OpCode},
+    program::{Procedure, Program},
     Width,
 };
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
 
-type OptimizerFunction = fn(&Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
+type OptimizerFunction =
+    fn(&Program, &Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     push_compare,
@@ -75,6 +77,7 @@ impl OpCode {
 
 /// Optimize a Push-Compare
 fn push_compare(
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -113,6 +116,7 @@ fn push_compare(
 
 /// Optimize a Push-ShiftOp
 fn push_shift(
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -147,6 +151,7 @@ fn push_shift(
 
 /// Optimize a Push-ArithBinOp
 fn push_arithmetic(
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -182,6 +187,7 @@ fn push_arithmetic(
 
 // Optimizes a Mem-Push-Store sequence.
 fn mem_push_store(
+    _: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -206,7 +212,7 @@ fn mem_push_store(
     assembler.set_op_range(ip, ip + start.len());
 
     if global {
-        assembler.use_memory_alloc(mem_id);
+        assembler.use_global_alloc(mem_id);
         let mem_id = interner.resolve_lexeme(mem_id);
 
         assembler.push_instr([str_lit(format!(
@@ -217,7 +223,8 @@ fn mem_push_store(
             push_val
         ))]);
     } else {
-        let base_offset = proc.alloc_size_and_offsets[&mem_id].offset;
+        let proc_data = proc.kind().get_proc_data();
+        let base_offset = proc_data.alloc_size_and_offsets[&mem_id].offset;
         assembler.push_instr([str_lit(format!(
             "    mov {} [rbp + {} + {}], {}",
             width.to_asm(),
@@ -232,6 +239,7 @@ fn mem_push_store(
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(
+    _: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -255,7 +263,7 @@ fn mem_load(
     };
 
     if global {
-        assembler.use_memory_alloc(mem_id);
+        assembler.use_global_alloc(mem_id);
         let mem_id = interner.resolve_lexeme(mem_id);
 
         assembler.push_instr([
@@ -269,7 +277,8 @@ fn mem_load(
             )),
         ]);
     } else {
-        let base_offset = proc.alloc_size_and_offsets[&mem_id].offset;
+        let proc_data = proc.kind().get_proc_data();
+        let base_offset = proc_data.alloc_size_and_offsets[&mem_id].offset;
         assembler.push_instr([
             str_lit("    mov "),
             dyn_sized_reg(reg, width),
@@ -289,6 +298,7 @@ fn mem_load(
 
 /// Compiles a single instruction in isolation. Doesn't actually optimize.
 pub(super) fn compile_single_instruction(
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -424,7 +434,8 @@ pub(super) fn compile_single_instruction(
             offset,
             global: false,
         } => {
-            let base_offset = proc.alloc_size_and_offsets[&name].offset;
+            let proc_data = proc.kind().get_proc_data();
+            let base_offset = proc_data.alloc_size_and_offsets[&name].offset;
             let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {} + {}", base_offset, offset));
             assembler.reg_free_dyn_push(reg);
         }
@@ -433,7 +444,7 @@ pub(super) fn compile_single_instruction(
             offset,
             global: true,
         } => {
-            assembler.use_memory_alloc(name);
+            assembler.use_global_alloc(name);
 
             let alloc_name = interner.resolve_lexeme(name);
             let reg = assembler.reg_alloc_dyn_literal(format!("__{} + {}", alloc_name, offset));
@@ -549,7 +560,9 @@ pub(super) fn compile_single_instruction(
         }
 
         OpCode::CallProc(id) => {
-            let proc_name = interner.resolve_lexeme(id);
+            let callee = program.get_proc(id);
+            assembler.use_function(id);
+            let proc_name = interner.resolve_lexeme(callee.name().lexeme);
 
             assembler.swap_stacks();
             assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
@@ -557,8 +570,12 @@ pub(super) fn compile_single_instruction(
         }
         OpCode::Return => {
             assembler.swap_stacks();
-            if !proc.allocs.is_empty() {
-                assembler.push_instr([str_lit(format!("    add rsp, {}", proc.total_alloc_size))]);
+            let proc_data = proc.kind().get_proc_data();
+            if !proc_data.allocs.is_empty() {
+                assembler.push_instr([str_lit(format!(
+                    "    add rsp, {}",
+                    proc_data.total_alloc_size
+                ))]);
             }
             assembler.push_instr([str_lit("    ret")]);
         }

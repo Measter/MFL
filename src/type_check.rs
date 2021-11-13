@@ -1,16 +1,15 @@
 use std::{
     cmp::Ordering,
-    collections::HashMap,
     fmt::{self, Write},
 };
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use lasso::Spur;
 
 use crate::{
     interners::Interners,
     n_ops::{NOps, PopN},
-    opcode::{Op, OpCode, Procedure},
+    opcode::{Op, OpCode},
+    program::{Procedure, Program},
     source_file::{FileId, SourceLocation},
 };
 
@@ -254,7 +253,7 @@ fn final_stack_check(
 ) {
     let make_labels = || {
         procedure
-            .body
+            .body()
             .last()
             .map(|op| {
                 let mut labels = vec![Label::primary(
@@ -273,17 +272,17 @@ fn final_stack_check(
             })
             .unwrap_or_else(|| {
                 vec![Label::primary(
-                    procedure.name.location.file_id,
-                    procedure.name.location.range(),
+                    procedure.name().location.file_id,
+                    procedure.name().location.range(),
                 )]
             })
     };
 
-    if stack.len() != procedure.expected_exit_stack.len() {
+    if stack.len() != procedure.exit_stack().len() {
         let diag = Diagnostic::error()
             .with_message(format!(
                 "expected {} elements on stack, found {}",
-                procedure.expected_exit_stack.len(),
+                procedure.exit_stack().len(),
                 stack.len()
             ))
             .with_labels(make_labels());
@@ -293,13 +292,13 @@ fn final_stack_check(
         return;
     }
 
-    if stack != procedure.expected_exit_stack {
+    if stack != procedure.exit_stack() {
         failed_compare_stack_types(
-            &procedure.expected_exit_stack,
+            procedure.exit_stack(),
             stack,
             diags,
-            procedure.name.location,
-            procedure.body.last().unwrap(),
+            procedure.name().location,
+            procedure.body().last().unwrap(),
             "procedure return stack mismatch",
         );
     }
@@ -311,15 +310,15 @@ struct BlockStackState {
 }
 
 pub fn type_check(
-    cur_proc: &Procedure,
-    all_procs: &HashMap<Spur, Procedure>,
+    program: &Program,
+    proc: &Procedure,
     interner: &Interners,
 ) -> Result<(), Vec<Diagnostic<FileId>>> {
-    let mut stack: Vec<PorthType> = cur_proc.expected_entry_stack.clone();
+    let mut stack: Vec<PorthType> = proc.entry_stack().to_owned();
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
     let mut diags = Vec::new();
 
-    for op in &cur_proc.body {
+    for op in proc.body() {
         match op.code {
             OpCode::Add => {
                 let res = stack_check!(
@@ -741,36 +740,36 @@ pub fn type_check(
             }
 
             OpCode::CallProc(id) => {
-                let callee = &all_procs[&id];
+                let callee = program.get_proc(id);
 
-                if stack.len() < callee.expected_entry_stack.len() {
+                if stack.len() < callee.entry_stack().len() {
                     generate_stack_exhaustion(
                         &mut diags,
                         op,
                         stack.len(),
-                        callee.expected_entry_stack.len(),
+                        callee.entry_stack().len(),
                     );
                     stack.clear();
                 } else {
-                    let last_n = stack.lastn(callee.expected_entry_stack.len()).unwrap();
-                    if last_n != callee.expected_entry_stack {
+                    let last_n = stack.lastn(callee.entry_stack().len()).unwrap();
+                    if last_n != callee.entry_stack() {
                         failed_compare_stack_types(
-                            &callee.expected_entry_stack,
+                            callee.entry_stack(),
                             last_n,
                             &mut diags,
-                            callee.name.location,
+                            callee.name().location,
                             op,
                             "incorrect types on stack",
                         );
                     }
 
-                    stack.truncate(stack.len() - callee.expected_entry_stack.len());
+                    stack.truncate(stack.len() - callee.entry_stack().len());
                 }
 
-                stack.extend_from_slice(&callee.expected_exit_stack);
+                stack.extend_from_slice(callee.exit_stack());
             }
             OpCode::Return => {
-                final_stack_check(cur_proc, &stack, &mut diags);
+                final_stack_check(proc, &stack, &mut diags);
             }
 
             OpCode::SysCall(num_args @ 0..=6) => {
@@ -795,7 +794,7 @@ pub fn type_check(
         }
     }
 
-    final_stack_check(cur_proc, &stack, &mut diags);
+    final_stack_check(proc, &stack, &mut diags);
 
     diags.is_empty().then(|| ()).ok_or(diags)
 }

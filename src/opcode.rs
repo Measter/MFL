@@ -10,6 +10,7 @@ use variantly::Variantly;
 use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
+    program::{ProcData, Procedure, ProcedureId, ProcedureKind},
     source_file::{FileId, SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
     Program, Width,
@@ -27,7 +28,7 @@ pub enum OpCode {
     BitAnd,
     BitNot,
     BitOr,
-    CallProc(Spur),
+    CallProc(ProcedureId),
     CastBool,
     CastInt,
     CastPtr,
@@ -369,26 +370,6 @@ impl OpCode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AllocData {
-    pub size: usize,
-    pub offset: usize,
-}
-
-#[derive(Debug)]
-pub struct Procedure {
-    pub name: Token,
-    pub body: Vec<Op>,
-    pub allocs: HashMap<Spur, Procedure>,
-    pub expected_exit_stack: Vec<PorthType>,
-    pub expected_entry_stack: Vec<PorthType>,
-    pub is_const: bool,
-    pub is_global: bool,
-    pub const_val: Option<u64>,
-    pub alloc_size_and_offsets: HashMap<Spur, AllocData>,
-    pub total_alloc_size: usize,
-}
-
 #[derive(Debug, Clone)]
 pub struct Op {
     pub code: OpCode,
@@ -448,7 +429,7 @@ fn parse_sub_block_contents<'a>(
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
-    current_scope: Option<&mut Procedure>,
+    parent: ProcedureId,
     mut last_token: Token,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let body_start_idx = match token_iter.peek() {
@@ -471,16 +452,15 @@ fn parse_sub_block_contents<'a>(
     // We need to keep track of whether we're in an if or while block, because they
     // should be usable inside a macro block.
     for (idx, token) in token_iter {
-        let is_nested_err = matches!(
-            (keyword.kind, token.kind),
-            (
-                TokenKind::Proc,
-                TokenKind::Proc | TokenKind::Macro | TokenKind::Const
-            ) | (
+        let is_nested_err = match (keyword.kind, token.kind) {
+            (TokenKind::Proc, TokenKind::Include) if parent != program.top_level_proc_id() => true,
+            (TokenKind::Proc, TokenKind::Proc | TokenKind::Macro)
+            | (
                 TokenKind::Memory | TokenKind::Const,
                 TokenKind::Proc | TokenKind::Macro | TokenKind::Const | TokenKind::Memory,
-            )
-        );
+            ) => true,
+            _ => false,
+        };
 
         if is_nested_err {
             let diag = Diagnostic::error()
@@ -522,7 +502,7 @@ fn parse_sub_block_contents<'a>(
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(program, body_tokens, interner, current_scope)?;
+    let body_ops = parse_token(program, body_tokens, interner, parent)?;
 
     Ok(body_ops)
 }
@@ -579,97 +559,85 @@ fn parse_type_signature<'a>(
 }
 
 fn parse_proc_header<'a>(
+    program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-) -> Result<(Token, Procedure), Diagnostic<FileId>> {
-    let expected_entry_stack = parse_type_signature(token_iter, interner, name)?;
+    parent: ProcedureId,
+) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    let entry_stack = parse_type_signature(token_iter, interner, name)?;
     expect_token(token_iter, "to", |k| k == TokenKind::GoesTo, name, interner)?;
-    let expected_exit_stack = parse_type_signature(token_iter, interner, name)?;
+    let exit_stack = parse_type_signature(token_iter, interner, name)?;
 
-    let new_proc = Procedure {
+    let new_proc = program.new_procedure(
         name,
-        body: Vec::new(),
-        allocs: HashMap::new(),
-        expected_exit_stack,
-        expected_entry_stack,
-        is_const: false,
-        is_global: false,
-        const_val: None,
-        alloc_size_and_offsets: HashMap::new(),
-        total_alloc_size: 0,
-    };
+        ProcedureKind::Proc(ProcData::default()),
+        Some(parent),
+        exit_stack,
+        entry_stack,
+    );
 
     let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
     Ok((is_token, new_proc))
 }
 
 fn parse_memory_header<'a>(
+    program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-) -> Result<(Token, Procedure), Diagnostic<FileId>> {
-    let new_proc = Procedure {
+    parent: ProcedureId,
+) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    let new_proc = program.new_procedure(
         name,
-        body: Vec::new(),
-        allocs: HashMap::new(),
-        expected_exit_stack: vec![PorthType {
+        ProcedureKind::Memory,
+        Some(parent),
+        vec![PorthType {
             kind: PorthTypeKind::Int,
             location: name.location,
         }],
-        expected_entry_stack: Vec::new(),
-        is_const: true,
-        is_global: false,
-        const_val: None,
-        alloc_size_and_offsets: HashMap::new(),
-        total_alloc_size: 0,
-    };
+        Vec::new(),
+    );
 
     let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
     Ok((is_token, new_proc))
 }
 
 fn parse_macro_header<'a>(
+    program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-) -> Result<(Token, Procedure), Diagnostic<FileId>> {
-    let new_proc = Procedure {
+    parent: ProcedureId,
+) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    let new_proc = program.new_procedure(
         name,
-        body: Vec::new(),
-        allocs: HashMap::new(),
-        expected_exit_stack: Vec::new(),
-        expected_entry_stack: Vec::new(),
-        is_const: false,
-        is_global: false,
-        const_val: None,
-        alloc_size_and_offsets: HashMap::new(),
-        total_alloc_size: 0,
-    };
+        ProcedureKind::Macro,
+        Some(parent),
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
     Ok((is_token, new_proc))
 }
 
 fn parse_const_header<'a>(
+    program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-) -> Result<(Token, Procedure), Diagnostic<FileId>> {
-    let expected_exit_stack = parse_type_signature(token_iter, interner, name)?;
+    parent: ProcedureId,
+) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    let exit_stack = parse_type_signature(token_iter, interner, name)?;
 
-    let new_proc = Procedure {
+    let new_proc = program.new_procedure(
         name,
-        body: Vec::new(),
-        allocs: HashMap::new(),
-        expected_exit_stack,
-        expected_entry_stack: Vec::new(),
-        is_const: true,
-        is_global: false,
-        const_val: None,
-        alloc_size_and_offsets: HashMap::new(),
-        total_alloc_size: 0,
-    };
+        ProcedureKind::Const { const_val: None },
+        Some(parent),
+        exit_stack,
+        Vec::new(),
+    );
 
     let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
     Ok((is_token, new_proc))
@@ -681,7 +649,7 @@ fn parse_sub_block<'a>(
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
-    mut current_scope: Option<&mut Procedure>,
+    parent: ProcedureId,
 ) -> Result<(), Vec<Diagnostic<FileId>>> {
     let name_token = match expect_token(
         token_iter,
@@ -702,10 +670,11 @@ fn parse_sub_block<'a>(
         _ => unreachable!(),
     };
 
-    let (is_token, mut proc_header) = match header_func(token_iter, interner, name_token) {
-        Ok(proc) => proc,
-        Err(diag) => return Err(vec![diag]),
-    };
+    let (is_token, proc_header_id) =
+        match header_func(program, token_iter, interner, name_token, parent) {
+            Ok(proc) => proc,
+            Err(diag) => return Err(vec![diag]),
+        };
 
     let mut body = parse_sub_block_contents(
         program,
@@ -713,9 +682,11 @@ fn parse_sub_block<'a>(
         tokens,
         keyword,
         interner,
-        Some(&mut proc_header),
+        proc_header_id,
         is_token,
     )?;
+
+    let proc_header = program.get_proc_mut(proc_header_id);
 
     if keyword.kind == TokenKind::Proc {
         // Makes later logic a bit easier if we always have a return opcode.
@@ -732,60 +703,41 @@ fn parse_sub_block<'a>(
             }
             None => body.push(Op {
                 code: OpCode::Return,
-                token: proc_header.name,
+                token: proc_header.name(),
                 expansions: Vec::new(),
             }),
         }
     }
 
-    proc_header.body = body;
+    *proc_header.body_mut() = body;
+    if let Some(prev_def) = program
+        .get_visible_symbol(proc_header_id, name_token.lexeme)
+        .filter(|&f| f != proc_header_id)
+    {
+        let prev_proc = program.get_proc(prev_def).name();
 
-    let namespaces = if let Some(proc) = current_scope.as_deref_mut() {
-        [
-            &program.macros,
-            &proc.allocs,
-            &program.procedures,
-            &program.const_values,
-        ]
-    } else {
-        [
-            &program.macros,
-            &program.global.allocs,
-            &program.procedures,
-            &program.const_values,
-        ]
-    };
-
-    for namespace in namespaces {
-        if let Some(prev_def) = namespace.get(&proc_header.name.lexeme) {
-            let diag = Diagnostic::error()
-                .with_message("multiple definitions of symbol")
-                .with_labels(vec![
-                    Label::primary(
-                        proc_header.name.location.file_id,
-                        proc_header.name.location.range(),
-                    )
+        let diag = Diagnostic::error()
+            .with_message("multiple definitions of symbol")
+            .with_labels(vec![
+                Label::primary(name_token.location.file_id, name_token.location.range())
                     .with_message("defined here"),
-                    Label::secondary(
-                        prev_def.name.location.file_id,
-                        prev_def.name.location.range(),
-                    )
+                Label::secondary(prev_proc.location.file_id, prev_proc.location.range())
                     .with_message("also defined here"),
-                ]);
-            return Err(vec![diag]);
-        }
+            ]);
+        return Err(vec![diag]);
     }
 
-    let namespace = match (keyword.kind, current_scope.as_deref_mut()) {
-        (TokenKind::Const, _) => &mut program.const_values,
-        (TokenKind::Proc, _) => &mut program.procedures,
-        (TokenKind::Macro, _) => &mut program.macros,
-        (TokenKind::Memory, None) => &mut program.global.allocs,
-        (TokenKind::Memory, Some(proc)) => &mut proc.allocs,
-        _ => unreachable!(),
-    };
-
-    namespace.insert(proc_header.name.lexeme, proc_header);
+    let parent_proc = program.get_proc_mut(parent);
+    match (parent_proc.kind_mut(), keyword.kind) {
+        (ProcedureKind::Proc(pd), TokenKind::Const) => {
+            pd.consts.insert(name_token.lexeme, proc_header_id);
+        }
+        (ProcedureKind::Proc(pd), TokenKind::Memory) => {
+            pd.allocs.insert(name_token.lexeme, proc_header_id);
+        }
+        // The other types aren't stored in the proc
+        _ => {}
+    }
 
     Ok(())
 }
@@ -794,7 +746,7 @@ pub fn parse_token(
     program: &mut Program,
     tokens: &[Token],
     interner: &Interners,
-    mut current_scope: Option<&mut Procedure>,
+    parent: ProcedureId,
 ) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
     let mut ops = Vec::new();
     let mut diags = Vec::new();
@@ -833,14 +785,9 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
-                if let Err(mut d) = parse_sub_block(
-                    program,
-                    &mut token_iter,
-                    tokens,
-                    *token,
-                    interner,
-                    current_scope.as_deref_mut(),
-                ) {
+                if let Err(mut d) =
+                    parse_sub_block(program, &mut token_iter, tokens, *token, interner, parent)
+                {
                     diags.append(&mut d);
                 }
                 continue;
@@ -865,7 +812,7 @@ pub fn parse_token(
                     _ => unreachable!(),
                 };
 
-                program.include_queue.push((path_token, literal));
+                program.add_include(path_token, literal);
                 OpCode::Include(literal)
             }
 
@@ -1214,16 +1161,12 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
 }
 
 pub fn expand_sub_blocks(
-    macros: &HashMap<Spur, Procedure>,
-    const_values: &HashMap<Spur, Procedure>,
-    global_allocs: &HashSet<Spur>,
-    procedure_names: &HashSet<Spur>,
-    ops: &[Op],
-    is_global: bool,
-    local_allocs: &HashMap<Spur, Procedure>,
+    program: &Program,
+    interner: &Interners,
+    proc: &Procedure,
 ) -> Result<(Vec<Op>, bool), Vec<Diagnostic<FileId>>> {
-    let mut src_vec = ops.to_owned();
-    let mut dst_vec = Vec::with_capacity(ops.len());
+    let mut src_vec = proc.body().to_owned();
+    let mut dst_vec = Vec::with_capacity(src_vec.len());
     let mut diags = Vec::new();
 
     // Keep making changes until we get no changes.
@@ -1231,78 +1174,86 @@ pub fn expand_sub_blocks(
     let mut last_changed_macros = Vec::new();
     let mut failed_const_expansion = false;
     loop {
-        let mut changed = false;
+        let mut expanded_macro = false;
         last_changed_macros.clear();
 
         for op in src_vec.drain(..) {
-            match op.code {
-                OpCode::Ident(id) if macros.contains_key(&id) => {
-                    changed = true;
-                    let macro_proc = macros.get(&id).unwrap();
-                    last_changed_macros.push(macro_proc.name);
-                    dst_vec.extend(macro_proc.body.iter().map(|new_op| {
+            let ident_id = match op.code {
+                OpCode::Ident(id) => id,
+                _ => {
+                    dst_vec.push(op);
+                    continue;
+                }
+            };
+
+            let found_proc_id = match proc.get_visible_symbol(ident_id) {
+                Some(id) => id,
+                None => {
+                    let diag = Diagnostic::error()
+                        .with_message(format!(
+                            "unknown symbol `{}`",
+                            interner.resolve_lexeme(ident_id)
+                        ))
+                        .with_labels(vec![Label::primary(
+                            op.token.location.file_id,
+                            op.token.location.range(),
+                        )]);
+                    diags.push(diag);
+                    continue;
+                }
+            };
+
+            let found_proc = if found_proc_id == proc.id() {
+                proc
+            } else {
+                program.get_proc(found_proc_id)
+            };
+
+            match found_proc.kind() {
+                ProcedureKind::Macro => {
+                    expanded_macro = true;
+                    last_changed_macros.push(found_proc.name());
+                    dst_vec.extend(found_proc.body().iter().map(|new_op| {
                         let mut new_op = new_op.clone();
                         new_op.expansions.push(op.token.location);
                         new_op.expansions.extend_from_slice(&op.expansions);
                         new_op
                     }));
                 }
-
-                OpCode::Ident(id) if !is_global && local_allocs.contains_key(&id) => {
-                    dst_vec.push(Op {
-                        code: OpCode::Memory {
-                            name: id,
-                            offset: 0,
-                            global: false,
-                        },
-                        token: op.token,
-                        expansions: op.expansions,
-                    });
+                ProcedureKind::Const { const_val: None } => {
+                    failed_const_expansion = true;
+                    dst_vec.push(op);
                 }
-                OpCode::Ident(id) if global_allocs.contains(&id) => {
-                    dst_vec.push(Op {
-                        code: OpCode::Memory {
-                            name: id,
-                            offset: 0,
-                            global: true,
-                        },
-                        token: op.token,
-                        expansions: op.expansions,
-                    });
-                }
-
-                OpCode::Ident(id) if procedure_names.contains(&id) => dst_vec.push(Op {
-                    code: OpCode::CallProc(id),
+                ProcedureKind::Const {
+                    const_val: Some(val),
+                } => dst_vec.push(Op {
+                    code: OpCode::PushInt(*val),
                     token: op.token,
                     expansions: op.expansions,
                 }),
-                OpCode::Ident(id) if const_values.contains_key(&id) => {
-                    let val = const_values.get(&id).unwrap();
-                    if let Some(val) = val.const_val {
-                        dst_vec.push(Op {
-                            code: OpCode::PushInt(val),
-                            token: op.token,
-                            expansions: op.expansions,
-                        });
-                    } else {
-                        failed_const_expansion = true;
-                        dst_vec.push(op);
-                    }
+
+                ProcedureKind::Memory => {
+                    dst_vec.push(Op {
+                        code: OpCode::Memory {
+                            name: ident_id,
+                            offset: 0,
+                            global: found_proc_id == program.top_level_proc_id(),
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
                 }
-                OpCode::Ident(_) => {
-                    let diag = Diagnostic::error()
-                        .with_message("unknown macro or memory allocation")
-                        .with_labels(vec![Label::primary(
-                            op.token.location.file_id,
-                            op.token.location.range(),
-                        )]);
-                    diags.push(diag);
+                ProcedureKind::Proc(_) => {
+                    dst_vec.push(Op {
+                        code: OpCode::CallProc(found_proc_id),
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
                 }
-                _ => dst_vec.push(op),
             }
         }
 
-        if !changed {
+        if !expanded_macro {
             break;
         }
 

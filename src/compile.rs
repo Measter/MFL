@@ -2,13 +2,10 @@ use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, 
 
 use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
-use lasso::Spur;
 
 use crate::{
-    interners::Interners,
-    opcode::{OpCode, Procedure},
-    source_file::SourceStorage,
-    Program, Width, OPT_INSTR, OPT_STACK,
+    interners::Interners, opcode::OpCode, program::Procedure, source_file::SourceStorage, Program,
+    Width, OPT_INSTR, OPT_STACK,
 };
 
 mod assembly;
@@ -80,21 +77,24 @@ impl OpCode {
 }
 
 fn build_assembly(
+    program: &Program,
     proc: &Procedure,
     interner: &Interners,
     opt_level: u8,
     assembler: &mut Assembler,
 ) {
-    let mut proc_body = &*proc.body;
+    let mut proc_body = proc.body();
     let mut ip = 0;
     while !proc_body.is_empty() {
         let len_compiled = if opt_level >= OPT_INSTR {
             PASSES
                 .iter()
-                .filter_map(|pass| pass(proc, proc_body, ip, assembler, interner))
+                .filter_map(|pass| pass(program, proc, proc_body, ip, assembler, interner))
                 .next()
         } else {
-            optimizer_passes::compile_single_instruction(proc, proc_body, ip, assembler, interner)
+            optimizer_passes::compile_single_instruction(
+                program, proc, proc_body, ip, assembler, interner,
+            )
         }
         .expect("ICE: Failed to compile single instruction");
         proc_body = &proc_body[len_compiled..];
@@ -682,49 +682,52 @@ fn optimize_allocation(program: &mut [Assembly]) {
 }
 
 fn assemble_procedure(
+    program: &Program,
     assembler: &mut Assembler,
     proc: &Procedure,
-    proc_name: Option<Spur>,
+    is_top_level: bool,
     source_store: &SourceStorage,
     interner: &Interners,
     out_file: &mut BufWriter<File>,
     opt_level: u8,
 ) -> Result<()> {
-    match proc_name {
-        Some(id) => {
-            let name = interner.resolve_lexeme(id);
-            println!("Compiling {}...", name);
-            assembler.push_instr([str_lit(format!("proc_{}:", name))]);
+    if is_top_level {
+        println!("Compiling main...");
+        assembler.push_instr([str_lit("_start:")]);
+        assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
+        assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
+        assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
+    } else {
+        let name = interner.resolve_lexeme(proc.name().lexeme);
+        println!("Compiling {}...", name);
+        assembler.push_instr([str_lit(format!("proc_{}:", name))]);
 
-            if !proc.allocs.is_empty() {
-                assembler.push_instr([str_lit(";; Local allocs")]);
-                // Output a list of allocs and their offsets.
-                for &alloc_id in proc.allocs.keys() {
-                    let name = interner.resolve_lexeme(alloc_id);
-                    let alloc_data = proc.alloc_size_and_offsets[&alloc_id];
-                    assembler.push_instr([str_lit(format!(
-                        ";; {:?} {} -- offset: {} -- size: {}",
-                        alloc_id, name, alloc_data.offset, alloc_data.size
-                    ))]);
-                }
-                assembler.push_instr([str_lit(format!("    sub rsp, {}", proc.total_alloc_size))]);
+        let proc_data = proc.kind().get_proc_data();
+
+        if !proc_data.allocs.is_empty() {
+            assembler.push_instr([str_lit(";; Local allocs")]);
+            // Output a list of allocs and their offsets.
+            for &alloc_id in proc_data.allocs.keys() {
+                let name = interner.resolve_lexeme(alloc_id);
+                let alloc_data = proc_data.alloc_size_and_offsets[&alloc_id];
+                assembler.push_instr([str_lit(format!(
+                    ";; {:?} {} -- offset: {} -- size: {}",
+                    alloc_id, name, alloc_data.offset, alloc_data.size
+                ))]);
             }
+            assembler.push_instr([str_lit(format!(
+                "    sub rsp, {}",
+                proc_data.total_alloc_size
+            ))]);
+        }
 
-            assembler.swap_stacks();
-        }
-        None => {
-            println!("Compiling main...");
-            assembler.push_instr([str_lit("_start:")]);
-            assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
-            assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
-            assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
-        }
+        assembler.swap_stacks();
     }
 
     eprintln!("  Building assembly...");
-    build_assembly(proc, interner, opt_level, assembler);
+    build_assembly(program, proc, interner, opt_level, assembler);
 
-    if proc_name.is_none() {
+    if is_top_level {
         assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
         assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
         assembler.push_instr([
@@ -751,7 +754,7 @@ fn assemble_procedure(
     for asm in assembler.assembly() {
         if last_op_range != asm.op_range {
             last_op_range = asm.op_range.clone();
-            for (op, ip) in proc.body[asm.op_range.clone()]
+            for (op, ip) in proc.body()[asm.op_range.clone()]
                 .iter()
                 .zip(asm.op_range.clone())
             {
@@ -807,25 +810,17 @@ pub(crate) fn compile_program(
     })?;
 
     let mut assembler = Assembler::default();
+    assembler.use_function(program.top_level_proc_id());
 
-    assemble_procedure(
-        &mut assembler,
-        &program.global,
-        None,
-        source_store,
-        interner,
-        &mut out_file,
-        opt_level,
-    )?;
+    while let Some(id) = assembler.next_used_function() {
+        let proc = program.get_proc(id);
 
-    writeln!(&mut out_file)?;
-
-    for (id, proc) in &program.procedures {
         assembler.reset();
         assemble_procedure(
+            program,
             &mut assembler,
             proc,
-            Some(*id),
+            id == program.top_level_proc_id(),
             source_store,
             interner,
             &mut out_file,
@@ -841,8 +836,12 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    __call_stack: resq {}", CALL_STACK_LEN)?;
     writeln!(&mut out_file, "    __call_stack_end:")?;
 
-    for &id in assembler.used_allocs() {
-        let size = program.global.alloc_size_and_offsets[&id].size;
+    let top_level_alloc_data = program
+        .get_proc(program.top_level_proc_id())
+        .kind()
+        .get_proc_data();
+    for &id in assembler.used_global_allocs() {
+        let size = top_level_alloc_data.alloc_size_and_offsets[&id].size;
         let name = interner.resolve_lexeme(id);
         writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }

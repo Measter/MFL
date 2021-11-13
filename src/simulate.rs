@@ -5,7 +5,8 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use crate::{
     interners::Interners,
     n_ops::PopN,
-    opcode::{Op, OpCode, Procedure},
+    opcode::{Op, OpCode},
+    program::Procedure,
     source_file::FileId,
     Program, Width,
 };
@@ -115,24 +116,32 @@ fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
 
 pub(crate) fn simulate_execute_program(
     program: &Program,
-    main_proc: &Procedure,
+    procedure: &Procedure,
     interner: &Interners,
     program_args: &[String],
 ) -> Result<Vec<u64>, Diagnostic<FileId>> {
     let mut ip = 0;
     let mut value_stack: Vec<u64> = Vec::new();
     let mut call_stack: Vec<(&Procedure, usize)> = Vec::new();
-    let mut current_procedure = main_proc;
 
-    let mut memory: Vec<u8> = vec![0; program.global.total_alloc_size];
+    let global_proc_data = program
+        .get_proc(program.top_level_proc_id())
+        .kind()
+        .get_proc_data();
+
+    let mut current_procedure = procedure;
+
+    let mut memory: Vec<u8> = vec![0; global_proc_data.total_alloc_size];
     let literal_addresses = allocate_string_literals(interner, &mut memory);
     let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
     let mut local_memory_base = memory.len();
 
-    while let Some(op) = current_procedure.body.get(ip) {
+    while let Some(op) = current_procedure.body().get(ip) {
         // eprintln!("{:?}", op.code);
         // Note: We should still check main_proc for const, as it may call non-const procs.
-        if main_proc.is_const && !op.code.is_const() {
+        if (current_procedure.kind().is_const() || current_procedure.kind().is_memory())
+            && !op.code.is_const()
+        {
             return Err(generate_error(
                 "Operation not supported during const evaluation",
                 op,
@@ -272,8 +281,8 @@ pub(crate) fn simulate_execute_program(
                 offset,
                 global: false,
             } => {
-                let base =
-                    local_memory_base + current_procedure.alloc_size_and_offsets[&name].offset;
+                let proc_data = current_procedure.kind().get_proc_data();
+                let base = local_memory_base + proc_data.alloc_size_and_offsets[&name].offset;
                 value_stack.push((base + offset) as u64)
             }
             OpCode::Memory {
@@ -281,7 +290,7 @@ pub(crate) fn simulate_execute_program(
                 offset,
                 global: true,
             } => {
-                let base = program.global.alloc_size_and_offsets[&name].offset;
+                let base = global_proc_data.alloc_size_and_offsets[&name].offset;
                 value_stack.push((base + offset) as u64)
             }
             OpCode::Load(width) => {
@@ -322,19 +331,21 @@ pub(crate) fn simulate_execute_program(
             OpCode::CallProc(id) => {
                 let return_address = ip + 1; // The instruction after.
                 call_stack.push((current_procedure, return_address));
-                current_procedure = &program.procedures[&id];
+                current_procedure = program.get_proc(id);
                 ip = 0;
 
                 local_memory_base = memory.len();
-                memory.resize(memory.len() + current_procedure.total_alloc_size, 0);
+                let proc_data = current_procedure.kind().get_proc_data();
+                memory.resize(memory.len() + proc_data.total_alloc_size, 0);
 
                 continue;
             }
             OpCode::Return => match call_stack.pop() {
                 None => break,
                 Some((proc, return_ip)) => {
-                    local_memory_base -= current_procedure.total_alloc_size;
-                    memory.truncate(memory.len() - current_procedure.total_alloc_size);
+                    let proc_data = current_procedure.kind().get_proc_data();
+                    local_memory_base -= proc_data.total_alloc_size;
+                    memory.truncate(memory.len() - proc_data.total_alloc_size);
 
                     current_procedure = proc;
                     ip = return_ip;

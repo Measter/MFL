@@ -9,7 +9,7 @@ use std::{
 use color_eyre::eyre::Result;
 use lasso::Spur;
 
-use crate::Width;
+use crate::{program::ProcedureId, Width};
 
 use super::{OpRange, RegisterAllocator};
 
@@ -462,6 +462,8 @@ pub struct Assembler {
     op_range: OpRange,
     used_memory: HashSet<Spur>,
     used_literals: HashSet<Spur>,
+    used_functions: HashSet<ProcedureId>,
+    used_function_queue: Vec<ProcedureId>,
 }
 
 impl Assembler {
@@ -488,8 +490,12 @@ impl Assembler {
         &self.used_literals
     }
 
-    pub fn used_allocs(&self) -> &HashSet<Spur> {
+    pub fn used_global_allocs(&self) -> &HashSet<Spur> {
         &self.used_memory
+    }
+
+    pub fn next_used_function(&mut self) -> Option<ProcedureId> {
+        self.used_function_queue.pop()
     }
 
     pub fn block_boundry(&mut self) {
@@ -645,7 +651,14 @@ impl Assembler {
         self.used_literals.insert(id);
     }
 
-    pub fn use_memory_alloc(&mut self, id: Spur) {
+    pub fn use_global_alloc(&mut self, id: Spur) {
         self.used_memory.insert(id);
+    }
+
+    pub fn use_function(&mut self, id: ProcedureId) {
+        let new_func = self.used_functions.insert(id);
+        if new_func {
+            self.used_function_queue.push(id);
+        }
     }
 }
