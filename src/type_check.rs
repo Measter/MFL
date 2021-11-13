@@ -365,7 +365,7 @@ pub fn type_check(
                         stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
                     }
                     Some(kind_pat!([PorthTypeKind::Ptr, PorthTypeKind::Ptr])) => {
-                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
+                        stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
                     }
                     Some(kind_pat!([PorthTypeKind::Ptr, PorthTypeKind::Int])) => {
                         stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
