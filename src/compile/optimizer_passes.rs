@@ -98,6 +98,7 @@ fn push_compare(
 
     assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
+    let result_reg = assembler.reg_alloc_dyn_literal("0");
     let op_suffix = op.code.compile_compare_op_suffix();
 
     assembler.push_instr([
@@ -107,9 +108,10 @@ fn push_compare(
     ]);
     assembler.push_instr([
         str_lit(format!("    set{} ", op_suffix)),
-        dyn_sized_reg(reg, Width::Byte),
+        dyn_sized_reg(result_reg, Width::Byte),
     ]);
-    assembler.reg_free_dyn_push(reg);
+    assembler.reg_free_dyn_drop(reg);
+    assembler.reg_free_dyn_push(result_reg);
 
     Some(start.len())
 }
