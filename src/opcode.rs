@@ -1244,7 +1244,7 @@ pub fn expand_sub_blocks(
                         code: OpCode::Memory {
                             name: ident_id,
                             offset: 0,
-                            global: found_proc_id == program.top_level_proc_id(),
+                            global: found_proc.parent() == Some(program.top_level_proc_id()),
                         },
                         token: op.token,
                         expansions: op.expansions,

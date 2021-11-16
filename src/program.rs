@@ -72,6 +72,10 @@ impl Procedure {
         self.id
     }
 
+    pub fn parent(&self) -> Option<ProcedureId> {
+        self.parent
+    }
+
     pub fn body(&self) -> &[Op] {
         &self.body
     }
