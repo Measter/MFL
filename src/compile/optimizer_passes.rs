@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    compile::assembly::X86Register,
+    compile::{assembly::X86Register, FIXED_REGS},
     interners::Interners,
     n_ops::NOps,
     opcode::{Op, OpCode},
@@ -624,12 +624,28 @@ pub(super) fn compile_single_instruction(
             assembler.use_function(id);
             let proc_name = interner.resolve_lexeme(callee.name().lexeme);
 
+            let num_regs = FIXED_REGS.len().min(callee.entry_stack().len());
+            for &reg in &FIXED_REGS[..num_regs] {
+                assembler.reg_alloc_fixed_pop(reg);
+            }
+
             assembler.swap_stacks();
             assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
             assembler.swap_stacks();
+
+            let num_regs = FIXED_REGS.len().min(callee.exit_stack().len());
+            for &reg in FIXED_REGS[..num_regs].iter().rev() {
+                assembler.reg_free_fixed_push(reg);
+            }
         }
         OpCode::Return => {
+            let num_regs = FIXED_REGS.len().min(proc.exit_stack().len());
+            for &reg in &FIXED_REGS[..num_regs] {
+                assembler.reg_alloc_fixed_pop(reg);
+            }
+
             assembler.swap_stacks();
+
             let proc_data = proc.kind().get_proc_data();
             if !proc_data.allocs.is_empty() {
                 assembler.push_instr([str_lit(format!(
@@ -641,17 +657,7 @@ pub(super) fn compile_single_instruction(
         }
 
         OpCode::SysCall(a @ 0..=6) => {
-            let regs = [
-                X86Register::Rax,
-                X86Register::Rdi,
-                X86Register::Rsi,
-                X86Register::Rdx,
-                X86Register::R10,
-                X86Register::R8,
-                X86Register::R9,
-            ];
-
-            for &reg in &regs[..=a] {
+            for &reg in &FIXED_REGS[..=a] {
                 assembler.reg_alloc_fixed_pop(reg);
             }
 
@@ -667,7 +673,7 @@ pub(super) fn compile_single_instruction(
                 use_reg(Fixed(X86Register::R9)),
             ]);
 
-            for &reg in &regs[1..=a] {
+            for &reg in &FIXED_REGS[1..=a] {
                 assembler.reg_free_fixed_drop(reg);
             }
             assembler.reg_free_fixed_push(X86Register::Rax);

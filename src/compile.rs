@@ -14,6 +14,22 @@ mod optimizer_passes;
 use optimizer_passes::{str_lit, use_reg, PASSES};
 
 const CALL_STACK_LEN: usize = usize::pow(2, 20); // 1 MB
+const FIXED_REGS: [X86Register; 7] = [
+    X86Register::Rax,
+    X86Register::Rdi,
+    X86Register::Rsi,
+    X86Register::Rdx,
+    X86Register::R10,
+    X86Register::R8,
+    X86Register::R9,
+];
+
+// Function call ABI:
+// Because we're re-using the syscall register, we can store up to 7 values in registers
+// when calling and returning from a function.
+//
+// The stack order will be like this:
+// [r9, r8, r10, rdx, rsi, rdi, rax]
 
 #[derive(Debug)]
 struct RegisterAllocator {
@@ -740,6 +756,7 @@ fn assemble_procedure(
     out_file: &mut BufWriter<File>,
     opt_level: u8,
 ) -> Result<()> {
+    assembler.set_is_prelude(true);
     if is_top_level {
         println!("Compiling main...");
         assembler.push_instr([str_lit("_start:")]);
@@ -771,10 +788,23 @@ fn assemble_procedure(
         }
 
         assembler.swap_stacks();
+
+        // Entry of the function, we need to push the values on the value stack
+        // in reverse order.
+        let num_call_regs = FIXED_REGS.len().min(proc.entry_stack().len());
+        let call_regs = &FIXED_REGS[..num_call_regs];
+
+        for &reg in call_regs.iter().rev() {
+            assembler.reg_free_fixed_push(reg);
+        }
     }
+
+    assembler.set_is_prelude(false);
 
     eprintln!("  Building assembly...");
     build_assembly(program, proc, interner, opt_level, assembler);
+
+    assembler.set_is_prelude(true);
 
     if is_top_level {
         assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
@@ -801,7 +831,7 @@ fn assemble_procedure(
     eprintln!();
     eprintln!("  Rendering...");
     for asm in assembler.assembly() {
-        if last_op_range != asm.op_range {
+        if last_op_range != asm.op_range && !asm.is_prelude {
             last_op_range = asm.op_range.clone();
             for (op, ip) in proc.body()[asm.op_range.clone()]
                 .iter()
