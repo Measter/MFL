@@ -102,6 +102,8 @@ fn build_assembly(
     }
 }
 
+/// Merges two dynamic registers by replacing all instances of `end_reg_id` into
+/// `start_reg_id`.
 fn merge_dyn_to_dyn_registers(
     program_chunk: &mut [Assembly],
     new_range: Range<usize>,
@@ -137,6 +139,19 @@ fn merge_dyn_to_dyn_registers(
             } if *reg_id == end_reg_id => {
                 *reg_id = start_reg_id;
             }
+            AsmInstruction::RegAllocMov {
+                src: Dynamic(reg_id),
+                ..
+            } if *reg_id == end_reg_id => {
+                *reg_id = start_reg_id;
+            }
+            AsmInstruction::RegAllocMov {
+                dst: Dynamic(reg_id),
+                ..
+            } if *reg_id == end_reg_id => {
+                *reg_id = start_reg_id;
+            }
+
             AsmInstruction::Instruction(instrs) => {
                 for instr in instrs {
                     match instr {
@@ -163,6 +178,9 @@ fn merge_dyn_to_dyn_registers(
     }
 }
 
+/// Merges a dynamic register into a fixed register by replacing all instances
+/// of `Dynamic(dynamic_reg_id)` with `Fixed(fixed_reg)`.
+/// Note that this is for when the dynamic register is first.
 fn merge_dyn_to_fixed_registers(
     program_chunk: &mut [Assembly],
     new_range: Range<usize>,
@@ -198,6 +216,24 @@ fn merge_dyn_to_fixed_registers(
                 asm_info.asm = AsmInstruction::RegAllocDup {
                     reg: Fixed(fixed_reg),
                     depth,
+                }
+            }
+            &mut AsmInstruction::RegAllocMov {
+                src: Dynamic(reg_id),
+                dst,
+            } if reg_id == dynamic_reg_id => {
+                asm_info.asm = AsmInstruction::RegAllocMov {
+                    dst,
+                    src: Fixed(fixed_reg),
+                }
+            }
+            &mut AsmInstruction::RegAllocMov {
+                dst: Dynamic(reg_id),
+                src,
+            } if reg_id == dynamic_reg_id => {
+                asm_info.asm = AsmInstruction::RegAllocMov {
+                    src,
+                    dst: Fixed(fixed_reg),
                 }
             }
             AsmInstruction::RegAllocLiteral {
@@ -260,6 +296,9 @@ fn merge_dyn_to_fixed_registers(
     }
 }
 
+/// Merges a fixed register into a dynamic register by replacing all instances
+/// of `Dynamic(dynamic_reg_id)` with `Fixed(fixed_reg)`.
+/// Note that this is for when the fixed register comes first.
 fn merge_fixed_to_dyn_registers(
     program_chunk: &mut [Assembly],
     new_range: Range<usize>,
@@ -288,6 +327,16 @@ fn merge_fixed_to_dyn_registers(
                 asm_info.asm = AsmInstruction::RegFree {
                     reg: Fixed(fixed_reg),
                     push,
+                };
+            }
+
+            &mut AsmInstruction::RegAllocMov {
+                src,
+                dst: Dynamic(reg_id),
+            } if reg_id == dynamic_reg_id => {
+                asm_info.asm = AsmInstruction::RegAllocMov {
+                    src,
+                    dst: Fixed(fixed_reg),
                 };
             }
 

@@ -519,6 +519,18 @@ impl Assembler {
         id
     }
 
+    pub fn reg_alloc_dyn_mov(&mut self, src: RegisterType) -> usize {
+        let id = self.next_register();
+        self.assembly.push(Assembly::new(
+            AsmInstruction::RegAllocMov {
+                src,
+                dst: RegisterType::Dynamic(id),
+            },
+            self.op_range,
+        ));
+        id
+    }
+
     pub fn reg_alloc_dyn_literal(&mut self, value: impl Into<Cow<'static, str>>) -> usize {
         let id = self.next_register();
         self.assembly.push(Assembly::new(

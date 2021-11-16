@@ -15,6 +15,7 @@ type OptimizerFunction =
     fn(&Program, &Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
+    dup_boundry,
     push_compare,
     push_shift,
     push_arithmetic,
@@ -73,6 +74,49 @@ impl OpCode {
             Equal | Greater | GreaterEqual | Less | LessEqual | NotEq
         )
     }
+}
+
+/// Optimize a Dup immediately following a block boundry
+/// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
+fn dup_boundry(
+    program: &Program,
+    proc: &Procedure,
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    interner: &Interners,
+) -> Option<usize> {
+    use OpCode::*;
+    let (start, _) = ops.firstn()?;
+    let dup = match start {
+        [boundry, dup]
+            if matches!(
+                boundry.code,
+                While { .. }
+                    | DoWhile { .. }
+                    | If
+                    | Elif { .. }
+                    | Else { .. }
+                    | EndIf { .. }
+                    | EndWhile { .. }
+            ) && dup.code.is_dup() =>
+        {
+            dup
+        }
+        _ => return None,
+    };
+
+    // We don't actually need any special handling for the boundry token,
+    // so we can just throw it into the single-instruction handler.
+    compile_single_instruction(program, proc, ops, ip, assembler, interner)?;
+
+    let depth = dup.code.unwrap_dup();
+    assembler.set_op_range(ip + 1, ip + 2);
+
+    let reg = assembler.reg_alloc_dyn_dup(depth);
+    assembler.reg_free_dyn_push(reg);
+
+    Some(start.len())
 }
 
 /// Optimize a Push-Compare
@@ -456,6 +500,20 @@ pub(super) fn compile_single_instruction(
         OpCode::Drop => {
             let reg = assembler.reg_alloc_dyn_pop();
             assembler.reg_free_dyn_drop(reg);
+        }
+        OpCode::Dup { depth: 0 } => {
+            let top = assembler.reg_alloc_dyn_pop();
+            let duped = assembler.reg_alloc_dyn_mov(RegisterType::Dynamic(top));
+            assembler.reg_free_dyn_push(top);
+            assembler.reg_free_dyn_push(duped);
+        }
+        OpCode::Dup { depth: 1 } => {
+            let top = assembler.reg_alloc_dyn_pop();
+            let lower = assembler.reg_alloc_dyn_pop();
+            let duped = assembler.reg_alloc_dyn_mov(RegisterType::Dynamic(lower));
+            assembler.reg_free_dyn_push(lower);
+            assembler.reg_free_dyn_push(top);
+            assembler.reg_free_dyn_push(duped);
         }
         OpCode::Dup { depth } => {
             let reg = assembler.reg_alloc_dyn_dup(depth);
