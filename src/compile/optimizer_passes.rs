@@ -520,10 +520,15 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::DupPair => {
-            let reg_top = assembler.reg_alloc_dyn_dup(0);
-            let reg_lower = assembler.reg_alloc_dyn_dup(1);
+            let reg_top = assembler.reg_alloc_dyn_pop();
+            let reg_lower = assembler.reg_alloc_dyn_pop();
+            let reg_dup_top = assembler.reg_alloc_dyn_mov(RegisterType::Dynamic(reg_top));
+            let reg_dup_lower = assembler.reg_alloc_dyn_mov(RegisterType::Dynamic(reg_lower));
+
             assembler.reg_free_dyn_push(reg_lower);
             assembler.reg_free_dyn_push(reg_top);
+            assembler.reg_free_dyn_push(reg_dup_lower);
+            assembler.reg_free_dyn_push(reg_dup_top);
         }
         OpCode::Print => {
             assembler.reg_alloc_fixed_pop(X86Register::Rdi);
