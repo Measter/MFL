@@ -167,7 +167,7 @@ impl AsmInstruction {
         &self,
         out_file: &mut BufWriter<File>,
         allocator: &mut RegisterAllocator,
-        map: &mut HashMap<usize, X86Register>,
+        register_map: &mut HashMap<usize, X86Register>,
     ) -> Result<()> {
         use RegisterType::*;
         match self {
@@ -179,7 +179,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!("    Reg Allocate Nop {} > {:?}", reg_id, reg);
-                map.insert(reg_id, reg);
+                register_map.insert(reg_id, reg);
             }
             &AsmInstruction::RegAllocDup {
                 reg: Dynamic(reg_id),
@@ -190,7 +190,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!("    Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
-                map.insert(reg_id, reg);
+                register_map.insert(reg_id, reg);
                 writeln!(
                     out_file,
                     "    mov {}, QWORD [rsp + 8*{}]",
@@ -206,7 +206,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!("    Reg Allocate Pop {} > {:?}", reg_id, reg);
-                map.insert(reg_id, reg);
+                register_map.insert(reg_id, reg);
                 writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
             AsmInstruction::RegAllocLiteral {
@@ -218,7 +218,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!("    Reg Allocate Lit({}) {} > {:?}", value, reg_id, reg);
-                map.insert(*reg_id, reg);
+                register_map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
                     "    mov {}, {}",
@@ -259,66 +259,27 @@ impl AsmInstruction {
             }
 
             &AsmInstruction::RegAllocMov {
-                src: Dynamic(src_id),
-                dst: Dynamic(dst_id),
-            } => {
-                let (src_reg, dst_reg) = match allocator.allocate().zip(allocator.allocate()) {
-                    Some(regs) => regs,
-                    None => panic!("ICE: Register exhaustion. {:?}", self),
-                };
-                eprintln!(
-                    "    Reg Allocate Mov Src {} > {}, Dst {} > {}",
-                    src_id,
-                    src_reg.as_width(Width::Qword),
-                    dst_id,
-                    dst_reg.as_width(Width::Qword)
-                );
-                map.insert(src_id, src_reg);
-                map.insert(dst_id, dst_reg);
-                writeln!(
-                    out_file,
-                    "    mov {}, {}",
-                    dst_reg.as_width(Width::Qword),
-                    src_reg.as_width(Width::Qword)
-                )?;
-            }
-            &AsmInstruction::RegAllocMov {
-                src: Dynamic(src_id),
-                dst: Fixed(dst_reg),
-            } => {
-                let src_reg = match allocator.allocate() {
-                    Some(regs) => regs,
-                    None => panic!("ICE: Register exhaustion. {:?}", self),
-                };
-                eprintln!(
-                    "    Reg Allocate Mov Src {} > {}, Dst {}",
-                    src_id,
-                    src_reg.as_width(Width::Qword),
-                    dst_reg.as_width(Width::Qword)
-                );
-                map.insert(src_id, src_reg);
-                writeln!(
-                    out_file,
-                    "    mov {}, {}",
-                    dst_reg.as_width(Width::Qword),
-                    src_reg.as_width(Width::Qword)
-                )?;
-            }
-            &AsmInstruction::RegAllocMov {
-                src: Fixed(src_reg),
+                src,
                 dst: Dynamic(dst_id),
             } => {
                 let dst_reg = match allocator.allocate() {
-                    Some(regs) => regs,
+                    Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
+                register_map.insert(dst_id, dst_reg);
+                let src_reg = match src {
+                    Dynamic(src_id) => *register_map.get(&src_id).unwrap_or_else(|| {
+                        panic!("ICE: Attempted to fetch unallocated register {},", src_id)
+                    }),
+                    Fixed(reg) => reg,
+                };
+
                 eprintln!(
-                    "    Reg Allocate Mov Src {}, Dst {} > {}",
+                    "    Reg Allocate Mov Src {} > Dst {}({})",
                     src_reg.as_width(Width::Qword),
                     dst_id,
                     dst_reg.as_width(Width::Qword)
                 );
-                map.insert(dst_id, dst_reg);
                 writeln!(
                     out_file,
                     "    mov {}, {}",
@@ -327,11 +288,18 @@ impl AsmInstruction {
                 )?;
             }
             &AsmInstruction::RegAllocMov {
-                src: Fixed(src_reg),
+                src,
                 dst: Fixed(dst_reg),
             } => {
+                let src_reg = match src {
+                    Dynamic(src_id) => *register_map.get(&src_id).unwrap_or_else(|| {
+                        panic!("ICE: Attempted to fetch unallocated register {},", src_id)
+                    }),
+                    Fixed(reg) => reg,
+                };
+
                 eprintln!(
-                    "    Reg Allocate Mov Src {}, Dst {}",
+                    "    Reg Allocate Mov Src {} > Dst {}",
                     src_reg.as_width(Width::Qword),
                     dst_reg.as_width(Width::Qword)
                 );
@@ -352,7 +320,7 @@ impl AsmInstruction {
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
                 eprintln!("    Reg Allocate Lea {} > {:?}", reg_id, reg);
-                map.insert(*reg_id, reg);
+                register_map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
                     "    lea {}, [{}]",
@@ -377,7 +345,7 @@ impl AsmInstruction {
                 reg: Dynamic(reg_id),
                 push,
             } => {
-                let reg = map
+                let reg = register_map
                     .remove(&reg_id)
                     .expect("ICE: Attempted to remove unallocated register");
 
@@ -411,7 +379,7 @@ impl AsmInstruction {
                             reg: RegisterType::Dynamic(reg_id),
                             width,
                         } => {
-                            let reg = *map.get(&reg_id).unwrap_or_else(|| {
+                            let reg = *register_map.get(&reg_id).unwrap_or_else(|| {
                                 panic!("ICE: Attempted to fetch unallocated register {}", reg_id)
                             });
                             write!(out_file, "{}", reg.as_width(width))?;
