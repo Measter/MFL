@@ -94,6 +94,7 @@ fn dup_boundry(
                 boundry.code,
                 While { .. }
                     | DoWhile { .. }
+                    | DoIf { .. }
                     | If
                     | Elif { .. }
                     | Else { .. }
