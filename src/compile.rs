@@ -616,15 +616,15 @@ fn find_fixed_first_merge(
                 // We need to check between the starting op and the ending op in case any of the
                 // ops in there use either register.
                 let between_asm_range = start_asm_range.end..end_asm_range.start;
-                let chunk = &program[between_asm_range];
-                if start_asm_range != end_asm_range && uses_fixed_reg(chunk, fixed_reg)
-                    || uses_fixed_reg(chunk, new_reg)
-                {
-                    break;
+
+                if let Some(chunk) = program.get(between_asm_range) {
+                    if uses_fixed_reg(chunk, fixed_reg) || uses_fixed_reg(chunk, new_reg) {
+                        break;
+                    }
                 }
 
-                program[start_idx].asm = AsmInstruction::Nop; // Nop the push.
-                program[end_idx].asm = AsmInstruction::RegAllocMov {
+                program[end_idx].asm = AsmInstruction::Nop; // Nop the pop.
+                program[start_idx].asm = AsmInstruction::RegAllocMov {
                     src: Fixed(fixed_reg),
                     dst: Fixed(new_reg),
                 };
