@@ -414,6 +414,9 @@ fn uses_fixed_reg(program_chunk: &[Assembly], fixed_reg: X86Register) -> bool {
             }
             | &AsmInstruction::RegAllocLiteral {
                 reg: Fixed(reg_id), ..
+            }
+            | &AsmInstruction::RegAllocLea {
+                reg: Fixed(reg_id), ..
             } if reg_id == fixed_reg => return true,
 
             &AsmInstruction::RegAllocMov {
@@ -429,6 +432,9 @@ fn uses_fixed_reg(program_chunk: &[Assembly], fixed_reg: X86Register) -> bool {
                         InstructionPart::EmitRegister {
                             reg: RegisterType::Fixed(reg_id),
                             ..
+                        } if reg_id == fixed_reg => return true,
+                        InstructionPart::UseRegister {
+                            reg: RegisterType::Fixed(reg_id),
                         } if reg_id == fixed_reg => return true,
                         _ => continue,
                     }
