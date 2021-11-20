@@ -469,20 +469,18 @@ fn parse_sub_block_contents<'a>(
     // We need to keep track of whether we're in an if or while block, because they
     // should be usable inside a macro block.
     for (idx, token) in token_iter {
+        use TokenKind::*;
+        #[allow(clippy::match_like_matches_macro)]
         let is_nested_err = match (keyword.kind, token.kind) {
-            (TokenKind::Proc, TokenKind::Include) if parent != program.top_level_proc_id() => true,
-            (TokenKind::Proc, TokenKind::Proc | TokenKind::Macro)
-            | (
-                TokenKind::Memory | TokenKind::Const,
-                TokenKind::Proc | TokenKind::Macro | TokenKind::Const | TokenKind::Memory,
-            ) => true,
+            (Proc, Include | Proc | Macro) => true,
+            (Memory | Const, Proc | Macro | Const | Memory | Include) => true,
             _ => false,
         };
 
         if is_nested_err {
             let diag = Diagnostic::error()
                 .with_message(format!(
-                    "cannot define a {:?} inside another {:?}",
+                    "cannot use {:?} inside a {:?}",
                     token.kind, keyword.kind
                 ))
                 .with_labels(vec![Label::primary(
