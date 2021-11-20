@@ -11,7 +11,7 @@ use crate::{
     opcode::{self, Op, OpCode},
     simulate::simulate_execute_program,
     source_file::{FileId, SourceStorage},
-    type_check::{self, PorthType},
+    type_check::{self, PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
 
@@ -36,7 +36,9 @@ pub struct ProcData {
 
 #[derive(Debug, Variantly)]
 pub enum ProcedureKind {
-    Const { const_val: Option<u64> },
+    Const {
+        const_val: Option<Vec<(PorthTypeKind, u64)>>,
+    },
     Macro,
     Memory,
     Proc(ProcData),
@@ -292,18 +294,22 @@ impl Program {
                             continue;
                         }
 
-                        let mut stack =
-                            match simulate_execute_program(self, &procedure, interner, &[]) {
-                                Err(diag) => {
-                                    all_diags.push(diag);
-                                    continue;
-                                }
-                                Ok(stack) => stack,
-                            };
+                        let stack = match simulate_execute_program(self, &procedure, interner, &[])
+                        {
+                            Err(diag) => {
+                                all_diags.push(diag);
+                                continue;
+                            }
+                            Ok(stack) => stack,
+                        };
 
-                        // The type checker enforces a single stack item here.
+                        let const_vals = stack
+                            .into_iter()
+                            .zip(procedure.exit_stack())
+                            .map(|(val, ty)| (ty.kind, val))
+                            .collect();
                         match &mut procedure.kind {
-                            ProcedureKind::Const { const_val } => *const_val = stack.pop(),
+                            ProcedureKind::Const { const_val } => *const_val = Some(const_vals),
                             _ => panic!("ICE: Tried setting const_val on non-const proc"),
                         }
                         self.all_procs.insert(const_id, procedure);

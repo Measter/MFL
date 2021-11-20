@@ -1255,12 +1255,22 @@ pub fn expand_sub_blocks(
                     dst_vec.push(op);
                 }
                 ProcedureKind::Const {
-                    const_val: Some(val),
-                } => dst_vec.push(Op {
-                    code: OpCode::PushInt(*val),
-                    token: op.token,
-                    expansions: op.expansions,
-                }),
+                    const_val: Some(vals),
+                } => {
+                    for (kind, val) in vals {
+                        let code = match kind {
+                            PorthTypeKind::Int => OpCode::PushInt(*val),
+                            PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
+                            PorthTypeKind::Ptr => panic!("ICE: Const pointers not supported"),
+                            PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
+                        };
+                        dst_vec.push(Op {
+                            code,
+                            token: op.token,
+                            expansions: op.expansions.clone(),
+                        });
+                    }
+                }
 
                 ProcedureKind::Memory => {
                     dst_vec.push(Op {
