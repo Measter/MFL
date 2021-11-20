@@ -62,6 +62,7 @@ pub enum OpCode {
         condition_ip: usize,
         end_ip: usize,
     },
+    Epilogue,
     Equal,
     Ident(Spur),
     If,
@@ -78,6 +79,7 @@ pub enum OpCode {
     },
     Multiply,
     NotEq,
+    Prologue,
     Print,
     PushBool(bool),
     PushInt(u64),
@@ -150,7 +152,7 @@ impl OpCode {
             | OpCode::PushStr { .. }
             | OpCode::While { .. } => 0,
 
-            OpCode::CallProc(_) | OpCode::Return => todo!(),
+            OpCode::CallProc(_) | OpCode::Return | OpCode::Prologue | OpCode::Epilogue => todo!(),
 
             OpCode::SysCall(a) => a + 1,
         }
@@ -177,6 +179,7 @@ impl OpCode {
             | OpCode::End
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
+            | OpCode::Epilogue
             | OpCode::Equal
             | OpCode::Ident(_)
             | OpCode::If
@@ -187,6 +190,7 @@ impl OpCode {
             | OpCode::GreaterEqual
             | OpCode::Multiply
             | OpCode::NotEq
+            | OpCode::Prologue
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr { .. }
@@ -235,11 +239,13 @@ impl OpCode {
             | End { .. }
             | EndIf { .. }
             | EndWhile { .. }
+            | Epilogue
             | Ident(_)
             | If
             | Include(_)
             | Load(_)
             | Memory { .. }
+            | Prologue
             | Print
             | PushBool(_)
             | PushInt(_)
@@ -280,12 +286,14 @@ impl OpCode {
             | End { .. }
             | EndIf { .. }
             | EndWhile { .. }
+            | Epilogue
             | Ident(_)
             | If
             | Include(_)
             | Load(_)
             | Memory { .. }
             | Multiply
+            | Prologue
             | Print
             | PushBool(_)
             | PushInt(_)
@@ -338,11 +346,13 @@ impl OpCode {
             | End { .. }
             | EndIf { .. }
             | EndWhile { .. }
+            | Epilogue
             | Ident(_)
             | If
             | Include { .. }
             | Load(_)
             | Memory { .. }
+            | Prologue
             | Print
             | PushBool(_)
             | PushInt(_)
@@ -696,16 +706,31 @@ fn parse_sub_block<'a>(
     let proc_header = program.get_proc_mut(proc_header_id);
 
     if keyword.kind == TokenKind::Proc {
+        body.insert(
+            0,
+            Op {
+                code: OpCode::Prologue,
+                token: name_token,
+                expansions: Vec::new(),
+            },
+        );
+
         // Makes later logic a bit easier if we always have a return opcode.
         match body.last() {
             Some(op) => {
                 if op.code != OpCode::Return {
-                    let ret_op = Op {
+                    let token = op.token;
+                    let expansions = op.expansions.clone();
+                    body.push(Op {
+                        code: OpCode::Epilogue,
+                        token,
+                        expansions: expansions.clone(),
+                    });
+                    body.push(Op {
                         code: OpCode::Return,
-                        token: op.token,
-                        expansions: op.expansions.clone(),
-                    };
-                    body.push(ret_op);
+                        token,
+                        expansions,
+                    });
                 }
             }
             None => body.push(Op {

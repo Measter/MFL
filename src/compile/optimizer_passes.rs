@@ -644,12 +644,23 @@ pub(super) fn compile_single_instruction(
                 assembler.reg_free_fixed_push(reg);
             }
         }
-        OpCode::Return => {
+        OpCode::Epilogue => {
             let num_regs = FIXED_REGS.len().min(proc.exit_stack().len());
             for &reg in &FIXED_REGS[..num_regs] {
                 assembler.reg_alloc_fixed_pop(reg);
             }
+        }
+        OpCode::Prologue => {
+            // Entry of the function, we need to push the values on the value stack
+            // in reverse order.
+            let num_call_regs = FIXED_REGS.len().min(proc.entry_stack().len());
+            let call_regs = &FIXED_REGS[..num_call_regs];
 
+            for &reg in call_regs.iter().rev() {
+                assembler.reg_free_fixed_push(reg);
+            }
+        }
+        OpCode::Return => {
             assembler.swap_stacks();
 
             let proc_data = proc.kind().get_proc_data();

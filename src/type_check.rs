@@ -768,6 +768,8 @@ pub fn type_check(
 
                 stack.extend_from_slice(callee.exit_stack());
             }
+
+            OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::Return => {
                 final_stack_check(proc, &stack, &mut diags);
             }

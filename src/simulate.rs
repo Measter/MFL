@@ -328,6 +328,8 @@ pub(crate) fn simulate_execute_program(
 
             OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
 
+            // These are no-ops for the simulator, only there to help the compiler.
+            OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::CallProc(id) => {
                 let return_address = ip + 1; // The instruction after.
                 call_stack.push((current_procedure, return_address));

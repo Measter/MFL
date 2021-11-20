@@ -411,16 +411,14 @@ pub struct Assembly {
     pub asm: AsmInstruction,
     pub op_range: Range<usize>,
     pub merged_range: Range<usize>,
-    pub is_prelude: bool,
 }
 
 impl Assembly {
-    fn new(asm: AsmInstruction, range: OpRange, is_prelude: bool) -> Self {
+    fn new(asm: AsmInstruction, range: OpRange) -> Self {
         Self {
             asm,
             op_range: range.start..range.end,
             merged_range: range.start..range.end,
-            is_prelude,
         }
     }
 }
@@ -430,7 +428,6 @@ pub struct Assembler {
     assembly: Vec<Assembly>,
     register_id: usize,
     op_range: OpRange,
-    is_prelude: bool,
     used_memory: HashSet<Spur>,
     used_literals: HashSet<Spur>,
     used_functions: HashSet<ProcedureId>,
@@ -446,8 +443,7 @@ impl Assembler {
     pub fn reset(&mut self) {
         self.assembly.clear();
         self.register_id = 0;
-        self.op_range = OpRange { start: 0, end: 1 };
-        self.is_prelude = true;
+        self.op_range = Default::default();
     }
 
     pub fn assembly(&self) -> &[Assembly] {
@@ -470,24 +466,14 @@ impl Assembler {
         self.used_function_queue.pop()
     }
 
-    pub fn set_is_prelude(&mut self, is_prelude: bool) {
-        self.is_prelude = is_prelude;
-    }
-
     pub fn block_boundry(&mut self) {
-        self.assembly.push(Assembly::new(
-            AsmInstruction::BlockBoundry,
-            self.op_range,
-            self.is_prelude,
-        ));
+        self.assembly
+            .push(Assembly::new(AsmInstruction::BlockBoundry, self.op_range));
     }
 
     pub fn swap_stacks(&mut self) {
-        self.assembly.push(Assembly::new(
-            AsmInstruction::SwapStacks,
-            self.op_range,
-            self.is_prelude,
-        ));
+        self.assembly
+            .push(Assembly::new(AsmInstruction::SwapStacks, self.op_range));
     }
 
     pub fn set_op_range(&mut self, start: usize, end: usize) {
@@ -496,8 +482,7 @@ impl Assembler {
 
     pub fn push_instr(&mut self, instr: impl Into<Vec<InstructionPart>>) {
         let asm = AsmInstruction::Instruction(instr.into());
-        self.assembly
-            .push(Assembly::new(asm, self.op_range, self.is_prelude));
+        self.assembly.push(Assembly::new(asm, self.op_range));
     }
 
     pub fn reg_alloc_dyn_pop(&mut self) -> usize {
@@ -507,7 +492,6 @@ impl Assembler {
                 reg: RegisterType::Dynamic(id),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -519,7 +503,6 @@ impl Assembler {
                 reg: RegisterType::Dynamic(id),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -532,7 +515,6 @@ impl Assembler {
                 reg: RegisterType::Dynamic(id),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -545,7 +527,6 @@ impl Assembler {
                 dst: RegisterType::Dynamic(id),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -558,7 +539,6 @@ impl Assembler {
                 value: value.into(),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -571,7 +551,6 @@ impl Assembler {
                 addr: addr.into(),
             },
             self.op_range,
-            self.is_prelude,
         ));
         id
     }
@@ -582,7 +561,6 @@ impl Assembler {
                 reg: RegisterType::Fixed(reg),
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -592,7 +570,6 @@ impl Assembler {
                 reg: RegisterType::Fixed(reg),
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -607,7 +584,6 @@ impl Assembler {
                 value: value.into(),
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -618,7 +594,6 @@ impl Assembler {
                 push: true,
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -629,7 +604,6 @@ impl Assembler {
                 push: false,
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -640,7 +614,6 @@ impl Assembler {
                 push: true,
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
@@ -651,7 +624,6 @@ impl Assembler {
                 push: false,
             },
             self.op_range,
-            self.is_prelude,
         ));
     }
 
