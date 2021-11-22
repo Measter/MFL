@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use codespan_reporting::files::{Files, SimpleFile};
+use ariadne::{Cache, Source, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(usize);
@@ -20,6 +20,8 @@ pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: usize,
     pub source_end: usize,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Default for SourceLocation {
@@ -28,16 +30,36 @@ impl Default for SourceLocation {
             file_id: FileId::blank(),
             source_start: Default::default(),
             source_end: Default::default(),
+            line: Default::default(),
+            column: Default::default(),
         }
     }
 }
 
+impl Span for SourceLocation {
+    type SourceId = FileId;
+
+    fn source(&self) -> &Self::SourceId {
+        &self.file_id
+    }
+
+    fn start(&self) -> usize {
+        self.source_start
+    }
+
+    fn end(&self) -> usize {
+        self.source_end
+    }
+}
+
 impl SourceLocation {
-    pub fn new(file_id: FileId, range: Range<usize>) -> Self {
+    pub fn new(file_id: FileId, range: Range<usize>, line: usize, column: usize) -> Self {
         Self {
             file_id,
             source_start: range.start,
             source_end: range.end,
+            line,
+            column,
         }
     }
 
@@ -54,13 +76,15 @@ impl SourceLocation {
             file_id: self.file_id,
             source_start: self.source_start.min(other.source_start),
             source_end: self.source_end.max(other.source_end),
+            line: self.line.min(other.line),
+            column: self.column.min(other.column),
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct SourceStorage {
-    files: Vec<SimpleFile<String, String>>,
+    files: Vec<(String, String, Source)>,
 }
 
 impl SourceStorage {
@@ -71,41 +95,28 @@ impl SourceStorage {
     pub fn add(&mut self, name: &str, source: &str) -> FileId {
         let id = self.files.len();
         self.files
-            .push(SimpleFile::new(name.to_owned(), source.to_owned()));
+            .push((name.to_owned(), source.to_owned(), source.into()));
 
         FileId(id)
     }
+
+    pub fn name(&self, id: FileId) -> &str {
+        &self.files[id.0].0
+    }
+
+    pub fn source(&self, id: FileId) -> &str {
+        &self.files[id.0].1
+    }
 }
 
-impl<'a> Files<'a> for SourceStorage {
-    type FileId = FileId;
-    type Name = &'a str;
-    type Source = &'a str;
-
-    fn name(&'a self, id: Self::FileId) -> Result<Self::Name, codespan_reporting::files::Error> {
-        Ok(self.files[id.0].name())
+impl Cache<FileId> for &SourceStorage {
+    fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
+        Ok(&self.files[id.0].2)
     }
 
-    fn source(
-        &'a self,
-        id: Self::FileId,
-    ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        Ok(self.files[id.0].source().as_ref())
-    }
+    fn display<'a>(&self, id: &'a FileId) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        let name = &self.files[id.0].0;
 
-    fn line_index(
-        &'a self,
-        id: Self::FileId,
-        byte_index: usize,
-    ) -> Result<usize, codespan_reporting::files::Error> {
-        self.files[id.0].line_index((), byte_index)
-    }
-
-    fn line_range(
-        &'a self,
-        id: Self::FileId,
-        line_index: usize,
-    ) -> Result<std::ops::Range<usize>, codespan_reporting::files::Error> {
-        self.files[id.0].line_range((), line_index)
+        Some(Box::new(name.clone()))
     }
 }

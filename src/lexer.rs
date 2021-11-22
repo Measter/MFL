@@ -1,12 +1,10 @@
 use std::{fmt::Write, iter::Peekable, ops::Range, str::CharIndices};
 
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label},
-    files::Files,
-};
+use ariadne::{Color, Label};
 use lasso::Spur;
 
 use crate::{
+    diagnostics,
     interners::Interners,
     source_file::{FileId, SourceLocation, SourceStorage},
     Width,
@@ -130,11 +128,18 @@ pub struct Token {
 }
 
 impl Token {
-    fn new(kind: TokenKind, lexeme: Spur, file_id: FileId, source_range: Range<usize>) -> Self {
+    fn new(
+        kind: TokenKind,
+        lexeme: Spur,
+        file_id: FileId,
+        source_range: Range<usize>,
+        line: usize,
+        column: usize,
+    ) -> Self {
         Self {
             kind,
             lexeme,
-            location: SourceLocation::new(file_id, source_range),
+            location: SourceLocation::new(file_id, source_range, line, column),
         }
     }
 }
@@ -142,9 +147,12 @@ impl Token {
 struct Scanner<'a> {
     chars: Peekable<CharIndices<'a>>,
     cur_token_start: usize,
+    cur_token_column: usize,
     next_token_start: usize,
     file_id: FileId,
     string_buf: String,
+    line: usize,
+    column: usize,
 }
 
 fn end_token(c: char) -> bool {
@@ -158,6 +166,11 @@ impl<'source> Scanner<'source> {
     fn advance(&mut self) -> char {
         let (idx, ch) = self.chars.next().expect("unexpected end of input");
         self.next_token_start = idx + ch.len_utf8();
+        self.column += 1;
+        if ch == '\n' {
+            self.line += 1;
+            self.column = 1;
+        }
         ch
     }
 
@@ -181,7 +194,8 @@ impl<'source> Scanner<'source> {
         &mut self,
         close_char: char,
         kind: &str,
-    ) -> Result<(), Diagnostic<FileId>> {
+        source_store: &SourceStorage,
+    ) -> Result<(), ()> {
         self.string_buf.clear();
 
         let mut ch = '\0';
@@ -224,13 +238,21 @@ impl<'source> Scanner<'source> {
         }
 
         if ch != close_char && self.is_at_end() {
-            let diag = Diagnostic::error()
-                .with_message(format!("unclosed {} literal", kind))
-                .with_labels(vec![Label::primary(
-                    self.file_id,
-                    self.cur_token_start..self.next_token_start,
-                )]);
-            return Err(diag);
+            let loc = SourceLocation::new(
+                self.file_id,
+                self.lexeme_range(),
+                self.line,
+                self.cur_token_column,
+            );
+            diagnostics::emit(
+                loc,
+                format!("unclosed {} literal", kind),
+                Some(Label::new(loc).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+
+            return Err(());
         }
 
         if close_char == '\"' {
@@ -246,7 +268,7 @@ impl<'source> Scanner<'source> {
         input: &str,
         interner: &mut Interners,
         source_store: &SourceStorage,
-    ) -> Result<Option<Token>, Diagnostic<FileId>> {
+    ) -> Result<Option<Token>, ()> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
 
@@ -272,7 +294,14 @@ impl<'source> Scanner<'source> {
                 self.advance(); // Consume the '='
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(Token::new(
+                    kind,
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                ))
             }
 
             ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']', _) => {
@@ -289,11 +318,18 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(Token::new(
+                    kind,
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                ))
             }
 
             ('"', _) => {
-                self.consume_string_or_char_literal('"', "string")?;
+                self.consume_string_or_char_literal('"', "string", source_store)?;
 
                 let is_c_str = if let Some('c') = self.peek() {
                     self.advance();
@@ -313,18 +349,29 @@ impl<'source> Scanner<'source> {
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
                 ))
             }
 
             ('\'', _) => {
-                self.consume_string_or_char_literal('\'', "char")?;
+                self.consume_string_or_char_literal('\'', "char", source_store)?;
 
                 if self.string_buf.chars().count() != 1 {
-                    let diag = Diagnostic::error()
-                        .with_message("invalid char literal")
-                        .with_labels(vec![Label::primary(self.file_id, self.lexeme_range())]);
-
-                    return Err(diag);
+                    let loc = SourceLocation::new(
+                        self.file_id,
+                        self.lexeme_range(),
+                        self.line,
+                        self.cur_token_column,
+                    );
+                    diagnostics::emit(
+                        loc,
+                        "invalid char literal",
+                        Some(Label::new(loc).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    return Err(());
                 }
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
@@ -335,6 +382,8 @@ impl<'source> Scanner<'source> {
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
                 ))
             }
 
@@ -377,16 +426,13 @@ impl<'source> Scanner<'source> {
                     "here" => {
                         // These should never fail; we get the file ID from the source store, and the store
                         // has a full copy of the contents.
-                        let filename = source_store.name(self.file_id).unwrap();
-                        let location = source_store
-                            .location(self.file_id, self.cur_token_start)
-                            .unwrap();
+                        let filename = source_store.name(self.file_id);
 
                         self.string_buf.clear();
                         write!(
                             &mut self.string_buf,
                             "{}:{}:{}",
-                            filename, location.line_number, location.column_number
+                            filename, self.line, self.cur_token_column
                         )
                         .unwrap();
                         let id = interner.intern_literal(&self.string_buf);
@@ -423,7 +469,14 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(Token::new(
+                    kind,
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                ))
             }
         };
 
@@ -436,11 +489,14 @@ pub(crate) fn lex_file(
     file_id: FileId,
     interner: &mut Interners,
     source_store: &SourceStorage,
-) -> Result<Vec<Token>, Diagnostic<FileId>> {
+) -> Result<Vec<Token>, ()> {
     let mut scanner = Scanner {
         chars: contents.char_indices().peekable(),
         cur_token_start: 0,
+        cur_token_column: 1,
         next_token_start: 0,
+        line: 1,
+        column: 1,
         file_id,
         string_buf: String::new(),
     };
@@ -449,6 +505,7 @@ pub(crate) fn lex_file(
 
     while scanner.peek().is_some() {
         scanner.cur_token_start = scanner.next_token_start;
+        scanner.cur_token_column = scanner.column;
 
         match scanner.scan_token(contents, interner, source_store)? {
             Some(op) => ops.push(op),

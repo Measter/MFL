@@ -1,17 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
     iter::Peekable,
+    ops::Not,
 };
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use ariadne::{Color, Label};
 use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
+    diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
     program::{ProcData, Procedure, ProcedureId, ProcedureKind},
-    source_file::{FileId, SourceLocation, SourceStorage},
+    source_file::{SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
     Program, Width,
 };
@@ -410,32 +412,33 @@ fn expect_token<'a>(
     expected: fn(TokenKind) -> bool,
     prev: Token,
     interner: &Interners,
-) -> Result<(usize, Token), Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<(usize, Token), ()> {
     match tokens.next() {
         Some((idx, ident)) if expected(ident.kind) => Ok((idx, *ident)),
         Some((_, ident)) => {
-            let diag = Diagnostic::error()
-                .with_message(format!(
+            diagnostics::emit(
+                ident.location,
+                format!(
                     "expected {}, found '{}'",
                     kind_str,
                     interner.resolve_lexeme(ident.lexeme)
-                ))
-                .with_labels(vec![Label::primary(
-                    ident.location.file_id,
-                    ident.location.range(),
-                )]);
-
-            Err(diag)
+                ),
+                Some(Label::new(ident.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            Err(())
         }
         None => {
-            let diag = Diagnostic::error()
-                .with_message("unexpected end of file")
-                .with_labels(vec![Label::primary(
-                    prev.location.file_id,
-                    prev.location.range(),
-                )]);
-
-            Err(diag)
+            diagnostics::emit(
+                prev.location,
+                "unexpected end of file",
+                Some(Label::new(prev.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            Err(())
         }
     }
 }
@@ -448,18 +451,13 @@ fn parse_sub_block_contents<'a>(
     interner: &Interners,
     parent: ProcedureId,
     mut last_token: Token,
-) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+    source_store: &SourceStorage,
+) -> Result<Vec<Op>, ()> {
     let body_start_idx = match token_iter.peek() {
         Some((idx, _)) => *idx,
         None => {
-            let diag = Diagnostic::error()
-                .with_message("unexpected end of file")
-                .with_labels(vec![Label::primary(
-                    last_token.location.file_id,
-                    last_token.location.range(),
-                )]);
-
-            return Err(vec![diag]);
+            diagnostics::end_of_file(last_token.location, source_store);
+            return Err(());
         }
     };
 
@@ -478,17 +476,14 @@ fn parse_sub_block_contents<'a>(
         };
 
         if is_nested_err {
-            let diag = Diagnostic::error()
-                .with_message(format!(
-                    "cannot use {:?} inside a {:?}",
-                    token.kind, keyword.kind
-                ))
-                .with_labels(vec![Label::primary(
-                    token.location.file_id,
-                    token.location.range(),
-                )]);
-
-            return Err(vec![diag]);
+            diagnostics::emit(
+                token.location,
+                format!("cannot use {:?} inside a {:?}", token.kind, keyword.kind),
+                Some(Label::new(token.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            return Err(());
         }
 
         if token.kind.new_block() {
@@ -506,18 +501,12 @@ fn parse_sub_block_contents<'a>(
     }
 
     if last_token.kind != TokenKind::End {
-        let diag = Diagnostic::error()
-            .with_message("unexpected end of file")
-            .with_labels(vec![Label::primary(
-                last_token.location.file_id,
-                last_token.location.range(),
-            )]);
-
-        return Err(vec![diag]);
+        diagnostics::end_of_file(last_token.location, source_store);
+        return Err(());
     }
 
     let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(program, body_tokens, interner, parent)?;
+    let body_ops = parse_token(program, body_tokens, interner, parent, source_store)?;
 
     Ok(body_ops)
 }
@@ -526,13 +515,15 @@ fn parse_type_signature<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-) -> Result<Vec<PorthType>, Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<Vec<PorthType>, ()> {
     expect_token(
         token_iter,
         "[",
         |k| k == TokenKind::SquareBracketOpen,
         name,
         interner,
+        source_store,
     )?;
 
     let mut type_list = Vec::new();
@@ -546,13 +537,15 @@ fn parse_type_signature<'a>(
             "ptr" => PorthTypeKind::Ptr,
             "bool" => PorthTypeKind::Bool,
             _ => {
-                let diag = Diagnostic::error()
-                    .with_message(format!("unknown type {}", lexeme))
-                    .with_labels(vec![Label::primary(
-                        token.location.file_id,
-                        token.location.range(),
-                    )]);
-                return Err(diag);
+                diagnostics::emit(
+                    token.location,
+                    format!("unknown type {}", lexeme),
+                    Some(Label::new(token.location).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+
+                return Err(());
             }
         };
 
@@ -568,6 +561,7 @@ fn parse_type_signature<'a>(
         |k| k == TokenKind::SquareBracketClosed,
         name,
         interner,
+        source_store,
     )?;
 
     Ok(type_list)
@@ -579,10 +573,18 @@ fn parse_proc_header<'a>(
     interner: &Interners,
     name: Token,
     parent: ProcedureId,
-) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
-    let entry_stack = parse_type_signature(token_iter, interner, name)?;
-    expect_token(token_iter, "to", |k| k == TokenKind::GoesTo, name, interner)?;
-    let exit_stack = parse_type_signature(token_iter, interner, name)?;
+    source_store: &SourceStorage,
+) -> Result<(Token, ProcedureId), ()> {
+    let entry_stack = parse_type_signature(token_iter, interner, name, source_store)?;
+    expect_token(
+        token_iter,
+        "to",
+        |k| k == TokenKind::GoesTo,
+        name,
+        interner,
+        source_store,
+    )?;
+    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
 
     let new_proc = program.new_procedure(
         name,
@@ -592,7 +594,14 @@ fn parse_proc_header<'a>(
         entry_stack,
     );
 
-    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    let (_, is_token) = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        name,
+        interner,
+        source_store,
+    )?;
     Ok((is_token, new_proc))
 }
 
@@ -602,7 +611,8 @@ fn parse_memory_header<'a>(
     interner: &Interners,
     name: Token,
     parent: ProcedureId,
-) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<(Token, ProcedureId), ()> {
     let new_proc = program.new_procedure(
         name,
         ProcedureKind::Memory,
@@ -614,7 +624,14 @@ fn parse_memory_header<'a>(
         Vec::new(),
     );
 
-    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    let (_, is_token) = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        name,
+        interner,
+        source_store,
+    )?;
     Ok((is_token, new_proc))
 }
 
@@ -624,7 +641,8 @@ fn parse_macro_header<'a>(
     interner: &Interners,
     name: Token,
     parent: ProcedureId,
-) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<(Token, ProcedureId), ()> {
     let new_proc = program.new_procedure(
         name,
         ProcedureKind::Macro,
@@ -633,7 +651,14 @@ fn parse_macro_header<'a>(
         Vec::new(),
     );
 
-    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    let (_, is_token) = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        name,
+        interner,
+        source_store,
+    )?;
     Ok((is_token, new_proc))
 }
 
@@ -643,8 +668,9 @@ fn parse_const_header<'a>(
     interner: &Interners,
     name: Token,
     parent: ProcedureId,
-) -> Result<(Token, ProcedureId), Diagnostic<FileId>> {
-    let exit_stack = parse_type_signature(token_iter, interner, name)?;
+    source_store: &SourceStorage,
+) -> Result<(Token, ProcedureId), ()> {
+    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
 
     let new_proc = program.new_procedure(
         name,
@@ -654,7 +680,14 @@ fn parse_const_header<'a>(
         Vec::new(),
     );
 
-    let (_, is_token) = expect_token(token_iter, "is", |k| k == TokenKind::Is, name, interner)?;
+    let (_, is_token) = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        name,
+        interner,
+        source_store,
+    )?;
     Ok((is_token, new_proc))
 }
 
@@ -665,17 +698,17 @@ fn parse_sub_block<'a>(
     keyword: Token,
     interner: &Interners,
     parent: ProcedureId,
-) -> Result<(), Vec<Diagnostic<FileId>>> {
-    let name_token = match expect_token(
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let name_token = expect_token(
         token_iter,
         "ident",
         |k| k == TokenKind::Ident,
         keyword,
         interner,
-    ) {
-        Ok((_, a)) => a,
-        Err(diag) => return Err(vec![diag]),
-    };
+        source_store,
+    )
+    .map(|(_, a)| a)?;
 
     let header_func = match keyword.kind {
         TokenKind::Proc => parse_proc_header,
@@ -685,11 +718,14 @@ fn parse_sub_block<'a>(
         _ => unreachable!(),
     };
 
-    let (is_token, proc_header_id) =
-        match header_func(program, token_iter, interner, name_token, parent) {
-            Ok(proc) => proc,
-            Err(diag) => return Err(vec![diag]),
-        };
+    let (is_token, proc_header_id) = header_func(
+        program,
+        token_iter,
+        interner,
+        name_token,
+        parent,
+        source_store,
+    )?;
 
     let mut body = parse_sub_block_contents(
         program,
@@ -699,6 +735,7 @@ fn parse_sub_block<'a>(
         interner,
         proc_header_id,
         is_token,
+        source_store,
     )?;
 
     let proc_header = program.get_proc_mut(proc_header_id);
@@ -746,15 +783,21 @@ fn parse_sub_block<'a>(
     {
         let prev_proc = program.get_proc(prev_def).name();
 
-        let diag = Diagnostic::error()
-            .with_message("multiple definitions of symbol")
-            .with_labels(vec![
-                Label::primary(name_token.location.file_id, name_token.location.range())
-                    .with_message("defined here"),
-                Label::secondary(prev_proc.location.file_id, prev_proc.location.range())
-                    .with_message("also defined here"),
-            ]);
-        return Err(vec![diag]);
+        diagnostics::emit(
+            name_token.location,
+            "multiple definitions of symbol",
+            [
+                Label::new(name_token.location)
+                    .with_message("defined here")
+                    .with_color(Color::Red),
+                Label::new(prev_proc.location)
+                    .with_message("also defined here")
+                    .with_color(Color::Blue),
+            ],
+            None,
+            source_store,
+        );
+        return Err(());
     }
 
     let parent_proc = program.get_proc_mut(parent);
@@ -777,9 +820,10 @@ pub fn parse_token(
     tokens: &[Token],
     interner: &Interners,
     parent: ProcedureId,
-) -> Result<Vec<Op>, Vec<Diagnostic<FileId>>> {
+    source_store: &SourceStorage,
+) -> Result<Vec<Op>, ()> {
     let mut ops = Vec::new();
-    let mut diags = Vec::new();
+    let mut had_error = false;
 
     let mut token_iter = tokens.iter().enumerate().peekable();
     while let Some((_, token)) = token_iter.next() {
@@ -815,10 +859,18 @@ pub fn parse_token(
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
-                if let Err(mut d) =
-                    parse_sub_block(program, &mut token_iter, tokens, *token, interner, parent)
+                if parse_sub_block(
+                    program,
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    interner,
+                    parent,
+                    source_store,
+                )
+                .is_err()
                 {
-                    diags.append(&mut d);
+                    had_error = true;
                 }
                 continue;
             }
@@ -829,10 +881,11 @@ pub fn parse_token(
                     |k| matches!(k, TokenKind::String { .. }),
                     *token,
                     interner,
+                    source_store,
                 ) {
                     Ok(ident) => ident,
-                    Err(diag) => {
-                        diags.push(diag);
+                    Err(_) => {
+                        had_error = true;
                         continue;
                     }
                 };
@@ -880,16 +933,18 @@ pub fn parse_token(
             | TokenKind::Is
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
-                let diag = Diagnostic::error()
-                    .with_message(format!(
+                diagnostics::emit(
+                    token.location,
+                    format!(
                         "unexpected token `{}` in input",
                         interner.resolve_lexeme(token.lexeme)
-                    ))
-                    .with_labels(vec![Label::primary(
-                        token.location.file_id,
-                        token.location.range(),
-                    )]);
-                diags.push(diag);
+                    ),
+                    Some(Label::new(token.location)),
+                    None,
+                    source_store,
+                );
+
+                had_error = true;
                 continue;
             }
         };
@@ -897,7 +952,7 @@ pub fn parse_token(
         ops.push(Op::new(kind, *token));
     }
 
-    diags.is_empty().then(|| ops).ok_or(diags)
+    had_error.not().then(|| ops).ok_or(())
 }
 
 struct JumpIpStack {
@@ -906,11 +961,11 @@ struct JumpIpStack {
     location: SourceLocation,
 }
 
-pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>>> {
+pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Result<(), ()> {
     let mut jump_ip_stack: Vec<JumpIpStack> = Vec::new();
     // Stores the IPs of the Elif opcodes so we can update their end IPs when we encounter an End opcode.
     let mut if_blocks_stack_ips: Vec<Vec<usize>> = Vec::new();
-    let mut diags = Vec::new();
+    let mut had_error = false;
 
     for ip in 0..ops.len() {
         let op = &ops[ip];
@@ -944,13 +999,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         ..
                     }) => if_idx,
                     _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`elif` requires a preceding `if-do`")
-                            .with_labels(vec![Label::primary(
-                                op.token.location.file_id,
-                                op.token.location.range(),
-                            )]);
-                        diags.push(diag);
+                        diagnostics::emit(
+                            op.token.location,
+                            "`elif` requires a preceding `if-do`",
+                            Some(Label::new(op.token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
                         continue;
                     }
                 };
@@ -967,17 +1023,20 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                     OpCode::DoIf { end_ip } => *end_ip = ip,
                     OpCode::DoWhile { .. } => {
                         let while_token = &ops[if_idx].token;
-                        let diag = Diagnostic::error()
-                            .with_message("`elif` can only be used with `if` blocks")
-                            .with_labels(vec![
-                                Label::primary(location.file_id, location.range()),
-                                Label::secondary(
-                                    while_token.location.file_id,
-                                    while_token.location.range(),
-                                )
-                                .with_message("opened here"),
-                            ]);
-                        diags.push(diag);
+
+                        diagnostics::emit(
+                            location,
+                            "`elif` can only be used with `if` blocks",
+                            [
+                                Label::new(location).with_color(Color::Red),
+                                Label::new(while_token.location)
+                                    .with_color(Color::Blue)
+                                    .with_message("opened here"),
+                            ],
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
                         continue;
                     }
                     _ => unreachable!(),
@@ -994,13 +1053,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         ..
                     }) => if_idx,
                     _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`else` requires a preceding `if-do`")
-                            .with_labels(vec![Label::primary(
-                                op.token.location.file_id,
-                                op.token.location.range(),
-                            )]);
-                        diags.push(diag);
+                        diagnostics::emit(
+                            op.token.location,
+                            "`else` requires a preceding `if-do`",
+                            Some(Label::new(op.token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
                         continue;
                     }
                 };
@@ -1029,13 +1089,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         ..
                     }) => ip,
                     _ => {
-                        let diag = Diagnostic::error()
-                            .with_message("`do` requires a preceding `if`, `elif` or `while`")
-                            .with_labels(vec![Label::primary(
-                                op.token.location.file_id,
-                                op.token.location.range(),
-                            )]);
-                        diags.push(diag);
+                        diagnostics::emit(
+                            op.token.location,
+                            "`do` requires a preceding `if`, `elif` or `while`",
+                            Some(Label::new(op.token.location)),
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
                         continue;
                     }
                 };
@@ -1069,15 +1130,14 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
                         ..
                     }) => ip,
                     _ => {
-                        let diag = Diagnostic::error()
-                            .with_message(
-                                "`end` requires a preceding `if-do`, `else`, or `while-do`",
-                            )
-                            .with_labels(vec![Label::primary(
-                                op.token.location.file_id,
-                                op.token.location.range(),
-                            )]);
-                        diags.push(diag);
+                        diagnostics::emit(
+                            op.token.location,
+                            "`end` requires a preceding `if-do`, `else`, or `while-do`",
+                            Some(Label::new(op.token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
                         continue;
                     }
                 };
@@ -1115,13 +1175,17 @@ pub fn generate_jump_labels(ops: &mut [Op]) -> Result<(), Vec<Diagnostic<FileId>
     }
 
     while let Some(JumpIpStack { location, .. }) = jump_ip_stack.pop() {
-        let diag = Diagnostic::error()
-            .with_message("unclosed `if`, `else`, or `while-do` block")
-            .with_labels(vec![Label::primary(location.file_id, location.range())]);
-        diags.push(diag);
+        diagnostics::emit(
+            location,
+            "unclosed `if`, `else`, or `while-do` block",
+            Some(Label::new(location).with_color(Color::Red)),
+            None,
+            source_store,
+        );
+        had_error = true;
     }
 
-    diags.is_empty().then(|| ()).ok_or(diags)
+    had_error.not().then(|| ()).ok_or(())
 }
 
 pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -> Vec<Op> {
@@ -1194,10 +1258,11 @@ pub fn expand_sub_blocks(
     program: &Program,
     interner: &Interners,
     proc: &Procedure,
-) -> Result<(Vec<Op>, bool), Vec<Diagnostic<FileId>>> {
+    source_store: &SourceStorage,
+) -> Result<(Vec<Op>, bool), ()> {
     let mut src_vec = proc.body().to_owned();
     let mut dst_vec = Vec::with_capacity(src_vec.len());
-    let mut diags = Vec::new();
+    let mut had_error = false;
 
     // Keep making changes until we get no changes.
     let mut num_expansions = 0;
@@ -1219,16 +1284,14 @@ pub fn expand_sub_blocks(
             let found_proc_id = match proc.get_visible_symbol(ident_id) {
                 Some(id) => id,
                 None => {
-                    let diag = Diagnostic::error()
-                        .with_message(format!(
-                            "unknown symbol `{}`",
-                            interner.resolve_lexeme(ident_id)
-                        ))
-                        .with_labels(vec![Label::primary(
-                            op.token.location.file_id,
-                            op.token.location.range(),
-                        )]);
-                    diags.push(diag);
+                    diagnostics::emit(
+                        op.token.location,
+                        format!("unknown symbol `{}`", interner.resolve_lexeme(ident_id)),
+                        Some(Label::new(op.token.location).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    had_error = true;
                     continue;
                 }
             };
@@ -1300,15 +1363,19 @@ pub fn expand_sub_blocks(
         if num_expansions > 128 {
             let mut labels = Vec::new();
 
+            let first_loc = last_changed_macros[0];
             for mac in last_changed_macros {
-                labels.push(Label::primary(mac.location.file_id, mac.location.range()));
+                labels.push(Label::new(mac.location).with_color(Color::Red));
             }
 
-            let diag = Diagnostic::error()
-                .with_message("depth of macro expansion exceeded 128")
-                .with_labels(labels);
-
-            diags.push(diag);
+            diagnostics::emit(
+                first_loc.location,
+                "depth of macro expansion exceeded 128",
+                labels,
+                None,
+                source_store,
+            );
+            had_error = true;
             break;
         }
 
@@ -1317,8 +1384,8 @@ pub fn expand_sub_blocks(
         std::mem::swap(&mut src_vec, &mut dst_vec);
     }
 
-    diags
-        .is_empty()
+    had_error
+        .not()
         .then(|| (dst_vec, failed_const_expansion))
-        .ok_or(diags)
+        .ok_or(())
 }

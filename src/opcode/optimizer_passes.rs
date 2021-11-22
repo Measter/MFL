@@ -7,7 +7,6 @@ use crate::{
 
 use super::{Op, OpCode};
 
-use codespan_reporting::files::Files;
 use OpCode::*;
 
 type PassFunction =
@@ -41,7 +40,7 @@ fn over_over<'a>(
     } else {
         a.token.location.merge(b.token.location)
     };
-    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = &sources.source(location.file_id)[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let token = Token {
@@ -77,7 +76,7 @@ fn push_not<'a>(
     } else {
         int.token.location.merge(not.token.location)
     };
-    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = &sources.source(location.file_id)[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let token = Token {
@@ -120,7 +119,7 @@ fn push_push_divmod<'a>(
     } else {
         a.token.location.merge(op.token.location)
     };
-    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = &sources.source(location.file_id)[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let rem_token = Token {
@@ -173,7 +172,7 @@ fn binary_ops<'a>(
     } else {
         a.token.location.merge(op.token.location)
     };
-    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = &sources.source(location.file_id)[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let token = Token {
@@ -235,7 +234,7 @@ fn memory_offset<'a>(
         int.token.location.merge(op.token.location)
     };
 
-    let lexeme = &sources.source(location.file_id).unwrap()[location.range()];
+    let lexeme = &sources.source(location.file_id)[location.range()];
     let lexeme = interners.intern_lexeme(lexeme);
 
     let token = Token {

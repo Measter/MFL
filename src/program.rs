@@ -1,21 +1,20 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, ops::Not, path::Path};
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
+    diagnostics,
     interners::Interners,
     lexer::{self, Token},
     opcode::{self, Op, OpCode},
     simulate::simulate_execute_program,
-    source_file::{FileId, SourceStorage},
+    source_file::SourceStorage,
     type_check::{self, PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
-
-type LoadProgramResult = Result<Program, Vec<Diagnostic<FileId>>>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AllocData {
@@ -127,7 +126,7 @@ impl Program {
         library_paths: &[String],
         include_token: Token,
         file: Spur,
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
+    ) -> Result<(), ()> {
         if self.included_files.contains_key(&file) {
             return Ok(());
         }
@@ -139,27 +138,29 @@ impl Program {
         let include_path = match search_includes(library_paths, file_name) {
             Some(path) => path,
             None => {
-                let diag = Diagnostic::error()
-                    .with_message(format!("include not found: `{}`", file_name))
-                    .with_labels(vec![Label::primary(
-                        include_token.location.file_id,
-                        include_token.location.range(),
-                    )]);
-                return Err(vec![diag]);
+                diagnostics::emit(
+                    include_token.location,
+                    format!("include not found: `{}`", file_name),
+                    Some(Label::new(include_token.location).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+
+                return Err(());
             }
         };
 
         let contents = match std::fs::read_to_string(&include_path) {
             Ok(contents) => contents,
             Err(e) => {
-                let diag = Diagnostic::error()
-                    .with_message(format!("error opening `{}`", include_path))
-                    .with_labels(vec![Label::primary(
-                        include_token.location.file_id,
-                        include_token.location.range(),
-                    )])
-                    .with_notes(vec![format!("{}", e)]);
-                return Err(vec![diag]);
+                diagnostics::emit(
+                    include_token.location,
+                    format!("error opening: `{}`", include_path),
+                    Some(Label::new(include_token.location).with_color(Color::Red)),
+                    Some(format!("{}", e)),
+                    source_store,
+                );
+                return Err(());
             }
         };
 
@@ -167,12 +168,18 @@ impl Program {
 
         let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
             Ok(program) => program,
-            Err(diag) => return Err(vec![diag]),
+            Err(()) => return Err(()),
         };
 
-        let ops = match opcode::parse_token(self, &tokens, interner, self.top_level_proc_id) {
+        let ops = match opcode::parse_token(
+            self,
+            &tokens,
+            interner,
+            self.top_level_proc_id,
+            source_store,
+        ) {
             Ok(ops) => ops,
-            Err(diags) => return Err(diags),
+            Err(()) => return Err(()),
         };
 
         self.included_files.insert(file, ops);
@@ -185,18 +192,19 @@ impl Program {
         source_store: &mut SourceStorage,
         interner: &mut Interners,
         library_paths: &[String],
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut all_diags = Vec::new();
+    ) -> Result<(), ()> {
+        let mut had_error = false;
 
         while let Some((include_token, file)) = self.include_queue.pop() {
-            if let Err(mut diags) =
-                self.load_include(source_store, interner, library_paths, include_token, file)
+            if self
+                .load_include(source_store, interner, library_paths, include_token, file)
+                .is_err()
             {
-                all_diags.append(&mut diags);
+                had_error = true;
             }
         }
 
-        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
     fn post_process_procedure(
@@ -205,9 +213,10 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
         opt_level: u8,
-    ) -> Result<bool, Vec<Diagnostic<FileId>>> {
+    ) -> Result<bool, ()> {
         procedure.body = opcode::expand_includes(&self.included_files, &procedure.body);
-        let (new_body, failed_const_eval) = opcode::expand_sub_blocks(self, interner, procedure)?;
+        let (new_body, failed_const_eval) =
+            opcode::expand_sub_blocks(self, interner, procedure, source_store)?;
         procedure.body = new_body;
 
         if !failed_const_eval {
@@ -215,7 +224,7 @@ impl Program {
                 procedure.body = opcode::optimize(&procedure.body, interner, source_store);
             }
 
-            opcode::generate_jump_labels(&mut procedure.body)?;
+            opcode::generate_jump_labels(&mut procedure.body, source_store)?;
         }
 
         Ok(failed_const_eval)
@@ -226,8 +235,8 @@ impl Program {
         interner: &mut Interners,
         source_store: &mut SourceStorage,
         opt_level: u8,
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut all_diags = Vec::new();
+    ) -> Result<(), ()> {
+        let mut had_error = false;
 
         // We're applying the same process to the global procedure, defined procedures, and memory defs,
         // so do them all in one loop instead of separately.
@@ -241,16 +250,17 @@ impl Program {
         for proc_id in to_check {
             let mut proc = self.all_procs.remove(&proc_id).unwrap();
 
-            if let Err(mut diags) =
-                self.post_process_procedure(&mut proc, interner, source_store, opt_level)
+            if self
+                .post_process_procedure(&mut proc, interner, source_store, opt_level)
+                .is_err()
             {
-                all_diags.append(&mut diags);
+                had_error = true;
             }
 
             self.all_procs.insert(proc_id, proc);
         }
 
-        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
     fn post_process_consts(
@@ -258,8 +268,8 @@ impl Program {
         interner: &mut Interners,
         source_store: &mut SourceStorage,
         opt_level: u8,
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut all_diags = Vec::new();
+    ) -> Result<(), ()> {
+        let mut had_error = false;
 
         let mut const_proc_ids: Vec<_> = self
             .all_procs
@@ -289,15 +299,21 @@ impl Program {
                     // We succeeded in fully expanding the constant.
                     // Now we type check then evaluate it.
                     Ok(false) => {
-                        if let Err(mut diags) = type_check::type_check(self, &procedure, interner) {
-                            all_diags.append(&mut diags);
+                        if type_check::type_check(self, &procedure, interner, source_store).is_err()
+                        {
+                            had_error = true;
                             continue;
                         }
 
-                        let stack = match simulate_execute_program(self, &procedure, interner, &[])
-                        {
-                            Err(diag) => {
-                                all_diags.push(diag);
+                        let stack = match simulate_execute_program(
+                            self,
+                            &procedure,
+                            interner,
+                            &[],
+                            source_store,
+                        ) {
+                            Err(_) => {
+                                had_error = true;
                                 continue;
                             }
                             Ok(stack) => stack,
@@ -314,8 +330,9 @@ impl Program {
                         }
                         self.all_procs.insert(const_id, procedure);
                     }
-                    Err(mut diags) => {
-                        all_diags.append(&mut diags);
+                    Err(_) => {
+                        eprint!("test");
+                        had_error = true;
                     }
                 }
             }
@@ -329,67 +346,76 @@ impl Program {
             if num_loops > MAX_EXPANSIONS {
                 let mut labels = Vec::new();
 
+                let first_con = last_changed_consts[0];
                 for con in last_changed_consts {
-                    labels.push(Label::primary(con.location.file_id, con.location.range()));
+                    labels.push(Label::new(con.location).with_color(Color::Red));
                 }
-                let diag = Diagnostic::error()
-                    .with_message("depth of const expansion exceeded 128")
-                    .with_labels(labels);
+                diagnostics::emit(
+                    first_con.location,
+                    "depth of const expansion exceeded 128",
+                    labels,
+                    None,
+                    source_store,
+                );
 
-                all_diags.push(diag);
+                had_error = true;
                 break;
             }
 
             std::mem::swap(&mut const_proc_ids, &mut next_run_names);
         }
 
-        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
-    fn type_check(&self, interner: &Interners) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut all_diags = Vec::new();
+    fn type_check(&self, interner: &Interners, source_store: &SourceStorage) -> Result<(), ()> {
+        let mut had_error = false;
 
         for proc in self.all_procs.values() {
             if proc.kind.is_macro() {
                 continue;
             }
 
-            if let Err(mut diags) = type_check::type_check(self, proc, interner) {
-                all_diags.append(&mut diags);
+            if type_check::type_check(self, proc, interner, source_store).is_err() {
+                had_error = true;
             }
         }
 
-        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
-    fn check_const_for_self(&self) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut all_diags = Vec::new();
+    fn check_const_for_self(&self, source_store: &SourceStorage) -> Result<(), ()> {
+        let mut had_error = false;
         // Consts cannot reference themselves, so we should check that here.
         for proc in self.all_procs.values() {
             if let ProcedureKind::Const { .. } = &proc.kind {
                 for op in &proc.body {
                     if matches!(op.code, OpCode::Ident(ref_id) if ref_id == proc.name.lexeme) {
-                        let diag = Diagnostic::error()
-                            .with_message("self referencing const")
-                            .with_labels(vec![Label::primary(
-                                op.token.location.file_id,
-                                op.token.location.range(),
-                            )]);
-                        all_diags.push(diag);
+                        diagnostics::emit(
+                            op.token.location,
+                            "self referencing const",
+                            Some(Label::new(op.token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
+
                         break;
                     }
                 }
             }
         }
 
-        all_diags.is_empty().then(|| ()).ok_or(all_diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
     fn evaluate_allocation_sizes(
         &mut self,
         interner: &Interners,
-    ) -> Result<(), Vec<Diagnostic<FileId>>> {
-        let mut diags = Vec::new();
+        source_store: &SourceStorage,
+    ) -> Result<(), ()> {
+        let mut had_error = false;
+
         let alloc_ids: Vec<_> = self
             .all_procs
             .iter()
@@ -398,14 +424,19 @@ impl Program {
             .collect();
 
         for alloc_id in alloc_ids {
-            let mut stack =
-                match simulate_execute_program(self, self.get_proc(alloc_id), interner, &[]) {
-                    Err(diag) => {
-                        diags.push(diag);
-                        continue;
-                    }
-                    Ok(stack) => stack,
-                };
+            let mut stack = match simulate_execute_program(
+                self,
+                self.get_proc(alloc_id),
+                interner,
+                &[],
+                source_store,
+            ) {
+                Err(()) => {
+                    had_error = true;
+                    continue;
+                }
+                Ok(stack) => stack,
+            };
 
             // The type checker enforces a single stack item here.
             let alloc_size = stack.pop().unwrap() as usize;
@@ -431,7 +462,7 @@ impl Program {
             proc_data.total_alloc_size += alloc_size;
         }
 
-        diags.is_empty().then(|| ()).ok_or(diags)
+        had_error.not().then(|| ()).ok_or(())
     }
 
     pub fn load(
@@ -440,16 +471,14 @@ impl Program {
         file: &str,
         opt_level: u8,
         library_paths: &[String],
-    ) -> Result<LoadProgramResult> {
+    ) -> Result<Program> {
         let contents =
             std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
 
         let file_id = source_store.add(file, &contents);
 
-        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
-            Ok(program) => program,
-            Err(diag) => return Ok(Err(vec![diag])),
-        };
+        let tokens = lexer::lex_file(&contents, file_id, interner, source_store)
+            .map_err(|_| eyre!("error lexing file: {}", file))?;
 
         let mut program = Program {
             top_level_proc_id: ProcedureId(usize::MAX),
@@ -472,41 +501,44 @@ impl Program {
 
         program.top_level_proc_id = top_level_proc_id;
 
-        let top_level_body =
-            match opcode::parse_token(&mut program, &tokens, interner, top_level_proc_id) {
-                Ok(ops) => ops,
-                Err(diags) => return Ok(Err(diags)),
-            };
+        let top_level_body = opcode::parse_token(
+            &mut program,
+            &tokens,
+            interner,
+            top_level_proc_id,
+            source_store,
+        )
+        .map_err(|_| eyre!("error parsing file: {}", file))?;
 
         *program.get_proc_mut(top_level_proc_id).body_mut() = top_level_body;
 
-        if let Err(diags) = program.process_include_queue(source_store, interner, library_paths) {
-            return Ok(Err(diags));
-        }
+        program
+            .process_include_queue(source_store, interner, library_paths)
+            .map_err(|_| eyre!("error processing includes: {}", file))?;
 
         program.resolve_visible_symbols();
 
-        if let Err(diags) = program.check_const_for_self() {
-            return Ok(Err(diags));
-        }
+        program
+            .check_const_for_self(source_store)
+            .map_err(|_| eyre!("error checking consts: {}", file))?;
 
-        if let Err(diags) = program.post_process_consts(interner, source_store, opt_level) {
-            return Ok(Err(diags));
-        }
+        program
+            .post_process_consts(interner, source_store, opt_level)
+            .map_err(|_| eyre!("error processing consts: {}", file))?;
 
-        if let Err(diags) = program.post_process(interner, source_store, opt_level) {
-            return Ok(Err(diags));
-        }
+        program
+            .post_process(interner, source_store, opt_level)
+            .map_err(|_| eyre!("error processing procedures: {}", file))?;
 
-        if let Err(diags) = program.type_check(interner) {
-            return Ok(Err(diags));
-        }
+        program
+            .type_check(interner, source_store)
+            .map_err(|_| eyre!("error type checking: {}", file))?;
 
-        if let Err(diags) = program.evaluate_allocation_sizes(interner) {
-            return Ok(Err(diags));
-        }
+        program
+            .evaluate_allocation_sizes(interner, source_store)
+            .map_err(|_| eyre!("error evaluating allocation sizes: {}", file))?;
 
-        Ok(Ok(program))
+        Ok(program)
     }
 
     pub fn new_procedure(

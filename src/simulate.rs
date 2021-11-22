@@ -1,13 +1,14 @@
-use std::{convert::TryInto, io::Write, iter::repeat, ops::Range};
+use std::{io::Write, iter::repeat, ops::Range};
 
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use ariadne::{Color, Label};
 
 use crate::{
+    diagnostics,
     interners::Interners,
     n_ops::PopN,
     opcode::{Op, OpCode},
     program::Procedure,
-    source_file::FileId,
+    source_file::SourceStorage,
     Program, Width,
 };
 
@@ -22,19 +23,18 @@ impl Width {
     }
 }
 
-fn generate_error(msg: impl Into<String>, op: &Op) -> Diagnostic<FileId> {
-    let mut labels = vec![Label::primary(
-        op.token.location.file_id,
-        op.token.location.range(),
-    )];
+fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
+    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
 
     for source in &op.expansions {
         labels.push(
-            Label::secondary(source.file_id, source.range()).with_message("expanded from here"),
+            Label::new(*source)
+                .with_color(Color::Blue)
+                .with_message("expanded from here"),
         );
     }
 
-    Diagnostic::error().with_message(msg).with_labels(labels)
+    diagnostics::emit(op.token.location, msg, labels, None, source_store);
 }
 
 fn make_syscall3(
@@ -45,37 +45,57 @@ fn make_syscall3(
     memory: &mut [u8],
     stack: &mut Vec<u64>,
     op: &Op,
-) -> Result<(), Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
     match id {
         // Write
         1 => {
             let start = arg2 as usize;
             let end = start + arg3 as usize;
             let buffer = memory.get(start..end).ok_or_else(|| {
-                generate_error(format!("invalid memory range {:?}", start..end), op)
+                generate_error(
+                    format!("invalid memory range {:?}", start..end),
+                    op,
+                    source_store,
+                )
             })?;
 
             // Not my problem if this isn't valid output data.
             let _ = match arg1 {
                 1 => std::io::stdout().write_all(buffer),
                 2 => std::io::stderr().write_all(buffer),
-                _ => return Err(generate_error("unsupported file descriptor", op)),
+                _ => {
+                    generate_error("unsupported file descriptor", op, source_store);
+                    return Err(());
+                }
             };
 
             stack.push(arg3);
         }
-        _ => return Err(generate_error("unsupported syscall ID", op)),
+        _ => {
+            generate_error("unsupported syscall ID", op, source_store);
+            return Err(());
+        }
     }
 
     Ok(())
 }
 
-fn make_syscall1(id: u64, arg1: u64, _: &mut [u8], op: &Op) -> Result<(), Diagnostic<FileId>> {
+fn make_syscall1(
+    id: u64,
+    arg1: u64,
+    _: &mut [u8],
+    op: &Op,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
     match id {
         // Exit
         60 => std::process::exit(arg1 as _),
 
-        _ => Err(generate_error("unsupported syscall ID", op)),
+        _ => {
+            generate_error("unsupported syscall ID", op, source_store);
+            Err(())
+        }
     }
 }
 
@@ -119,7 +139,8 @@ pub(crate) fn simulate_execute_program(
     procedure: &Procedure,
     interner: &Interners,
     program_args: &[String],
-) -> Result<Vec<u64>, Diagnostic<FileId>> {
+    source_store: &SourceStorage,
+) -> Result<Vec<u64>, ()> {
     let mut ip = 0;
     let mut value_stack: Vec<u64> = Vec::new();
     let mut call_stack: Vec<(&Procedure, usize)> = Vec::new();
@@ -142,10 +163,12 @@ pub(crate) fn simulate_execute_program(
         if (current_procedure.kind().is_const() || current_procedure.kind().is_memory())
             && !op.code.is_const()
         {
-            return Err(generate_error(
+            generate_error(
                 "Operation not supported during const evaluation",
                 op,
-            ));
+                source_store,
+            );
+            return Err(());
         }
 
         match op.code {
@@ -298,7 +321,7 @@ pub(crate) fn simulate_execute_program(
 
                 let bytes = memory
                     .get(width.addr_range(address))
-                    .ok_or_else(|| generate_error("invalid memory address", op))?;
+                    .ok_or_else(|| generate_error("invalid memory address", op, source_store))?;
 
                 let value = match width {
                     Width::Byte => bytes[0] as u64,
@@ -313,7 +336,11 @@ pub(crate) fn simulate_execute_program(
                 let dest = memory
                     .get_mut(width.addr_range(address as usize))
                     .ok_or_else(|| {
-                        generate_error(format!("invalid memory address {:?}", address), op)
+                        generate_error(
+                            format!("invalid memory address {:?}", address),
+                            op,
+                            source_store,
+                        )
                     })?;
                 match width {
                     Width::Byte => dest[0] = value as u8,
@@ -366,14 +393,16 @@ pub(crate) fn simulate_execute_program(
                     &mut memory,
                     &mut value_stack,
                     op,
+                    source_store,
                 )?;
             }
             OpCode::SysCall(1) => {
                 let [arg1, syscall_id] = value_stack.popn().unwrap();
-                make_syscall1(syscall_id, arg1, &mut memory, op)?;
+                make_syscall1(syscall_id, arg1, &mut memory, op, source_store)?;
             }
             OpCode::SysCall(_) => {
-                return Err(generate_error("unsupported syscall", op));
+                generate_error("unsupported syscall", op, source_store);
+                return Err(());
             }
             OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
                 panic!("ICE: Encountered {:?}", op.code)

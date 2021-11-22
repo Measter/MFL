@@ -2,7 +2,6 @@
 
 use std::{path::Path, process::Command};
 
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
 use program::Program;
@@ -10,6 +9,7 @@ use source_file::SourceStorage;
 use structopt::StructOpt;
 
 mod compile;
+mod diagnostics;
 mod interners;
 mod lexer;
 mod n_ops;
@@ -73,47 +73,35 @@ fn run_simulate(
     mut program_args: Vec<String>,
     include_paths: Vec<String>,
 ) -> Result<()> {
-    let cfg = codespan_reporting::term::Config::default();
-    let stderr = StandardStream::stderr(ColorChoice::Always);
-    let mut stderr = stderr.lock();
-
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
     program_args.insert(0, file.clone()); // We need the program name to be part of the args.
 
-    let program = match Program::load(
+    let program = Program::load(
         &mut source_storage,
         &mut interner,
         &file,
         opt_level,
         &include_paths,
-    )? {
-        Ok(program) => program,
-        Err(diags) => {
-            for diag in diags {
-                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-            }
-            std::process::exit(-1);
-        }
-    };
+    )
+    .with_context(|| eyre!("failed to load program"))?;
 
     let top_level_proc = program.get_proc(program.top_level_proc_id());
 
-    if let Err(diag) =
-        simulate::simulate_execute_program(&program, top_level_proc, &interner, &program_args)
-    {
-        codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-    }
+    simulate::simulate_execute_program(
+        &program,
+        top_level_proc,
+        &interner,
+        &program_args,
+        &source_storage,
+    )
+    .map_err(|_| eyre!("failed to simulate program"))?;
 
     Ok(())
 }
 
 fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
-    let cfg = codespan_reporting::term::Config::default();
-    let stderr = StandardStream::stderr(ColorChoice::Always);
-    let mut stderr = stderr.lock();
-
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
@@ -124,21 +112,14 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let program = match Program::load(
+    let program = Program::load(
         &mut source_storage,
         &mut interner,
         &file,
         opt_level,
         &include_paths,
-    )? {
-        Ok(program) => program,
-        Err(diags) => {
-            for diag in diags {
-                codespan_reporting::term::emit(&mut stderr, &cfg, &source_storage, &diag)?;
-            }
-            std::process::exit(-1);
-        }
-    };
+    )
+    .with_context(|| eyre!("failed to load program"))?;
 
     println!("Compiling... to {}", output_asm.display());
     compile::compile_program(&program, &source_storage, &interner, &output_asm, opt_level)?;

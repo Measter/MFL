@@ -1,6 +1,5 @@
 use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, path::Path};
 
-use codespan_reporting::files::Files;
 use color_eyre::eyre::{eyre, Context, Result};
 
 use crate::{
@@ -829,15 +828,15 @@ fn assemble_procedure(
                 .iter()
                 .zip(asm.op_range.clone())
             {
-                let location = source_store
-                    .location(op.token.location.file_id, op.token.location.source_start)?;
+                // We get the file ID from the source store, and the offset was generated from the source
+                // while lexing.
                 writeln!(
                     out_file,
                     ";; IP{} -- {}:{}:{} -- {:?}",
                     ip,
-                    source_store.name(op.token.location.file_id)?,
-                    location.line_number,
-                    location.column_number,
+                    source_store.name(op.token.location.file_id),
+                    op.token.location.line,
+                    op.token.location.column,
                     op.code,
                 )?;
             }
