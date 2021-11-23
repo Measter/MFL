@@ -2,20 +2,19 @@ use ariadne::{Color, Label, Report, ReportKind};
 
 use crate::source_file::{SourceLocation, SourceStorage};
 
-pub fn emit<Labels, Notes>(
+pub fn emit<Labels>(
     loc: SourceLocation,
     msg: impl ToString,
     labels: Labels,
-    notes: Notes,
+    note: impl Into<Option<String>>,
     mut sources: &SourceStorage,
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
-    Notes: IntoIterator<Item = String>,
 {
     let mut diag =
         Report::build(ReportKind::Error, loc.file_id, loc.source_start).with_message(msg);
 
-    for note in notes {
+    if let Some(note) = note.into() {
         diag = diag.with_note(note);
     }
 

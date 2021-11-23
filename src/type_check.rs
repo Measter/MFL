@@ -149,13 +149,12 @@ fn failed_compare_stack_types(
     msg: &str,
     source_store: &SourceStorage,
 ) {
-    let mut notes = vec![
-        "IDX  | Expected |   Actual".to_owned(),
-        "_____|__________|_________".to_owned(),
-    ];
+    let mut note = "\n\t\tIDX  | Expected |   Actual\n\
+        \t\t_____|__________|_________"
+        .to_owned();
 
     if expected_stack[0] == actual_stack[0] {
-        notes.push("...".to_owned());
+        note.push_str("\n\t\t...");
     }
 
     let mut pairs = expected_stack
@@ -168,22 +167,28 @@ fn failed_compare_stack_types(
     }
 
     for (idx, (a, b)) in pairs {
-        notes.push(format!(
-            "{:<4} | {:<8} | {:>8}",
+        write!(
+            &mut note,
+            "\n\t\t{:<4} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
             a.kind,
             b.kind
-        ));
+        )
+        .unwrap();
     }
 
     diagnostics::emit(
         open_block_loc,
         msg,
         [
-            Label::new(open_block_loc).with_color(Color::Cyan),
-            Label::new(op.token.location).with_color(Color::Cyan),
+            Label::new(op.token.location)
+                .with_color(Color::Red)
+                .with_message("called here"),
+            Label::new(open_block_loc)
+                .with_color(Color::Cyan)
+                .with_message("defined here"),
         ],
-        notes,
+        note,
         source_store,
     );
 }
