@@ -742,14 +742,29 @@ fn optimize_allocation(program: &mut [Assembly]) {
                 }
 
                 // Also optimize sequential stack swaps
-                AsmInstruction::SwapStacks
-                    if matches![
-                        program.get(start_idx + 1).map(|p| &p.asm),
-                        Some(AsmInstruction::SwapStacks)
-                    ] =>
-                {
-                    program[start_idx].asm = AsmInstruction::Nop;
-                    program[start_idx + 1].asm = AsmInstruction::Nop;
+                AsmInstruction::SwapStacks => {
+                    for (end_idx, asm) in program.iter().enumerate().skip(start_idx + 1) {
+                        match asm.asm {
+                            AsmInstruction::SwapStacks => {
+                                program[start_idx].asm = AsmInstruction::Nop;
+                                program[end_idx].asm = AsmInstruction::Nop;
+                                break;
+                            }
+
+                            AsmInstruction::BlockBoundry
+                            | AsmInstruction::RegAllocPop { .. }
+                            | AsmInstruction::RegAllocDup { .. }
+                            | AsmInstruction::RegFree { push: true, .. } => break,
+
+                            AsmInstruction::Nop
+                            | AsmInstruction::Instruction(_)
+                            | AsmInstruction::RegFree { push: false, .. }
+                            | AsmInstruction::RegAllocLea { .. }
+                            | AsmInstruction::RegAllocMov { .. }
+                            | AsmInstruction::RegAllocLiteral { .. }
+                            | AsmInstruction::RegAllocNop { .. } => continue,
+                        }
+                    }
                 }
                 _ => continue,
             };
