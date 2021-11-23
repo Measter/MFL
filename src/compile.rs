@@ -322,8 +322,8 @@ fn merge_fixed_to_dyn_registers(
 ) {
     eprintln!(
         "    Merge {} and {} in range {}..={}",
-        dynamic_reg_id,
         fixed_reg.as_width(Width::Qword),
+        dynamic_reg_id,
         new_range.start,
         new_range.end - 1
     );
@@ -352,6 +352,16 @@ fn merge_fixed_to_dyn_registers(
                 asm_info.asm = AsmInstruction::RegAllocMov {
                     src,
                     dst: Fixed(fixed_reg),
+                };
+            }
+
+            &mut AsmInstruction::RegAllocMov {
+                src: Dynamic(reg_id),
+                dst,
+            } if reg_id == dynamic_reg_id => {
+                asm_info.asm = AsmInstruction::RegAllocMov {
+                    src: Fixed(fixed_reg),
+                    dst,
                 };
             }
 
@@ -839,6 +849,15 @@ fn assemble_procedure(
                     op.token.location.column,
                     op.code,
                 )?;
+
+                eprintln!(
+                    "    ;; IP{} -- {}:{}:{} -- {:?}",
+                    ip,
+                    source_store.name(op.token.location.file_id),
+                    op.token.location.line,
+                    op.token.location.column,
+                    op.code,
+                )
             }
         }
 
