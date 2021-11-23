@@ -82,9 +82,15 @@ impl SourceLocation {
     }
 }
 
+struct LoadedSource {
+    name: String,
+    contents: String,
+    source: Source,
+}
+
 #[derive(Default)]
 pub struct SourceStorage {
-    files: Vec<(String, String, Source)>,
+    files: Vec<LoadedSource>,
 }
 
 impl SourceStorage {
@@ -94,28 +100,31 @@ impl SourceStorage {
 
     pub fn add(&mut self, name: &str, source: &str) -> FileId {
         let id = self.files.len();
-        self.files
-            .push((name.to_owned(), source.to_owned(), source.into()));
+        self.files.push(LoadedSource {
+            name: name.to_owned(),
+            contents: source.to_owned(),
+            source: source.into(),
+        });
 
         FileId(id)
     }
 
     pub fn name(&self, id: FileId) -> &str {
-        &self.files[id.0].0
+        &self.files[id.0].name
     }
 
     pub fn source(&self, id: FileId) -> &str {
-        &self.files[id.0].1
+        &self.files[id.0].contents
     }
 }
 
 impl Cache<FileId> for &SourceStorage {
     fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
-        Ok(&self.files[id.0].2)
+        Ok(&self.files[id.0].source)
     }
 
     fn display<'a>(&self, id: &'a FileId) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let name = &self.files[id.0].0;
+        let name = &self.files[id.0].name;
 
         Some(Box::new(name.clone()))
     }
