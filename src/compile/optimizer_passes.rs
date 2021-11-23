@@ -16,6 +16,7 @@ type OptimizerFunction =
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     dup_boundry,
+    duppair_boundry,
     push_compare,
     push_shift,
     push_arithmetic,
@@ -116,6 +117,48 @@ fn dup_boundry(
 
     let reg = assembler.reg_alloc_dyn_dup(depth);
     assembler.reg_free_dyn_push(reg);
+
+    Some(start.len())
+}
+
+/// Optimize a DupPair immediately following a block boundry
+/// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
+fn duppair_boundry(
+    program: &Program,
+    proc: &Procedure,
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    interner: &Interners,
+) -> Option<usize> {
+    use OpCode::*;
+    let (start, _) = ops.firstn()?;
+    match start {
+        [boundry, dup]
+            if matches!(
+                boundry.code,
+                While { .. }
+                    | DoWhile { .. }
+                    | DoIf { .. }
+                    | If
+                    | Elif { .. }
+                    | Else { .. }
+                    | EndIf { .. }
+                    | EndWhile { .. }
+            ) && dup.code.is_dup_pair() => {}
+        _ => return None,
+    }
+
+    // We don't actually need any special handling for the boundry token,
+    // so we can just throw it into the single-instruction handler.
+    compile_single_instruction(program, proc, ops, ip, assembler, interner)?;
+
+    assembler.set_op_range(ip + 1, ip + 2);
+
+    let top_reg = assembler.reg_alloc_dyn_dup(0);
+    let bottom_reg = assembler.reg_alloc_dyn_dup(1);
+    assembler.reg_free_dyn_push(bottom_reg);
+    assembler.reg_free_dyn_push(top_reg);
 
     Some(start.len())
 }
