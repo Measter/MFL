@@ -72,7 +72,9 @@ fn generate_type_mismatch(
         }
     }
 
-    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
+    let mut labels = vec![Label::new(op.token.location)
+        .with_color(Color::Red)
+        .with_message(" ")];
 
     for source in op.expansions.iter().skip(1) {
         labels.push(
@@ -82,11 +84,12 @@ fn generate_type_mismatch(
         );
     }
 
-    for ty in types {
+    for (ty, order) in types.iter().rev().zip(1..) {
         labels.push(
             Label::new(ty.location)
                 .with_color(Color::Yellow)
-                .with_message(format!("{}", ty.kind)),
+                .with_message(format!("{}", ty.kind))
+                .with_order(order),
         )
     }
 
