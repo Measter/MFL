@@ -531,11 +531,6 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg_dup_lower);
             assembler.reg_free_dyn_push(reg_dup_top);
         }
-        OpCode::Print => {
-            assembler.reg_alloc_fixed_pop(X86Register::Rdi);
-            assembler.push_instr([str_lit("    call dump"), use_reg(Fixed(X86Register::Rdi))]);
-            assembler.reg_free_fixed_drop(X86Register::Rdi);
-        }
         OpCode::Rot => {
             let a_reg = assembler.reg_alloc_dyn_pop();
             let b_reg = assembler.reg_alloc_dyn_pop();

@@ -276,10 +276,6 @@ pub(crate) fn simulate_execute_program(
                 value_stack.push((a != b) as u64);
             }
 
-            OpCode::Print => {
-                let val = value_stack.pop().unwrap();
-                println!("{}", val);
-            }
             OpCode::Dup { depth } => {
                 let a = value_stack[value_stack.len() - 1 - depth];
                 value_stack.push(a);

@@ -858,12 +858,6 @@ pub(crate) fn compile_program(
     out_file_path: &Path,
     opt_level: u8,
 ) -> Result<()> {
-    let mut cur_exe_dur =
-        std::env::current_exe().with_context(|| eyre!("Failed to get compiler exe path"))?;
-    cur_exe_dur.set_file_name("std_asm.asm");
-    let mut std_asm = File::open(&cur_exe_dur)
-        .with_context(|| eyre!("Failed to open {}", cur_exe_dur.display()))?;
-
     let out_file = File::create(out_file_path)
         .with_context(|| eyre!("Failed to create file: {}", out_file_path.display()))?;
     let mut out_file = BufWriter::new(out_file);
@@ -871,13 +865,6 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "BITS 64")?;
     writeln!(&mut out_file, "segment .text")?;
     writeln!(&mut out_file, "global _start")?;
-
-    std::io::copy(&mut std_asm, &mut out_file).with_context(|| {
-        eyre!(
-            "Failed to copy std_asm.asm contents to {}",
-            out_file_path.display()
-        )
-    })?;
 
     let mut assembler = Assembler::default();
     assembler.use_function(program.top_level_proc_id());

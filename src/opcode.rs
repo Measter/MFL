@@ -82,7 +82,6 @@ pub enum OpCode {
     Multiply,
     NotEq,
     Prologue,
-    Print,
     PushBool(bool),
     PushInt(u64),
     PushStr {
@@ -132,8 +131,7 @@ impl OpCode {
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
             | OpCode::Drop
-            | OpCode::Load(_)
-            | OpCode::Print => 1,
+            | OpCode::Load(_) => 1,
 
             OpCode::Dup { depth } => depth + 1,
 
@@ -209,7 +207,6 @@ impl OpCode {
             | OpCode::CallProc(_)
             | OpCode::Load(_)
             | OpCode::Memory { .. }
-            | OpCode::Print
             | OpCode::Store(_)
             | OpCode::SysCall(_) => false,
         }
@@ -248,7 +245,6 @@ impl OpCode {
             | Load(_)
             | Memory { .. }
             | Prologue
-            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
@@ -296,7 +292,6 @@ impl OpCode {
             | Memory { .. }
             | Multiply
             | Prologue
-            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
@@ -355,7 +350,6 @@ impl OpCode {
             | Load(_)
             | Memory { .. }
             | Prologue
-            | Print
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
@@ -829,7 +823,6 @@ pub fn parse_token(
     while let Some((_, token)) = token_iter.next() {
         let kind = match token.kind {
             TokenKind::Drop => OpCode::Drop,
-            TokenKind::Print => OpCode::Print,
             TokenKind::Dup(depth) => OpCode::Dup { depth },
             TokenKind::DupPair => OpCode::DupPair,
             TokenKind::Rot => OpCode::Rot,

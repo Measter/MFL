@@ -670,9 +670,6 @@ pub fn type_check(
                 stack.push(PorthType::new(PorthTypeKind::Bool, op.token.location));
             }
 
-            OpCode::Print => {
-                stack_check!(source_store, had_error, stack, interner, op, kind_pat!([_]));
-            }
             OpCode::Dup { depth } => {
                 if stack.len() < (depth + 1) {
                     generate_stack_exhaustion(source_store, op, stack.len(), depth + 1);
