@@ -76,7 +76,7 @@ fn generate_type_mismatch(
         .with_color(Color::Red)
         .with_message(" ")];
 
-    for source in op.expansions.iter().skip(1) {
+    for source in op.expansions.iter() {
         labels.push(
             Label::new(*source)
                 .with_color(Color::Blue)
@@ -106,7 +106,7 @@ fn generate_stack_exhaustion(
 
     let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
 
-    for source in op.expansions.iter().skip(1) {
+    for source in op.expansions.iter() {
         labels.push(
             Label::new(*source)
                 .with_color(Color::Blue)
