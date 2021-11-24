@@ -9,7 +9,7 @@ use crate::{
     opcode::{Op, OpCode},
     program::Procedure,
     source_file::SourceStorage,
-    Program, Width,
+    Width,
 };
 
 impl Width {
@@ -135,42 +135,14 @@ fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
 }
 
 pub(crate) fn simulate_execute_program(
-    program: &Program,
     procedure: &Procedure,
     interner: &Interners,
-    program_args: &[String],
     source_store: &SourceStorage,
 ) -> Result<Vec<u64>, ()> {
     let mut ip = 0;
     let mut value_stack: Vec<u64> = Vec::new();
-    let mut call_stack: Vec<(&Procedure, usize)> = Vec::new();
 
-    let global_proc_data = program
-        .get_proc(program.top_level_proc_id())
-        .kind()
-        .get_proc_data();
-
-    let mut current_procedure = procedure;
-
-    let mut memory: Vec<u8> = vec![0; global_proc_data.total_alloc_size];
-    let literal_addresses = allocate_string_literals(interner, &mut memory);
-    let (_, argv_ptr) = allocate_program_args(&mut memory, program_args);
-    let mut local_memory_base = memory.len();
-
-    while let Some(op) = current_procedure.body().get(ip) {
-        // eprintln!("{:?}", op.code);
-        // Note: We should still check main_proc for const, as it may call non-const procs.
-        if (current_procedure.kind().is_const() || current_procedure.kind().is_memory())
-            && !op.code.is_const()
-        {
-            generate_error(
-                "Operation not supported during const evaluation",
-                op,
-                source_store,
-            );
-            return Err(());
-        }
-
+    while let Some(op) = procedure.body().get(ip) {
         match op.code {
             OpCode::Add => {
                 let ([b], a) = value_stack.popn_last_mut().unwrap();
@@ -214,6 +186,9 @@ pub(crate) fn simulate_execute_program(
 
             OpCode::PushBool(val) => value_stack.push(val as _),
             OpCode::PushInt(val) => value_stack.push(val),
+            // It's a bit weird, given you can't do much with a string, but
+            // you could just drop the address that gets pushed leaving the length
+            // which can be used in a const context.
             OpCode::PushStr { id, is_c_str } => {
                 let literal = interner.resolve_literal(id);
                 if !is_c_str {
@@ -221,7 +196,8 @@ pub(crate) fn simulate_execute_program(
                     // include that character.
                     value_stack.push(literal.len() as u64 - 1);
                 }
-                value_stack.push(literal_addresses[id.into_inner().get() as usize]);
+                // Nullptr is fine, because you can't read/write memory in a const-context anyway.
+                value_stack.push(0);
             }
             OpCode::Drop => {
                 value_stack.pop().unwrap();
@@ -295,112 +271,27 @@ pub(crate) fn simulate_execute_program(
                 }
             }
 
-            OpCode::Memory {
-                name,
-                offset,
-                global: false,
-            } => {
-                let proc_data = current_procedure.kind().get_proc_data();
-                let base = local_memory_base + proc_data.alloc_size_and_offsets[&name].offset;
-                value_stack.push((base + offset) as u64)
-            }
-            OpCode::Memory {
-                name,
-                offset,
-                global: true,
-            } => {
-                let base = global_proc_data.alloc_size_and_offsets[&name].offset;
-                value_stack.push((base + offset) as u64)
-            }
-            OpCode::Load(width) => {
-                let address = value_stack.pop().unwrap() as usize;
-
-                let bytes = memory
-                    .get(width.addr_range(address))
-                    .ok_or_else(|| generate_error("invalid memory address", op, source_store))?;
-
-                let value = match width {
-                    Width::Byte => bytes[0] as u64,
-                    Width::Word => u16::from_le_bytes(bytes.try_into().unwrap()) as u64,
-                    Width::Dword => u32::from_le_bytes(bytes.try_into().unwrap()) as u64,
-                    Width::Qword => u64::from_le_bytes(bytes.try_into().unwrap()) as u64,
-                };
-                value_stack.push(value);
-            }
-            OpCode::Store(width) => {
-                let [value, address] = value_stack.popn().unwrap();
-                let dest = memory
-                    .get_mut(width.addr_range(address as usize))
-                    .ok_or_else(|| {
-                        generate_error(
-                            format!("invalid memory address {:?}", address),
-                            op,
-                            source_store,
-                        )
-                    })?;
-                match width {
-                    Width::Byte => dest[0] = value as u8,
-                    Width::Word => dest.copy_from_slice(&u16::to_le_bytes(value as _)),
-                    Width::Dword => dest.copy_from_slice(&u32::to_le_bytes(value as _)),
-                    Width::Qword => dest.copy_from_slice(&u64::to_le_bytes(value)),
-                }
-            }
-
-            OpCode::ArgC => value_stack.push(program_args.len() as _),
-            OpCode::ArgV => value_stack.push(argv_ptr),
-
             OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
 
             // These are no-ops for the simulator, only there to help the compiler.
             OpCode::Epilogue | OpCode::Prologue => {}
-            OpCode::CallProc(id) => {
-                let return_address = ip + 1; // The instruction after.
-                call_stack.push((current_procedure, return_address));
-                current_procedure = program.get_proc(id);
-                ip = 0;
+            OpCode::Return => break,
 
-                local_memory_base = memory.len();
-                let proc_data = current_procedure.kind().get_proc_data();
-                memory.resize(memory.len() + proc_data.total_alloc_size, 0);
-
-                continue;
-            }
-            OpCode::Return => match call_stack.pop() {
-                None => break,
-                Some((proc, return_ip)) => {
-                    let proc_data = current_procedure.kind().get_proc_data();
-                    local_memory_base -= proc_data.total_alloc_size;
-                    memory.truncate(memory.len() - proc_data.total_alloc_size);
-
-                    current_procedure = proc;
-                    ip = return_ip;
-
-                    continue;
-                }
-            },
-
-            OpCode::SysCall(3) => {
-                let [arg3, arg2, arg1, syscall_id] = value_stack.popn().unwrap();
-                make_syscall3(
-                    syscall_id,
-                    arg1,
-                    arg2,
-                    arg3,
-                    &mut memory,
-                    &mut value_stack,
+            OpCode::ArgC
+            | OpCode::ArgV
+            | OpCode::CallProc(_)
+            | OpCode::Load(_)
+            | OpCode::Memory { .. }
+            | OpCode::Store(_)
+            | OpCode::SysCall(_) => {
+                generate_error(
+                    "operation not supported during const evaluation",
                     op,
                     source_store,
-                )?;
-            }
-            OpCode::SysCall(1) => {
-                let [arg1, syscall_id] = value_stack.popn().unwrap();
-                make_syscall1(syscall_id, arg1, &mut memory, op, source_store)?;
-            }
-            OpCode::SysCall(_) => {
-                generate_error("unsupported syscall", op, source_store);
+                );
                 return Err(());
             }
-            OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
+            OpCode::Do | OpCode::End | OpCode::UnresolvedIdent(_) | OpCode::Include(_) => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

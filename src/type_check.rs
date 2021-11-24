@@ -11,7 +11,7 @@ use crate::{
     interners::Interners,
     n_ops::{NOps, PopN},
     opcode::{Op, OpCode},
-    program::{Procedure, Program},
+    program::{Module, Procedure},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -337,7 +337,7 @@ struct BlockStackState {
 }
 
 pub fn type_check(
-    program: &Program,
+    program: &Module,
     proc: &Procedure,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -858,7 +858,7 @@ pub fn type_check(
             }
 
             OpCode::SysCall(_)
-            | OpCode::Ident(_)
+            | OpCode::UnresolvedIdent(_)
             | OpCode::Include(_)
             | OpCode::End
             | OpCode::Do => {

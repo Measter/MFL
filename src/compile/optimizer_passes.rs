@@ -5,14 +5,14 @@ use crate::{
     interners::Interners,
     n_ops::NOps,
     opcode::{Op, OpCode},
-    program::{Procedure, Program},
+    program::{Module, Procedure},
     Width,
 };
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
 
 type OptimizerFunction =
-    fn(&Program, &Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
+    fn(&Module, &Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     dup_boundry,
@@ -80,7 +80,7 @@ impl OpCode {
 /// Optimize a Dup immediately following a block boundry
 /// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
 fn dup_boundry(
-    program: &Program,
+    program: &Module,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -124,7 +124,7 @@ fn dup_boundry(
 /// Optimize a DupPair immediately following a block boundry
 /// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
 fn duppair_boundry(
-    program: &Program,
+    program: &Module,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -165,7 +165,7 @@ fn duppair_boundry(
 
 /// Optimize a Push-Compare
 fn push_compare(
-    _: &Program,
+    _: &Module,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -206,7 +206,7 @@ fn push_compare(
 
 /// Optimize a Push-ShiftOp
 fn push_shift(
-    _: &Program,
+    _: &Module,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -241,7 +241,7 @@ fn push_shift(
 
 /// Optimize a Push-ArithBinOp
 fn push_arithmetic(
-    _: &Program,
+    _: &Module,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -277,7 +277,7 @@ fn push_arithmetic(
 
 // Optimizes a Mem-Push-Store sequence.
 fn mem_push_store(
-    _: &Program,
+    _: &Module,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -329,7 +329,7 @@ fn mem_push_store(
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(
-    _: &Program,
+    _: &Module,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -388,7 +388,7 @@ fn mem_load(
 
 /// Compiles a single instruction in isolation. Doesn't actually optimize.
 pub(super) fn compile_single_instruction(
-    program: &Program,
+    program: &Module,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
@@ -740,7 +740,7 @@ pub(super) fn compile_single_instruction(
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }
-        OpCode::Do | OpCode::End | OpCode::Ident(_) | OpCode::Include(_) => {
+        OpCode::Do | OpCode::End | OpCode::UnresolvedIdent(_) | OpCode::Include(_) => {
             panic!("ICE: Encountered: {:?}", op.code)
         }
     }

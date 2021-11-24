@@ -2,11 +2,15 @@
 
 use std::{path::Path, process::Command};
 
+use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
-use program::Program;
+use lasso::Interner;
+use program::{Module, ModuleId, ProcedureId};
 use source_file::SourceStorage;
 use structopt::StructOpt;
+
+use crate::program::{ProcedureKind, Program};
 
 mod compile;
 mod diagnostics;
@@ -48,13 +52,7 @@ enum Mode {
 
     /// Compile the program
     #[structopt(name = "com")]
-    Compile {
-        file: String,
-
-        /// Set optimization level
-        #[structopt(short, parse(from_occurrences))]
-        opt_level: u8,
-    },
+    Compile {},
 }
 
 #[derive(Debug, StructOpt)]
@@ -63,48 +61,67 @@ struct Args {
     #[structopt(short = "I", require_delimiter = true)]
     library_paths: Vec<String>,
 
-    #[structopt(subcommand)]
-    mode: Mode,
+    file: String,
+
+    /// Set optimization level
+    #[structopt(short, parse(from_occurrences))]
+    opt_level: u8,
 }
 
-fn run_simulate(
-    file: String,
+fn load_program(
+    file: &str,
     opt_level: u8,
-    mut program_args: Vec<String>,
     include_paths: Vec<String>,
-) -> Result<()> {
+) -> Result<(Program, SourceStorage, Interners, ModuleId, ProcedureId)> {
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
-    program_args.insert(0, file.clone()); // We need the program name to be part of the args.
+    let mut program = Program::new();
+    let entry_module_id = program
+        .load_program(
+            &file,
+            &mut interner,
+            &mut source_storage,
+            opt_level,
+            &include_paths,
+        )
+        .with_context(|| eyre!("failude to load program"))?;
 
-    let program = Program::load(
-        &mut source_storage,
-        &mut interner,
-        &file,
-        opt_level,
-        &include_paths,
-    )
-    .with_context(|| eyre!("failed to load program"))?;
+    // TODO: Get program entry function.
+    let entry_symbol = interner.intern_lexeme("entry");
+    let entry_module = program.get_module(entry_module_id);
 
-    let top_level_proc = program.get_proc(program.top_level_proc_id());
+    let entry_function_id = entry_module
+        .get_proc_id(entry_symbol)
+        .ok_or_else(|| eyre!("`entry` function not found"))?;
 
-    simulate::simulate_execute_program(
-        &program,
-        top_level_proc,
-        &interner,
-        &program_args,
-        &source_storage,
-    )
-    .map_err(|_| eyre!("failed to simulate program"))?;
+    let entry_proc = program.get_proc(entry_function_id);
+    if !matches!(entry_proc.kind(), ProcedureKind::Proc(_)) {
+        let name = entry_proc.name();
+        diagnostics::emit(
+            name.location,
+            "`entry` must be a function",
+            Some(
+                Label::new(name.location)
+                    .with_color(Color::Red)
+                    .with_message(format!("found `{:?}`", entry_proc.kind())),
+            ),
+            None,
+            &source_storage,
+        );
+        return Err(eyre!("invalid `entry` procedure type"));
+    }
 
-    Ok(())
+    Ok((
+        program,
+        source_storage,
+        interner,
+        entry_module_id,
+        entry_function_id,
+    ))
 }
 
 fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
-    let mut source_storage = SourceStorage::new();
-    let mut interner = Interners::new();
-
     let mut output_asm = Path::new(&file).to_path_buf();
     output_asm.set_extension("asm");
     let mut output_obj = output_asm.clone();
@@ -112,14 +129,8 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let program = Program::load(
-        &mut source_storage,
-        &mut interner,
-        &file,
-        opt_level,
-        &include_paths,
-    )
-    .with_context(|| eyre!("failed to load program"))?;
+    let (program, source_storage, interner, entry_module, entry_function) =
+        load_program(&file, opt_level, include_paths)?;
 
     println!("Compiling... to {}", output_asm.display());
     compile::compile_program(&program, &source_storage, &interner, &output_asm, opt_level)?;
@@ -153,14 +164,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let args = Args::from_args();
 
-    match args.mode {
-        Mode::Simulate {
-            file,
-            opt_level,
-            args: program_args,
-        } => run_simulate(file, opt_level, program_args, args.library_paths)?,
-        Mode::Compile { file, opt_level } => run_compile(file, opt_level, args.library_paths)?,
-    }
+    run_compile(args.file, args.opt_level, args.library_paths)?;
 
     Ok(())
 }

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, ops::Not, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
+    ops::Not,
+    path::Path,
+};
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
@@ -15,6 +20,8 @@ use crate::{
     type_check::{self, PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
+
+mod parser;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AllocData {
@@ -55,10 +62,12 @@ impl ProcedureKind {
 #[derive(Debug)]
 pub struct Procedure {
     name: Token,
+    module: ModuleId,
     id: ProcedureId,
     parent: Option<ProcedureId>,
-    body: Vec<Op>,
     kind: ProcedureKind,
+
+    body: Vec<Op>,
     exit_stack: Vec<PorthType>,
     entry_stack: Vec<PorthType>,
     visible_symbols: HashMap<Spur, ProcedureId>,
@@ -106,107 +115,334 @@ impl Procedure {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleId(usize);
+
 pub struct Program {
-    top_level_proc_id: ProcedureId,
-    included_files: HashMap<Spur, Vec<Op>>,
-    include_queue: Vec<(Token, Spur)>,
+    module_counter: usize,
+    modules: HashMap<ModuleId, Module>,
+    module_ident_map: HashMap<Spur, ModuleId>,
 
     proc_counter: usize,
-    all_procs: HashMap<ProcedureId, Procedure>,
-    macros: HashMap<Spur, ProcedureId>,
-    functions: HashMap<Spur, ProcedureId>,
-    has_resolved_visible: bool,
+    all_procedures: HashMap<ProcedureId, Procedure>,
 }
 
 impl Program {
-    fn load_include(
+    pub fn new() -> Self {
+        Program {
+            module_counter: 0,
+            modules: Default::default(),
+            module_ident_map: Default::default(),
+            proc_counter: 0,
+            all_procedures: HashMap::new(),
+        }
+    }
+
+    fn new_module(&mut self, name: Spur) -> ModuleId {
+        self.module_counter += 1;
+        let new_id = ModuleId(self.module_counter);
+
+        let module = Module {
+            name,
+            id: new_id,
+            has_resolved_visible: false,
+            top_level_symbols: HashMap::new(),
+        };
+        self.module_ident_map.insert(name, new_id);
+        self.modules.insert(new_id, module);
+
+        new_id
+    }
+
+    pub fn get_module(&self, id: ModuleId) -> &Module {
+        &self.modules[&id]
+    }
+
+    pub fn modules(&self) -> &HashMap<ModuleId, Module> {
+        &self.modules
+    }
+
+    pub fn load_program(
         &mut self,
-        source_store: &mut SourceStorage,
+        file: &str,
         interner: &mut Interners,
+        source_store: &mut SourceStorage,
+        opt_level: u8,
         library_paths: &[String],
-        include_token: Token,
-        file: Spur,
-    ) -> Result<(), ()> {
-        if self.included_files.contains_key(&file) {
-            return Ok(());
+    ) -> Result<ModuleId> {
+        let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
+        let module_name = interner.intern_lexeme(module_name);
+
+        let mut program = Program::new();
+
+        let mut loaded_modules = HashSet::new();
+        let mut include_queue = Vec::new();
+
+        let entry_module_id = program.new_module(module_name);
+
+        let entry_module = Module::load(
+            &mut program,
+            entry_module_id,
+            source_store,
+            interner,
+            file,
+            opt_level,
+            library_paths,
+            &mut include_queue,
+        )?;
+
+        loaded_modules.insert(module_name);
+
+        let mut had_error = false;
+        while let Some(token) = include_queue.pop() {
+            if loaded_modules.contains(&token.lexeme) {
+                continue;
+            }
+
+            let mut filename = Path::new(interner.resolve_lexeme(token.lexeme)).to_owned();
+            filename.set_extension("porth");
+
+            let full_path = match search_includes(library_paths, &filename) {
+                Some(path) => path,
+                None => {
+                    diagnostics::emit(
+                        token.location,
+                        "unable to find module",
+                        Some(
+                            Label::new(token.location)
+                                .with_color(Color::Red)
+                                .with_message("here"),
+                        ),
+                        None,
+                        source_store,
+                    );
+
+                    had_error = true;
+                    continue;
+                }
+            };
+
+            let new_module_id = program.new_module(token.lexeme);
+
+            let new_module = match Module::load(
+                &mut program,
+                entry_module_id,
+                source_store,
+                interner,
+                &full_path,
+                opt_level,
+                library_paths,
+                &mut include_queue,
+            ) {
+                Ok(module) => module,
+                Err(e) => {
+                    diagnostics::emit(
+                        token.location,
+                        "error loading module",
+                        Some(
+                            Label::new(token.location)
+                                .with_color(Color::Red)
+                                .with_message("here"),
+                        ),
+                        format!("{}", e),
+                        source_store,
+                    );
+
+                    had_error = true;
+                    continue;
+                }
+            };
+
+            loaded_modules.insert(token.lexeme);
         }
 
-        let file_name = interner.resolve_literal(file);
-        // String literals are always null-terminated, so we need to trim that off.
-        let file_name = &file_name[..file_name.len() - 1];
+        had_error |= program.post_process_procs(interner, source_store).is_ok();
 
-        let include_path = match search_includes(library_paths, file_name) {
-            Some(path) => path,
-            None => {
-                diagnostics::emit(
-                    include_token.location,
-                    format!("include not found: `{}`", file_name),
-                    Some(Label::new(include_token.location).with_color(Color::Red)),
-                    None,
-                    source_store,
-                );
+        had_error
+            .not()
+            .then(|| entry_module_id)
+            .ok_or_else(|| eyre!("failed to load program"))
+    }
 
-                return Err(());
+    fn resolve_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+        for (proc_id, proc) in self.all_procedures.iter_mut() {
+            for op in &mut proc.body {
+                match op.code {
+                    // Symbol in own module.
+                    OpCode::UnresolvedIdent {
+                        token,
+                        sub_token: None,
+                    } => {
+                        if let Some(id) = self.get_visible_symbol(*proc_id, token.lexeme) {
+                            op.code = OpCode::ResolvedIdent {
+                                module: proc.module,
+                                proc_id: id,
+                            };
+                        } else {
+                            let module = &self.modules[&proc.module];
+                            let token_lexeme = interner.resolve_lexeme(token.lexeme);
+                            let module_lexeme = interner.resolve_lexeme(module.name);
+                            diagnostics::emit(
+                                token.location,
+                                format!(
+                                    "symbol `{}` not found in module `{}`",
+                                    token_lexeme, module_lexeme
+                                ),
+                                Some(
+                                    Label::new(token.location)
+                                        .with_color(Color::Red)
+                                        .with_message("not found"),
+                                ),
+                                None,
+                                source_store,
+                            );
+                        }
+                    }
+                    OpCode::UnresolvedIdent {
+                        token,
+                        sub_token: Some(proc),
+                    } => {
+                        let module_id = match self.module_ident_map.get(&token.lexeme) {
+                            Some(id) => *id,
+                            None => {
+                                let module_name = interner.resolve_lexeme(token.lexeme);
+                                diagnostics::emit(
+                                    token.location,
+                                    format!("module `{}` not found", module_name),
+                                    Some(
+                                        Label::new(token.location)
+                                            .with_color(Color::Red)
+                                            .with_message("not found"),
+                                    ),
+                                    None,
+                                    source_store,
+                                );
+                                had_error = true;
+                                continue;
+                            }
+                        };
+
+                        let module = &self.modules[&module_id];
+                        match module.top_level_symbols.get(&proc.lexeme) {
+                            Some(proc_id) => {
+                                op.code = OpCode::ResolvedIdent {
+                                    module: module_id,
+                                    proc_id,
+                                };
+                            }
+                            None => {
+                                let proc_name = interner.resolve_lexeme(proc.lexeme);
+                                let module_name = interner.resolve_lexeme(token.lexeme);
+                                diagnostics::emit(
+                                    proc.location,
+                                    format!(
+                                        "symbol `{}` not found in module `{}`",
+                                        proc_name, module_name
+                                    ),
+                                    Some(
+                                        Label::new(proc.location)
+                                            .with_color(Color::Red)
+                                            .with_message("not found"),
+                                    ),
+                                    None,
+                                    source_store,
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
             }
-        };
-
-        let contents = match std::fs::read_to_string(&include_path) {
-            Ok(contents) => contents,
-            Err(e) => {
-                diagnostics::emit(
-                    include_token.location,
-                    format!("error opening: `{}`", include_path),
-                    Some(Label::new(include_token.location).with_color(Color::Red)),
-                    Some(format!("{}", e)),
-                    source_store,
-                );
-                return Err(());
-            }
-        };
-
-        let file_id = source_store.add(&include_path, &contents);
-
-        let tokens = match lexer::lex_file(&contents, file_id, interner, source_store) {
-            Ok(program) => program,
-            Err(()) => return Err(()),
-        };
-
-        let ops = match opcode::parse_token(
-            self,
-            &tokens,
-            interner,
-            self.top_level_proc_id,
-            source_store,
-        ) {
-            Ok(ops) => ops,
-            Err(()) => return Err(()),
-        };
-
-        self.included_files.insert(file, ops);
+        }
 
         Ok(())
     }
 
-    fn process_include_queue(
+    fn post_process_procs(
         &mut self,
-        source_store: &mut SourceStorage,
-        interner: &mut Interners,
-        library_paths: &[String],
-    ) -> Result<(), ()> {
-        let mut had_error = false;
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        self.resolve_idents(interner, source_store)?;
+        // Expand all macros.
+        // Evaluate consts.
+        // Expand consts.
+        // Evaluate memory.
 
-        while let Some((include_token, file)) = self.include_queue.pop() {
-            if self
-                .load_include(source_store, interner, library_paths, include_token, file)
-                .is_err()
-            {
-                had_error = true;
-            }
-        }
-
-        had_error.not().then(|| ()).ok_or(())
+        Ok(())
     }
 
+    pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
+        &self.all_procedures[&id]
+    }
+
+    pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
+        self.all_procedures.get_mut(&id).unwrap()
+    }
+
+    pub fn new_procedure(
+        &mut self,
+        name: Token,
+        module: ModuleId,
+        kind: ProcedureKind,
+        parent: Option<ProcedureId>,
+        exit_stack: Vec<PorthType>,
+        entry_stack: Vec<PorthType>,
+    ) -> ProcedureId {
+        let id = ProcedureId(self.proc_counter);
+        self.proc_counter += 1;
+
+        let proc = Procedure {
+            name,
+            module,
+            id,
+            kind,
+            body: Vec::new(),
+            parent,
+            exit_stack,
+            entry_stack,
+            visible_symbols: HashMap::new(),
+        };
+
+        self.all_procedures.insert(id, proc);
+
+        if parent.is_none() {
+            let module = &mut self.modules[&module];
+            module.top_level_symbols.insert(name.lexeme, id);
+        }
+
+        id
+    }
+
+    pub fn get_visible_symbol(&self, from: ProcedureId, symbol: Spur) -> Option<ProcedureId> {
+        let mut cur_id = Some(from);
+        while let Some(id) = cur_id {
+            let proc = self.get_proc(id);
+            if let ProcedureKind::Proc(ProcData { allocs, consts, .. }) = &proc.kind {
+                if let Some(found_id) = allocs.get(&symbol).or_else(|| consts.get(&symbol)) {
+                    return Some(*found_id);
+                }
+            }
+            cur_id = proc.parent;
+        }
+
+        let module_id = self.all_procedures[&from].module;
+        let module = &self.modules[&module_id];
+        module.top_level_symbols.get(&symbol).copied()
+    }
+}
+
+pub struct Module {
+    name: Spur,
+    id: ModuleId,
+    has_resolved_visible: bool,
+    top_level_symbols: HashMap<Spur, ProcedureId>,
+}
+
+impl Module {
     fn post_process_procedure(
         &mut self,
         procedure: &mut Procedure,
@@ -214,7 +450,6 @@ impl Program {
         source_store: &SourceStorage,
         opt_level: u8,
     ) -> Result<bool, ()> {
-        procedure.body = opcode::expand_includes(&self.included_files, &procedure.body);
         let (new_body, failed_const_eval) =
             opcode::expand_sub_blocks(self, interner, procedure, source_store)?;
         procedure.body = new_body;
@@ -233,7 +468,7 @@ impl Program {
     fn post_process(
         &mut self,
         interner: &mut Interners,
-        source_store: &mut SourceStorage,
+        source_store: &SourceStorage,
         opt_level: u8,
     ) -> Result<(), ()> {
         let mut had_error = false;
@@ -266,7 +501,7 @@ impl Program {
     fn post_process_consts(
         &mut self,
         interner: &mut Interners,
-        source_store: &mut SourceStorage,
+        source_store: &SourceStorage,
         opt_level: u8,
     ) -> Result<(), ()> {
         let mut had_error = false;
@@ -305,19 +540,14 @@ impl Program {
                             continue;
                         }
 
-                        let stack = match simulate_execute_program(
-                            self,
-                            &procedure,
-                            interner,
-                            &[],
-                            source_store,
-                        ) {
-                            Err(_) => {
-                                had_error = true;
-                                continue;
-                            }
-                            Ok(stack) => stack,
-                        };
+                        let stack =
+                            match simulate_execute_program(&procedure, interner, source_store) {
+                                Err(_) => {
+                                    had_error = true;
+                                    continue;
+                                }
+                                Ok(stack) => stack,
+                            };
 
                         let const_vals = stack
                             .into_iter()
@@ -390,7 +620,8 @@ impl Program {
         for proc in self.all_procs.values() {
             if let ProcedureKind::Const { .. } = &proc.kind {
                 for op in &proc.body {
-                    if matches!(op.code, OpCode::Ident(ref_id) if ref_id == proc.name.lexeme) {
+                    if matches!(op.code, OpCode::UnresolvedIdent(ref_id) if ref_id == proc.name.lexeme)
+                    {
                         diagnostics::emit(
                             op.token.location,
                             "self referencing const",
@@ -424,19 +655,14 @@ impl Program {
             .collect();
 
         for alloc_id in alloc_ids {
-            let mut stack = match simulate_execute_program(
-                self,
-                self.get_proc(alloc_id),
-                interner,
-                &[],
-                source_store,
-            ) {
-                Err(()) => {
-                    had_error = true;
-                    continue;
-                }
-                Ok(stack) => stack,
-            };
+            let mut stack =
+                match simulate_execute_program(self.get_proc(alloc_id), interner, source_store) {
+                    Err(()) => {
+                        had_error = true;
+                        continue;
+                    }
+                    Ok(stack) => stack,
+                };
 
             // The type checker enforces a single stack item here.
             let alloc_size = stack.pop().unwrap() as usize;
@@ -466,12 +692,15 @@ impl Program {
     }
 
     pub fn load(
+        program: &mut Program,
+        module_id: ModuleId,
         source_store: &mut SourceStorage,
         interner: &mut Interners,
         file: &str,
         opt_level: u8,
         library_paths: &[String],
-    ) -> Result<Program> {
+        include_queue: &mut Vec<Token>,
+    ) -> Result<()> {
         let contents =
             std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
 
@@ -480,188 +709,56 @@ impl Program {
         let tokens = lexer::lex_file(&contents, file_id, interner, source_store)
             .map_err(|_| eyre!("error lexing file: {}", file))?;
 
-        let mut program = Program {
-            top_level_proc_id: ProcedureId(usize::MAX),
-            included_files: HashMap::new(),
-            include_queue: Vec::new(),
-            proc_counter: 0,
-            all_procs: HashMap::new(),
-            macros: HashMap::new(),
-            functions: HashMap::new(),
-            has_resolved_visible: false,
-        };
+        let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
+        let module_spur = interner.intern_lexeme(file_stem);
 
-        let top_level_proc_id = program.new_procedure(
-            tokens[0],
-            ProcedureKind::Proc(ProcData::default()),
-            None,
-            Vec::new(),
-            Vec::new(),
-        );
-
-        program.top_level_proc_id = top_level_proc_id;
-
-        let top_level_body = opcode::parse_token(
-            &mut program,
+        parser::parse_module(
+            program,
+            module_id,
             &tokens,
             interner,
-            top_level_proc_id,
+            include_queue,
             source_store,
         )
         .map_err(|_| eyre!("error parsing file: {}", file))?;
 
-        *program.get_proc_mut(top_level_proc_id).body_mut() = top_level_body;
-
-        program
-            .process_include_queue(source_store, interner, library_paths)
-            .map_err(|_| eyre!("error processing includes: {}", file))?;
-
-        program.resolve_visible_symbols();
-
-        program
-            .check_const_for_self(source_store)
-            .map_err(|_| eyre!("error checking consts: {}", file))?;
-
-        program
-            .post_process_consts(interner, source_store, opt_level)
-            .map_err(|_| eyre!("error processing consts: {}", file))?;
-
-        program
-            .post_process(interner, source_store, opt_level)
-            .map_err(|_| eyre!("error processing procedures: {}", file))?;
-
-        program
-            .type_check(interner, source_store)
-            .map_err(|_| eyre!("error type checking: {}", file))?;
-
-        program
-            .evaluate_allocation_sizes(interner, source_store)
-            .map_err(|_| eyre!("error evaluating allocation sizes: {}", file))?;
-
-        Ok(program)
+        Ok(())
     }
 
-    pub fn new_procedure(
+    fn post_process_module(
         &mut self,
-        name: Token,
-        kind: ProcedureKind,
-        parent: Option<ProcedureId>,
-        exit_stack: Vec<PorthType>,
-        entry_stack: Vec<PorthType>,
-    ) -> ProcedureId {
-        let id = ProcedureId(self.proc_counter);
-        self.proc_counter += 1;
+        program: &Program,
+        opt_level: u8,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let module_name = interner.resolve_lexeme(self.name);
 
-        let is_macro = kind.is_macro();
-        let is_function = kind.is_proc();
+        // Fix this crap
+        self.check_const_for_self(source_store)
+            .map_err(|_| eyre!("error checking consts: {}", module_name))?;
 
-        let proc = Procedure {
-            name,
-            id,
-            kind,
-            body: Vec::new(),
-            parent,
-            exit_stack,
-            entry_stack,
-            visible_symbols: HashMap::new(),
-        };
+        self.post_process_consts(interner, source_store, opt_level)
+            .map_err(|_| eyre!("error processing consts: {}", module_name))?;
 
-        self.all_procs.insert(id, proc);
+        self.post_process(interner, source_store, opt_level)
+            .map_err(|_| eyre!("error processing procedures: {}", module_name))?;
 
-        if is_macro {
-            self.macros.insert(name.lexeme, id);
-        } else if is_function {
-            self.functions.insert(name.lexeme, id);
-        }
+        self.type_check(interner, source_store)
+            .map_err(|_| eyre!("error type checking: {}", module_name))?;
 
-        id
+        self.evaluate_allocation_sizes(interner, source_store)
+            .map_err(|_| eyre!("error evaluating allocation sizes: {}", module_name))?;
+
+        Ok(())
     }
 
-    pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
-        &self.all_procs[&id]
-    }
-
-    pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
-        self.all_procs.get_mut(&id).unwrap()
-    }
-
-    pub fn get_visible_symbol(&self, from: ProcedureId, symbol: Spur) -> Option<ProcedureId> {
-        // We only fully resolve symbols after parsing the entire input.
-        // If we haven't, we need to fully walk the parent tree.
-        if self.has_resolved_visible {
-            return self.get_proc(from).get_visible_symbol(symbol);
-        }
-
-        if let Some(&found_id) = self
-            .macros
-            .get(&symbol)
-            .or_else(|| self.functions.get(&symbol))
-        {
-            return Some(found_id);
-        }
-
-        let mut cur_id = Some(from);
-        while let Some(id) = cur_id {
-            let proc = self.get_proc(id);
-            if let ProcedureKind::Proc(ProcData { allocs, consts, .. }) = &proc.kind {
-                if let Some(found_id) = allocs.get(&symbol).or_else(|| consts.get(&symbol)) {
-                    return Some(*found_id);
-                }
-            }
-            cur_id = proc.parent;
-        }
-
-        None
-    }
-
-    pub fn top_level_proc_id(&self) -> ProcedureId {
-        self.top_level_proc_id
-    }
-
-    pub fn add_include(&mut self, path_literal: Token, literal: Spur) {
-        self.include_queue.push((path_literal, literal));
-    }
-
-    fn resolve_visible_symbols(&mut self) {
-        let proc_keys: Vec<_> = self
-            .all_procs
-            .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
-            .map(|(id, _)| *id)
-            .collect();
-
-        for proc_id in proc_keys {
-            let mut proc = self.all_procs.remove(&proc_id).unwrap();
-
-            let mut parent = proc.parent;
-            while let Some(parent_id) = parent {
-                let parent_proc = self.get_proc(parent_id);
-                if let ProcedureKind::Proc(ProcData { allocs, consts, .. }) = &parent_proc.kind {
-                    for (&name, &id) in allocs.iter().chain(consts) {
-                        proc.visible_symbols.insert(name, id);
-                    }
-                }
-                parent = parent_proc.parent;
-            }
-
-            for (&name, &id) in self.macros.iter().chain(&self.functions) {
-                proc.visible_symbols.insert(name, id);
-            }
-
-            if let ProcedureKind::Proc(ProcData { allocs, consts, .. }) = &proc.kind {
-                for (&name, &id) in allocs.iter().chain(consts) {
-                    proc.visible_symbols.insert(name, id);
-                }
-            }
-
-            self.all_procs.insert(proc_id, proc);
-        }
-
-        self.has_resolved_visible = true;
+    pub fn get_proc_id(&self, name: Spur) -> Option<ProcedureId> {
+        self.top_level_symbols.get(&name).copied()
     }
 }
 
-fn search_includes(paths: &[String], file_name: &str) -> Option<String> {
+fn search_includes(paths: &[String], file_name: &Path) -> Option<String> {
     // Stupidly innefficient, but whatever...
 
     for path in paths {

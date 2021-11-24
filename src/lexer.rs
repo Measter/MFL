@@ -20,6 +20,7 @@ pub enum TokenKind {
     CastBool,
     CastInt,
     CastPtr,
+    ColonColon,
     Const,
     DivMod,
     Do,
@@ -72,6 +73,7 @@ impl TokenKind {
             | TokenKind::CastBool
             | TokenKind::CastInt
             | TokenKind::CastPtr
+            | TokenKind::ColonColon
             | TokenKind::Const
             | TokenKind::DivMod
             | TokenKind::Do
@@ -118,7 +120,7 @@ impl TokenKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: Spur,
@@ -377,6 +379,19 @@ impl<'source> Scanner<'source> {
 
                 Some(Token::new(
                     TokenKind::Integer(ch as _),
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                ))
+            }
+
+            (':', ':') => {
+                self.advance(); // Consume the second ':'
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(
+                    TokenKind::ColonColon,
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),

@@ -3,8 +3,11 @@ use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, 
 use color_eyre::eyre::{eyre, Context, Result};
 
 use crate::{
-    interners::Interners, opcode::OpCode, program::Procedure, source_file::SourceStorage, Program,
-    Width, OPT_INSTR, OPT_STACK,
+    interners::Interners,
+    opcode::OpCode,
+    program::{ModuleId, Procedure, ProcedureId, Program},
+    source_file::SourceStorage,
+    Module, Width, OPT_INSTR, OPT_STACK,
 };
 
 mod assembly;
@@ -92,7 +95,7 @@ impl OpCode {
 }
 
 fn build_assembly(
-    program: &Program,
+    program: &Module,
     proc: &Procedure,
     interner: &Interners,
     opt_level: u8,
@@ -777,7 +780,7 @@ fn optimize_allocation(program: &mut [Assembly]) {
 }
 
 fn assemble_procedure(
-    program: &Program,
+    program: &Module,
     assembler: &mut Assembler,
     proc: &Procedure,
     is_top_level: bool,
@@ -887,6 +890,8 @@ fn assemble_procedure(
 
 pub(crate) fn compile_program(
     program: &Program,
+    entry_module: ModuleId,
+    entry_function: ProcedureId,
     source_store: &SourceStorage,
     interner: &Interners,
     out_file_path: &Path,

@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    iter::Peekable,
     ops::Not,
 };
 
@@ -12,10 +11,10 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    program::{ProcData, Procedure, ProcedureId, ProcedureKind},
+    program::{ModuleId, Procedure, ProcedureId, ProcedureKind},
     source_file::{SourceLocation, SourceStorage},
-    type_check::{PorthType, PorthTypeKind},
-    Program, Width,
+    type_check::PorthTypeKind,
+    Module, Width,
 };
 
 use self::optimizer_passes::PASSES;
@@ -66,7 +65,6 @@ pub enum OpCode {
     },
     Epilogue,
     Equal,
-    Ident(Spur),
     If,
     Include(Spur),
     Less,
@@ -88,6 +86,10 @@ pub enum OpCode {
         id: Spur,
         is_c_str: bool,
     },
+    ResolvedIdent {
+        module: ModuleId,
+        proc_id: ProcedureId,
+    },
     Return,
     Rot,
     ShiftLeft,
@@ -96,6 +98,10 @@ pub enum OpCode {
     Subtract,
     Swap,
     SysCall(usize),
+    UnresolvedIdent {
+        token: Token,
+        sub_token: Option<Token>,
+    },
     While {
         ip: usize,
     },
@@ -143,7 +149,7 @@ impl OpCode {
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
-            | OpCode::Ident(_)
+            | OpCode::UnresolvedIdent(_)
             | OpCode::If
             | OpCode::Include(_)
             | OpCode::Memory { .. }
@@ -181,7 +187,7 @@ impl OpCode {
             | OpCode::EndWhile { .. }
             | OpCode::Epilogue
             | OpCode::Equal
-            | OpCode::Ident(_)
+            | OpCode::UnresolvedIdent(_)
             | OpCode::If
             | OpCode::Include(_)
             | OpCode::Less
@@ -239,7 +245,7 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | Ident(_)
+            | UnresolvedIdent(_)
             | If
             | Include(_)
             | Load(_)
@@ -285,7 +291,7 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | Ident(_)
+            | UnresolvedIdent(_)
             | If
             | Include(_)
             | Load(_)
@@ -344,7 +350,7 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | Ident(_)
+            | UnresolvedIdent(_)
             | If
             | Include { .. }
             | Load(_)
@@ -391,561 +397,13 @@ pub struct Op {
 }
 
 impl Op {
-    fn new(code: OpCode, token: Token) -> Self {
+    pub fn new(code: OpCode, token: Token) -> Self {
         Self {
             code,
             token,
             expansions: Vec::new(),
         }
     }
-}
-
-fn expect_token<'a>(
-    tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
-    kind_str: &str,
-    expected: fn(TokenKind) -> bool,
-    prev: Token,
-    interner: &Interners,
-    source_store: &SourceStorage,
-) -> Result<(usize, Token), ()> {
-    match tokens.next() {
-        Some((idx, ident)) if expected(ident.kind) => Ok((idx, *ident)),
-        Some((_, ident)) => {
-            diagnostics::emit(
-                ident.location,
-                format!(
-                    "expected {}, found '{}'",
-                    kind_str,
-                    interner.resolve_lexeme(ident.lexeme)
-                ),
-                Some(Label::new(ident.location).with_color(Color::Red)),
-                None,
-                source_store,
-            );
-            Err(())
-        }
-        None => {
-            diagnostics::emit(
-                prev.location,
-                "unexpected end of file",
-                Some(Label::new(prev.location).with_color(Color::Red)),
-                None,
-                source_store,
-            );
-            Err(())
-        }
-    }
-}
-
-fn parse_sub_block_contents<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
-    interner: &Interners,
-    parent: ProcedureId,
-    mut last_token: Token,
-    source_store: &SourceStorage,
-) -> Result<Vec<Op>, ()> {
-    let body_start_idx = match token_iter.peek() {
-        Some((idx, _)) => *idx,
-        None => {
-            diagnostics::end_of_file(last_token.location, source_store);
-            return Err(());
-        }
-    };
-
-    let mut block_depth = 1;
-    let mut end_idx = body_start_idx;
-
-    // We need to keep track of whether we're in an if or while block, because they
-    // should be usable inside a macro block.
-    for (idx, token) in token_iter {
-        use TokenKind::*;
-        #[allow(clippy::match_like_matches_macro)]
-        let is_nested_err = match (keyword.kind, token.kind) {
-            (Proc, Include | Proc | Macro) => true,
-            (Memory | Const, Proc | Macro | Const | Memory | Include) => true,
-            _ => false,
-        };
-
-        if is_nested_err {
-            diagnostics::emit(
-                token.location,
-                format!("cannot use {:?} inside a {:?}", token.kind, keyword.kind),
-                Some(Label::new(token.location).with_color(Color::Red)),
-                None,
-                source_store,
-            );
-            return Err(());
-        }
-
-        if token.kind.new_block() {
-            block_depth += 1;
-        } else if token.kind.end_block() {
-            block_depth -= 1;
-        }
-
-        end_idx = idx;
-        last_token = *token;
-
-        if block_depth == 0 {
-            break;
-        }
-    }
-
-    if last_token.kind != TokenKind::End {
-        diagnostics::end_of_file(last_token.location, source_store);
-        return Err(());
-    }
-
-    let body_tokens = &tokens[body_start_idx..end_idx];
-    let body_ops = parse_token(program, body_tokens, interner, parent, source_store)?;
-
-    Ok(body_ops)
-}
-
-fn parse_type_signature<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    source_store: &SourceStorage,
-) -> Result<Vec<PorthType>, ()> {
-    expect_token(
-        token_iter,
-        "[",
-        |k| k == TokenKind::SquareBracketOpen,
-        name,
-        interner,
-        source_store,
-    )?;
-
-    let mut type_list = Vec::new();
-
-    while token_iter.peek().map(|(_, t)| t.kind) == Some(TokenKind::Ident) {
-        let (_, token) = token_iter.next().unwrap();
-
-        let lexeme = interner.resolve_lexeme(token.lexeme);
-        let typ = match lexeme {
-            "int" => PorthTypeKind::Int,
-            "ptr" => PorthTypeKind::Ptr,
-            "bool" => PorthTypeKind::Bool,
-            _ => {
-                diagnostics::emit(
-                    token.location,
-                    format!("unknown type {}", lexeme),
-                    Some(Label::new(token.location).with_color(Color::Red)),
-                    None,
-                    source_store,
-                );
-
-                return Err(());
-            }
-        };
-
-        type_list.push(PorthType {
-            kind: typ,
-            location: token.location,
-        })
-    }
-
-    expect_token(
-        token_iter,
-        "]",
-        |k| k == TokenKind::SquareBracketClosed,
-        name,
-        interner,
-        source_store,
-    )?;
-
-    Ok(type_list)
-}
-
-fn parse_proc_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let entry_stack = parse_type_signature(token_iter, interner, name, source_store)?;
-    expect_token(
-        token_iter,
-        "to",
-        |k| k == TokenKind::GoesTo,
-        name,
-        interner,
-        source_store,
-    )?;
-    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
-
-    let new_proc = program.new_procedure(
-        name,
-        ProcedureKind::Proc(ProcData::default()),
-        Some(parent),
-        exit_stack,
-        entry_stack,
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )?;
-    Ok((is_token, new_proc))
-}
-
-fn parse_memory_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let new_proc = program.new_procedure(
-        name,
-        ProcedureKind::Memory,
-        Some(parent),
-        vec![PorthType {
-            kind: PorthTypeKind::Int,
-            location: name.location,
-        }],
-        Vec::new(),
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )?;
-    Ok((is_token, new_proc))
-}
-
-fn parse_macro_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let new_proc = program.new_procedure(
-        name,
-        ProcedureKind::Macro,
-        Some(parent),
-        Vec::new(),
-        Vec::new(),
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )?;
-    Ok((is_token, new_proc))
-}
-
-fn parse_const_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
-
-    let new_proc = program.new_procedure(
-        name,
-        ProcedureKind::Const { const_val: None },
-        Some(parent),
-        exit_stack,
-        Vec::new(),
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )?;
-    Ok((is_token, new_proc))
-}
-
-fn parse_sub_block<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
-    interner: &Interners,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<(), ()> {
-    let name_token = expect_token(
-        token_iter,
-        "ident",
-        |k| k == TokenKind::Ident,
-        keyword,
-        interner,
-        source_store,
-    )
-    .map(|(_, a)| a)?;
-
-    let header_func = match keyword.kind {
-        TokenKind::Proc => parse_proc_header,
-        TokenKind::Memory => parse_memory_header,
-        TokenKind::Macro => parse_macro_header,
-        TokenKind::Const => parse_const_header,
-        _ => unreachable!(),
-    };
-
-    let (is_token, proc_header_id) = header_func(
-        program,
-        token_iter,
-        interner,
-        name_token,
-        parent,
-        source_store,
-    )?;
-
-    let mut body = parse_sub_block_contents(
-        program,
-        &mut *token_iter,
-        tokens,
-        keyword,
-        interner,
-        proc_header_id,
-        is_token,
-        source_store,
-    )?;
-
-    let proc_header = program.get_proc_mut(proc_header_id);
-
-    if keyword.kind == TokenKind::Proc {
-        body.insert(
-            0,
-            Op {
-                code: OpCode::Prologue,
-                token: name_token,
-                expansions: Vec::new(),
-            },
-        );
-
-        // Makes later logic a bit easier if we always have a return opcode.
-        match body.last() {
-            Some(op) => {
-                if op.code != OpCode::Return {
-                    let token = op.token;
-                    let expansions = op.expansions.clone();
-                    body.push(Op {
-                        code: OpCode::Epilogue,
-                        token,
-                        expansions: expansions.clone(),
-                    });
-                    body.push(Op {
-                        code: OpCode::Return,
-                        token,
-                        expansions,
-                    });
-                }
-            }
-            None => body.push(Op {
-                code: OpCode::Return,
-                token: proc_header.name(),
-                expansions: Vec::new(),
-            }),
-        }
-    }
-
-    *proc_header.body_mut() = body;
-    if let Some(prev_def) = program
-        .get_visible_symbol(proc_header_id, name_token.lexeme)
-        .filter(|&f| f != proc_header_id)
-    {
-        let prev_proc = program.get_proc(prev_def).name();
-
-        diagnostics::emit(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_proc.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        return Err(());
-    }
-
-    let parent_proc = program.get_proc_mut(parent);
-    match (parent_proc.kind_mut(), keyword.kind) {
-        (ProcedureKind::Proc(pd), TokenKind::Const) => {
-            pd.consts.insert(name_token.lexeme, proc_header_id);
-        }
-        (ProcedureKind::Proc(pd), TokenKind::Memory) => {
-            pd.allocs.insert(name_token.lexeme, proc_header_id);
-        }
-        // The other types aren't stored in the proc
-        _ => {}
-    }
-
-    Ok(())
-}
-
-pub fn parse_token(
-    program: &mut Program,
-    tokens: &[Token],
-    interner: &Interners,
-    parent: ProcedureId,
-    source_store: &SourceStorage,
-) -> Result<Vec<Op>, ()> {
-    let mut ops = Vec::new();
-    let mut had_error = false;
-
-    let mut token_iter = tokens.iter().enumerate().peekable();
-    while let Some((_, token)) = token_iter.next() {
-        let kind = match token.kind {
-            TokenKind::Drop => OpCode::Drop,
-            TokenKind::Dup(depth) => OpCode::Dup { depth },
-            TokenKind::DupPair => OpCode::DupPair,
-            TokenKind::Rot => OpCode::Rot,
-            TokenKind::Swap => OpCode::Swap,
-
-            TokenKind::Load(width) => OpCode::Load(width),
-            TokenKind::Store(width) => OpCode::Store(width),
-
-            TokenKind::Equal => OpCode::Equal,
-            TokenKind::Greater => OpCode::Greater,
-            TokenKind::GreaterEqual => OpCode::GreaterEqual,
-            TokenKind::Less => OpCode::Less,
-            TokenKind::LessEqual => OpCode::LessEqual,
-            TokenKind::NotEqual => OpCode::NotEq,
-
-            TokenKind::Ident => OpCode::Ident(token.lexeme),
-            TokenKind::Integer(value) => OpCode::PushInt(value),
-            TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
-            TokenKind::Here(id) => OpCode::PushStr {
-                id,
-                is_c_str: false,
-            },
-            TokenKind::ArgC => OpCode::ArgC,
-            TokenKind::ArgV => OpCode::ArgV,
-
-            TokenKind::While => OpCode::While { ip: usize::MAX },
-            TokenKind::Do => OpCode::Do,
-
-            TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
-                if parse_sub_block(
-                    program,
-                    &mut token_iter,
-                    tokens,
-                    *token,
-                    interner,
-                    parent,
-                    source_store,
-                )
-                .is_err()
-                {
-                    had_error = true;
-                }
-                continue;
-            }
-            TokenKind::Include => {
-                let (_, path_token) = match expect_token(
-                    &mut token_iter,
-                    "string",
-                    |k| matches!(k, TokenKind::String { .. }),
-                    *token,
-                    interner,
-                    source_store,
-                ) {
-                    Ok(ident) => ident,
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
-                };
-
-                let literal = match path_token.kind {
-                    TokenKind::String { id, .. } => id,
-                    _ => unreachable!(),
-                };
-
-                program.add_include(path_token, literal);
-                OpCode::Include(literal)
-            }
-
-            TokenKind::If => OpCode::If,
-            TokenKind::Elif => OpCode::Elif {
-                else_start: usize::MAX,
-                end_ip: usize::MAX,
-            },
-            TokenKind::Else => OpCode::Else {
-                else_start: usize::MAX,
-                end_ip: usize::MAX,
-            },
-            TokenKind::End => OpCode::End,
-
-            TokenKind::Minus => OpCode::Subtract,
-            TokenKind::Plus => OpCode::Add,
-            TokenKind::Star => OpCode::Multiply,
-            TokenKind::DivMod => OpCode::DivMod,
-
-            TokenKind::BitAnd => OpCode::BitAnd,
-            TokenKind::BitNot => OpCode::BitNot,
-            TokenKind::BitOr => OpCode::BitOr,
-            TokenKind::ShiftLeft => OpCode::ShiftLeft,
-            TokenKind::ShiftRight => OpCode::ShiftRight,
-
-            TokenKind::CastBool => OpCode::CastBool,
-            TokenKind::CastInt => OpCode::CastInt,
-            TokenKind::CastPtr => OpCode::CastPtr,
-
-            TokenKind::SysCall(id) => OpCode::SysCall(id),
-
-            // These are only used as part of a sub-block. If they're found anywhere else,
-            // it's an error.
-            TokenKind::GoesTo
-            | TokenKind::Is
-            | TokenKind::SquareBracketClosed
-            | TokenKind::SquareBracketOpen => {
-                diagnostics::emit(
-                    token.location,
-                    format!(
-                        "unexpected token `{}` in input",
-                        interner.resolve_lexeme(token.lexeme)
-                    ),
-                    Some(Label::new(token.location)),
-                    None,
-                    source_store,
-                );
-
-                had_error = true;
-                continue;
-            }
-        };
-
-        ops.push(Op::new(kind, *token));
-    }
-
-    had_error.not().then(|| ops).ok_or(())
 }
 
 struct JumpIpStack {
@@ -1248,7 +706,7 @@ pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> V
 }
 
 pub fn expand_sub_blocks(
-    program: &Program,
+    program: &Module,
     interner: &Interners,
     proc: &Procedure,
     source_store: &SourceStorage,
@@ -1267,7 +725,7 @@ pub fn expand_sub_blocks(
 
         for op in src_vec.drain(..) {
             let ident_id = match op.code {
-                OpCode::Ident(id) => id,
+                OpCode::UnresolvedIdent(id) => id,
                 _ => {
                     dst_vec.push(op);
                     continue;
@@ -1333,7 +791,7 @@ pub fn expand_sub_blocks(
                         code: OpCode::Memory {
                             name: ident_id,
                             offset: 0,
-                            global: found_proc.parent() == Some(program.top_level_proc_id()),
+                            global: found_proc.parent().is_none(),
                         },
                         token: op.token,
                         expansions: op.expansions,
