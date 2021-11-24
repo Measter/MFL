@@ -149,72 +149,19 @@ impl OpCode {
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
-            | OpCode::UnresolvedIdent(_)
             | OpCode::If
             | OpCode::Include(_)
             | OpCode::Memory { .. }
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
             | OpCode::PushStr { .. }
+            | OpCode::ResolvedIdent { .. }
+            | OpCode::UnresolvedIdent { .. }
             | OpCode::While { .. } => 0,
 
             OpCode::CallProc(_) | OpCode::Return | OpCode::Prologue | OpCode::Epilogue => todo!(),
 
             OpCode::SysCall(a) => a + 1,
-        }
-    }
-
-    pub fn is_const(self) -> bool {
-        match self {
-            OpCode::Add
-            | OpCode::BitAnd
-            | OpCode::BitNot
-            | OpCode::BitOr
-            | OpCode::CastBool
-            | OpCode::CastInt
-            | OpCode::CastPtr
-            | OpCode::DivMod
-            | OpCode::Do
-            | OpCode::DoIf { .. }
-            | OpCode::DoWhile { .. }
-            | OpCode::Dup { .. }
-            | OpCode::DupPair
-            | OpCode::Drop
-            | OpCode::Elif { .. }
-            | OpCode::Else { .. }
-            | OpCode::End
-            | OpCode::EndIf { .. }
-            | OpCode::EndWhile { .. }
-            | OpCode::Epilogue
-            | OpCode::Equal
-            | OpCode::UnresolvedIdent(_)
-            | OpCode::If
-            | OpCode::Include(_)
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Multiply
-            | OpCode::NotEq
-            | OpCode::Prologue
-            | OpCode::PushBool(_)
-            | OpCode::PushInt(_)
-            | OpCode::PushStr { .. }
-            | OpCode::Return
-            | OpCode::Rot
-            | OpCode::ShiftLeft
-            | OpCode::ShiftRight
-            | OpCode::Subtract
-            | OpCode::Swap
-            | OpCode::While { .. } => true,
-
-            OpCode::ArgC
-            | OpCode::ArgV
-            | OpCode::CallProc(_)
-            | OpCode::Load(_)
-            | OpCode::Memory { .. }
-            | OpCode::Store(_)
-            | OpCode::SysCall(_) => false,
         }
     }
 
@@ -245,7 +192,6 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | UnresolvedIdent(_)
             | If
             | Include(_)
             | Load(_)
@@ -254,11 +200,13 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | ResolvedIdent { .. }
             | Return
             | Rot
             | Store(_)
             | Swap
             | SysCall(_)
+            | UnresolvedIdent { .. }
             | While { .. } => false,
         }
     }
@@ -291,7 +239,6 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | UnresolvedIdent(_)
             | If
             | Include(_)
             | Load(_)
@@ -301,6 +248,7 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | ResolvedIdent { .. }
             | Return
             | Rot
             | ShiftLeft
@@ -309,6 +257,7 @@ impl OpCode {
             | Subtract
             | Swap
             | SysCall(_)
+            | UnresolvedIdent { .. }
             | While { .. } => false,
         }
     }
@@ -350,7 +299,6 @@ impl OpCode {
             | EndIf { .. }
             | EndWhile { .. }
             | Epilogue
-            | UnresolvedIdent(_)
             | If
             | Include { .. }
             | Load(_)
@@ -359,11 +307,13 @@ impl OpCode {
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
+            | ResolvedIdent { .. }
             | Return
             | Rot
             | Store(_)
             | Swap
             | SysCall(_)
+            | UnresolvedIdent { .. }
             | While { .. } => {
                 panic!("ICE: Attempted to get the binary_op of a {:?}", self)
             }
