@@ -33,7 +33,7 @@ pub struct AllocData {
 pub struct ProcedureId(usize);
 
 #[derive(Debug, Default)]
-pub struct ProcData {
+pub struct FunctionData {
     pub allocs: HashMap<Spur, ProcedureId>,
     pub alloc_size_and_offsets: HashMap<Spur, AllocData>,
     pub total_alloc_size: usize,
@@ -47,13 +47,13 @@ pub enum ProcedureKind {
     },
     Macro,
     Memory,
-    Proc(ProcData),
+    Function(FunctionData),
 }
 
 impl ProcedureKind {
-    pub fn get_proc_data(&self) -> &ProcData {
+    pub fn get_proc_data(&self) -> &FunctionData {
         match self {
-            ProcedureKind::Proc(data) => data,
+            ProcedureKind::Function(data) => data,
             _ => panic!("ICE: called get_proc_data on a non-proc"),
         }
     }
@@ -421,7 +421,7 @@ impl Program {
         let mut cur_id = Some(from);
         while let Some(id) = cur_id {
             let proc = self.get_proc(id);
-            if let ProcedureKind::Proc(ProcData { allocs, consts, .. }) = &proc.kind {
+            if let ProcedureKind::Function(FunctionData { allocs, consts, .. }) = &proc.kind {
                 if let Some(found_id) = allocs.get(&symbol).or_else(|| consts.get(&symbol)) {
                     return Some(*found_id);
                 }
@@ -674,7 +674,7 @@ impl Module {
 
             let parent_proc = self.get_proc_mut(alloc_proc_parent);
             let proc_data = match &mut parent_proc.kind {
-                ProcedureKind::Proc(data) => data,
+                ProcedureKind::Function(data) => data,
                 _ => panic!("ICE: Alloc parent wasn't a proc"),
             };
 

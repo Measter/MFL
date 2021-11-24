@@ -797,7 +797,7 @@ pub fn expand_sub_blocks(
                         expansions: op.expansions,
                     });
                 }
-                ProcedureKind::Proc(_) => {
+                ProcedureKind::Function(_) => {
                     dst_vec.push(Op {
                         code: OpCode::CallProc(found_proc_id),
                         token: op.token,

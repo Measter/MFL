@@ -11,7 +11,7 @@ use crate::{
     type_check::{PorthType, PorthTypeKind},
 };
 
-use super::{ModuleId, ProcData, ProcedureId, ProcedureKind, Program};
+use super::{FunctionData, ModuleId, ProcedureId, ProcedureKind, Program};
 
 fn expect_token<'a>(
     tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
@@ -354,7 +354,7 @@ fn parse_function_header<'a>(
     let new_proc = program.new_procedure(
         name,
         module_id,
-        ProcedureKind::Proc(ProcData::default()),
+        ProcedureKind::Function(FunctionData::default()),
         parent,
         exit_stack,
         entry_stack,
@@ -587,10 +587,10 @@ fn parse_procedure<'a>(
     if let Some(parent_id) = parent {
         let parent_proc = program.get_proc_mut(parent_id);
         match (parent_proc.kind_mut(), keyword.kind) {
-            (ProcedureKind::Proc(pd), TokenKind::Const) => {
+            (ProcedureKind::Function(pd), TokenKind::Const) => {
                 pd.consts.insert(name_token.lexeme, procedure_id);
             }
-            (ProcedureKind::Proc(pd), TokenKind::Memory) => {
+            (ProcedureKind::Function(pd), TokenKind::Memory) => {
                 pd.allocs.insert(name_token.lexeme, procedure_id);
             }
             // The other types aren't stored in the proc

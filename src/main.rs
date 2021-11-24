@@ -96,7 +96,7 @@ fn load_program(
         .ok_or_else(|| eyre!("`entry` function not found"))?;
 
     let entry_proc = program.get_proc(entry_function_id);
-    if !matches!(entry_proc.kind(), ProcedureKind::Proc(_)) {
+    if !matches!(entry_proc.kind(), ProcedureKind::Function(_)) {
         let name = entry_proc.name();
         diagnostics::emit(
             name.location,
