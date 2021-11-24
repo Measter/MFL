@@ -113,6 +113,89 @@ impl Procedure {
     pub fn get_visible_symbol(&self, symbol: Spur) -> Option<ProcedureId> {
         self.visible_symbols.get(&symbol).copied()
     }
+
+    fn expand_macros(
+        &mut self,
+        program: &Program,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let mut src_ops = std::mem::take(&mut self.body);
+        let mut dst_ops = Vec::with_capacity(self.body.len());
+        let mut had_error = false;
+
+        let mut num_expansions = 0;
+        let mut last_changed_macros = Vec::new();
+
+        loop {
+            let mut expanded_macro = false;
+
+            for op in src_ops.drain(..) {
+                let (module, proc_id) = match op.code {
+                    OpCode::ResolvedIdent {
+                        module, proc_id, ..
+                    } => (module, proc_id),
+                    _ => {
+                        dst_ops.push(op);
+                        continue;
+                    }
+                };
+
+                let found_proc = program.get_proc(proc_id);
+                if !found_proc.kind().is_macro() {
+                    dst_ops.push(op);
+                    continue;
+                }
+
+                expanded_macro = true;
+                last_changed_macros.push(found_proc.name());
+                dst_ops.extend(found_proc.body().iter().map(|new_op| {
+                    let mut new_op = new_op.clone();
+                    new_op.expansions.push(op.token.location);
+                    new_op.expansions.extend_from_slice(&op.expansions);
+                    new_op
+                }));
+            }
+
+            if !expanded_macro {
+                break;
+            }
+
+            if num_expansions > 128 {
+                let mut labels = Vec::new();
+
+                let first_loc = last_changed_macros[0];
+                for macro_token in last_changed_macros {
+                    labels.push(
+                        Label::new(macro_token.location)
+                            .with_color(Color::Red)
+                            .with_message("exceeded expansion limit"),
+                    );
+                }
+
+                diagnostics::emit(
+                    first_loc.location,
+                    "depth of macro expansion exeeced 128",
+                    labels,
+                    None,
+                    source_store,
+                );
+
+                had_error = true;
+                break;
+            }
+
+            num_expansions += 1;
+            std::mem::swap(&mut src_ops, &mut dst_ops);
+        }
+
+        self.body = src_ops;
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed to expand macro"))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -299,6 +382,7 @@ impl Program {
                             );
                         }
                     }
+                    // Symbol in other module.
                     OpCode::UnresolvedIdent {
                         token,
                         sub_token: Some(proc),
@@ -328,7 +412,7 @@ impl Program {
                             Some(proc_id) => {
                                 op.code = OpCode::ResolvedIdent {
                                     module: module_id,
-                                    proc_id,
+                                    proc_id: *proc_id,
                                 };
                             }
                             None => {
@@ -358,7 +442,35 @@ impl Program {
             }
         }
 
-        Ok(())
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("error during ident resolation"))
+    }
+
+    fn expand_macros(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+        let non_macro_proc_ids: Vec<_> = self
+            .all_procedures
+            .iter()
+            .filter(|(_, p)| !p.kind().is_macro())
+            .map(|(id, _)| *id)
+            .collect();
+
+        for proc_id in non_macro_proc_ids {
+            let mut proc = self.all_procedures.remove(&proc_id).unwrap();
+
+            if proc.expand_macros(self, interner, source_store).is_err() {
+                had_error = true;
+            }
+
+            self.all_procedures.insert(proc_id, proc);
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("error during macro expansion"))
     }
 
     fn post_process_procs(
@@ -367,6 +479,7 @@ impl Program {
         source_store: &SourceStorage,
     ) -> Result<()> {
         self.resolve_idents(interner, source_store)?;
+        self.expand_macros(interner, source_store)?;
         // Expand all macros.
         // Evaluate consts.
         // Expand consts.
