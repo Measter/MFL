@@ -65,7 +65,6 @@ pub enum OpCode {
     Epilogue,
     Equal,
     If,
-    Include(Spur),
     Less,
     LessEqual,
     Load(Width),
@@ -90,7 +89,9 @@ pub enum OpCode {
         module: ModuleId,
         proc_id: ProcedureId,
     },
-    Return,
+    Return {
+        implicit: bool,
+    },
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -150,7 +151,6 @@ impl OpCode {
             | OpCode::EndIf { .. }
             | OpCode::EndWhile { .. }
             | OpCode::If
-            | OpCode::Include(_)
             | OpCode::Memory { .. }
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
@@ -159,7 +159,10 @@ impl OpCode {
             | OpCode::UnresolvedIdent { .. }
             | OpCode::While { .. } => 0,
 
-            OpCode::CallProc { .. } | OpCode::Return | OpCode::Prologue | OpCode::Epilogue => {
+            OpCode::CallProc { .. }
+            | OpCode::Return { .. }
+            | OpCode::Prologue
+            | OpCode::Epilogue => {
                 panic!("ICE: called pop_count on function opcodes")
             }
 
@@ -195,7 +198,6 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Include(_)
             | Load(_)
             | Memory { .. }
             | Prologue
@@ -203,7 +205,7 @@ impl OpCode {
             | PushInt(_)
             | PushStr { .. }
             | ResolvedIdent { .. }
-            | Return
+            | Return { .. }
             | Rot
             | Store(_)
             | Swap
@@ -242,7 +244,6 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Include(_)
             | Load(_)
             | Memory { .. }
             | Multiply
@@ -251,7 +252,7 @@ impl OpCode {
             | PushInt(_)
             | PushStr { .. }
             | ResolvedIdent { .. }
-            | Return
+            | Return { .. }
             | Rot
             | ShiftLeft
             | ShiftRight
@@ -302,7 +303,6 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Include { .. }
             | Load(_)
             | Memory { .. }
             | Prologue
@@ -310,7 +310,7 @@ impl OpCode {
             | PushInt(_)
             | PushStr { .. }
             | ResolvedIdent { .. }
-            | Return
+            | Return { .. }
             | Rot
             | Store(_)
             | Swap

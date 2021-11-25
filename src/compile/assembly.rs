@@ -428,7 +428,7 @@ pub struct Assembler {
     assembly: Vec<Assembly>,
     register_id: usize,
     op_range: OpRange,
-    used_memory: HashSet<Spur>,
+    used_global_allocs: HashSet<ProcedureId>,
     used_literals: HashSet<Spur>,
     used_functions: HashSet<ProcedureId>,
     used_function_queue: Vec<ProcedureId>,
@@ -458,8 +458,8 @@ impl Assembler {
         &self.used_literals
     }
 
-    pub fn used_global_allocs(&self) -> &HashSet<Spur> {
-        &self.used_memory
+    pub fn used_global_allocs(&self) -> &HashSet<ProcedureId> {
+        &self.used_global_allocs
     }
 
     pub fn next_used_function(&mut self) -> Option<ProcedureId> {
@@ -631,8 +631,8 @@ impl Assembler {
         self.used_literals.insert(id);
     }
 
-    pub fn use_global_alloc(&mut self, id: Spur) {
-        self.used_memory.insert(id);
+    pub fn use_global_alloc(&mut self, id: ProcedureId) {
+        self.used_global_allocs.insert(id);
     }
 
     pub fn use_function(&mut self, id: ProcedureId) {

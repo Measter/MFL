@@ -284,7 +284,9 @@ fn final_stack_check(
             .body()
             .last()
             .map(|op| {
-                let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
+                let mut labels = vec![Label::new(op.token.location)
+                    .with_color(Color::Red)
+                    .with_message("here")];
 
                 for source in op.expansions.iter() {
                     labels.push(
@@ -296,7 +298,11 @@ fn final_stack_check(
 
                 labels
             })
-            .unwrap_or_else(|| vec![Label::new(procedure.name().location).with_color(Color::Red)])
+            .unwrap_or_else(|| {
+                vec![Label::new(procedure.name().location)
+                    .with_color(Color::Red)
+                    .with_message("here")]
+            })
     };
 
     if stack.len() != procedure.exit_stack().len() {
@@ -843,9 +849,10 @@ pub fn type_check(
             }
 
             OpCode::Epilogue | OpCode::Prologue => {}
-            OpCode::Return => {
+            OpCode::Return{implicit: false} => {
                 had_error |= final_stack_check(proc, &stack, source_store);
             }
+            OpCode::Return{implicit: true} => {} // Added for every proc
 
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
@@ -864,7 +871,6 @@ pub fn type_check(
             | OpCode::CallProc{..} // These haven't been generated yet
             | OpCode::Memory{..} // These haven't been generated yet
             | OpCode::UnresolvedIdent { .. }
-            | OpCode::Include(_)
             | OpCode::End
             | OpCode::Do => {
                 panic!("ICE: Encountered {:?}", op.code)

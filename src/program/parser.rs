@@ -81,8 +81,6 @@ pub fn parse_procedure_body(
             TokenKind::NotEqual => OpCode::NotEq,
 
             TokenKind::Ident => {
-                let lexeme = token.lexeme;
-                if let Some((_, Token)) = token_iter.peek() {}
                 let sub_token = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
                 {
                     let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
@@ -208,8 +206,6 @@ pub fn parse_procedure_body(
 }
 
 fn get_procedure_body<'a>(
-    program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
@@ -501,15 +497,7 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
-    let body = get_procedure_body(
-        program,
-        module_id,
-        &mut *token_iter,
-        tokens,
-        keyword,
-        is_token,
-        source_store,
-    )?;
+    let body = get_procedure_body(&mut *token_iter, tokens, keyword, is_token, source_store)?;
 
     let mut body = parse_procedure_body(
         program,
@@ -536,7 +524,7 @@ fn parse_procedure<'a>(
         // TODO: Make this less dumb
         match body.last() {
             Some(op) => {
-                if op.code != OpCode::Return {
+                if !matches!(op.code, OpCode::Return { .. }) {
                     let token = op.token;
                     let expansions = op.expansions.clone();
                     body.push(Op {
@@ -545,14 +533,14 @@ fn parse_procedure<'a>(
                         expansions: expansions.clone(),
                     });
                     body.push(Op {
-                        code: OpCode::Return,
+                        code: OpCode::Return { implicit: true },
                         token,
                         expansions,
                     });
                 }
             }
             None => body.push(Op {
-                code: OpCode::Return,
+                code: OpCode::Return { implicit: true },
                 token: proc_header.name(),
                 expansions: Vec::new(),
             }),
@@ -560,9 +548,14 @@ fn parse_procedure<'a>(
     }
 
     *proc_header.body_mut() = body;
-    let module = program.get_module(module_id);
+
+    // stupid borrow checker...
+    let id = proc_header.id();
+    let _ = proc_header; // Need to discard the borrow;
+    let proc_header = program.get_proc(id);
+
     if let Some(prev_def) = program
-        .get_visible_symbol(procedure_id, name_token.lexeme)
+        .get_visible_symbol(proc_header, name_token.lexeme)
         .filter(|&f| f != procedure_id)
     {
         let prev_proc = program.get_proc(prev_def).name();

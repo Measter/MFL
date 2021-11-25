@@ -5,14 +5,14 @@ use crate::{
     interners::Interners,
     n_ops::NOps,
     opcode::{Op, OpCode},
-    program::{Module, Procedure},
+    program::{Procedure, Program},
     Width,
 };
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
 
 type OptimizerFunction =
-    fn(&Module, &Procedure, &[Op], usize, &mut Assembler, &Interners) -> Option<usize>;
+    fn(&Program, &Procedure, &[Op], usize, &mut Assembler, &mut Interners) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     dup_boundry,
@@ -80,12 +80,12 @@ impl OpCode {
 /// Optimize a Dup immediately following a block boundry
 /// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
 fn dup_boundry(
-    program: &Module,
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    interner: &Interners,
+    interner: &mut Interners,
 ) -> Option<usize> {
     use OpCode::*;
     let (start, _) = ops.firstn()?;
@@ -124,12 +124,12 @@ fn dup_boundry(
 /// Optimize a DupPair immediately following a block boundry
 /// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
 fn duppair_boundry(
-    program: &Module,
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    interner: &Interners,
+    interner: &mut Interners,
 ) -> Option<usize> {
     use OpCode::*;
     let (start, _) = ops.firstn()?;
@@ -165,12 +165,12 @@ fn duppair_boundry(
 
 /// Optimize a Push-Compare
 fn push_compare(
-    _: &Module,
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    _: &Interners,
+    _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (push, op) = match start {
@@ -206,12 +206,12 @@ fn push_compare(
 
 /// Optimize a Push-ShiftOp
 fn push_shift(
-    _: &Module,
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    _: &Interners,
+    _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (push, op) = match start {
@@ -241,12 +241,12 @@ fn push_shift(
 
 /// Optimize a Push-ArithBinOp
 fn push_arithmetic(
-    _: &Module,
+    _: &Program,
     _: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    _: &Interners,
+    _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (push, op) = match start {
@@ -277,12 +277,12 @@ fn push_arithmetic(
 
 // Optimizes a Mem-Push-Store sequence.
 fn mem_push_store(
-    _: &Module,
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    interner: &Interners,
+    interner: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (mem, push, store) = match start {
@@ -296,14 +296,14 @@ fn mem_push_store(
         _ => return None,
     };
 
-    let (mem_id, offset, global) = mem.code.unwrap_memory();
+    let (_, proc_id, offset, global) = mem.code.unwrap_memory();
     let push_val = push.code.unwrap_push_int();
     let width = store.code.unwrap_store();
     assembler.set_op_range(ip, ip + start.len());
 
     if global {
-        assembler.use_global_alloc(mem_id);
-        let mem_id = interner.resolve_lexeme(mem_id);
+        assembler.use_global_alloc(proc_id);
+        let mem_id = interner.get_symbol_name(program, proc_id);
 
         assembler.push_instr([str_lit(format!(
             "    mov {} [__{} + {}], {}",
@@ -314,7 +314,7 @@ fn mem_push_store(
         ))]);
     } else {
         let proc_data = proc.kind().get_proc_data();
-        let base_offset = proc_data.alloc_size_and_offsets[&mem_id].offset;
+        let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
         assembler.push_instr([str_lit(format!(
             "    mov {} [rbp + {} + {}], {}",
             width.to_asm(),
@@ -329,12 +329,12 @@ fn mem_push_store(
 
 /// Optimises the Mem-Load sequence.
 fn mem_load(
-    _: &Module,
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    interner: &Interners,
+    interner: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
     let (mem, load) = match start {
@@ -342,7 +342,7 @@ fn mem_load(
         _ => return None,
     };
 
-    let (mem_id, mem_offset, global) = mem.code.unwrap_memory();
+    let (_, proc_id, mem_offset, global) = mem.code.unwrap_memory();
     let width = load.code.unwrap_load();
     assembler.set_op_range(ip, ip + start.len());
 
@@ -353,8 +353,8 @@ fn mem_load(
     };
 
     if global {
-        assembler.use_global_alloc(mem_id);
-        let mem_id = interner.resolve_lexeme(mem_id);
+        assembler.use_global_alloc(proc_id);
+        let mem_id = interner.get_symbol_name(program, proc_id);
 
         assembler.push_instr([
             str_lit("    mov "),
@@ -368,7 +368,7 @@ fn mem_load(
         ]);
     } else {
         let proc_data = proc.kind().get_proc_data();
-        let base_offset = proc_data.alloc_size_and_offsets[&mem_id].offset;
+        let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
         assembler.push_instr([
             str_lit("    mov "),
             dyn_sized_reg(reg, width),
@@ -388,12 +388,12 @@ fn mem_load(
 
 /// Compiles a single instruction in isolation. Doesn't actually optimize.
 pub(super) fn compile_single_instruction(
-    program: &Module,
+    program: &Program,
     proc: &Procedure,
     ops: &[Op],
     ip: usize,
     assembler: &mut Assembler,
-    interner: &Interners,
+    interner: &mut Interners,
 ) -> Option<usize> {
     use super::{InstructionPart::EmitRegister, RegisterType::Fixed};
 
@@ -520,23 +520,25 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(ptr_reg);
         }
         OpCode::Memory {
-            name,
+            proc_id,
             offset,
             global: false,
+            ..
         } => {
             let proc_data = proc.kind().get_proc_data();
-            let base_offset = proc_data.alloc_size_and_offsets[&name].offset;
+            let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
             let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {} + {}", base_offset, offset));
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::Memory {
-            name,
+            proc_id,
             offset,
             global: true,
+            ..
         } => {
-            assembler.use_global_alloc(name);
+            assembler.use_global_alloc(proc_id);
 
-            let alloc_name = interner.resolve_lexeme(name);
+            let alloc_name = interner.get_symbol_name(program, proc_id);
             let reg = assembler.reg_alloc_dyn_literal(format!("__{} + {}", alloc_name, offset));
             assembler.reg_free_dyn_push(reg);
         }
@@ -663,10 +665,10 @@ pub(super) fn compile_single_instruction(
             assembler.block_boundry();
         }
 
-        OpCode::CallProc(id) => {
-            let callee = program.get_proc(id);
-            assembler.use_function(id);
-            let proc_name = interner.resolve_lexeme(callee.name().lexeme);
+        OpCode::CallProc { proc_id, .. } => {
+            let callee = program.get_proc(proc_id);
+            assembler.use_function(proc_id);
+            let proc_name = interner.get_symbol_name(program, proc_id);
 
             let num_regs = FIXED_REGS.len().min(callee.entry_stack().len());
             for &reg in &FIXED_REGS[..num_regs] {
@@ -699,7 +701,7 @@ pub(super) fn compile_single_instruction(
                 assembler.reg_free_fixed_push(reg);
             }
         }
-        OpCode::Return => {
+        OpCode::Return { .. } => {
             assembler.swap_stacks();
 
             let proc_data = proc.kind().get_proc_data();
@@ -740,7 +742,10 @@ pub(super) fn compile_single_instruction(
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }
-        OpCode::Do | OpCode::End | OpCode::UnresolvedIdent(_) | OpCode::Include(_) => {
+        OpCode::Do
+        | OpCode::End
+        | OpCode::UnresolvedIdent { .. }
+        | OpCode::ResolvedIdent { .. } => {
             panic!("ICE: Encountered: {:?}", op.code)
         }
     }

@@ -5,9 +5,9 @@ use color_eyre::eyre::{eyre, Context, Result};
 use crate::{
     interners::Interners,
     opcode::OpCode,
-    program::{ModuleId, Procedure, ProcedureId, Program},
+    program::{Procedure, ProcedureId, Program},
     source_file::SourceStorage,
-    Module, Width, OPT_INSTR, OPT_STACK,
+    Width, OPT_INSTR, OPT_STACK,
 };
 
 mod assembly;
@@ -95,9 +95,9 @@ impl OpCode {
 }
 
 fn build_assembly(
-    program: &Module,
+    program: &Program,
     proc: &Procedure,
-    interner: &Interners,
+    interner: &mut Interners,
     opt_level: u8,
     assembler: &mut Assembler,
 ) {
@@ -780,62 +780,41 @@ fn optimize_allocation(program: &mut [Assembly]) {
 }
 
 fn assemble_procedure(
-    program: &Module,
+    program: &Program,
     assembler: &mut Assembler,
     proc: &Procedure,
-    is_top_level: bool,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &mut Interners,
     out_file: &mut BufWriter<File>,
     opt_level: u8,
 ) -> Result<()> {
-    if is_top_level {
-        println!("Compiling main...");
-        assembler.push_instr([str_lit("_start:")]);
-        assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
-        assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
-        assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
-    } else {
-        let name = interner.resolve_lexeme(proc.name().lexeme);
-        println!("Compiling {}...", name);
-        assembler.push_instr([str_lit(format!("proc_{}:", name))]);
+    let name = interner.get_symbol_name(program, proc.id());
+    println!("Compiling {}...", name);
+    assembler.push_instr([str_lit(format!("proc_{}:", name))]);
 
-        let proc_data = proc.kind().get_proc_data();
+    let proc_data = proc.kind().get_proc_data();
 
-        if !proc_data.allocs.is_empty() {
-            assembler.push_instr([str_lit(";; Local allocs")]);
-            // Output a list of allocs and their offsets.
-            for &alloc_id in proc_data.allocs.keys() {
-                let name = interner.resolve_lexeme(alloc_id);
-                let alloc_data = proc_data.alloc_size_and_offsets[&alloc_id];
-                assembler.push_instr([str_lit(format!(
-                    ";; {:?} {} -- offset: {} -- size: {}",
-                    alloc_id, name, alloc_data.offset, alloc_data.size
-                ))]);
-            }
+    if !proc_data.allocs.is_empty() {
+        assembler.push_instr([str_lit(";; Local allocs")]);
+        // Output a list of allocs and their offsets.
+        for (&alloc_name, &alloc_id) in &proc_data.allocs {
+            let name = interner.resolve_lexeme(alloc_name);
+            let alloc_data = proc_data.alloc_size_and_offsets[&alloc_id];
             assembler.push_instr([str_lit(format!(
-                "    sub rsp, {}",
-                proc_data.total_alloc_size
+                ";; {:?} {} -- offset: {} -- size: {}",
+                alloc_id, name, alloc_data.offset, alloc_data.size
             ))]);
         }
-
-        assembler.swap_stacks();
+        assembler.push_instr([str_lit(format!(
+            "    sub rsp, {}",
+            proc_data.total_alloc_size
+        ))]);
     }
+
+    assembler.swap_stacks();
 
     eprintln!("  Building assembly...");
     build_assembly(program, proc, interner, opt_level, assembler);
-
-    if is_top_level {
-        assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
-        assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
-        assembler.push_instr([
-            str_lit("    syscall"),
-            use_reg(RegisterType::Fixed(X86Register::Rax)),
-            use_reg(RegisterType::Fixed(X86Register::Rdi)),
-        ]);
-        assembler.reg_free_fixed_drop(X86Register::Rax);
-        assembler.reg_free_fixed_drop(X86Register::Rdi);
-    }
 
     if opt_level >= OPT_STACK {
         eprintln!("  Optimizing stack ops...");
@@ -888,12 +867,57 @@ fn assemble_procedure(
     Ok(())
 }
 
+fn assemble_entry(
+    program: &Program,
+    entry_function: ProcedureId,
+    assembler: &mut Assembler,
+    interner: &mut Interners,
+    out_file: &mut BufWriter<File>,
+) -> Result<()> {
+    eprintln!("Compiler _start...");
+    // Program entry
+    assembler.push_instr([str_lit("_start:")]);
+    assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
+    assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
+    assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
+
+    // TODO: Call entry function
+    let proc_name = interner.get_symbol_name(program, entry_function);
+    assembler.swap_stacks();
+    assembler.block_boundry();
+    assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
+    assembler.swap_stacks();
+    assembler.use_function(entry_function);
+
+    assembler.reg_alloc_fixed_literal(X86Register::Rax, "60");
+    assembler.reg_alloc_fixed_literal(X86Register::Rdi, "0");
+    assembler.push_instr([
+        str_lit("    syscall"),
+        use_reg(RegisterType::Fixed(X86Register::Rax)),
+        use_reg(RegisterType::Fixed(X86Register::Rdi)),
+    ]);
+    assembler.reg_free_fixed_drop(X86Register::Rax);
+    assembler.reg_free_fixed_drop(X86Register::Rdi);
+
+    let mut register_allocator = RegisterAllocator::new();
+    let mut register_map = HashMap::new();
+
+    for asm in assembler.assembly() {
+        asm.asm
+            .render(out_file, &mut register_allocator, &mut register_map)?;
+    }
+
+    writeln!(out_file)?;
+    eprintln!();
+
+    Ok(())
+}
+
 pub(crate) fn compile_program(
     program: &Program,
-    entry_module: ModuleId,
     entry_function: ProcedureId,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &mut Interners,
     out_file_path: &Path,
     opt_level: u8,
 ) -> Result<()> {
@@ -906,8 +930,16 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "global _start")?;
 
     let mut assembler = Assembler::default();
-    assembler.use_function(program.top_level_proc_id());
 
+    assemble_entry(
+        program,
+        entry_function,
+        &mut assembler,
+        interner,
+        &mut out_file,
+    )?;
+
+    // Now run the procedure compilation queue.
     while let Some(id) = assembler.next_used_function() {
         let proc = program.get_proc(id);
 
@@ -916,7 +948,6 @@ pub(crate) fn compile_program(
             program,
             &mut assembler,
             proc,
-            id == program.top_level_proc_id(),
             source_store,
             interner,
             &mut out_file,
@@ -932,16 +963,16 @@ pub(crate) fn compile_program(
     writeln!(&mut out_file, "    __call_stack: resq {}", CALL_STACK_LEN)?;
     writeln!(&mut out_file, "    __call_stack_end:")?;
 
-    let top_level_alloc_data = program
-        .get_proc(program.top_level_proc_id())
-        .kind()
-        .get_proc_data();
+    // Emit our global memory into the BSS.
     for &id in assembler.used_global_allocs() {
-        let size = top_level_alloc_data.alloc_size_and_offsets[&id].size;
-        let name = interner.resolve_lexeme(id);
+        let size = program
+            .get_global_alloc(id)
+            .expect("ICE: Tried to fetch a non-global alloc proc");
+        let name = interner.get_symbol_name(program, id);
         writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
     }
 
+    // Finally emit our string literals
     writeln!(&mut out_file, "segment .rodata")?;
     for &id in assembler.used_strings() {
         let literal = interner.resolve_literal(id);

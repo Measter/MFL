@@ -5,8 +5,7 @@ use std::{path::Path, process::Command};
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
-use lasso::Interner;
-use program::{Module, ModuleId, ProcedureId};
+use program::ProcedureId;
 use source_file::SourceStorage;
 use structopt::StructOpt;
 
@@ -72,22 +71,19 @@ fn load_program(
     file: &str,
     opt_level: u8,
     include_paths: Vec<String>,
-) -> Result<(Program, SourceStorage, Interners, ModuleId, ProcedureId)> {
+) -> Result<(Program, SourceStorage, Interners, ProcedureId)> {
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
     let mut program = Program::new();
-    let entry_module_id = program
-        .load_program(
-            &file,
-            &mut interner,
-            &mut source_storage,
-            opt_level,
-            &include_paths,
-        )
-        .with_context(|| eyre!("failude to load program"))?;
+    let entry_module_id = program.load_program(
+        file,
+        &mut interner,
+        &mut source_storage,
+        opt_level,
+        &include_paths,
+    )?;
 
-    // TODO: Get program entry function.
     let entry_symbol = interner.intern_lexeme("entry");
     let entry_module = program.get_module(entry_module_id);
 
@@ -112,13 +108,9 @@ fn load_program(
         return Err(eyre!("invalid `entry` procedure type"));
     }
 
-    Ok((
-        program,
-        source_storage,
-        interner,
-        entry_module_id,
-        entry_function_id,
-    ))
+    // TODO: Check function type signature
+
+    Ok((program, source_storage, interner, entry_function_id))
 }
 
 fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
@@ -129,11 +121,18 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = output_obj.clone();
     output_binary.set_extension("");
 
-    let (program, source_storage, interner, entry_module, entry_function) =
+    let (program, source_storage, mut interner, entry_function) =
         load_program(&file, opt_level, include_paths)?;
 
     println!("Compiling... to {}", output_asm.display());
-    compile::compile_program(&program, &source_storage, &interner, &output_asm, opt_level)?;
+    compile::compile_program(
+        &program,
+        entry_function,
+        &source_storage,
+        &mut interner,
+        &output_asm,
+        opt_level,
+    )?;
 
     println!("Assembling... to {}", output_obj.display());
     let nasm = Command::new("nasm")
