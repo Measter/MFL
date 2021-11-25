@@ -57,6 +57,13 @@ impl ProcedureKind {
             _ => panic!("ICE: called get_proc_data on a non-proc"),
         }
     }
+
+    pub fn get_proc_data_mut(&mut self) -> &mut FunctionData {
+        match self {
+            ProcedureKind::Function(data) => data,
+            _ => panic!("ICE: called get_proc_data on a non-proc"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -230,6 +237,7 @@ impl Program {
             id: new_id,
             has_resolved_visible: false,
             top_level_symbols: HashMap::new(),
+            allocs: HashMap::new(),
         };
         self.module_ident_map.insert(name, new_id);
         self.modules.insert(new_id, module);
@@ -339,7 +347,9 @@ impl Program {
             loaded_modules.insert(token.lexeme);
         }
 
-        had_error |= program.post_process_procs(interner, source_store).is_ok();
+        had_error |= program
+            .post_process_procs(opt_level, interner, source_store)
+            .is_ok();
 
         had_error
             .not()
@@ -611,19 +621,153 @@ impl Program {
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
-    fn post_process_procs(
+    fn process_idents(&mut self, interner: &Interners, source_store: &SourceStorage) {
+        for (proc_id, proc) in &mut self.all_procedures {
+            let mut new_ops = Vec::with_capacity(proc.body.len());
+
+            for op in proc.body.drain(..) {
+                match op.code {
+                    OpCode::ResolvedIdent { module, proc_id } => {
+                        let found_proc = self.get_proc(proc_id);
+
+                        match found_proc.kind() {
+                            ProcedureKind::Const {
+                                const_val: Some(vals),
+                            } => {
+                                for (kind, val) in vals {
+                                    let code = match kind {
+                                        PorthTypeKind::Int => OpCode::PushInt(*val),
+                                        PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
+                                        PorthTypeKind::Ptr => {
+                                            panic!("ICE: Const pointers not supported")
+                                        }
+                                        PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
+                                    };
+                                    new_ops.push(Op {
+                                        code,
+                                        token: op.token,
+                                        expansions: op.expansions.clone(),
+                                    });
+                                }
+                            }
+                            ProcedureKind::Memory => {
+                                new_ops.push(Op {
+                                    code: OpCode::Memory {
+                                        module_id: module,
+                                        proc_id,
+                                        offset: 0,
+                                        global: found_proc.parent().is_none(),
+                                    },
+                                    token: op.token,
+                                    expansions: op.expansions,
+                                });
+                            }
+                            ProcedureKind::Function(_) => {
+                                new_ops.push(Op {
+                                    code: OpCode::CallProc { module, proc_id },
+                                    token: op.token,
+                                    expansions: op.expansions,
+                                });
+                            }
+                            ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
+                                panic!("ICE: Encountered macro or un-evaluated const during ident processing");
+                            }
+                        }
+                    }
+                    _ => new_ops.push(op),
+                }
+            }
+
+            std::mem::swap(&mut proc.body, &mut new_ops);
+        }
+    }
+
+    fn evaluate_allocation_sizes(
         &mut self,
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
+        let mut had_error = false;
+
+        for (&proc_id, proc) in &mut self.all_procedures {
+            if !proc.kind().is_memory() {
+                continue;
+            }
+
+            let stack = match simulate_execute_program(self, proc, interner, source_store) {
+                Ok(stack) => stack,
+                Err(_) => {
+                    had_error = true;
+                    continue;
+                }
+            };
+
+            // The type checker ensures a single stack item.
+            let alloc_size = stack.pop().unwrap() as usize;
+
+            match proc.parent {
+                // If we have a parent, it means it's a local allocation.
+                Some(parent_id) => {
+                    let alloc_name = proc.name;
+
+                    let parent_proc = self.get_proc_mut(parent_id);
+                    let function_data = parent_proc.kind.get_proc_data_mut();
+
+                    let alloc_data = AllocData {
+                        size: alloc_size,
+                        offset: function_data.total_alloc_size,
+                    };
+
+                    function_data
+                        .alloc_size_and_offsets
+                        .insert(alloc_name.lexeme, alloc_data);
+                    function_data.total_alloc_size += alloc_size;
+                }
+
+                // If not, this is global, and needs to be placed in the module.
+                // Less work needs doing here as global allocs are always refenced by name.
+                None => {
+                    let module = &mut self.modules[&proc.module];
+                    module.allocs.insert(proc_id, alloc_size);
+                }
+            }
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("allocation size evaluation failed"))
+    }
+
+    fn optimize_functions(&mut self, interner: &mut Interners, source_store: &SourceStorage) {
+        for (_, proc) in &mut self.all_procedures {
+            if !proc.kind().is_function() {
+                continue;
+            }
+
+            proc.body = opcode::optimize(&proc.body, interner, source_store);
+        }
+    }
+
+    fn post_process_procs(
+        &mut self,
+        opt_level: u8,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
         self.resolve_idents(interner, source_store)?;
         self.expand_macros(interner, source_store)?;
+
         self.check_all_const_for_loops(interner, source_store)?;
         self.type_check_procs(interner, source_store)?;
-        self.evaluate_const_values(interner, source_store);
+        self.evaluate_const_values(interner, source_store)?;
 
-        // Expand consts, calls, and memory references.
-        // Evaluate memory.
+        self.process_idents(interner, source_store);
+        self.evaluate_allocation_sizes(interner, source_store)?;
+
+        if opt_level >= OPT_OPCODE {
+            self.optimize_functions(interner, source_store);
+        }
 
         Ok(())
     }
@@ -693,257 +837,11 @@ pub struct Module {
     id: ModuleId,
     has_resolved_visible: bool,
     top_level_symbols: HashMap<Spur, ProcedureId>,
+
+    allocs: HashMap<ProcedureId, usize>,
 }
 
 impl Module {
-    fn post_process_procedure(
-        &mut self,
-        procedure: &mut Procedure,
-        interner: &mut Interners,
-        source_store: &SourceStorage,
-        opt_level: u8,
-    ) -> Result<bool, ()> {
-        let (new_body, failed_const_eval) =
-            opcode::expand_sub_blocks(self, interner, procedure, source_store)?;
-        procedure.body = new_body;
-
-        if !failed_const_eval {
-            if opt_level >= OPT_OPCODE {
-                procedure.body = opcode::optimize(&procedure.body, interner, source_store);
-            }
-
-            opcode::generate_jump_labels(&mut procedure.body, source_store)?;
-        }
-
-        Ok(failed_const_eval)
-    }
-
-    fn post_process(
-        &mut self,
-        interner: &mut Interners,
-        source_store: &SourceStorage,
-        opt_level: u8,
-    ) -> Result<(), ()> {
-        let mut had_error = false;
-
-        // We're applying the same process to the global procedure, defined procedures, and memory defs,
-        // so do them all in one loop instead of separately.
-        let to_check: Vec<_> = self
-            .all_procs
-            .iter()
-            .filter(|(_, p)| !p.kind.is_const() && !p.kind().is_macro())
-            .map(|(id, _)| *id)
-            .collect();
-
-        for proc_id in to_check {
-            let mut proc = self.all_procs.remove(&proc_id).unwrap();
-
-            if self
-                .post_process_procedure(&mut proc, interner, source_store, opt_level)
-                .is_err()
-            {
-                had_error = true;
-            }
-
-            self.all_procs.insert(proc_id, proc);
-        }
-
-        had_error.not().then(|| ()).ok_or(())
-    }
-
-    fn post_process_consts(
-        &mut self,
-        interner: &mut Interners,
-        source_store: &SourceStorage,
-        opt_level: u8,
-    ) -> Result<(), ()> {
-        let mut had_error = false;
-
-        let mut const_proc_ids: Vec<_> = self
-            .all_procs
-            .iter()
-            .filter(|(_, p)| p.kind.is_const())
-            .map(|(id, _)| *id)
-            .collect();
-        let mut next_run_names = Vec::new();
-
-        let mut num_loops = 0;
-        const MAX_EXPANSIONS: usize = 128;
-        let mut last_changed_consts: Vec<Token> = Vec::new();
-
-        loop {
-            for const_id in const_proc_ids.drain(..) {
-                let mut procedure = self.all_procs.remove(&const_id).unwrap();
-
-                match self.post_process_procedure(&mut procedure, interner, source_store, opt_level)
-                {
-                    // We failed expansion. This would be because it needed the value of another,
-                    // as yet un-evaluated constant.
-                    Ok(true) => {
-                        last_changed_consts.push(procedure.name);
-                        self.all_procs.insert(const_id, procedure);
-                        next_run_names.push(const_id);
-                    }
-                    // We succeeded in fully expanding the constant.
-                    // Now we type check then evaluate it.
-                    Ok(false) => {
-                        if type_check::type_check(self, &procedure, interner, source_store).is_err()
-                        {
-                            had_error = true;
-                            continue;
-                        }
-
-                        let stack =
-                            match simulate_execute_program(&procedure, interner, source_store) {
-                                Err(_) => {
-                                    had_error = true;
-                                    continue;
-                                }
-                                Ok(stack) => stack,
-                            };
-
-                        let const_vals = stack
-                            .into_iter()
-                            .zip(procedure.exit_stack())
-                            .map(|(val, ty)| (ty.kind, val))
-                            .collect();
-                        match &mut procedure.kind {
-                            ProcedureKind::Const { const_val } => *const_val = Some(const_vals),
-                            _ => panic!("ICE: Tried setting const_val on non-const proc"),
-                        }
-                        self.all_procs.insert(const_id, procedure);
-                    }
-                    Err(_) => {
-                        eprint!("test");
-                        had_error = true;
-                    }
-                }
-            }
-
-            // No more constants left to evaluate.
-            if next_run_names.is_empty() {
-                break;
-            }
-
-            num_loops += 1;
-            if num_loops > MAX_EXPANSIONS {
-                let mut labels = Vec::new();
-
-                let first_con = last_changed_consts[0];
-                for con in last_changed_consts {
-                    labels.push(Label::new(con.location).with_color(Color::Red));
-                }
-                diagnostics::emit(
-                    first_con.location,
-                    "depth of const expansion exceeded 128",
-                    labels,
-                    None,
-                    source_store,
-                );
-
-                had_error = true;
-                break;
-            }
-
-            std::mem::swap(&mut const_proc_ids, &mut next_run_names);
-        }
-
-        had_error.not().then(|| ()).ok_or(())
-    }
-
-    fn type_check(&self, interner: &Interners, source_store: &SourceStorage) -> Result<(), ()> {
-        let mut had_error = false;
-
-        for proc in self.all_procs.values() {
-            if proc.kind.is_macro() {
-                continue;
-            }
-
-            if type_check::type_check(self, proc, interner, source_store).is_err() {
-                had_error = true;
-            }
-        }
-
-        had_error.not().then(|| ()).ok_or(())
-    }
-
-    fn check_const_for_self(&self, source_store: &SourceStorage) -> Result<(), ()> {
-        let mut had_error = false;
-        // Consts cannot reference themselves, so we should check that here.
-        for proc in self.all_procs.values() {
-            if let ProcedureKind::Const { .. } = &proc.kind {
-                for op in &proc.body {
-                    if matches!(op.code, OpCode::UnresolvedIdent(ref_id) if ref_id == proc.name.lexeme)
-                    {
-                        diagnostics::emit(
-                            op.token.location,
-                            "self referencing const",
-                            Some(Label::new(op.token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-
-                        break;
-                    }
-                }
-            }
-        }
-
-        had_error.not().then(|| ()).ok_or(())
-    }
-
-    fn evaluate_allocation_sizes(
-        &mut self,
-        interner: &Interners,
-        source_store: &SourceStorage,
-    ) -> Result<(), ()> {
-        let mut had_error = false;
-
-        let alloc_ids: Vec<_> = self
-            .all_procs
-            .iter()
-            .filter(|(_, p)| p.kind.is_memory())
-            .map(|(id, _)| *id)
-            .collect();
-
-        for alloc_id in alloc_ids {
-            let mut stack =
-                match simulate_execute_program(self.get_proc(alloc_id), interner, source_store) {
-                    Err(()) => {
-                        had_error = true;
-                        continue;
-                    }
-                    Ok(stack) => stack,
-                };
-
-            // The type checker enforces a single stack item here.
-            let alloc_size = stack.pop().unwrap() as usize;
-
-            // All allocs have a parent.
-            let alloc_proc = self.get_proc(alloc_id);
-            let alloc_proc_parent = alloc_proc.parent.unwrap();
-            let alloc_proc_name = alloc_proc.name();
-
-            let parent_proc = self.get_proc_mut(alloc_proc_parent);
-            let proc_data = match &mut parent_proc.kind {
-                ProcedureKind::Function(data) => data,
-                _ => panic!("ICE: Alloc parent wasn't a proc"),
-            };
-
-            let alloc_data = AllocData {
-                size: alloc_size,
-                offset: proc_data.total_alloc_size,
-            };
-            proc_data
-                .alloc_size_and_offsets
-                .insert(alloc_proc_name.lexeme, alloc_data);
-            proc_data.total_alloc_size += alloc_size;
-        }
-
-        had_error.not().then(|| ()).ok_or(())
-    }
-
     pub fn load(
         program: &mut Program,
         module_id: ModuleId,
@@ -974,32 +872,6 @@ impl Module {
             source_store,
         )
         .map_err(|_| eyre!("error parsing file: {}", file))?;
-
-        Ok(())
-    }
-
-    fn post_process_module(
-        &mut self,
-        program: &Program,
-        opt_level: u8,
-        interner: &mut Interners,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
-        let module_name = interner.resolve_lexeme(self.name);
-
-        // Fix this crap
-
-        self.post_process_consts(interner, source_store, opt_level)
-            .map_err(|_| eyre!("error processing consts: {}", module_name))?;
-
-        self.post_process(interner, source_store, opt_level)
-            .map_err(|_| eyre!("error processing procedures: {}", module_name))?;
-
-        self.type_check(interner, source_store)
-            .map_err(|_| eyre!("error type checking: {}", module_name))?;
-
-        self.evaluate_allocation_sizes(interner, source_store)
-            .map_err(|_| eyre!("error evaluating allocation sizes: {}", module_name))?;
 
         Ok(())
     }

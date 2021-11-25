@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Not,
-};
+use std::ops::Not;
 
 use ariadne::{Color, Label};
 use lasso::Spur;
@@ -11,10 +8,9 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    program::{ModuleId, Procedure, ProcedureId, ProcedureKind},
+    program::{ModuleId, ProcedureId},
     source_file::{SourceLocation, SourceStorage},
-    type_check::PorthTypeKind,
-    Module, Width,
+    Width,
 };
 
 use self::optimizer_passes::PASSES;
@@ -29,7 +25,10 @@ pub enum OpCode {
     BitAnd,
     BitNot,
     BitOr,
-    CallProc(ProcedureId),
+    CallProc {
+        module: ModuleId,
+        proc_id: ProcedureId,
+    },
     CastBool,
     CastInt,
     CastPtr,
@@ -73,7 +72,8 @@ pub enum OpCode {
     Greater,
     GreaterEqual,
     Memory {
-        name: Spur,
+        module_id: ModuleId,
+        proc_id: ProcedureId,
         offset: usize,
         global: bool,
     },
@@ -159,7 +159,9 @@ impl OpCode {
             | OpCode::UnresolvedIdent { .. }
             | OpCode::While { .. } => 0,
 
-            OpCode::CallProc(_) | OpCode::Return | OpCode::Prologue | OpCode::Epilogue => todo!(),
+            OpCode::CallProc { .. } | OpCode::Return | OpCode::Prologue | OpCode::Epilogue => {
+                panic!("ICE: called pop_count on function opcodes")
+            }
 
             OpCode::SysCall(a) => a + 1,
         }
@@ -175,7 +177,7 @@ impl OpCode {
             ArgC
             | ArgV
             | BitNot
-            | CallProc(_)
+            | CallProc { .. }
             | CastBool
             | CastInt
             | CastPtr
@@ -222,7 +224,7 @@ impl OpCode {
             | BitAnd
             | BitNot
             | BitOr
-            | CallProc(_)
+            | CallProc { .. }
             | CastBool
             | CastInt
             | CastPtr
@@ -282,7 +284,7 @@ impl OpCode {
             ArgC
             | ArgV
             | BitNot
-            | CallProc(_)
+            | CallProc { .. }
             | CastBool
             | CastInt
             | CastPtr
@@ -320,13 +322,14 @@ impl OpCode {
         }
     }
 
-    pub fn unwrap_memory(self) -> (Spur, usize, bool) {
+    pub fn unwrap_memory(self) -> (ModuleId, ProcedureId, usize, bool) {
         match self {
             Self::Memory {
-                name,
+                module_id: module,
+                proc_id,
                 offset,
                 global,
-            } => (name, offset, global),
+            } => (module, proc_id, offset, global),
             _ => panic!("expected OpCode::Memory"),
         }
     }
@@ -622,171 +625,4 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
     }
 
     dst_vec
-}
-
-pub fn expand_includes(included_files: &HashMap<Spur, Vec<Op>>, ops: &[Op]) -> Vec<Op> {
-    let mut src_vec = ops.to_owned();
-    let mut dst_vec = Vec::with_capacity(ops.len());
-    let mut already_included = HashSet::new();
-
-    loop {
-        let mut changed = false;
-
-        for op in src_vec.drain(..) {
-            match op.code {
-                OpCode::Include(id) => {
-                    changed = true;
-                    if !already_included.contains(&id) {
-                        dst_vec.extend_from_slice(&included_files[&id]);
-                        already_included.insert(id);
-                    }
-                }
-                _ => dst_vec.push(op),
-            }
-        }
-
-        if !changed {
-            break;
-        }
-
-        std::mem::swap(&mut src_vec, &mut dst_vec);
-    }
-
-    dst_vec
-}
-
-pub fn expand_sub_blocks(
-    program: &Module,
-    interner: &Interners,
-    proc: &Procedure,
-    source_store: &SourceStorage,
-) -> Result<(Vec<Op>, bool), ()> {
-    let mut src_vec = proc.body().to_owned();
-    let mut dst_vec = Vec::with_capacity(src_vec.len());
-    let mut had_error = false;
-
-    // Keep making changes until we get no changes.
-    let mut num_expansions = 0;
-    let mut last_changed_macros = Vec::new();
-    let mut failed_const_expansion = false;
-    loop {
-        let mut expanded_macro = false;
-        last_changed_macros.clear();
-
-        for op in src_vec.drain(..) {
-            let ident_id = match op.code {
-                OpCode::UnresolvedIdent(id) => id,
-                _ => {
-                    dst_vec.push(op);
-                    continue;
-                }
-            };
-
-            let found_proc_id = match proc.get_visible_symbol(ident_id) {
-                Some(id) => id,
-                None => {
-                    diagnostics::emit(
-                        op.token.location,
-                        format!("unknown symbol `{}`", interner.resolve_lexeme(ident_id)),
-                        Some(Label::new(op.token.location).with_color(Color::Red)),
-                        None,
-                        source_store,
-                    );
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            let found_proc = if found_proc_id == proc.id() {
-                proc
-            } else {
-                program.get_proc(found_proc_id)
-            };
-
-            match found_proc.kind() {
-                ProcedureKind::Macro => {
-                    expanded_macro = true;
-                    last_changed_macros.push(found_proc.name());
-                    dst_vec.extend(found_proc.body().iter().map(|new_op| {
-                        let mut new_op = new_op.clone();
-                        new_op.expansions.push(op.token.location);
-                        new_op.expansions.extend_from_slice(&op.expansions);
-                        new_op
-                    }));
-                }
-                ProcedureKind::Const { const_val: None } => {
-                    failed_const_expansion = true;
-                    dst_vec.push(op);
-                }
-                ProcedureKind::Const {
-                    const_val: Some(vals),
-                } => {
-                    for (kind, val) in vals {
-                        let code = match kind {
-                            PorthTypeKind::Int => OpCode::PushInt(*val),
-                            PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
-                            PorthTypeKind::Ptr => panic!("ICE: Const pointers not supported"),
-                            PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
-                        };
-                        dst_vec.push(Op {
-                            code,
-                            token: op.token,
-                            expansions: op.expansions.clone(),
-                        });
-                    }
-                }
-
-                ProcedureKind::Memory => {
-                    dst_vec.push(Op {
-                        code: OpCode::Memory {
-                            name: ident_id,
-                            offset: 0,
-                            global: found_proc.parent().is_none(),
-                        },
-                        token: op.token,
-                        expansions: op.expansions,
-                    });
-                }
-                ProcedureKind::Function(_) => {
-                    dst_vec.push(Op {
-                        code: OpCode::CallProc(found_proc_id),
-                        token: op.token,
-                        expansions: op.expansions,
-                    });
-                }
-            }
-        }
-
-        if !expanded_macro {
-            break;
-        }
-
-        if num_expansions > 128 {
-            let mut labels = Vec::new();
-
-            let first_loc = last_changed_macros[0];
-            for mac in last_changed_macros {
-                labels.push(Label::new(mac.location).with_color(Color::Red));
-            }
-
-            diagnostics::emit(
-                first_loc.location,
-                "depth of macro expansion exceeded 128",
-                labels,
-                None,
-                source_store,
-            );
-            had_error = true;
-            break;
-        }
-
-        num_expansions += 1;
-
-        std::mem::swap(&mut src_vec, &mut dst_vec);
-    }
-
-    had_error
-        .not()
-        .then(|| (dst_vec, failed_const_expansion))
-        .ok_or(())
 }

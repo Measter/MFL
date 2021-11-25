@@ -223,7 +223,7 @@ fn memory_offset<'a>(
     };
 
     let int_val = int.code.unwrap_push_int();
-    let (mem_id, mem_offset, global) = mem.code.unwrap_memory();
+    let (module_id, proc_id, mem_offset, global) = mem.code.unwrap_memory();
     let res = mem_first
         .then(|| op.code.get_binary_op()(mem_offset as u64, int_val))
         .unwrap_or_else(|| op.code.get_binary_op()(int_val, mem_offset as u64));
@@ -245,7 +245,8 @@ fn memory_offset<'a>(
 
     let opt = Op {
         code: Memory {
-            name: mem_id,
+            module_id,
+            proc_id,
             offset: res as _,
             global,
         },

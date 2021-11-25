@@ -305,7 +305,7 @@ pub(crate) fn simulate_execute_program(
 
             OpCode::ArgC
             | OpCode::ArgV
-            | OpCode::CallProc(_)
+            | OpCode::CallProc { .. }
             | OpCode::Load(_)
             | OpCode::Memory { .. }
             | OpCode::Store(_)
@@ -317,6 +317,7 @@ pub(crate) fn simulate_execute_program(
                 );
                 return Err(SimulationError::UnsupportedOp);
             }
+
             OpCode::Do | OpCode::End | OpCode::UnresolvedIdent { .. } | OpCode::Include(_) => {
                 panic!("ICE: Encountered {:?}", op.code)
             }

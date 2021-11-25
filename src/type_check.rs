@@ -861,7 +861,7 @@ pub fn type_check(
             }
 
             OpCode::SysCall(_)
-            | OpCode::CallProc(_) // These haven't been generated yet
+            | OpCode::CallProc{..} // These haven't been generated yet
             | OpCode::Memory{..} // These haven't been generated yet
             | OpCode::UnresolvedIdent { .. }
             | OpCode::Include(_)
