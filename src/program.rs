@@ -134,7 +134,7 @@ impl Procedure {
 
             for op in src_ops.drain(..) {
                 let proc_id = match op.code {
-                    OpCode::ResolvedIdent { proc_id, .. } => proc_id,
+                    OpCode::ResolvedIdent { proc_id, .. } if proc_id != self.id => proc_id,
                     _ => {
                         dst_ops.push(op);
                         continue;
