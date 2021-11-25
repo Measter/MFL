@@ -11,7 +11,7 @@ use crate::{
     interners::Interners,
     n_ops::{NOps, PopN},
     opcode::{Op, OpCode},
-    program::{Module, Procedure},
+    program::{Procedure, ProcedureKind, Program},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -337,7 +337,7 @@ struct BlockStackState {
 }
 
 pub fn type_check(
-    program: &Module,
+    program: &Program,
     proc: &Procedure,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -741,9 +741,6 @@ pub fn type_check(
                 }
             },
 
-            OpCode::Memory { .. } => {
-                stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location))
-            }
             OpCode::Load(_) => {
                 stack_check!(
                     source_store,
@@ -807,36 +804,42 @@ pub fn type_check(
                 stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
             }
 
-            OpCode::CallProc(id) => {
-                let callee = program.get_proc(id);
+            OpCode::ResolvedIdent { proc_id, .. } => {
+                let referenced_proc = program.get_proc(proc_id);
 
-                if stack.len() < callee.entry_stack().len() {
-                    generate_stack_exhaustion(
-                        source_store,
-                        op,
-                        stack.len(),
-                        callee.entry_stack().len(),
-                    );
-                    had_error = true;
-                    stack.clear();
-                } else {
-                    let last_n = stack.lastn(callee.entry_stack().len()).unwrap();
-                    if last_n != callee.entry_stack() {
-                        failed_compare_stack_types(
-                            callee.entry_stack(),
-                            last_n,
-                            callee.name().location,
-                            op,
-                            "incorrect types on stack",
-                            source_store,
-                        );
-                        had_error = true;
+                match referenced_proc.kind() {
+                    ProcedureKind::Memory => {
+                        stack.push(PorthType::new(PorthTypeKind::Ptr, op.token.location));
                     }
+                    _ => {
+                        if stack.len() < referenced_proc.entry_stack().len() {
+                            generate_stack_exhaustion(
+                                source_store,
+                                op,
+                                stack.len(),
+                                referenced_proc.entry_stack().len(),
+                            );
+                            had_error = true;
+                            stack.clear();
+                        } else {
+                            let last_n = stack.lastn(referenced_proc.entry_stack().len()).unwrap();
+                            if last_n != referenced_proc.entry_stack() {
+                                failed_compare_stack_types(
+                                    referenced_proc.entry_stack(),
+                                    last_n,
+                                    referenced_proc.name().location,
+                                    op,
+                                    "incorrect types on stack",
+                                    source_store,
+                                );
+                                had_error = true;
+                            }
+                            stack.truncate(stack.len() - referenced_proc.entry_stack().len());
+                        }
 
-                    stack.truncate(stack.len() - callee.entry_stack().len());
+                        stack.extend_from_slice(referenced_proc.exit_stack());
+                    }
                 }
-
-                stack.extend_from_slice(callee.exit_stack());
             }
 
             OpCode::Epilogue | OpCode::Prologue => {}
@@ -858,7 +861,9 @@ pub fn type_check(
             }
 
             OpCode::SysCall(_)
-            | OpCode::UnresolvedIdent(_)
+            | OpCode::CallProc(_) // These haven't been generated yet
+            | OpCode::Memory{..} // These haven't been generated yet
+            | OpCode::UnresolvedIdent { .. }
             | OpCode::Include(_)
             | OpCode::End
             | OpCode::Do => {

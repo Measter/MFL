@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     n_ops::PopN,
     opcode::{Op, OpCode},
-    program::Procedure,
+    program::{Procedure, ProcedureKind, Program},
     source_file::SourceStorage,
     Width,
 };
@@ -21,6 +21,12 @@ impl Width {
             Width::Qword => start..start + 8,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimulationError {
+    UnsupportedOp,
+    UnreadyConst,
 }
 
 fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
@@ -135,10 +141,11 @@ fn allocate_program_args(memory: &mut Vec<u8>, args: &[String]) -> (u64, u64) {
 }
 
 pub(crate) fn simulate_execute_program(
+    program: &Program,
     procedure: &Procedure,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<Vec<u64>, ()> {
+) -> Result<Vec<u64>, SimulationError> {
     let mut ip = 0;
     let mut value_stack: Vec<u64> = Vec::new();
 
@@ -277,6 +284,25 @@ pub(crate) fn simulate_execute_program(
             OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::Return => break,
 
+            OpCode::ResolvedIdent { proc_id, .. } => {
+                let referenced_proc = program.get_proc(proc_id);
+
+                match referenced_proc.kind() {
+                    ProcedureKind::Const {
+                        const_val: Some(vals),
+                    } => {
+                        value_stack.extend(vals.iter().map(|(t, v)| *v));
+                    }
+                    ProcedureKind::Const { .. } => {
+                        return Err(SimulationError::UnreadyConst);
+                    }
+                    _ => {
+                        generate_error("non-const cannot be refenced in a const", op, source_store);
+                        return Err(SimulationError::UnsupportedOp);
+                    }
+                }
+            }
+
             OpCode::ArgC
             | OpCode::ArgV
             | OpCode::CallProc(_)
@@ -289,9 +315,9 @@ pub(crate) fn simulate_execute_program(
                     op,
                     source_store,
                 );
-                return Err(());
+                return Err(SimulationError::UnsupportedOp);
             }
-            OpCode::Do | OpCode::End | OpCode::UnresolvedIdent(_) | OpCode::Include(_) => {
+            OpCode::Do | OpCode::End | OpCode::UnresolvedIdent { .. } | OpCode::Include(_) => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

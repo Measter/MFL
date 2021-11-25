@@ -15,7 +15,7 @@ use crate::{
     interners::Interners,
     lexer::{self, Token},
     opcode::{self, Op, OpCode},
-    simulate::simulate_execute_program,
+    simulate::{simulate_execute_program, SimulationError},
     source_file::SourceStorage,
     type_check::{self, PorthType, PorthTypeKind},
     OPT_OPCODE,
@@ -473,6 +473,144 @@ impl Program {
             .ok_or_else(|| eyre!("error during macro expansion"))
     }
 
+    fn check_all_const_for_loops(
+        &self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let mut had_error = false;
+
+        for (&own_proc_id, own_proc) in &self.all_procedures {
+            if !own_proc.kind().is_const() {
+                continue;
+            }
+
+            let mut seen_ids = HashSet::new();
+            seen_ids.insert(own_proc_id);
+            let mut check_queue = vec![own_proc];
+            while let Some(proc) = check_queue.pop() {
+                if !proc.kind().is_const() {
+                    panic!("ICE: found non-const reference in const");
+                }
+
+                for op in &proc.body {
+                    match op.code {
+                        OpCode::ResolvedIdent { proc_id, .. } => {
+                            if seen_ids.insert(proc_id) == false {
+                                had_error = true;
+                                diagnostics::emit(
+                                    proc.name.location,
+                                    "const reference cycle detected",
+                                    [
+                                        Label::new(own_proc.name.location)
+                                            .with_color(Color::Red)
+                                            .with_message("in this const"),
+                                        Label::new(op.token.location)
+                                            .with_color(Color::Cyan)
+                                            .with_message("cyclic reference"),
+                                    ],
+                                    None,
+                                    source_store,
+                                );
+                            } else {
+                                check_queue.push(self.get_proc(proc_id));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed const self-check"))
+    }
+
+    fn type_check_procs(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+
+        for (proc_id, proc) in &self.all_procedures {
+            // Macros have already been expanded, so we don't need to check them.
+            if proc.kind().is_macro() {
+                continue;
+            }
+
+            had_error |= type_check::type_check(self, proc, interner, source_store).is_err();
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed type checking"))
+    }
+
+    fn evaluate_const_values(
+        &mut self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let mut had_error = false;
+
+        let mut const_queue: Vec<_> = self
+            .all_procedures
+            .iter()
+            .filter(|(_, proc)| proc.kind().is_const())
+            .map(|(id, _)| *id)
+            .collect();
+        let mut next_run_queue = Vec::with_capacity(const_queue.len());
+
+        // Generate the jump labels first so we can simulate them.
+        for &const_id in &const_queue {
+            let proc = self.get_proc_mut(const_id);
+            had_error |= opcode::generate_jump_labels(&mut proc.body, source_store).is_err();
+        }
+
+        if had_error {
+            return Err(eyre!("const jump label create failed"));
+        }
+
+        loop {
+            for const_id in const_queue.drain(..) {
+                let proc = self.get_proc(const_id);
+                match simulate_execute_program(self, proc, interner, source_store) {
+                    Ok(stack) => {
+                        let const_vals = stack
+                            .into_iter()
+                            .zip(proc.exit_stack)
+                            .map(|(val, ty)| (ty.kind, val))
+                            .collect();
+
+                        match self.get_proc_mut(const_id).kind {
+                            ProcedureKind::Const { const_val } => {
+                                const_val = Some(const_vals);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    Err(SimulationError::UnsupportedOp) => {
+                        had_error = true;
+                    }
+                    Err(SimulationError::UnreadyConst) => {
+                        next_run_queue.push(const_id);
+                    }
+                }
+            }
+
+            if next_run_queue.is_empty() {
+                break;
+            }
+
+            std::mem::swap(&mut const_queue, &mut next_run_queue);
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed during const evaluation"))
+    }
+
     fn post_process_procs(
         &mut self,
         interner: &Interners,
@@ -480,9 +618,11 @@ impl Program {
     ) -> Result<()> {
         self.resolve_idents(interner, source_store)?;
         self.expand_macros(interner, source_store)?;
-        // Expand all macros.
-        // Evaluate consts.
-        // Expand consts.
+        self.check_all_const_for_loops(interner, source_store)?;
+        self.type_check_procs(interner, source_store)?;
+        self.evaluate_const_values(interner, source_store);
+
+        // Expand consts, calls, and memory references.
         // Evaluate memory.
 
         Ok(())
@@ -848,8 +988,6 @@ impl Module {
         let module_name = interner.resolve_lexeme(self.name);
 
         // Fix this crap
-        self.check_const_for_self(source_store)
-            .map_err(|_| eyre!("error checking consts: {}", module_name))?;
 
         self.post_process_consts(interner, source_store, opt_level)
             .map_err(|_| eyre!("error processing consts: {}", module_name))?;
