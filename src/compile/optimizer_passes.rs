@@ -640,7 +640,7 @@ pub(super) fn compile_single_instruction(
             assembler.block_boundry();
         }
         OpCode::While { ip } => {
-            assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
+            assembler.push_instr([str_lit(format!("  .LBL{}:", ip))]);
             assembler.block_boundry();
         }
         OpCode::EndWhile {
@@ -648,7 +648,7 @@ pub(super) fn compile_single_instruction(
             end_ip,
         } => {
             assembler.push_instr([str_lit(format!("    jmp .LBL{}", condition_ip))]);
-            assembler.push_instr([str_lit(format!(".LBL{}:", end_ip))]);
+            assembler.push_instr([str_lit(format!("  .LBL{}:", end_ip))]);
             assembler.block_boundry();
         }
 
@@ -657,11 +657,11 @@ pub(super) fn compile_single_instruction(
         }
         OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
             assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
-            assembler.push_instr([str_lit(format!(".LBL{}:", else_start))]);
+            assembler.push_instr([str_lit(format!("  .LBL{}:", else_start))]);
             assembler.block_boundry();
         }
         OpCode::EndIf { ip } => {
-            assembler.push_instr([str_lit(format!(".LBL{}:", ip))]);
+            assembler.push_instr([str_lit(format!("  .LBL{}:", ip))]);
             assembler.block_boundry();
         }
 

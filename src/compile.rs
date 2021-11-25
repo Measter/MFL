@@ -795,13 +795,13 @@ fn assemble_procedure(
     let proc_data = proc.kind().get_proc_data();
 
     if !proc_data.allocs.is_empty() {
-        assembler.push_instr([str_lit(";; Local allocs")]);
+        assembler.push_instr([str_lit("  ;; Local allocs")]);
         // Output a list of allocs and their offsets.
         for (&alloc_name, &alloc_id) in &proc_data.allocs {
             let name = interner.resolve_lexeme(alloc_name);
             let alloc_data = proc_data.alloc_size_and_offsets[&alloc_id];
             assembler.push_instr([str_lit(format!(
-                ";; {:?} {} -- offset: {} -- size: {}",
+                "  ;; {:?} {} -- offset: {} -- size: {}",
                 alloc_id, name, alloc_data.offset, alloc_data.size
             ))]);
         }
@@ -839,7 +839,7 @@ fn assemble_procedure(
                 // while lexing.
                 writeln!(
                     out_file,
-                    ";; IP{} -- {}:{}:{} -- {:?}",
+                    "  ;; IP{} -- {}:{}:{} -- {:?}",
                     ip,
                     source_store.name(op.token.location.file_id),
                     op.token.location.line,
