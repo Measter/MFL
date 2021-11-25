@@ -215,6 +215,7 @@ pub struct Program {
 
     proc_counter: usize,
     all_procedures: HashMap<ProcedureId, Procedure>,
+    global_allocs: HashMap<ProcedureId, usize>,
 }
 
 impl Program {
@@ -225,6 +226,7 @@ impl Program {
             module_ident_map: Default::default(),
             proc_counter: 0,
             all_procedures: HashMap::new(),
+            global_allocs: HashMap::new(),
         }
     }
 
@@ -237,7 +239,6 @@ impl Program {
             id: new_id,
             has_resolved_visible: false,
             top_level_symbols: HashMap::new(),
-            allocs: HashMap::new(),
         };
         self.module_ident_map.insert(name, new_id);
         self.modules.insert(new_id, module);
@@ -724,11 +725,10 @@ impl Program {
                     function_data.total_alloc_size += alloc_size;
                 }
 
-                // If not, this is global, and needs to be placed in the module.
-                // Less work needs doing here as global allocs are always refenced by name.
+                // If not, this is global, and needs to be placed in the program.
+                // Less work needs doing here as global allocs are always referenced by name.
                 None => {
-                    let module = &mut self.modules[&proc.module];
-                    module.allocs.insert(proc_id, alloc_size);
+                    self.global_allocs.insert(proc_id, alloc_size);
                 }
             }
         }
@@ -837,8 +837,6 @@ pub struct Module {
     id: ModuleId,
     has_resolved_visible: bool,
     top_level_symbols: HashMap<Spur, ProcedureId>,
-
-    allocs: HashMap<ProcedureId, usize>,
 }
 
 impl Module {
