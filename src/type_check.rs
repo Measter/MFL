@@ -149,8 +149,8 @@ fn failed_compare_stack_types(
     msg: &str,
     source_store: &SourceStorage,
 ) {
-    let mut note = "\n\t\tIDX  | Expected |   Actual\n\
-        \t\t_____|__________|_________"
+    let mut note = "\n\t\tDepth | Expected |   Actual\n\
+        \t\t______|__________|_________"
         .to_owned();
 
     if expected_stack[0] == actual_stack[0] {
@@ -161,6 +161,7 @@ fn failed_compare_stack_types(
         .iter()
         .zip(actual_stack)
         .enumerate()
+        .rev()
         .peekable();
     while matches!(pairs.peek(), Some((_, (a, b))) if a == b) {
         pairs.next();
@@ -169,7 +170,7 @@ fn failed_compare_stack_types(
     for (idx, (a, b)) in pairs {
         write!(
             &mut note,
-            "\n\t\t{:<4} | {:<8} | {:>8}",
+            "\n\t\t{:<5} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
             a.kind,
             b.kind
@@ -183,10 +184,10 @@ fn failed_compare_stack_types(
         [
             Label::new(op.token.location)
                 .with_color(Color::Red)
-                .with_message("called here"),
+                .with_message("actual"),
             Label::new(open_block_loc)
                 .with_color(Color::Cyan)
-                .with_message("defined here"),
+                .with_message("expected"),
         ],
         note,
         source_store,
