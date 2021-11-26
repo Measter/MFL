@@ -881,7 +881,6 @@ fn assemble_entry(
     assembler.push_instr([str_lit("    mov QWORD [__argv], rsp")]);
     assembler.push_instr([str_lit("    mov rbp, __call_stack_end")]);
 
-    // TODO: Call entry function
     let proc_name = interner.get_symbol_name(program, entry_function);
     assembler.swap_stacks();
     assembler.block_boundry();
