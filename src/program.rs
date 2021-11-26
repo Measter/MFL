@@ -121,80 +121,33 @@ impl Procedure {
         &self.entry_stack
     }
 
-    fn expand_macros(&mut self, program: &Program, source_store: &SourceStorage) -> Result<()> {
-        let mut src_ops = std::mem::take(&mut self.body);
-        let mut dst_ops = Vec::with_capacity(self.body.len());
-        let mut had_error = false;
+    fn expand_macros(&mut self, program: &Program) {
+        let mut i = 0;
+        while i < self.body.len() {
+            match self.body[i].code {
+                OpCode::ResolvedIdent { proc_id, .. } if proc_id != self.id => {
+                    let found_proc = program.get_proc(proc_id);
+                    if found_proc.kind().is_macro() {
+                        let token = self.body[i].token;
+                        let expansions = self.body[i].expansions.clone();
+                        let new_ops = found_proc.body().iter().map(|new_op| {
+                            let mut new_op = new_op.clone();
+                            new_op.expansions.push(token.location);
+                            new_op.expansions.extend_from_slice(&expansions);
+                            new_op
+                        });
 
-        let mut num_expansions = 0;
-        let mut last_changed_macros = Vec::new();
+                        self.body.splice(i..i + 1, new_ops);
 
-        loop {
-            let mut expanded_macro = false;
-
-            for op in src_ops.drain(..) {
-                let proc_id = match op.code {
-                    OpCode::ResolvedIdent { proc_id, .. } if proc_id != self.id => proc_id,
-                    _ => {
-                        dst_ops.push(op);
+                        // Want to continue with the current op index
                         continue;
                     }
-                };
-
-                let found_proc = program.get_proc(proc_id);
-                if !found_proc.kind().is_macro() {
-                    dst_ops.push(op);
-                    continue;
                 }
-
-                expanded_macro = true;
-                last_changed_macros.push(found_proc.name());
-                dst_ops.extend(found_proc.body().iter().map(|new_op| {
-                    let mut new_op = new_op.clone();
-                    new_op.expansions.push(op.token.location);
-                    new_op.expansions.extend_from_slice(&op.expansions);
-                    new_op
-                }));
+                _ => {}
             }
 
-            if !expanded_macro {
-                break;
-            }
-
-            if num_expansions > 128 {
-                let mut labels = Vec::new();
-
-                let first_loc = last_changed_macros[0];
-                for macro_token in last_changed_macros {
-                    labels.push(
-                        Label::new(macro_token.location)
-                            .with_color(Color::Red)
-                            .with_message("exceeded expansion limit"),
-                    );
-                }
-
-                diagnostics::emit(
-                    first_loc.location,
-                    "depth of macro expansion exeeced 128",
-                    labels,
-                    None,
-                    source_store,
-                );
-
-                had_error = true;
-                break;
-            }
-
-            num_expansions += 1;
-            std::mem::swap(&mut src_ops, &mut dst_ops);
+            i += 1;
         }
-
-        self.body = dst_ops;
-
-        had_error
-            .not()
-            .then(|| ())
-            .ok_or_else(|| eyre!("failed to expand macro"))
     }
 }
 
@@ -457,8 +410,7 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
-    fn expand_macros(&mut self, source_store: &SourceStorage) -> Result<()> {
-        let mut had_error = false;
+    fn expand_macros(&mut self) {
         let non_macro_proc_ids: Vec<_> = self
             .all_procedures
             .iter()
@@ -469,48 +421,46 @@ impl Program {
         for proc_id in non_macro_proc_ids {
             let mut proc = self.all_procedures.remove(&proc_id).unwrap();
 
-            if proc.expand_macros(self, source_store).is_err() {
-                had_error = true;
-            }
+            proc.expand_macros(self);
 
             self.all_procedures.insert(proc_id, proc);
         }
-
-        had_error
-            .not()
-            .then(|| ())
-            .ok_or_else(|| eyre!("error during macro expansion"))
     }
 
-    fn check_all_const_for_loops(&self, source_store: &SourceStorage) -> Result<()> {
+    fn check_cyclic_consts_and_macros(&self, source_store: &SourceStorage) -> Result<()> {
         let mut had_error = false;
 
+        let mut check_queue = Vec::new();
+        let mut already_checked = HashSet::new();
         for (&own_proc_id, own_proc) in &self.all_procedures {
-            if !own_proc.kind().is_const() {
-                continue;
-            }
+            let kind = match own_proc.kind() {
+                ProcedureKind::Const { .. } => "const",
+                ProcedureKind::Macro => "macro",
+                ProcedureKind::Memory | ProcedureKind::Function(_) => continue,
+            };
 
-            let mut seen_ids = HashSet::new();
-            seen_ids.insert(own_proc_id);
-            let mut check_queue = vec![own_proc];
+            check_queue.clear();
+            check_queue.push(own_proc);
+            already_checked.clear();
+
             while let Some(proc) = check_queue.pop() {
-                if !proc.kind().is_const() {
-                    panic!("ICE: found non-const reference in const");
-                }
-
                 for op in &proc.body {
                     if let OpCode::ResolvedIdent { proc_id, .. } = op.code {
                         // False means that there was already a value in the set with this proc_id
                         #[allow(clippy::bool_comparison)]
-                        if seen_ids.insert(proc_id) == false {
+                        if already_checked.insert(proc_id) == false {
+                            continue;
+                        }
+
+                        if proc_id == own_proc_id {
                             had_error = true;
                             diagnostics::emit(
                                 proc.name.location,
-                                "const reference cycle detected",
+                                format!("cyclic {} detected", kind),
                                 [
                                     Label::new(own_proc.name.location)
                                         .with_color(Color::Red)
-                                        .with_message("in this const"),
+                                        .with_message(format!("in this {}", kind)),
                                     Label::new(op.token.location)
                                         .with_color(Color::Cyan)
                                         .with_message("cyclic reference"),
@@ -783,11 +733,12 @@ impl Program {
         eprintln!("Processing procs...");
         eprintln!("    Resolving idents...");
         self.resolve_idents(interner, source_store)?;
-        eprintln!("    Expanding macros...");
-        self.expand_macros(source_store)?;
 
-        eprintln!("    Checking for cyclic consts...");
-        self.check_all_const_for_loops(source_store)?;
+        eprintln!("    Checking for cyclic consts and macros...");
+        self.check_cyclic_consts_and_macros(source_store)?;
+        eprintln!("    Expanding macros...");
+        self.expand_macros();
+
         eprintln!("    Generating jump labels...");
         self.generate_jump_labels(source_store)?;
         eprintln!("    Type checking...");
