@@ -104,7 +104,9 @@ fn generate_stack_exhaustion(
 ) {
     let message = format!("expected {} items, found {}", expected, actual);
 
-    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
+    let mut labels = vec![Label::new(op.token.location)
+        .with_color(Color::Red)
+        .with_message("here")];
 
     for source in op.expansions.iter() {
         labels.push(
