@@ -186,10 +186,10 @@ fn failed_compare_stack_types(
         [
             Label::new(op.token.location)
                 .with_color(Color::Red)
-                .with_message("actual"),
+                .with_message("actual sampled here"),
             Label::new(open_block_loc)
                 .with_color(Color::Cyan)
-                .with_message("expected"),
+                .with_message("expected sampled here"),
         ],
         note,
         source_store,
