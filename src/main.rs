@@ -108,7 +108,21 @@ fn load_program(
         return Err(eyre!("invalid `entry` procedure type"));
     }
 
-    // TODO: Check function type signature
+    if !entry_proc.entry_stack().is_empty() || !entry_proc.exit_stack().is_empty() {
+        let name = entry_proc.name();
+        diagnostics::emit(
+            name.location,
+            "`entry` must have the signature `[] to []`",
+            Some(
+                Label::new(name.location)
+                    .with_color(Color::Red)
+                    .with_message("defined Here"),
+            ),
+            None,
+            &source_storage,
+        );
+        return Err(eyre!("invalid `entry` signature"));
+    }
 
     Ok((program, source_storage, interner, entry_function_id))
 }
