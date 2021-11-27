@@ -579,7 +579,9 @@ impl Program {
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
-    fn process_idents(&mut self, interner: &Interners) {
+    fn process_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+
         // Macros should already have been expanded.
         let all_proc_ids: Vec<_> = self
             .all_procedures
@@ -641,11 +643,25 @@ impl Program {
                                     expansions: op.expansions,
                                 });
                             }
-                            ProcedureKind::Const { const_val: None }
-                            | ProcedureKind::Macro
-                            | ProcedureKind::Assert => {
+                            ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
                                 let name = interner.resolve_lexeme(proc.name.lexeme);
                                 panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {}", name);
+                            }
+
+                            ProcedureKind::Assert => {
+                                had_error = true;
+                                diagnostics::emit(
+                                    op.token.location,
+                                    "asserts cannot be used in operations",
+                                    Some(
+                                        Label::new(op.token.location)
+                                            .with_color(Color::Red)
+                                            .with_message("here"),
+                                    ),
+                                    None,
+                                    source_store,
+                                );
+                                continue;
                             }
                         }
                     }
@@ -656,6 +672,11 @@ impl Program {
             proc.body = new_ops;
             self.all_procedures.insert(own_proc_id, proc);
         }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("error processing idents"))
     }
 
     fn evaluate_allocation_sizes(
@@ -791,7 +812,7 @@ impl Program {
         self.evaluate_const_values(interner, source_store)?;
 
         eprintln!("    Processing idents...");
-        self.process_idents(interner);
+        self.process_idents(interner, source_store)?;
         eprintln!("    Evaluating allocation sizes...");
         self.evaluate_allocation_sizes(interner, source_store)?;
         eprintln!("    Checking asserts...");
