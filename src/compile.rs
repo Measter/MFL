@@ -712,6 +712,10 @@ fn find_unused_reg(program: &mut [Assembly], start_idx: usize, reg: RegisterType
                     }
                 }
             }
+            AsmInstruction::BlockBoundry | AsmInstruction::SwapStacks => {
+                // Don't optimize over a block boundry or stack swap.
+                return false;
+            }
             _ => continue,
         }
     }
