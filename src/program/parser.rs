@@ -115,7 +115,7 @@ pub fn parse_procedure_body(
             TokenKind::While => OpCode::While { ip: usize::MAX },
             TokenKind::Do => OpCode::Do,
 
-            TokenKind::Const | TokenKind::Memory => {
+            TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
                 if parse_procedure(
                     program,
                     module_id,
@@ -459,6 +459,39 @@ fn parse_const_header<'a>(
     Ok((is_token, new_proc))
 }
 
+fn parse_assert_header<'a>(
+    program: &mut Program,
+    module_id: ModuleId,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    name: Token,
+    parent: Option<ProcedureId>,
+    source_store: &SourceStorage,
+) -> Result<(Token, ProcedureId), ()> {
+    let new_proc = program.new_procedure(
+        name,
+        module_id,
+        ProcedureKind::Assert,
+        parent,
+        vec![PorthType {
+            kind: PorthTypeKind::Bool,
+            location: name.location,
+        }],
+        Vec::new(),
+    );
+
+    let (_, is_token) = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        name,
+        interner,
+        source_store,
+    )?;
+
+    Ok((is_token, new_proc))
+}
+
 fn parse_procedure<'a>(
     program: &mut Program,
     module_id: ModuleId,
@@ -484,6 +517,7 @@ fn parse_procedure<'a>(
         TokenKind::Memory => parse_memory_header,
         TokenKind::Macro => parse_macro_header,
         TokenKind::Const => parse_const_header,
+        TokenKind::Assert => parse_assert_header,
         _ => unreachable!(),
     };
 
@@ -607,7 +641,11 @@ pub(super) fn parse_module(
 
     while let Some((_, token)) = token_iter.next() {
         match token.kind {
-            TokenKind::Const | TokenKind::Macro | TokenKind::Memory | TokenKind::Proc => {
+            TokenKind::Assert
+            | TokenKind::Const
+            | TokenKind::Macro
+            | TokenKind::Memory
+            | TokenKind::Proc => {
                 if parse_procedure(
                     program,
                     module_id,

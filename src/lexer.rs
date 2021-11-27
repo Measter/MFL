@@ -14,6 +14,7 @@ use crate::{
 pub enum TokenKind {
     ArgC,
     ArgV,
+    Assert,
     BitAnd,
     BitNot,
     BitOr,
@@ -67,6 +68,7 @@ impl TokenKind {
         match self {
             TokenKind::ArgC
             | TokenKind::ArgV
+            | TokenKind::Assert
             | TokenKind::BitAnd
             | TokenKind::BitNot
             | TokenKind::BitOr
@@ -422,9 +424,10 @@ impl<'source> Scanner<'source> {
                     "!16" => TokenKind::Store(Width::Word),
                     "!32" => TokenKind::Store(Width::Dword),
                     "!64" => TokenKind::Store(Width::Qword),
+                    "and" => TokenKind::BitAnd,
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
-                    "and" => TokenKind::BitAnd,
+                    "assert" => TokenKind::Assert,
                     "cast(bool)" => TokenKind::CastBool,
                     "cast(int)" => TokenKind::CastInt,
                     "cast(ptr)" => TokenKind::CastPtr,

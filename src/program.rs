@@ -40,8 +40,10 @@ pub struct FunctionData {
     pub consts: HashMap<Spur, ProcedureId>,
 }
 
+// TODO: Add compile-time asserts
 #[derive(Debug, Variantly)]
 pub enum ProcedureKind {
+    Assert,
     Const {
         const_val: Option<Vec<(PorthTypeKind, u64)>>,
     },
@@ -427,7 +429,7 @@ impl Program {
         }
     }
 
-    fn check_cyclic_consts_and_macros(&self, source_store: &SourceStorage) -> Result<()> {
+    fn check_invalid_cyclic_refs(&self, source_store: &SourceStorage) -> Result<()> {
         let mut had_error = false;
 
         let mut check_queue = Vec::new();
@@ -436,6 +438,7 @@ impl Program {
             let kind = match own_proc.kind() {
                 ProcedureKind::Const { .. } => "const",
                 ProcedureKind::Macro => "macro",
+                ProcedureKind::Assert => "assert",
                 ProcedureKind::Memory | ProcedureKind::Function(_) => continue,
             };
 
@@ -638,9 +641,11 @@ impl Program {
                                     expansions: op.expansions,
                                 });
                             }
-                            ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
+                            ProcedureKind::Const { const_val: None }
+                            | ProcedureKind::Macro
+                            | ProcedureKind::Assert => {
                                 let name = interner.resolve_lexeme(proc.name.lexeme);
-                                panic!("ICE: Encountered macro or un-evaluated const during ident processing {}", name);
+                                panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {}", name);
                             }
                         }
                     }
@@ -714,6 +719,45 @@ impl Program {
             .ok_or_else(|| eyre!("allocation size evaluation failed"))
     }
 
+    fn check_asserts(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+
+        for proc in self.all_procedures.values() {
+            if !proc.kind().is_assert() {
+                continue;
+            }
+
+            let assert_result = match simulate_execute_program(self, proc, interner, source_store) {
+                // Type check says we'll have a value at this point.
+                Ok(mut stack) => stack.pop().unwrap() != 0,
+                Err(_) => {
+                    had_error = true;
+                    continue;
+                }
+            };
+
+            if !assert_result {
+                diagnostics::emit(
+                    proc.name.location,
+                    "assert failure",
+                    Some(
+                        Label::new(proc.name.location)
+                            .with_color(Color::Red)
+                            .with_message("evaluated to false"),
+                    ),
+                    None,
+                    source_store,
+                );
+                had_error = true;
+            }
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed assert check"))
+    }
+
     fn optimize_functions(&mut self, interner: &mut Interners, source_store: &SourceStorage) {
         for proc in self.all_procedures.values_mut() {
             if !proc.kind().is_function() {
@@ -735,7 +779,7 @@ impl Program {
         self.resolve_idents(interner, source_store)?;
 
         eprintln!("    Checking for cyclic consts and macros...");
-        self.check_cyclic_consts_and_macros(source_store)?;
+        self.check_invalid_cyclic_refs(source_store)?;
         eprintln!("    Expanding macros...");
         self.expand_macros();
 
@@ -750,6 +794,8 @@ impl Program {
         self.process_idents(interner);
         eprintln!("    Evaluating allocation sizes...");
         self.evaluate_allocation_sizes(interner, source_store)?;
+        eprintln!("    Checking asserts...");
+        self.check_asserts(interner, source_store)?;
 
         if opt_level >= OPT_OPCODE {
             eprintln!("    Optimizing functions...");
