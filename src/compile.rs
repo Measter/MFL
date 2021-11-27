@@ -790,7 +790,7 @@ fn assemble_procedure(
 ) -> Result<()> {
     let name = interner.get_symbol_name(program, proc.id());
     println!("Compiling {}...", name);
-    assembler.push_instr([str_lit(format!("proc_{}:", name))]);
+    assembler.push_instr([str_lit(format!("{}:", name))]);
 
     let proc_data = proc.kind().get_proc_data();
 
@@ -884,7 +884,7 @@ fn assemble_entry(
     let proc_name = interner.get_symbol_name(program, entry_function);
     assembler.swap_stacks();
     assembler.block_boundry();
-    assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
+    assembler.push_instr([str_lit(format!("    call {}", proc_name))]);
     assembler.swap_stacks();
     assembler.use_function(entry_function);
 

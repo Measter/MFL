@@ -677,7 +677,7 @@ pub(super) fn compile_single_instruction(
 
             assembler.swap_stacks();
             assembler.block_boundry();
-            assembler.push_instr([str_lit(format!("    call proc_{}", proc_name))]);
+            assembler.push_instr([str_lit(format!("    call {}", proc_name))]);
             assembler.swap_stacks();
 
             let num_regs = FIXED_REGS.len().min(callee.exit_stack().len());
