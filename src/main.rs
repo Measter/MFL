@@ -35,26 +35,6 @@ pub enum Width {
 }
 
 #[derive(Debug, StructOpt)]
-enum Mode {
-    /// Simulate the program
-    #[structopt(name = "sim")]
-    Simulate {
-        file: String,
-
-        /// Set optimization level
-        #[structopt(short, parse(from_occurrences))]
-        opt_level: u8,
-
-        /// Arguments to pass to the executed Porth program
-        args: Vec<String>,
-    },
-
-    /// Compile the program
-    #[structopt(name = "com")]
-    Compile {},
-}
-
-#[derive(Debug, StructOpt)]
 struct Args {
     /// Comma-separated list of paths to search includes.
     #[structopt(short = "I", require_delimiter = true)]

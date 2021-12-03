@@ -79,7 +79,6 @@ pub struct Procedure {
     body: Vec<Op>,
     exit_stack: Vec<PorthType>,
     entry_stack: Vec<PorthType>,
-    visible_symbols: HashMap<Spur, ProcedureId>,
 }
 
 impl Procedure {
@@ -858,7 +857,6 @@ impl Program {
             parent,
             exit_stack,
             entry_stack,
-            visible_symbols: HashMap::new(),
         };
 
         self.all_procedures.insert(id, proc);
