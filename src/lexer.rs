@@ -18,6 +18,7 @@ pub enum TokenKind {
     BitAnd,
     BitNot,
     BitOr,
+    Boolean(bool),
     CastBool,
     CastInt,
     CastPtr,
@@ -72,6 +73,7 @@ impl TokenKind {
             | TokenKind::BitAnd
             | TokenKind::BitNot
             | TokenKind::BitOr
+            | TokenKind::Boolean(_)
             | TokenKind::CastBool
             | TokenKind::CastInt
             | TokenKind::CastPtr
@@ -439,6 +441,7 @@ impl<'source> Scanner<'source> {
                     "elif" => TokenKind::Elif,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
+                    "false" => TokenKind::Boolean(false),
                     "here" => {
                         // These should never fail; we get the file ID from the source store, and the store
                         // has a full copy of the contents.
@@ -474,6 +477,7 @@ impl<'source> Scanner<'source> {
                     "syscall4" => TokenKind::SysCall(4),
                     "syscall5" => TokenKind::SysCall(5),
                     "syscall6" => TokenKind::SysCall(6),
+                    "true" => TokenKind::Boolean(true),
                     "while" => TokenKind::While,
                     _ if is_all_num => {
                         // We only put numbers in here, so it can't fail.

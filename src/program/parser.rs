@@ -80,6 +80,7 @@ pub fn parse_procedure_body(
             TokenKind::LessEqual => OpCode::LessEqual,
             TokenKind::NotEqual => OpCode::NotEq,
 
+            TokenKind::Boolean(b) => OpCode::PushBool(b),
             TokenKind::Ident => {
                 let sub_token = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
                 {
