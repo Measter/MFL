@@ -34,6 +34,17 @@ pub enum Width {
     Qword,
 }
 
+impl Width {
+    pub fn byte_size(self) -> u64 {
+        match self {
+            Width::Byte => 1,
+            Width::Word => 2,
+            Width::Dword => 4,
+            Width::Qword => 8,
+        }
+    }
+}
+
 #[derive(Debug, StructOpt)]
 struct Args {
     /// Comma-separated list of paths to search includes.
