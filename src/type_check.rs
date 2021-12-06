@@ -279,38 +279,31 @@ macro_rules! kind_pat {
 #[must_use]
 fn final_stack_check(
     procedure: &Procedure,
+    op: Option<&Op>,
     stack: &[PorthType],
     source_store: &SourceStorage,
 ) -> bool {
+    let op = op.unwrap_or_else(|| procedure.body().last().unwrap());
+
     let make_labels = || {
-        procedure
-            .body()
-            .last()
-            .map(|op| {
-                let mut labels = vec![Label::new(op.token.location)
-                    .with_color(Color::Red)
-                    .with_message("here")];
+        let mut labels = vec![Label::new(op.token.location)
+            .with_color(Color::Red)
+            .with_message("here")];
 
-                for source in op.expansions.iter() {
-                    labels.push(
-                        Label::new(*source)
-                            .with_color(Color::Blue)
-                            .with_message("expanded from here"),
-                    );
-                }
+        for source in op.expansions.iter() {
+            labels.push(
+                Label::new(*source)
+                    .with_color(Color::Blue)
+                    .with_message("expanded from here"),
+            );
+        }
 
-                labels
-            })
-            .unwrap_or_else(|| {
-                vec![Label::new(procedure.name().location)
-                    .with_color(Color::Red)
-                    .with_message("here")]
-            })
+        labels
     };
 
     if stack.len() != procedure.exit_stack().len() {
         diagnostics::emit(
-            procedure.name().location,
+            op.token.location,
             format!(
                 "expected {} elements on stack, found {}",
                 procedure.exit_stack().len(),
@@ -328,8 +321,8 @@ fn final_stack_check(
         failed_compare_stack_types(
             procedure.exit_stack(),
             stack,
-            procedure.name().location,
-            procedure.body().last().unwrap(),
+            op.token.location,
+            op,
             "procedure return stack mismatch",
             source_store,
         );
@@ -852,10 +845,9 @@ pub fn type_check(
             }
 
             OpCode::Epilogue | OpCode::Prologue => {}
-            OpCode::Return{implicit: false} => {
-                had_error |= final_stack_check(proc, &stack, source_store);
+            OpCode::Return => {
+                had_error |= final_stack_check(proc, Some(op), &stack, source_store);
             }
-            OpCode::Return{implicit: true} => {} // Added for every proc
 
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
@@ -881,7 +873,7 @@ pub fn type_check(
         }
     }
 
-    had_error |= final_stack_check(proc, &stack, source_store);
+    had_error |= final_stack_check(proc, None, &stack, source_store);
 
     had_error.not().then(|| ()).ok_or(())
 }

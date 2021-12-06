@@ -51,6 +51,7 @@ pub enum TokenKind {
     NotEqual,
     Plus,
     Proc,
+    Return,
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -104,6 +105,7 @@ impl TokenKind {
             | TokenKind::NotEqual
             | TokenKind::Plus
             | TokenKind::Proc
+            | TokenKind::Return
             | TokenKind::Rot
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
@@ -466,10 +468,10 @@ impl<'source> Scanner<'source> {
                     "or" => TokenKind::BitOr,
                     "over" => TokenKind::Dup(1),
                     "proc" => TokenKind::Proc,
+                    "return" => TokenKind::Return,
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
-                    "to" => TokenKind::GoesTo,
                     "swap" => TokenKind::Swap,
                     "syscall1" => TokenKind::SysCall(1),
                     "syscall2" => TokenKind::SysCall(2),
@@ -477,6 +479,7 @@ impl<'source> Scanner<'source> {
                     "syscall4" => TokenKind::SysCall(4),
                     "syscall5" => TokenKind::SysCall(5),
                     "syscall6" => TokenKind::SysCall(6),
+                    "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
                     "while" => TokenKind::While,
                     _ if is_all_num => {

@@ -686,10 +686,23 @@ pub(super) fn compile_single_instruction(
             }
         }
         OpCode::Epilogue => {
+            assembler.block_boundry();
+
+            assembler.push_instr([str_lit("  .LBL_EXIT:")]);
             let num_regs = FIXED_REGS.len().min(proc.exit_stack().len());
             for &reg in &FIXED_REGS[..num_regs] {
                 assembler.reg_alloc_fixed_pop(reg);
             }
+            assembler.swap_stacks();
+
+            let proc_data = proc.kind().get_proc_data();
+            if !proc_data.allocs.is_empty() {
+                assembler.push_instr([str_lit(format!(
+                    "    add rsp, {}",
+                    proc_data.total_alloc_size
+                ))]);
+            }
+            assembler.push_instr([str_lit("    ret")]);
         }
         OpCode::Prologue => {
             // Entry of the function, we need to push the values on the value stack
@@ -701,17 +714,9 @@ pub(super) fn compile_single_instruction(
                 assembler.reg_free_fixed_push(reg);
             }
         }
-        OpCode::Return { .. } => {
-            assembler.swap_stacks();
-
-            let proc_data = proc.kind().get_proc_data();
-            if !proc_data.allocs.is_empty() {
-                assembler.push_instr([str_lit(format!(
-                    "    add rsp, {}",
-                    proc_data.total_alloc_size
-                ))]);
-            }
-            assembler.push_instr([str_lit("    ret")]);
+        OpCode::Return => {
+            assembler.block_boundry();
+            assembler.push_instr([str_lit("    jmp .LBL_EXIT")]);
         }
 
         OpCode::SysCall(a @ 0..=6) => {

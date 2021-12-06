@@ -175,6 +175,7 @@ pub fn parse_procedure_body(
             TokenKind::CastInt => OpCode::CastInt,
             TokenKind::CastPtr => OpCode::CastPtr,
 
+            TokenKind::Return => OpCode::Return,
             TokenKind::SysCall(id) => OpCode::SysCall(id),
 
             // These are only used as part of a sub-block. If they're found anywhere else,
@@ -556,30 +557,11 @@ fn parse_procedure<'a>(
         );
 
         // Makes later logic a bit easier if we always have a return opcode.
-        // TODO: Make this less dumb
-        match body.last() {
-            Some(op) => {
-                if !matches!(op.code, OpCode::Return { .. }) {
-                    let token = op.token;
-                    let expansions = op.expansions.clone();
-                    body.push(Op {
-                        code: OpCode::Epilogue,
-                        token,
-                        expansions: expansions.clone(),
-                    });
-                    body.push(Op {
-                        code: OpCode::Return { implicit: true },
-                        token,
-                        expansions,
-                    });
-                }
-            }
-            None => body.push(Op {
-                code: OpCode::Return { implicit: true },
-                token: proc_header.name(),
-                expansions: Vec::new(),
-            }),
-        }
+        body.push(Op {
+            code: OpCode::Epilogue,
+            token: name_token,
+            expansions: Vec::new(),
+        });
     }
 
     *proc_header.body_mut() = body;

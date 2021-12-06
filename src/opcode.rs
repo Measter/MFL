@@ -89,9 +89,7 @@ pub enum OpCode {
         module: ModuleId,
         proc_id: ProcedureId,
     },
-    Return {
-        implicit: bool,
-    },
+    Return,
     Rot,
     ShiftLeft,
     ShiftRight,

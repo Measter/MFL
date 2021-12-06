@@ -486,7 +486,9 @@ pub fn analyze(
             OpCode::Prologue | OpCode::Epilogue => {
                 // TODO: These should do some handling
             }
-            OpCode::Return { implicit: true } => {}
+            OpCode::Return => {
+                // TODO: Final stack check here.
+            }
             _ => unimplemented!("{:?}", op.code),
         }
     }
