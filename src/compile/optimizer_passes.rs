@@ -21,6 +21,7 @@ pub(super) const PASSES: &[OptimizerFunction] = &[
     push_shift,
     push_arithmetic,
     mem_push_store,
+    mem_store,
     mem_load,
     compile_single_instruction,
 ];
@@ -323,6 +324,59 @@ fn mem_push_store(
             push_val
         ))]);
     }
+
+    Some(start.len())
+}
+
+// Optimize a Mem-Store sequence.
+fn mem_store(
+    program: &Program,
+    proc: &Procedure,
+    ops: &[Op],
+    ip: usize,
+    assembler: &mut Assembler,
+    interner: &mut Interners,
+) -> Option<usize> {
+    let (start, _) = ops.firstn()?;
+    let (mem, store) = match start {
+        [mem, store] if mem.code.is_memory() && store.code.is_store() => (mem, store),
+        _ => return None,
+    };
+
+    let (_, proc_id, offset, global) = mem.code.unwrap_memory();
+    let width = store.code.unwrap_store();
+    assembler.set_op_range(ip, ip + start.len());
+
+    let value_reg = assembler.reg_alloc_dyn_pop();
+
+    if global {
+        assembler.use_global_alloc(proc_id);
+        let mem_id = interner.get_symbol_name(program, proc_id);
+
+        assembler.push_instr([
+            str_lit(format!(
+                "    mov {} [__{} + {}], ",
+                width.to_asm(),
+                mem_id,
+                offset,
+            )),
+            dyn_reg(value_reg),
+        ]);
+    } else {
+        let proc_data = proc.kind().get_proc_data();
+        let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
+        assembler.push_instr([
+            str_lit(format!(
+                "    mov {} [rbp + {} + {}], ",
+                width.to_asm(),
+                base_offset,
+                offset,
+            )),
+            dyn_reg(value_reg),
+        ]);
+    }
+
+    assembler.reg_free_dyn_drop(value_reg);
 
     Some(start.len())
 }
