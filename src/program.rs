@@ -834,8 +834,8 @@ impl Program {
 
         eprintln!("    Generating jump labels...");
         self.generate_jump_labels(source_store)?;
-        eprintln!("    Analyzing data flow...");
-        self.analyze_data_flow(interner, source_store)?;
+        // eprintln!("    Analyzing data flow...");
+        // self.analyze_data_flow(interner, source_store)?;
         eprintln!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
         eprintln!("    Evaluating const bodies...");

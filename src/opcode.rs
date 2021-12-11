@@ -10,6 +10,7 @@ use crate::{
     lexer::{Token, TokenKind},
     program::{ModuleId, ProcedureId},
     source_file::{SourceLocation, SourceStorage},
+    type_check::PorthTypeKind,
     Width,
 };
 
@@ -67,7 +68,10 @@ pub enum OpCode {
     If,
     Less,
     LessEqual,
-    Load(Width),
+    Load {
+        width: Width,
+        kind: PorthTypeKind,
+    },
     Greater,
     GreaterEqual,
     Memory {
@@ -93,7 +97,10 @@ pub enum OpCode {
     Rot,
     ShiftLeft,
     ShiftRight,
-    Store(Width),
+    Store {
+        width: Width,
+        kind: PorthTypeKind,
+    },
     Subtract,
     Swap,
     SysCall(usize),
@@ -124,7 +131,7 @@ impl OpCode {
             | OpCode::NotEq
             | OpCode::ShiftLeft
             | OpCode::ShiftRight
-            | OpCode::Store(_)
+            | OpCode::Store { .. }
             | OpCode::Swap
             | OpCode::Subtract => 2,
 
@@ -136,7 +143,7 @@ impl OpCode {
             | OpCode::DoIf { .. }
             | OpCode::DoWhile { .. }
             | OpCode::Drop
-            | OpCode::Load(_) => 1,
+            | OpCode::Load { .. } => 1,
 
             OpCode::Dup { depth } => depth + 1,
 
@@ -196,7 +203,7 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Load(_)
+            | Load { .. }
             | Memory { .. }
             | Prologue
             | PushBool(_)
@@ -205,7 +212,7 @@ impl OpCode {
             | ResolvedIdent { .. }
             | Return { .. }
             | Rot
-            | Store(_)
+            | Store { .. }
             | Swap
             | SysCall(_)
             | UnresolvedIdent { .. }
@@ -242,7 +249,7 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Load(_)
+            | Load { .. }
             | Memory { .. }
             | Multiply
             | Prologue
@@ -254,7 +261,7 @@ impl OpCode {
             | Rot
             | ShiftLeft
             | ShiftRight
-            | Store(_)
+            | Store { .. }
             | Subtract
             | Swap
             | SysCall(_)
@@ -301,7 +308,7 @@ impl OpCode {
             | EndWhile { .. }
             | Epilogue
             | If
-            | Load(_)
+            | Load { .. }
             | Memory { .. }
             | Prologue
             | PushBool(_)
@@ -310,7 +317,7 @@ impl OpCode {
             | ResolvedIdent { .. }
             | Return { .. }
             | Rot
-            | Store(_)
+            | Store { .. }
             | Swap
             | SysCall(_)
             | UnresolvedIdent { .. }
@@ -336,6 +343,20 @@ impl OpCode {
         match self {
             OpCode::Dup { depth } => depth,
             _ => panic!("expected OpCode::Dup"),
+        }
+    }
+
+    pub fn unwrap_load(self) -> (Width, PorthTypeKind) {
+        match self {
+            OpCode::Load { width, kind } => (width, kind),
+            _ => panic!("expected Opcode::Load"),
+        }
+    }
+
+    pub fn unwrap_store(self) -> (Width, PorthTypeKind) {
+        match self {
+            OpCode::Store { width, kind } => (width, kind),
+            _ => panic!("expected Opcode::Store"),
         }
     }
 }

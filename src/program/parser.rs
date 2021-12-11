@@ -9,6 +9,7 @@ use crate::{
     opcode::{Op, OpCode},
     source_file::SourceStorage,
     type_check::{PorthType, PorthTypeKind},
+    Width,
 };
 
 use super::{FunctionData, ModuleId, ProcedureId, ProcedureKind, Program};
@@ -70,8 +71,22 @@ pub fn parse_procedure_body(
             TokenKind::Rot => OpCode::Rot,
             TokenKind::Swap => OpCode::Swap,
 
-            TokenKind::Load(width) => OpCode::Load(width),
-            TokenKind::Store(width) => OpCode::Store(width),
+            TokenKind::Load(width) => OpCode::Load {
+                width,
+                kind: PorthTypeKind::Int,
+            },
+            TokenKind::LoadPtr => OpCode::Load {
+                width: Width::Qword,
+                kind: PorthTypeKind::Ptr,
+            },
+            TokenKind::Store(width) => OpCode::Store {
+                width,
+                kind: PorthTypeKind::Int,
+            },
+            TokenKind::StorePtr => OpCode::Store {
+                width: Width::Qword,
+                kind: PorthTypeKind::Ptr,
+            },
 
             TokenKind::Equal => OpCode::Equal,
             TokenKind::Greater => OpCode::Greater,

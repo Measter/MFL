@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::{self, Write},
-    ops::Not,
-};
+use std::{collections::HashMap, fmt::Write, ops::Not};
 
 use ariadne::{Color, Label};
 use lasso::Spur;
@@ -16,6 +12,7 @@ use crate::{
     opcode::{Op, OpCode},
     program::{Procedure, Program},
     source_file::{SourceLocation, SourceStorage},
+    type_check::PorthTypeKind,
 };
 
 use super::ProcedureId;
@@ -35,25 +32,6 @@ pub enum ConstVal {
         source_op_location: SourceLocation,
         offset: u64,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PorthTypeKind {
-    Int,
-    Ptr,
-    Bool,
-    Unknown,
-}
-
-impl fmt::Display for PorthTypeKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PorthTypeKind::Int => "Int".fmt(f),
-            PorthTypeKind::Ptr => "Ptr".fmt(f),
-            PorthTypeKind::Bool => "Bool".fmt(f),
-            PorthTypeKind::Unknown => "Unknown".fmt(f),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -420,7 +398,7 @@ pub fn analyze(
                 }
             },
 
-            OpCode::Load(width) => match stack.pop() {
+            OpCode::Load { width, kind } => match stack.pop() {
                 None => {
                     generate_stack_exhaustion_diag(source_store, op, 0, 1);
                     had_error = true;
@@ -478,7 +456,7 @@ pub fn analyze(
                         }
                     };
 
-                    let (new_id, _) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
+                    let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
                     stack.push(new_id);
                 }
             },

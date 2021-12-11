@@ -743,7 +743,7 @@ pub fn type_check(
                 }
             },
 
-            OpCode::Load(_) => {
+            OpCode::Load{ kind, .. } => {
                 stack_check!(
                     source_store,
                     had_error,
@@ -752,21 +752,26 @@ pub fn type_check(
                     op,
                     kind_pat!([PorthTypeKind::Ptr])
                 );
-                stack.push(PorthType::new(PorthTypeKind::Int, op.token.location));
+                stack.push(PorthType::new(kind, op.token.location));
             }
-            OpCode::Store(_) => {
-                stack_check!(
+            OpCode::Store{ kind, .. } => {
+                let res = stack_check!(
                     source_store,
                     had_error,
                     stack,
                     interner,
                     op,
-                    kind_pat!(
-                        [PorthTypeKind::Int, PorthTypeKind::Ptr]
-                            | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
-                            | [PorthTypeKind::Bool, PorthTypeKind::Ptr]
-                    )
+                    kind_pat!([_, PorthTypeKind::Ptr])
                 );
+
+                match res {
+                    Some([store_kind, _]) if store_kind.kind != kind && store_kind.kind != PorthTypeKind::Unknown => {
+                        had_error = true;
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch(source_store, lexeme, op, &[store_kind]);
+                    }
+                    _ => {}
+                }
             }
 
             OpCode::ArgC => stack.push(PorthType::new(PorthTypeKind::Int, op.token.location)),

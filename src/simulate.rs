@@ -195,9 +195,9 @@ pub(crate) fn simulate_execute_program(
             OpCode::ArgC
             | OpCode::ArgV
             | OpCode::CallProc { .. }
-            | OpCode::Load(_)
+            | OpCode::Load { .. }
             | OpCode::Memory { .. }
-            | OpCode::Store(_)
+            | OpCode::Store { .. }
             | OpCode::SysCall(_) => {
                 generate_error(
                     "operation not supported during const evaluation",

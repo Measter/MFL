@@ -45,6 +45,7 @@ pub enum TokenKind {
     Less,
     LessEqual,
     Load(Width),
+    LoadPtr,
     Macro,
     Memory,
     Minus,
@@ -60,6 +61,7 @@ pub enum TokenKind {
     Star,
     String { id: Spur, is_c_str: bool },
     Store(Width),
+    StorePtr,
     Swap,
     SysCall(usize),
     While,
@@ -99,6 +101,7 @@ impl TokenKind {
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load(_)
+            | TokenKind::LoadPtr
             | TokenKind::Macro
             | TokenKind::Memory
             | TokenKind::Minus
@@ -114,6 +117,7 @@ impl TokenKind {
             | TokenKind::Star
             | TokenKind::String { .. }
             | TokenKind::Store(_)
+            | TokenKind::StorePtr
             | TokenKind::Swap
             | TokenKind::SysCall(_) => false,
 
@@ -424,10 +428,12 @@ impl<'source> Scanner<'source> {
                     "@16" => TokenKind::Load(Width::Word),
                     "@32" => TokenKind::Load(Width::Dword),
                     "@64" => TokenKind::Load(Width::Qword),
+                    "@ptr" => TokenKind::LoadPtr,
                     "!8" => TokenKind::Store(Width::Byte),
                     "!16" => TokenKind::Store(Width::Word),
                     "!32" => TokenKind::Store(Width::Dword),
                     "!64" => TokenKind::Store(Width::Qword),
+                    "!ptr" => TokenKind::StorePtr,
                     "and" => TokenKind::BitAnd,
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,

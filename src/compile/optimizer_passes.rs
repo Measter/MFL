@@ -299,7 +299,7 @@ fn mem_push_store(
 
     let (_, proc_id, offset, global) = mem.code.unwrap_memory();
     let push_val = push.code.unwrap_push_int();
-    let width = store.code.unwrap_store();
+    let (width, ..) = store.code.unwrap_store();
     assembler.set_op_range(ip, ip + start.len());
 
     if global {
@@ -344,7 +344,7 @@ fn mem_store(
     };
 
     let (_, proc_id, offset, global) = mem.code.unwrap_memory();
-    let width = store.code.unwrap_store();
+    let (width, _) = store.code.unwrap_store();
     assembler.set_op_range(ip, ip + start.len());
 
     let value_reg = assembler.reg_alloc_dyn_pop();
@@ -397,7 +397,7 @@ fn mem_load(
     };
 
     let (_, proc_id, mem_offset, global) = mem.code.unwrap_memory();
-    let width = load.code.unwrap_load();
+    let (width, _) = load.code.unwrap_load();
     assembler.set_op_range(ip, ip + start.len());
 
     let reg = if width != Width::Qword {
@@ -646,7 +646,7 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(b_id);
         }
 
-        OpCode::Load(width) => {
+        OpCode::Load { width, .. } => {
             let addr_reg = assembler.reg_alloc_dyn_pop();
             let val_reg = if width == Width::Qword {
                 assembler.reg_alloc_dyn_nop()
@@ -665,7 +665,7 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(addr_reg);
             assembler.reg_free_dyn_push(val_reg);
         }
-        OpCode::Store(width) => {
+        OpCode::Store { width, .. } => {
             let addr_reg = assembler.reg_alloc_dyn_pop();
             let val_reg = assembler.reg_alloc_dyn_pop();
             assembler.push_instr([
