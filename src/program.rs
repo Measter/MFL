@@ -327,6 +327,7 @@ impl Program {
                             let module = &self.modules[&proc.module];
                             let token_lexeme = interner.resolve_lexeme(token.lexeme);
                             let module_lexeme = interner.resolve_lexeme(module.name);
+                            had_error = true;
                             diagnostics::emit(
                                 token.location,
                                 format!(
