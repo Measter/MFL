@@ -360,7 +360,7 @@ fn mem_store(
                 mem_id,
                 offset,
             )),
-            dyn_reg(value_reg),
+            dyn_sized_reg(value_reg, width),
         ]);
     } else {
         let proc_data = proc.kind().get_proc_data();
@@ -372,7 +372,7 @@ fn mem_store(
                 base_offset,
                 offset,
             )),
-            dyn_reg(value_reg),
+            dyn_sized_reg(value_reg, width),
         ]);
     }
 
