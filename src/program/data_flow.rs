@@ -8,14 +8,24 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::Token,
-    n_ops::{NOps, PopN},
     opcode::{Op, OpCode},
-    program::{Procedure, Program},
+    program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
     type_check::PorthTypeKind,
 };
 
-use super::ProcedureId;
+#[macro_export]
+macro_rules! type_pattern {
+    ($( $const_name:tt @ $p:pat_param ),+) => {
+        [
+            $( Value { porth_type: $p, const_val: $const_name, .. } ),+
+        ]
+    };
+}
+
+mod arithmetic;
+mod memory;
+mod stack_ops;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum PtrId {
@@ -44,7 +54,6 @@ struct Value {
     creator_token: Token,
     porth_type: PorthTypeKind,
     const_val: Option<ConstVal>,
-    users: Vec<usize>,
     consumer: Option<usize>,
 }
 
@@ -71,7 +80,6 @@ impl Analyzer {
                 creator_token,
                 porth_type,
                 const_val: None,
-                users: Vec::new(),
                 consumer: None,
             }),
         )
@@ -149,14 +157,6 @@ fn generate_stack_exhaustion_diag(
     diagnostics::emit(op.token.location, message, labels, None, source_store);
 }
 
-macro_rules! type_pattern {
-    ($( $const_name:tt @ $p:pat_param ),+) => {
-        [
-            $( Value { porth_type: $p, const_val: $const_name, .. } ),+
-        ]
-    };
-}
-
 pub fn analyze(
     program: &Program,
     proc: &Procedure,
@@ -169,297 +169,65 @@ pub fn analyze(
 
     for (op_idx, op) in proc.body().iter().enumerate() {
         match op.code {
-            OpCode::Add => {
-                for value_id in stack.lastn(2).unwrap_or(&stack) {
-                    let value = analyzer.values.get_mut(value_id).unwrap();
-                    value.users.push(op_idx);
-                    value.consumer = Some(op_idx);
-                }
+            OpCode::Add => arithmetic::add(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+                interner,
+            ),
+            OpCode::Subtract => arithmetic::subtract(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+                interner,
+            ),
 
-                let (new_type, const_val) = match stack.popn::<2>() {
-                    None => {
-                        generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
-                        had_error = true;
+            OpCode::PushBool(v) => stack_ops::push_bool(&mut analyzer, op_idx, op, v, &mut stack),
+            OpCode::PushInt(v) => stack_ops::push_int(&mut analyzer, op_idx, op, v, &mut stack),
+            OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
+                is_c_str,
+                &mut analyzer,
+                op_idx,
+                op,
+                interner,
+                id,
+                &mut stack,
+            ),
 
-                        (PorthTypeKind::Unknown, None)
-                    }
-                    Some(vals) => {
-                        let new_tv = match analyzer.get_values(vals) {
-                            type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
-                                (PorthTypeKind::Int, (*a).zip(*b))
-                            }
+            OpCode::Drop => stack_ops::drop(
+                &mut stack,
+                source_store,
+                op,
+                &mut had_error,
+                &mut analyzer,
+                op_idx,
+            ),
+            OpCode::Swap => stack_ops::swap(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+            ),
 
-                            type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Int)
-                            | type_pattern!(b @ PorthTypeKind::Int, a @ PorthTypeKind::Ptr) => {
-                                (PorthTypeKind::Ptr, (*a).zip(*b))
-                            }
-                            vals => {
-                                // Type mismatch
-                                had_error = true;
-                                // Don't emit an diagnostic here if any are Unknown, as it's a result of
-                                // an earlier error.
-                                if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
-                                    let lexeme = interner.resolve_lexeme(op.token.lexeme);
-                                    generate_type_mismatch_diag(source_store, lexeme, op, &vals);
-                                }
-                                (PorthTypeKind::Unknown, None)
-                            }
-                        };
-
-                        new_tv
-                    }
-                };
-
-                let const_val = const_val.map(|mut cv| {
-                    match &mut cv {
-                        (ConstVal::Int(a), ConstVal::Int(b)) => *a += *b,
-                        (ConstVal::Ptr { offset, .. }, ConstVal::Int(v)) => *offset += *v,
-                        _ => unreachable!(),
-                    }
-                    cv.0
-                });
-
-                let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
-                new_value.const_val = const_val;
-                stack.push(new_id);
-            }
-            OpCode::Subtract => {
-                for value_id in stack.lastn(2).unwrap_or(&stack) {
-                    let value = analyzer.values.get_mut(value_id).unwrap();
-                    value.users.push(op_idx);
-                    value.consumer = Some(op_idx);
-                }
-
-                let (new_type, const_val) = match stack.popn::<2>() {
-                    None => {
-                        generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
-                        had_error = true;
-
-                        (PorthTypeKind::Unknown, None)
-                    }
-                    Some(vals) => {
-                        let new_tv = match analyzer.get_values(vals) {
-                            type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
-                                (PorthTypeKind::Int, (*a).zip(*b))
-                            }
-                            type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Ptr) => {
-                                (PorthTypeKind::Int, (*a).zip(*b))
-                            }
-                            type_pattern!(b @ PorthTypeKind::Ptr, a @ PorthTypeKind::Int) => {
-                                (PorthTypeKind::Ptr, (*a).zip(*b))
-                            }
-                            vals => {
-                                // Type mismatch
-                                had_error = true;
-                                // Don't emit an diagnostic here if any are Unknown, as it's a result of
-                                // an earlier error.
-                                if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
-                                    let lexeme = interner.resolve_lexeme(op.token.lexeme);
-                                    generate_type_mismatch_diag(source_store, lexeme, op, &vals);
-                                }
-                                (PorthTypeKind::Unknown, None)
-                            }
-                        };
-                        new_tv
-                    }
-                };
-
-                let const_val = const_val.map(|mut cv| {
-                    match &mut cv {
-                        (ConstVal::Int(a), ConstVal::Int(b)) => *a -= *b,
-                        (
-                            ConstVal::Ptr {
-                                id,
-                                source_op_location,
-                                offset,
-                                ..
-                            },
-                            ConstVal::Ptr {
-                                id: id2,
-                                source_op_location: source_op_location2,
-                                offset: offset2,
-                                ..
-                            },
-                        ) => {
-                            if id != id2 {
-                                diagnostics::emit(
-                                    op.token.location,
-                                    "subtracting pointers of different sources",
-                                    [
-                                        Label::new(op.token.location)
-                                            .with_color(Color::Red)
-                                            .with_message("here"),
-                                        Label::new(*source_op_location)
-                                            .with_color(Color::Cyan)
-                                            .with_message("...from this")
-                                            .with_order(2),
-                                        Label::new(*source_op_location2)
-                                            .with_color(Color::Cyan)
-                                            .with_message("subtracting this...")
-                                            .with_order(1),
-                                    ],
-                                    None,
-                                    source_store,
-                                );
-                                had_error = true;
-                            } else if offset2 > offset {
-                                diagnostics::emit(
-                                    op.token.location,
-                                    "subtracting out of bounds",
-                                    [
-                                        Label::new(op.token.location)
-                                            .with_color(Color::Red)
-                                            .with_message("here"),
-                                        Label::new(*source_op_location)
-                                            .with_color(Color::Cyan)
-                                            .with_message(format!("...from this offset {}", offset))
-                                            .with_order(2),
-                                        Label::new(*source_op_location2)
-                                            .with_color(Color::Cyan)
-                                            .with_message(format!(
-                                                "subtracting offset {}...",
-                                                offset2
-                                            ))
-                                            .with_order(1),
-                                    ],
-                                    None,
-                                    source_store,
-                                );
-                                had_error = true;
-                            }
-                        }
-                        (ConstVal::Ptr { offset, .. }, ConstVal::Int(v)) => *offset -= *v,
-                        _ => unreachable!(),
-                    }
-                    cv.0
-                });
-
-                let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
-                new_value.const_val = const_val;
-                stack.push(new_id);
-            }
-
-            OpCode::PushBool(v) => {
-                let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Bool, op_idx, op.token);
-                new_value.const_val = Some(ConstVal::Bool(v));
-                stack.push(new_id);
-            }
-            OpCode::PushInt(v) => {
-                let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
-                new_value.const_val = Some(ConstVal::Int(v));
-                stack.push(new_id);
-            }
-            OpCode::PushStr { is_c_str, id } => {
-                if !is_c_str {
-                    let (new_id, new_value) =
-                        analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
-                    let string = interner.resolve_literal(id);
-                    new_value.const_val = Some(ConstVal::Int((string.len() - 1) as u64));
-                    stack.push(new_id);
-                }
-
-                let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
-                new_value.const_val = Some(ConstVal::Ptr {
-                    id: PtrId::Str(id),
-                    source_op_location: op.token.location,
-                    offset: 0,
-                });
-                stack.push(new_id);
-            }
-            OpCode::Drop => match stack.pop() {
-                None => {
-                    generate_stack_exhaustion_diag(source_store, op, 0, 1);
-                    had_error = true;
-                }
-                Some(val_id) => {
-                    let value = analyzer.values.get_mut(&val_id).unwrap();
-                    value.consumer = Some(op_idx);
-                    value.users.push(op_idx);
-                }
-            },
-
-            OpCode::Swap => match stack.as_mut_slice() {
-                [.., a, b] => {
-                    analyzer.values.get_mut(a).unwrap().users.push(op_idx);
-                    analyzer.values.get_mut(b).unwrap().users.push(op_idx);
-                    std::mem::swap(a, b);
-                }
-                _ => {
-                    generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
-                    had_error = true;
-                    for vid in &stack {
-                        analyzer.values.get_mut(vid).unwrap().users.push(op_idx);
-                    }
-                    stack.resize_with(2, || {
-                        analyzer
-                            .new_value(PorthTypeKind::Unknown, op_idx, op.token)
-                            .0
-                    });
-                }
-            },
-
-            OpCode::Load { width, kind } => match stack.pop() {
-                None => {
-                    generate_stack_exhaustion_diag(source_store, op, 0, 1);
-                    had_error = true;
-                    let (new_id, _) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
-                    stack.push(new_id);
-                }
-                Some(val_id) => {
-                    match analyzer.values.get(&val_id).unwrap() {
-                        Value {
-                            porth_type: PorthTypeKind::Ptr,
-                            const_val,
-                            ..
-                        } => {
-                            // Look at handling memory at some point?
-                            if let Some(ConstVal::Ptr {
-                                id: PtrId::Str(spur),
-                                source_op_location,
-                                offset,
-                            }) = *const_val
-                            {
-                                let string = interner.resolve_literal(spur);
-                                let end_idx = offset + width.byte_size();
-                                if end_idx > string.len() as u64 - 1 {
-                                    diagnostics::emit(
-                                        op.token.location,
-                                        "index out of bounds",
-                                        [
-                                            Label::new(op.token.location)
-                                                .with_color(Color::Red)
-                                                .with_message(format!("index: {}", offset,)),
-                                            Label::new(source_op_location)
-                                                .with_color(Color::Cyan)
-                                                .with_message(format!(
-                                                    "length: {}",
-                                                    string.len() - 1
-                                                ))
-                                                .with_order(1),
-                                        ],
-                                        None,
-                                        source_store,
-                                    );
-
-                                    had_error = true;
-                                }
-                            }
-                        }
-                        val => {
-                            // Type mismatch
-                            had_error = true;
-                            // Unknown is the result of a previous error.
-                            if val.porth_type != PorthTypeKind::Unknown {
-                                let lexeme = interner.resolve_lexeme(op.token.lexeme);
-                                generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
-                            }
-                        }
-                    };
-
-                    let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
-                    stack.push(new_id);
-                }
-            },
+            OpCode::Load { width, kind } => memory::load(
+                &mut stack,
+                source_store,
+                op,
+                &mut had_error,
+                &mut analyzer,
+                op_idx,
+                interner,
+                width,
+                kind,
+            ),
 
             OpCode::Prologue | OpCode::Epilogue => {
                 // TODO: These should do some handling
