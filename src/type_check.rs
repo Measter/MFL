@@ -93,7 +93,7 @@ fn generate_type_mismatch(
         )
     }
 
-    diagnostics::emit(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 
 fn generate_stack_exhaustion(
@@ -116,7 +116,7 @@ fn generate_stack_exhaustion(
         );
     }
 
-    diagnostics::emit(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 
 fn generate_block_depth_mismatch(
@@ -127,7 +127,7 @@ fn generate_block_depth_mismatch(
     actual: usize,
     msg: &str,
 ) {
-    diagnostics::emit(
+    diagnostics::emit_error(
         open_loc,
         msg,
         [
@@ -180,7 +180,7 @@ fn failed_compare_stack_types(
         .unwrap();
     }
 
-    diagnostics::emit(
+    diagnostics::emit_error(
         open_block_loc,
         msg,
         [
@@ -302,7 +302,7 @@ fn final_stack_check(
     };
 
     if stack.len() != procedure.exit_stack().len() {
-        diagnostics::emit(
+        diagnostics::emit_error(
             op.token.location,
             format!(
                 "expected {} elements on stack, found {}",

@@ -270,7 +270,7 @@ impl OpCode {
         }
     }
 
-    fn get_binary_op(self) -> fn(u64, u64) -> u64 {
+    pub fn get_binary_op(self) -> fn(u64, u64) -> u64 {
         use OpCode::*;
         match self {
             Add => |a, b| a + b,
@@ -422,7 +422,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                         ..
                     }) => if_idx,
                     _ => {
-                        diagnostics::emit(
+                        diagnostics::emit_error(
                             op.token.location,
                             "`elif` requires a preceding `if-do`",
                             Some(Label::new(op.token.location).with_color(Color::Red)),
@@ -447,7 +447,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                     OpCode::DoWhile { .. } => {
                         let while_token = &ops[if_idx].token;
 
-                        diagnostics::emit(
+                        diagnostics::emit_error(
                             location,
                             "`elif` can only be used with `if` blocks",
                             [
@@ -476,7 +476,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                         ..
                     }) => if_idx,
                     _ => {
-                        diagnostics::emit(
+                        diagnostics::emit_error(
                             op.token.location,
                             "`else` requires a preceding `if-do`",
                             Some(Label::new(op.token.location).with_color(Color::Red)),
@@ -512,7 +512,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                         ..
                     }) => ip,
                     _ => {
-                        diagnostics::emit(
+                        diagnostics::emit_error(
                             op.token.location,
                             "`do` requires a preceding `if`, `elif` or `while`",
                             Some(Label::new(op.token.location)),
@@ -553,7 +553,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                         ..
                     }) => ip,
                     _ => {
-                        diagnostics::emit(
+                        diagnostics::emit_error(
                             op.token.location,
                             "`end` requires a preceding `if-do`, `else`, or `while-do`",
                             Some(Label::new(op.token.location).with_color(Color::Red)),
@@ -598,7 +598,7 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
     }
 
     while let Some(JumpIpStack { location, .. }) = jump_ip_stack.pop() {
-        diagnostics::emit(
+        diagnostics::emit_error(
             location,
             "unclosed `if`, `else`, or `while-do` block",
             Some(Label::new(location).with_color(Color::Red)),

@@ -85,7 +85,7 @@ fn load_program(
     let entry_proc = program.get_proc(entry_function_id);
     if !matches!(entry_proc.kind(), ProcedureKind::Function(_)) {
         let name = entry_proc.name();
-        diagnostics::emit(
+        diagnostics::emit_error(
             name.location,
             "`entry` must be a function",
             Some(
@@ -101,7 +101,7 @@ fn load_program(
 
     if !entry_proc.entry_stack().is_empty() || !entry_proc.exit_stack().is_empty() {
         let name = entry_proc.name();
-        diagnostics::emit(
+        diagnostics::emit_error(
             name.location,
             "`entry` must have the signature `[] to []`",
             Some(

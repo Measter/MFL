@@ -131,7 +131,7 @@ fn generate_type_mismatch_diag(
         )
     }
 
-    diagnostics::emit(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 
 fn generate_stack_exhaustion_diag(
@@ -154,7 +154,7 @@ fn generate_stack_exhaustion_diag(
         );
     }
 
-    diagnostics::emit(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 
 pub fn analyze(

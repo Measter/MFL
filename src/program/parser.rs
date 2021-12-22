@@ -25,7 +25,7 @@ fn expect_token<'a>(
     match tokens.next() {
         Some((idx, ident)) if expected(ident.kind) => Ok((idx, *ident)),
         Some((_, ident)) => {
-            diagnostics::emit(
+            diagnostics::emit_error(
                 ident.location,
                 format!(
                     "expected `{}`, found `{}`",
@@ -39,7 +39,7 @@ fn expect_token<'a>(
             Err(())
         }
         None => {
-            diagnostics::emit(
+            diagnostics::emit_error(
                 prev.location,
                 "unexpected end of file",
                 Some(Label::new(prev.location).with_color(Color::Red)),
@@ -149,7 +149,7 @@ pub fn parse_procedure_body(
                 continue;
             }
             TokenKind::Include | TokenKind::Macro | TokenKind::Proc => {
-                diagnostics::emit(
+                diagnostics::emit_error(
                     token.location,
                     format!("cannot use `{:?}` inside a procedure", token.kind),
                     Some(
@@ -200,7 +200,7 @@ pub fn parse_procedure_body(
             | TokenKind::Is
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
-                diagnostics::emit(
+                diagnostics::emit_error(
                     token.location,
                     format!(
                         "unexpected token `{}` in input",
@@ -253,7 +253,7 @@ fn get_procedure_body<'a>(
         };
 
         if is_nested_err {
-            diagnostics::emit(
+            diagnostics::emit_error(
                 token.location,
                 format!("cannot use {:?} inside a {:?}", token.kind, keyword.kind),
                 Some(Label::new(token.location).with_color(Color::Red)),
@@ -314,7 +314,7 @@ fn parse_type_signature<'a>(
             "ptr" => PorthTypeKind::Ptr,
             "bool" => PorthTypeKind::Bool,
             _ => {
-                diagnostics::emit(
+                diagnostics::emit_error(
                     token.location,
                     format!("unknown type {}", lexeme),
                     Some(Label::new(token.location).with_color(Color::Red)),
@@ -592,7 +592,7 @@ fn parse_procedure<'a>(
     {
         let prev_proc = program.get_proc(prev_def).name();
 
-        diagnostics::emit(
+        diagnostics::emit_error(
             name_token.location,
             "multiple definitions of symbol",
             [
@@ -680,7 +680,7 @@ pub(super) fn parse_module(
             }
 
             _ => {
-                diagnostics::emit(
+                diagnostics::emit_error(
                     token.location,
                     format!("top-level can only declared `const`, `include`, `macro` `memory` or `proc`, found `{:?}`", token.kind),
                     Some(Label::new(token.location).with_color(Color::Red).with_message("here")),

@@ -2,7 +2,7 @@ use ariadne::{Color, Label, Report, ReportKind};
 
 use crate::source_file::{SourceLocation, SourceStorage};
 
-pub fn emit<Labels>(
+pub fn emit_error<Labels>(
     loc: SourceLocation,
     msg: impl ToString,
     labels: Labels,
@@ -26,7 +26,7 @@ pub fn emit<Labels>(
 }
 
 pub fn end_of_file(loc: SourceLocation, sources: &SourceStorage) {
-    emit(
+    emit_error(
         loc,
         "unexpected end of file",
         Some(Label::new(loc).with_color(Color::Red)),

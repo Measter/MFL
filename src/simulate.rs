@@ -26,7 +26,7 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
         );
     }
 
-    diagnostics::emit(op.token.location, msg, labels, None, source_store);
+    diagnostics::emit_error(op.token.location, msg, labels, None, source_store);
 }
 
 pub(crate) fn simulate_execute_program(

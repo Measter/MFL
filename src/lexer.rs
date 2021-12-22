@@ -254,7 +254,7 @@ impl<'source> Scanner<'source> {
                 self.line,
                 self.cur_token_column,
             );
-            diagnostics::emit(
+            diagnostics::emit_error(
                 loc,
                 format!("unclosed {} literal", kind),
                 Some(Label::new(loc).with_color(Color::Red)),
@@ -374,7 +374,7 @@ impl<'source> Scanner<'source> {
                         self.line,
                         self.cur_token_column,
                     );
-                    diagnostics::emit(
+                    diagnostics::emit_error(
                         loc,
                         "invalid char literal",
                         Some(Label::new(loc).with_color(Color::Red)),

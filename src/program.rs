@@ -239,7 +239,7 @@ impl Program {
             let full_path = match search_includes(library_paths, &filename) {
                 Some(path) => path,
                 None => {
-                    diagnostics::emit(
+                    diagnostics::emit_error(
                         token.location,
                         "unable to find module",
                         Some(
@@ -268,7 +268,7 @@ impl Program {
             ) {
                 Ok(module) => module,
                 Err(e) => {
-                    diagnostics::emit(
+                    diagnostics::emit_error(
                         token.location,
                         "error loading module",
                         Some(
@@ -328,7 +328,7 @@ impl Program {
                             let token_lexeme = interner.resolve_lexeme(token.lexeme);
                             let module_lexeme = interner.resolve_lexeme(module.name);
                             had_error = true;
-                            diagnostics::emit(
+                            diagnostics::emit_error(
                                 token.location,
                                 format!(
                                     "symbol `{}` not found in module `{}`",
@@ -353,7 +353,7 @@ impl Program {
                             Some(id) => *id,
                             None => {
                                 let module_name = interner.resolve_lexeme(token.lexeme);
-                                diagnostics::emit(
+                                diagnostics::emit_error(
                                     token.location,
                                     format!("module `{}` not found", module_name),
                                     Some(
@@ -380,7 +380,7 @@ impl Program {
                             None => {
                                 let proc_name = interner.resolve_lexeme(sub_token.lexeme);
                                 let module_name = interner.resolve_lexeme(token.lexeme);
-                                diagnostics::emit(
+                                diagnostics::emit_error(
                                     sub_token.location,
                                     format!(
                                         "symbol `{}` not found in module `{}`",
@@ -458,7 +458,7 @@ impl Program {
 
                         if proc_id == own_proc_id {
                             had_error = true;
-                            diagnostics::emit(
+                            diagnostics::emit_error(
                                 proc.name.location,
                                 format!("cyclic {} detected", kind),
                                 [
@@ -678,7 +678,7 @@ impl Program {
 
                             ProcedureKind::Assert => {
                                 had_error = true;
-                                diagnostics::emit(
+                                diagnostics::emit_error(
                                     op.token.location,
                                     "asserts cannot be used in operations",
                                     Some(
@@ -786,7 +786,7 @@ impl Program {
             };
 
             if !assert_result {
-                diagnostics::emit(
+                diagnostics::emit_error(
                     proc.name.location,
                     "assert failure",
                     Some(
@@ -834,8 +834,8 @@ impl Program {
 
         eprintln!("    Generating jump labels...");
         self.generate_jump_labels(source_store)?;
-        // eprintln!("    Analyzing data flow...");
-        // self.analyze_data_flow(interner, source_store)?;
+        eprintln!("    Analyzing data flow...");
+        self.analyze_data_flow(interner, source_store)?;
         eprintln!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
         eprintln!("    Evaluating const bodies...");
