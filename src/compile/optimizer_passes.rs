@@ -740,21 +740,19 @@ pub(super) fn compile_single_instruction(
             }
         }
         OpCode::Epilogue => {
-            assembler.block_boundry();
-
-            assembler.push_instr([str_lit("  .LBL_EXIT:")]);
             let num_regs = FIXED_REGS.len().min(proc.exit_stack().len());
             for &reg in &FIXED_REGS[..num_regs] {
                 assembler.reg_alloc_fixed_pop(reg);
             }
             assembler.swap_stacks();
+            assembler.block_boundry();
 
             let proc_data = proc.kind().get_proc_data();
             if !proc_data.allocs.is_empty() {
-                assembler.push_instr([str_lit(format!(
-                    "    add rsp, {}",
-                    proc_data.total_alloc_size
-                ))]);
+                assembler.push_instr([
+                    str_lit("  .LBL_EXIT:"),
+                    str_lit(format!("    add rsp, {}", proc_data.total_alloc_size)),
+                ]);
             }
             assembler.push_instr([str_lit("    ret")]);
         }
@@ -769,6 +767,10 @@ pub(super) fn compile_single_instruction(
             }
         }
         OpCode::Return => {
+            let num_regs = FIXED_REGS.len().min(proc.exit_stack().len());
+            for &reg in &FIXED_REGS[..num_regs] {
+                assembler.reg_alloc_fixed_pop(reg);
+            }
             assembler.block_boundry();
             assembler.push_instr([str_lit("    jmp .LBL_EXIT")]);
         }
