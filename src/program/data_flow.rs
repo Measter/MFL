@@ -24,6 +24,7 @@ macro_rules! type_pattern {
 }
 
 mod arithmetic;
+mod comparative;
 mod memory;
 mod stack_ops;
 
@@ -87,6 +88,10 @@ impl Analyzer {
 
     fn get_values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
         ids.map(|id| &self.values[&id])
+    }
+
+    fn value_mut(&mut self, id: ValueId) -> &mut Value {
+        self.values.get_mut(&id).unwrap()
     }
 }
 
@@ -188,6 +193,16 @@ pub fn analyze(
                 interner,
             ),
 
+            OpCode::Equal | OpCode::NotEq => comparative::equal(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+                interner,
+            ),
+
             OpCode::PushBool(v) => stack_ops::push_bool(&mut analyzer, op_idx, op, v, &mut stack),
             OpCode::PushInt(v) => stack_ops::push_int(&mut analyzer, op_idx, op, v, &mut stack),
             OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
@@ -207,6 +222,23 @@ pub fn analyze(
                 &mut had_error,
                 &mut analyzer,
                 op_idx,
+            ),
+            OpCode::Dup { depth } => stack_ops::dup(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+                depth,
+            ),
+            OpCode::DupPair => stack_ops::dup_pair(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
             ),
             OpCode::Swap => stack_ops::swap(
                 &mut stack,
