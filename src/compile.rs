@@ -904,6 +904,7 @@ fn assemble_entry(
     assembler.swap_stacks();
     assembler.block_boundry();
     assembler.push_instr([str_lit(format!("    call {}", proc_name))]);
+    assembler.block_boundry();
     assembler.swap_stacks();
     assembler.use_function(entry_function);
 
