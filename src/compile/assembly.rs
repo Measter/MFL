@@ -29,6 +29,7 @@ pub enum X86Register {
     Rdx,
     Rdi,
     Rsi,
+    Rbp,
 }
 
 impl X86Register {
@@ -103,6 +104,9 @@ impl X86Register {
             (X86Register::Rsi, Width::Word) => "si",
             (X86Register::Rsi, Width::Dword) => "esi",
             (X86Register::Rsi, Width::Qword) => "rsi",
+
+            // These don't change their size
+            (X86Register::Rbp, _) => "rbp",
         }
     }
 }

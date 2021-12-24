@@ -316,13 +316,16 @@ fn mem_push_store(
     } else {
         let proc_data = proc.kind().get_proc_data();
         let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
-        assembler.push_instr([str_lit(format!(
-            "    mov {} [rbp + {} + {}], {}",
-            width.to_asm(),
-            base_offset,
-            offset,
-            push_val
-        ))]);
+        assembler.push_instr([
+            str_lit(format!(
+                "    mov {} [rbp + {} + {}], {}",
+                width.to_asm(),
+                base_offset,
+                offset,
+                push_val
+            )),
+            use_reg(RegisterType::Fixed(X86Register::Rbp)),
+        ]);
     }
 
     Some(start.len())
@@ -373,6 +376,7 @@ fn mem_store(
                 offset,
             )),
             dyn_sized_reg(value_reg, width),
+            use_reg(RegisterType::Fixed(X86Register::Rbp)),
         ]);
     }
 
@@ -432,6 +436,7 @@ fn mem_load(
                 base_offset,
                 mem_offset
             )),
+            use_reg(RegisterType::Fixed(X86Register::Rbp)),
         ]);
     }
 
