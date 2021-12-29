@@ -8,6 +8,7 @@ use std::{
 
 use color_eyre::eyre::Result;
 use lasso::Spur;
+use log::trace;
 
 use crate::{program::ProcedureId, Width};
 
@@ -182,7 +183,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("    Reg Allocate Nop {} > {:?}", reg_id, reg);
+                trace!("    Reg Allocate Nop {} > {:?}", reg_id, reg);
                 register_map.insert(reg_id, reg);
             }
             &AsmInstruction::RegAllocDup {
@@ -193,7 +194,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("    Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
+                trace!("    Reg Allocate Dup({}) {} > {:?}", depth, reg_id, reg);
                 register_map.insert(reg_id, reg);
                 writeln!(
                     out_file,
@@ -209,7 +210,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("    Reg Allocate Pop {} > {:?}", reg_id, reg);
+                trace!("    Reg Allocate Pop {} > {:?}", reg_id, reg);
                 register_map.insert(reg_id, reg);
                 writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
@@ -221,7 +222,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("    Reg Allocate Lit({}) {} > {:?}", value, reg_id, reg);
+                trace!("    Reg Allocate Lit({}) {} > {:?}", value, reg_id, reg);
                 register_map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
@@ -234,7 +235,7 @@ impl AsmInstruction {
                 reg: Fixed(reg),
                 depth,
             } => {
-                eprintln!("    Reg Allocate Dup({}) {:?}", depth, reg);
+                trace!("    Reg Allocate Dup({}) {:?}", depth, reg);
                 writeln!(
                     out_file,
                     "    mov {}, QWORD [rsp + 8*{}]",
@@ -243,17 +244,17 @@ impl AsmInstruction {
                 )?;
             }
             AsmInstruction::RegAllocNop { reg: Fixed(reg) } => {
-                eprintln!("    Reg Allocate Nop {:?}", reg);
+                trace!("    Reg Allocate Nop {:?}", reg);
             }
             &AsmInstruction::RegAllocPop { reg: Fixed(reg) } => {
-                eprintln!("    Reg Allocate Pop {:?}", reg);
+                trace!("    Reg Allocate Pop {:?}", reg);
                 writeln!(out_file, "    pop {}", reg.as_width(Width::Qword))?;
             }
             AsmInstruction::RegAllocLiteral {
                 reg: Fixed(reg),
                 value,
             } => {
-                eprintln!("    Reg Allocate Lit({}) {:?}", value, reg);
+                trace!("    Reg Allocate Lit({}) {:?}", value, reg);
                 writeln!(
                     out_file,
                     "    mov {}, {}",
@@ -278,7 +279,7 @@ impl AsmInstruction {
                     Fixed(reg) => reg,
                 };
 
-                eprintln!(
+                trace!(
                     "    Reg Allocate Mov Src {} > Dst {}({})",
                     src_reg.as_width(Width::Qword),
                     dst_id,
@@ -302,7 +303,7 @@ impl AsmInstruction {
                     Fixed(reg) => reg,
                 };
 
-                eprintln!(
+                trace!(
                     "    Reg Allocate Mov Src {} > Dst {}",
                     src_reg.as_width(Width::Qword),
                     dst_reg.as_width(Width::Qword)
@@ -323,7 +324,7 @@ impl AsmInstruction {
                     Some(reg) => reg,
                     None => panic!("ICE: Register exhaustion. {:?}", self),
                 };
-                eprintln!("    Reg Allocate Lea {} > {:?}", reg_id, reg);
+                trace!("    Reg Allocate Lea {} > {:?}", reg_id, reg);
                 register_map.insert(*reg_id, reg);
                 writeln!(
                     out_file,
@@ -336,7 +337,7 @@ impl AsmInstruction {
                 reg: Fixed(reg),
                 addr,
             } => {
-                eprintln!("    Reg Allocate Lea {:?}", reg);
+                trace!("    Reg Allocate Lea {:?}", reg);
                 writeln!(
                     out_file,
                     "    lea {}, [{}]",
@@ -359,7 +360,7 @@ impl AsmInstruction {
                 } else {
                     "Drop"
                 };
-                eprintln!("    Reg Free {} {} > {:?}", kind, reg_id, reg);
+                trace!("    Reg Free {} {} > {:?}", kind, reg_id, reg);
                 allocator.free(reg);
             }
             &AsmInstruction::RegFree {
@@ -372,7 +373,7 @@ impl AsmInstruction {
                 } else {
                     "Drop"
                 };
-                eprintln!("    Reg Free {} {:?}", kind, reg_id);
+                trace!("    Reg Free {} {:?}", kind, reg_id);
             }
 
             AsmInstruction::Instruction(parts) => {

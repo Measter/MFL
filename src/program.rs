@@ -8,6 +8,7 @@ use std::{
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use lasso::Spur;
+use log::debug;
 use variantly::Variantly;
 
 use crate::{
@@ -823,38 +824,38 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        eprintln!("Processing procs...");
-        eprintln!("    Resolving idents...");
+        debug!("Processing procs...");
+        debug!("    Resolving idents...");
         self.resolve_idents(interner, source_store)?;
 
-        eprintln!("    Checking for cyclic consts and macros...");
+        debug!("    Checking for cyclic consts and macros...");
         self.check_invalid_cyclic_refs(source_store)?;
-        eprintln!("    Expanding macros...");
+        debug!("    Expanding macros...");
         self.expand_macros();
 
-        eprintln!("    Generating jump labels...");
+        debug!("    Generating jump labels...");
         self.generate_jump_labels(source_store)?;
-        eprintln!("    Analyzing data flow...");
+        debug!("    Analyzing data flow...");
         self.analyze_data_flow(interner, source_store)?;
-        eprintln!("    Type checking...");
+        debug!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
-        eprintln!("    Evaluating const bodies...");
+        debug!("    Evaluating const bodies...");
         self.evaluate_const_values(interner, source_store)?;
 
-        eprintln!("    Processing idents...");
+        debug!("    Processing idents...");
         self.process_idents(interner, source_store)?;
-        eprintln!("    Evaluating allocation sizes...");
+        debug!("    Evaluating allocation sizes...");
         self.evaluate_allocation_sizes(interner, source_store)?;
-        eprintln!("    Checking asserts...");
+        debug!("    Checking asserts...");
         self.check_asserts(interner, source_store)?;
 
         if opt_level >= OPT_OPCODE {
-            eprintln!("    Optimizing functions...");
+            debug!("    Optimizing functions...");
             self.optimize_functions(interner, source_store);
         }
 
-        eprintln!("    Finished processing procs.");
-        eprintln!();
+        debug!("    Finished processing procs.");
+        debug!("");
 
         Ok(())
     }

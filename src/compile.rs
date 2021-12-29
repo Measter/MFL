@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs::File, io::BufWriter, io::Write, ops::Range, path::Path};
 
 use color_eyre::eyre::{eyre, Context, Result};
+use log::{debug, trace};
 
 use crate::{
     interners::Interners,
@@ -128,7 +129,7 @@ fn merge_dyn_to_dyn_registers(
     start_reg_id: usize,
     end_reg_id: usize,
 ) {
-    eprintln!(
+    trace!(
         "    Merge {} and {} in range {}..={}",
         start_reg_id,
         end_reg_id,
@@ -205,7 +206,7 @@ fn merge_dyn_to_fixed_registers(
     dynamic_reg_id: usize,
     fixed_reg: X86Register,
 ) {
-    eprintln!(
+    trace!(
         "    Merge {} and {} in range {}..={}",
         dynamic_reg_id,
         fixed_reg.as_width(Width::Qword),
@@ -323,7 +324,7 @@ fn merge_fixed_to_dyn_registers(
     dynamic_reg_id: usize,
     fixed_reg: X86Register,
 ) {
-    eprintln!(
+    trace!(
         "    Merge {} and {} in range {}..={}",
         fixed_reg.as_width(Width::Qword),
         dynamic_reg_id,
@@ -808,7 +809,7 @@ fn assemble_procedure(
     opt_level: u8,
 ) -> Result<()> {
     let name = interner.get_symbol_name(program, proc.id());
-    println!("Compiling {}...", name);
+    debug!("Compiling {}...", name);
     assembler.push_instr([str_lit(format!("{}:", name))]);
 
     let proc_data = proc.kind().get_proc_data();
@@ -832,11 +833,11 @@ fn assemble_procedure(
 
     assembler.swap_stacks();
 
-    eprintln!("  Building assembly...");
+    debug!("  Building assembly...");
     build_assembly(program, proc, interner, opt_level, assembler);
 
     if opt_level >= OPT_STACK {
-        eprintln!("  Optimizing stack ops...");
+        debug!("  Optimizing stack ops...");
         optimize_allocation(assembler.assembly_mut());
     }
 
@@ -845,8 +846,7 @@ fn assemble_procedure(
 
     let mut last_op_range = usize::MAX..usize::MAX; // Intentinally invalid.
 
-    eprintln!();
-    eprintln!("  Rendering...");
+    debug!("  Rendering...");
     for asm in assembler.assembly() {
         if last_op_range != asm.op_range {
             last_op_range = asm.op_range.clone();
@@ -866,7 +866,7 @@ fn assemble_procedure(
                     op.code,
                 )?;
 
-                eprintln!(
+                trace!(
                     "    ;; IP{} -- {}:{}:{} -- {:?}",
                     ip,
                     source_store.name(op.token.location.file_id),
@@ -881,7 +881,7 @@ fn assemble_procedure(
             .render(out_file, &mut register_allocator, &mut register_map)?;
     }
 
-    eprintln!();
+    trace!("");
 
     Ok(())
 }
@@ -893,7 +893,7 @@ fn assemble_entry(
     interner: &mut Interners,
     out_file: &mut BufWriter<File>,
 ) -> Result<()> {
-    eprintln!("Compiler _start...");
+    debug!("Compiling _start...");
     // Program entry
     assembler.push_instr([str_lit("_start:")]);
     assembler.push_instr([str_lit("    pop QWORD [__argc]")]);
@@ -927,7 +927,7 @@ fn assemble_entry(
     }
 
     writeln!(out_file)?;
-    eprintln!();
+    trace!("");
 
     Ok(())
 }

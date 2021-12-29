@@ -5,7 +5,9 @@ use std::{path::Path, process::Command};
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
+use log::{info, Level, LevelFilter};
 use program::ProcedureId;
+use simplelog::{ConfigBuilder, TermLogger};
 use source_file::SourceStorage;
 use structopt::StructOpt;
 
@@ -47,6 +49,10 @@ impl Width {
 
 #[derive(Debug, StructOpt)]
 struct Args {
+    /// Print more to the console
+    #[structopt(short, parse(from_occurrences))]
+    verbose: u8,
+
     /// Comma-separated list of paths to search includes.
     #[structopt(short = "I", require_delimiter = true)]
     library_paths: Vec<String>,
@@ -129,7 +135,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let (program, source_storage, mut interner, entry_function) =
         load_program(&file, opt_level, include_paths)?;
 
-    println!("Compiling... to {}", output_asm.display());
+    info!("Compiling... to {}", output_asm.display());
     compile::compile_program(
         &program,
         entry_function,
@@ -139,7 +145,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
         opt_level,
     )?;
 
-    println!("Assembling... to {}", output_obj.display());
+    info!("Assembling... to {}", output_obj.display());
     let nasm = Command::new("nasm")
         .arg("-felf64")
         .arg(&output_asm)
@@ -149,7 +155,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
         std::process::exit(-2);
     }
 
-    println!("Linking... into {}", output_binary.display());
+    info!("Linking... into {}", output_binary.display());
     let ld = Command::new("ld")
         .arg("-o")
         .arg(&output_binary)
@@ -167,6 +173,27 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 fn main() -> Result<()> {
     color_eyre::install()?;
     let args = Args::from_args();
+    let log_level = match args.verbose {
+        0 => LevelFilter::Warn,
+        1 => LevelFilter::Info,
+        2 => LevelFilter::Debug,
+        _ => LevelFilter::Trace,
+    };
+
+    let config = ConfigBuilder::new()
+        .set_level_padding(simplelog::LevelPadding::Right)
+        .set_target_level(LevelFilter::Off)
+        .set_thread_level(LevelFilter::Off)
+        .set_location_level(LevelFilter::Error)
+        .set_level_color(Level::Trace, Some(simplelog::Color::Green))
+        .build();
+
+    TermLogger::init(
+        log_level,
+        config,
+        simplelog::TerminalMode::Stderr,
+        simplelog::ColorChoice::Always,
+    )?;
 
     run_compile(args.file, args.opt_level, args.library_paths)?;
 
