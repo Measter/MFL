@@ -42,8 +42,7 @@ pub(super) fn drop(
             *had_error = true;
         }
         Some(val_id) => {
-            let value = analyzer.values.get_mut(&val_id).unwrap();
-            value.consumer = Some(op_idx);
+            analyzer.consume(val_id, op_idx);
         }
     }
 }

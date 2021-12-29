@@ -55,7 +55,7 @@ struct Value {
     creator_token: Token,
     porth_type: PorthTypeKind,
     const_val: Option<ConstVal>,
-    consumer: Option<usize>,
+    consumer: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -81,7 +81,7 @@ impl Analyzer {
                 creator_token,
                 porth_type,
                 const_val: None,
-                consumer: None,
+                consumer: Vec::new(),
             }),
         )
     }
@@ -92,6 +92,11 @@ impl Analyzer {
 
     fn value_mut(&mut self, id: ValueId) -> &mut Value {
         self.values.get_mut(&id).unwrap()
+    }
+
+    fn consume(&mut self, value: ValueId, consumer_id: usize) {
+        let val = self.values.get_mut(&value).unwrap();
+        val.consumer.push(consumer_id);
     }
 }
 

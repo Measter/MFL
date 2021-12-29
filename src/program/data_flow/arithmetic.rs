@@ -22,9 +22,8 @@ pub(super) fn add(
     had_error: &mut bool,
     interner: &Interners,
 ) {
-    for value_id in stack.lastn(2).unwrap_or(&*stack) {
-        let value = analyzer.values.get_mut(value_id).unwrap();
-        value.consumer = Some(op_idx);
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
     }
     let (new_type, const_val) = match stack.popn::<2>() {
         None => {
@@ -81,9 +80,8 @@ pub(super) fn subtract(
     had_error: &mut bool,
     interner: &Interners,
 ) {
-    for value_id in stack.lastn(2).unwrap_or(&*stack) {
-        let value = analyzer.values.get_mut(value_id).unwrap();
-        value.consumer = Some(op_idx);
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
     }
     let (new_type, const_val) = match stack.popn::<2>() {
         None => {
