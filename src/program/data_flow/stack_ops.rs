@@ -30,6 +30,9 @@ pub(super) fn dup(
 
     let (new_id, new_val) = analyzer.new_value(val_type, op_idx, op.token);
     new_val.const_val = val_const_val;
+
+    analyzer.set_io(op_idx, op.token, &[val_id], &[new_id]);
+
     stack.push(new_id);
 }
 
@@ -43,7 +46,10 @@ pub(super) fn dup_pair(
 ) {
     match &**stack {
         [.., a, b] => {
-            let [a_val, b_val] = analyzer.get_values([*a, *b]);
+            let a = *a;
+            let b = *b;
+
+            let [a_val, b_val] = analyzer.get_values([a, b]);
             let a_type = a_val.porth_type;
             let a_const = a_val.const_val;
             let b_type = b_val.porth_type;
@@ -56,6 +62,8 @@ pub(super) fn dup_pair(
             let (dup_b_id, dup_b) = analyzer.new_value(b_type, op_idx, op.token);
             dup_b.const_val = b_const;
             stack.push(dup_b_id);
+
+            analyzer.set_io(op_idx, op.token, &[a, b], &[dup_a_id, dup_b_id]);
         }
         [a] => {
             let a = *a;
@@ -72,6 +80,8 @@ pub(super) fn dup_pair(
             let (dup_a_id, dup_a) = analyzer.new_value(a_type, op_idx, op.token);
             dup_a.const_val = a_const;
             stack.push(dup_a_id);
+
+            analyzer.set_io(op_idx, op.token, &[a], &[dup_b_id, dup_a_id]);
         }
         [] => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
@@ -81,6 +91,8 @@ pub(super) fn dup_pair(
             stack.push(dup_b_id);
             let (dup_a_id, _) = analyzer.new_value(PorthTypeKind::Unknown, op_idx, op.token);
             stack.push(dup_a_id);
+
+            analyzer.set_io(op_idx, op.token, &[], &[dup_b_id, dup_a_id])
         }
     }
 }
@@ -146,6 +158,7 @@ pub(super) fn drop(
         }
         Some(val_id) => {
             analyzer.consume(val_id, op_idx);
+            analyzer.set_io(op_idx, op.token, &[val_id], &[]);
         }
     }
 }
@@ -159,19 +172,29 @@ pub(super) fn push_str(
     id: Spur,
     stack: &mut Vec<ValueId>,
 ) {
-    if !is_c_str {
-        let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
-        let string = interner.resolve_literal(id);
-        new_value.const_val = Some(ConstVal::Int((string.len() - 1) as u64));
-        stack.push(new_id);
-    }
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Ptr {
         id: PtrId::Str(id),
         src_op_loc: op.token.location,
         offset: Some(0),
     });
+
+    let mut outputs = [new_id, new_id];
+    if !is_c_str {
+        let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
+        let string = interner.resolve_literal(id);
+        new_value.const_val = Some(ConstVal::Int((string.len() - 1) as u64));
+        stack.push(new_id);
+        outputs[0] = new_id;
+    }
+
     stack.push(new_id);
+    analyzer.set_io(
+        op_idx,
+        op.token,
+        &[],
+        is_c_str.then(|| &outputs[1..]).unwrap_or(&outputs),
+    )
 }
 
 pub(super) fn push_int(
@@ -184,6 +207,7 @@ pub(super) fn push_int(
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Int(v));
     stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
 }
 
 pub(super) fn push_bool(
@@ -196,4 +220,5 @@ pub(super) fn push_bool(
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Bool, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Bool(v));
     stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
 }

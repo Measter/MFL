@@ -25,16 +25,16 @@ pub(super) fn add(
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);
     }
-    let (new_type, const_val) = match stack.popn::<2>() {
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
             *had_error = true;
             stack.clear();
 
-            (PorthTypeKind::Unknown, None)
+            (None, PorthTypeKind::Unknown, None)
         }
         Some(vals) => {
-            let new_tv = match analyzer.get_values(vals) {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
                 type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
                     (PorthTypeKind::Int, (*a).zip(*b))
                 }
@@ -56,7 +56,7 @@ pub(super) fn add(
                 }
             };
 
-            new_tv
+            (Some(vals), new_type, const_val)
         }
     };
     let const_val = const_val.map(|mut cv| {
@@ -80,6 +80,9 @@ pub(super) fn add(
     });
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
     new_value.const_val = const_val;
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -95,16 +98,16 @@ pub(super) fn subtract(
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);
     }
-    let (new_type, const_val) = match stack.popn::<2>() {
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
             *had_error = true;
             stack.clear();
 
-            (PorthTypeKind::Unknown, (None, None))
+            (None, PorthTypeKind::Unknown, (None, None))
         }
         Some(vals) => {
-            let new_tv = match analyzer.get_values(vals) {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
                 type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
                     (PorthTypeKind::Int, (*a, *b))
                 }
@@ -126,7 +129,7 @@ pub(super) fn subtract(
                     (PorthTypeKind::Unknown, (None, None))
                 }
             };
-            new_tv
+            (Some(vals), new_type, const_val)
         }
     };
 
@@ -248,5 +251,9 @@ pub(super) fn subtract(
 
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
     new_value.const_val = const_val;
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+
     stack.push(new_id);
 }

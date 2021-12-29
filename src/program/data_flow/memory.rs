@@ -81,5 +81,7 @@ pub(super) fn load(
     }
 
     let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
+    analyzer.set_io(op_idx, op.token, &[val_id], &[new_id]);
+
     stack.push(new_id);
 }

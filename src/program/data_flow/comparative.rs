@@ -25,16 +25,16 @@ pub(super) fn equal(
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);
     }
-    let (new_type, const_val) = match stack.popn::<2>() {
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
             *had_error = true;
             stack.clear();
 
-            (PorthTypeKind::Unknown, None)
+            (None, PorthTypeKind::Unknown, None)
         }
         Some(vals) => {
-            let new_tv = match analyzer.get_values(vals) {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
                 type_pattern!(a @ PorthTypeKind::Bool, b @ PorthTypeKind::Bool)
                 | type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Ptr)
                 | type_pattern!(b @ PorthTypeKind::Int, a @ PorthTypeKind::Int) => {
@@ -53,7 +53,7 @@ pub(super) fn equal(
                 }
             };
 
-            new_tv
+            (Some(vals), new_type, const_val)
         }
     };
 
@@ -142,5 +142,8 @@ pub(super) fn equal(
 
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
     new_value.const_val = const_val.map(ConstVal::Bool);
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }

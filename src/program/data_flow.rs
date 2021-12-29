@@ -58,10 +58,19 @@ struct Value {
     consumer: Vec<usize>,
 }
 
+#[derive(Debug)]
+struct OpData {
+    op: Token,
+    idx: usize,
+    inputs: Vec<ValueId>,
+    outputs: Vec<ValueId>,
+}
+
 #[derive(Debug, Default)]
 struct Analyzer {
     values: HashMap<ValueId, Value>,
     current_id: usize,
+    ios: HashMap<usize, OpData>,
 }
 
 impl Analyzer {
@@ -97,6 +106,20 @@ impl Analyzer {
     fn consume(&mut self, value: ValueId, consumer_id: usize) {
         let val = self.values.get_mut(&value).unwrap();
         val.consumer.push(consumer_id);
+    }
+
+    fn set_io(&mut self, op_idx: usize, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
+        let prev = self.ios.insert(
+            op_idx,
+            OpData {
+                op,
+                idx: op_idx,
+                inputs: inputs.to_owned(),
+                outputs: outputs.to_owned(),
+            },
+        );
+
+        assert!(prev.is_none(), "Set operands twice");
     }
 }
 
