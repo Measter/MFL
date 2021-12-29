@@ -29,6 +29,7 @@ pub(super) fn add(
         None => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
             *had_error = true;
+            stack.clear();
 
             (PorthTypeKind::Unknown, None)
         }
@@ -87,6 +88,7 @@ pub(super) fn subtract(
         None => {
             generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
             *had_error = true;
+            stack.clear();
 
             (PorthTypeKind::Unknown, None)
         }
