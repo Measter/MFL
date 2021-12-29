@@ -45,7 +45,7 @@ pub(super) fn load(
                         let string = interner.resolve_literal(spur);
                         let end_idx = offset + width.byte_size();
                         if end_idx > string.len() as u64 - 1 {
-                            diagnostics::emit(
+                            diagnostics::emit_error(
                                 op.token.location,
                                 "index out of bounds",
                                 [

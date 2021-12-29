@@ -138,7 +138,7 @@ pub(super) fn subtract(
                 },
             ) => {
                 if id != id2 {
-                    diagnostics::emit(
+                    diagnostics::emit_error(
                         op.token.location,
                         "subtracting pointers of different sources",
                         [
@@ -159,7 +159,7 @@ pub(super) fn subtract(
                     );
                     *had_error = true;
                 } else if offset2 > offset {
-                    diagnostics::emit(
+                    diagnostics::emit_error(
                         op.token.location,
                         "subtracting out of bounds",
                         [
