@@ -253,6 +253,14 @@ pub fn analyze(
                 op,
                 &mut had_error,
             ),
+            OpCode::Rot => stack_ops::rot(
+                &mut stack,
+                &mut analyzer,
+                op_idx,
+                source_store,
+                op,
+                &mut had_error,
+            ),
 
             OpCode::Load { width, kind } => memory::load(
                 &mut stack,

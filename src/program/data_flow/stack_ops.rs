@@ -107,6 +107,30 @@ pub(super) fn swap(
     }
 }
 
+pub(super) fn rot(
+    stack: &mut Vec<ValueId>,
+    analyzer: &mut Analyzer,
+    op_idx: usize,
+    source_store: &SourceStorage,
+    op: &Op,
+    had_error: &mut bool,
+) {
+    match stack.as_slice() {
+        [.., _, _, _] => {}
+        _ => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
+            *had_error = true;
+            stack.resize_with(3, || {
+                analyzer
+                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
+                    .0
+            });
+        }
+    }
+    let start = stack.len() - 3;
+    stack[start..].rotate_left(1);
+}
+
 pub(super) fn drop(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
