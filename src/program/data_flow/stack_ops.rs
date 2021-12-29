@@ -144,8 +144,8 @@ pub(super) fn push_str(
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Ptr {
         id: PtrId::Str(id),
-        source_op_location: op.token.location,
-        offset: 0,
+        src_op_loc: op.token.location,
+        offset: Some(0),
     });
     stack.push(new_id);
 }

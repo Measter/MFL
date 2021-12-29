@@ -62,7 +62,18 @@ pub(super) fn add(
     let const_val = const_val.map(|mut cv| {
         match &mut cv {
             (ConstVal::Int(a), ConstVal::Int(b)) => *a += *b,
-            (ConstVal::Ptr { offset, .. }, ConstVal::Int(v)) => *offset += *v,
+
+            // Static pointer with a constant offset.
+            (
+                ConstVal::Ptr {
+                    offset: Some(offset),
+                    ..
+                },
+                ConstVal::Int(v),
+            ) => *offset += *v,
+
+            // Static pointer with a runtime offset.
+            (ConstVal::Ptr { .. }, ConstVal::Int(_)) => {}
             _ => unreachable!(),
         }
         cv.0
@@ -90,18 +101,18 @@ pub(super) fn subtract(
             *had_error = true;
             stack.clear();
 
-            (PorthTypeKind::Unknown, None)
+            (PorthTypeKind::Unknown, (None, None))
         }
         Some(vals) => {
             let new_tv = match analyzer.get_values(vals) {
                 type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
-                    (PorthTypeKind::Int, (*a).zip(*b))
+                    (PorthTypeKind::Int, (*a, *b))
                 }
                 type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Ptr) => {
-                    (PorthTypeKind::Int, (*a).zip(*b))
+                    (PorthTypeKind::Int, (*a, *b))
                 }
                 type_pattern!(b @ PorthTypeKind::Ptr, a @ PorthTypeKind::Int) => {
-                    (PorthTypeKind::Ptr, (*a).zip(*b))
+                    (PorthTypeKind::Ptr, (*a, *b))
                 }
                 vals => {
                     // Type mismatch
@@ -112,81 +123,129 @@ pub(super) fn subtract(
                         let lexeme = interner.resolve_lexeme(op.token.lexeme);
                         generate_type_mismatch_diag(source_store, lexeme, op, &vals);
                     }
-                    (PorthTypeKind::Unknown, None)
+                    (PorthTypeKind::Unknown, (None, None))
                 }
             };
             new_tv
         }
     };
 
-    let const_val = const_val.map(|mut cv| {
-        match &mut cv {
-            (ConstVal::Int(a), ConstVal::Int(b)) => *a -= *b,
-            (ConstVal::Ptr { offset, .. }, ConstVal::Int(v)) => *offset -= *v,
-            (
-                ConstVal::Ptr {
-                    id,
-                    source_op_location,
-                    offset,
-                    ..
-                },
-                ConstVal::Ptr {
-                    id: id2,
-                    source_op_location: source_op_location2,
-                    offset: offset2,
-                    ..
-                },
-            ) => {
-                if id != id2 {
-                    diagnostics::emit_error(
-                        op.token.location,
-                        "subtracting pointers of different sources",
-                        [
-                            Label::new(op.token.location)
-                                .with_color(Color::Red)
-                                .with_message("here"),
-                            Label::new(*source_op_location)
-                                .with_color(Color::Cyan)
-                                .with_message("...from this")
-                                .with_order(2),
-                            Label::new(*source_op_location2)
-                                .with_color(Color::Cyan)
-                                .with_message("subtracting this...")
-                                .with_order(1),
-                        ],
-                        None,
-                        source_store,
-                    );
-                    *had_error = true;
-                } else if offset2 > offset {
-                    diagnostics::emit_error(
-                        op.token.location,
-                        "subtracting out of bounds",
-                        [
-                            Label::new(op.token.location)
-                                .with_color(Color::Red)
-                                .with_message("here"),
-                            Label::new(*source_op_location)
-                                .with_color(Color::Cyan)
-                                .with_message(format!("...from this offset {}", offset))
-                                .with_order(2),
-                            Label::new(*source_op_location2)
-                                .with_color(Color::Cyan)
-                                .with_message(format!("subtracting offset {}...", offset2))
-                                .with_order(1),
-                        ],
-                        None,
-                        source_store,
-                    );
-                    *had_error = true;
-                } else {
-                    *offset -= *offset2;
-                }
-            }
-            _ => unreachable!(),
+    let const_val = match const_val {
+        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => Some(ConstVal::Int(a - b)),
+
+        // Static pointer, constant offset.
+        // Note that we don't emit a diagnostic if we subtract out of bounds
+        // because it could be part of a larger calculation.
+        (
+            Some(ConstVal::Ptr {
+                id,
+                offset,
+                src_op_loc,
+            }),
+            Some(ConstVal::Int(v)),
+        ) => Some(ConstVal::Ptr {
+            id,
+            src_op_loc,
+            offset: offset.map(|off| off - v),
+        }),
+
+        // Static pointer, runtime offset.
+        (Some(ConstVal::Ptr { id, src_op_loc, .. }), None) => Some(ConstVal::Ptr {
+            id,
+            src_op_loc,
+            offset: None,
+        }),
+
+        // Pointers with differant static IDs.
+        // Obviously an error.
+        (
+            Some(ConstVal::Ptr { id, src_op_loc, .. }),
+            Some(ConstVal::Ptr {
+                id: id2,
+                src_op_loc: src_op_loc2,
+                ..
+            }),
+        ) if id != id2 => {
+            diagnostics::emit_error(
+                op.token.location,
+                "subtracting pointers of different sources",
+                [
+                    Label::new(op.token.location)
+                        .with_color(Color::Red)
+                        .with_message("here"),
+                    Label::new(src_op_loc)
+                        .with_color(Color::Cyan)
+                        .with_message("...from this")
+                        .with_order(2),
+                    Label::new(src_op_loc2)
+                        .with_color(Color::Cyan)
+                        .with_message("subtracting this...")
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+            *had_error = true;
+            None
         }
-        cv.0
-    });
+
+        // Pointers with the same static ID, with constant offsets.
+        (
+            Some(ConstVal::Ptr {
+                id,
+                src_op_loc,
+                offset: Some(offset),
+                ..
+            }),
+            Some(ConstVal::Ptr {
+                src_op_loc: src_op_loc2,
+                offset: Some(offset2),
+                ..
+            }),
+        ) => {
+            if offset2 > offset {
+                diagnostics::emit_error(
+                    op.token.location,
+                    "subtracting out of bounds",
+                    [
+                        Label::new(op.token.location)
+                            .with_color(Color::Red)
+                            .with_message("here"),
+                        Label::new(src_op_loc)
+                            .with_color(Color::Cyan)
+                            .with_message(format!("...from this offset {}", offset))
+                            .with_order(2),
+                        Label::new(src_op_loc2)
+                            .with_color(Color::Cyan)
+                            .with_message(format!("subtracting offset {}...", offset2))
+                            .with_order(1),
+                    ],
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+                None
+            } else {
+                Some(ConstVal::Ptr {
+                    id,
+                    src_op_loc,
+                    offset: Some(offset - offset2),
+                })
+            }
+        }
+
+        // Pointers with the same ID, but we have a runtime offset for one or both.
+        (Some(ConstVal::Ptr { id, src_op_loc, .. }), Some(ConstVal::Ptr { .. })) => {
+            Some(ConstVal::Ptr {
+                id,
+                src_op_loc,
+                offset: None,
+            })
+        }
+
+        _ => None,
+    };
+
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
     new_value.const_val = const_val;
     stack.push(new_id);

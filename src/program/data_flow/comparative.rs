@@ -56,55 +56,91 @@ pub(super) fn equal(
             new_tv
         }
     };
-    let const_val = const_val.map(|cv| {
-        let res = match cv {
-            (ConstVal::Int(a), ConstVal::Int(b)) => op.code.get_binary_op()(a, b) != 0,
-            (ConstVal::Bool(a), ConstVal::Bool(b)) => op.code.get_binary_op()(a as _, b as _) != 0,
-            (
-                ConstVal::Ptr {
-                    id: a_id,
-                    offset: a_offset,
-                    source_op_location: a_op,
-                },
-                ConstVal::Ptr {
-                    id: b_id,
-                    offset: b_offset,
-                    source_op_location: b_op,
-                },
-            ) => {
-                if a_id != b_id {
-                    diagnostics::emit_warning(
-                        op.token.location,
-                        "pointers never equal",
-                        [
-                            Label::new(op.token.location)
-                                .with_color(Color::Yellow)
-                                .with_message("here"),
-                            Label::new(a_op)
-                                .with_color(Color::Cyan)
-                                .with_message("...and this")
-                                .with_order(2),
-                            Label::new(b_op)
-                                .with_color(Color::Cyan)
-                                .with_message("comparing this...")
-                                .with_order(1),
-                        ],
-                        None,
-                        source_store,
-                    );
-                    op.code.get_binary_op()(0, 1) != 0
-                } else {
-                    op.code.get_binary_op()(a_offset, b_offset) != 0
-                }
-                //
-            }
-            _ => unreachable!(),
-        };
-        dbg!(res);
 
-        ConstVal::Bool(res)
-    });
+    let const_val = match const_val {
+        Some((ConstVal::Int(a), ConstVal::Int(b))) => Some(op.code.get_binary_op()(a, b) != 0),
+        Some((ConstVal::Bool(a), ConstVal::Bool(b))) => {
+            Some(op.code.get_binary_op()(a as _, b as _) != 0)
+        }
+
+        // Static pointers with different IDs.
+        Some((
+            ConstVal::Ptr {
+                id: a_id,
+                src_op_loc: a_op,
+                ..
+            },
+            ConstVal::Ptr {
+                id: b_id,
+                src_op_loc: b_op,
+                ..
+            },
+        )) if a_id != b_id => {
+            diagnostics::emit_warning(
+                op.token.location,
+                "pointers never equal",
+                [
+                    Label::new(op.token.location)
+                        .with_color(Color::Yellow)
+                        .with_message("here"),
+                    Label::new(a_op)
+                        .with_color(Color::Cyan)
+                        .with_message("...and this")
+                        .with_order(2),
+                    Label::new(b_op)
+                        .with_color(Color::Cyan)
+                        .with_message("comparing this...")
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+            Some(op.code.get_binary_op()(0, 1) != 0)
+        }
+
+        // Static pointers with the same ID, but different static offsets.
+        Some((
+            ConstVal::Ptr {
+                src_op_loc: a_op,
+                offset: off_a,
+                ..
+            },
+            ConstVal::Ptr {
+                src_op_loc: b_op,
+                offset: off_b,
+                ..
+            },
+        )) => {
+            if off_a != off_b {
+                diagnostics::emit_warning(
+                    op.token.location,
+                    "pointers never equal",
+                    [
+                        Label::new(op.token.location)
+                            .with_color(Color::Yellow)
+                            .with_message("here"),
+                        Label::new(a_op)
+                            .with_color(Color::Cyan)
+                            .with_message("...and this")
+                            .with_order(2),
+                        Label::new(b_op)
+                            .with_color(Color::Cyan)
+                            .with_message("comparing this...")
+                            .with_order(1),
+                    ],
+                    None,
+                    source_store,
+                );
+                Some(op.code.get_binary_op()(0, 1) != 0)
+            } else {
+                Some(op.code.get_binary_op()(1, 1) != 0)
+            }
+        }
+
+        _ => None,
+    };
+
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
-    new_value.const_val = const_val;
+    new_value.const_val = const_val.map(ConstVal::Bool);
     stack.push(new_id);
 }

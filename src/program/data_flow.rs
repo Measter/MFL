@@ -40,8 +40,8 @@ pub enum ConstVal {
     Bool(bool),
     Ptr {
         id: PtrId,
-        source_op_location: SourceLocation,
-        offset: u64,
+        src_op_loc: SourceLocation,
+        offset: Option<u64>,
     },
 }
 
