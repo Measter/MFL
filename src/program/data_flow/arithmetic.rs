@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::{NOps, PopN},
-    opcode::Op,
+    opcode::{Op, OpCode},
     source_file::SourceStorage,
     type_check::PorthTypeKind,
 };
@@ -78,6 +78,87 @@ pub(super) fn add(
         }
         cv.0
     });
+    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    new_value.const_val = const_val;
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    stack.push(new_id);
+}
+
+pub(super) fn multiply_and_shift(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
+    }
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.clear();
+            (None, PorthTypeKind::Unknown, (None, None))
+        }
+        Some(vals) => {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
+                type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
+                    (PorthTypeKind::Int, (*a, *b))
+                }
+                vals => {
+                    // Type mismatch
+                    *had_error = true;
+                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
+                    }
+                    (PorthTypeKind::Unknown, (None, None))
+                }
+            };
+
+            (Some(vals), new_type, const_val)
+        }
+    };
+
+    if let (OpCode::ShiftLeft | OpCode::ShiftRight, Some(ConstVal::Int(sv @ 64..))) =
+        (op.code, const_val.1)
+    {
+        let [shift_val] = analyzer.get_values([inputs.unwrap()[1]]);
+        diagnostics::emit_warning(
+            op.token.location,
+            "shift value exceeds 63",
+            [
+                Label::new(op.token.location)
+                    .with_color(Color::Yellow)
+                    .with_message("here"),
+                Label::new(shift_val.creator_token.location)
+                    .with_color(Color::Cyan)
+                    .with_message("Shift value from here")
+                    .with_order(1),
+            ],
+            format!("shift value ({}) will be masked to the lower 6 bits", sv),
+            source_store,
+        )
+    }
+
+    let const_val = match const_val {
+        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => {
+            match op.code {
+                OpCode::Multiply => Some(ConstVal::Int(a * b)),
+                OpCode::ShiftLeft => Some(ConstVal::Int(a << b)),
+                OpCode::ShiftRight => Some(ConstVal::Int(a >> b)),
+                _ => unreachable!(),
+            }
+            //
+        }
+        _ => None,
+    };
+
     let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
     new_value.const_val = const_val;
 

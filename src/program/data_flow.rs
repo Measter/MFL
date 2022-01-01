@@ -221,6 +221,18 @@ pub fn analyze(
                 op,
             ),
 
+            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
+                arithmetic::multiply_and_shift(
+                    &mut analyzer,
+                    &mut stack,
+                    source_store,
+                    interner,
+                    &mut had_error,
+                    op_idx,
+                    op,
+                )
+            }
+
             OpCode::Equal | OpCode::NotEq => comparative::equal(
                 &mut analyzer,
                 &mut stack,
