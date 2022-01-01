@@ -181,6 +181,7 @@ fn main() -> Result<()> {
     };
 
     let config = ConfigBuilder::new()
+        .set_time_level(LevelFilter::Off)
         .set_level_padding(simplelog::LevelPadding::Right)
         .set_target_level(LevelFilter::Off)
         .set_thread_level(LevelFilter::Off)
