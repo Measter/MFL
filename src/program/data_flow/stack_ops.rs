@@ -6,6 +6,26 @@ use crate::{
 
 use super::{generate_stack_exhaustion_diag, Analyzer, ConstVal, PtrId, ValueId};
 
+pub(super) fn drop(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    match stack.pop() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, 0, 1);
+            *had_error = true;
+        }
+        Some(val_id) => {
+            analyzer.consume(val_id, op_idx);
+            analyzer.set_io(op_idx, op.token, &[val_id], &[]);
+        }
+    }
+}
+
 pub(super) fn dup(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -97,70 +117,30 @@ pub(super) fn dup_pair(
     }
 }
 
-pub(super) fn swap(
+pub(super) fn push_bool(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
     op_idx: usize,
     op: &Op,
+    v: bool,
 ) {
-    match stack.as_mut_slice() {
-        [.., a, b] => std::mem::swap(a, b),
-        _ => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
-            *had_error = true;
-            stack.resize_with(2, || {
-                analyzer
-                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
-                    .0
-            });
-        }
-    }
+    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Bool, op_idx, op.token);
+    new_value.const_val = Some(ConstVal::Bool(v));
+    stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
 }
 
-pub(super) fn rot(
+pub(super) fn push_int(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
     op_idx: usize,
     op: &Op,
+    v: u64,
 ) {
-    match stack.as_slice() {
-        [.., _, _, _] => {}
-        _ => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
-            *had_error = true;
-            stack.resize_with(3, || {
-                analyzer
-                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
-                    .0
-            });
-        }
-    }
-    let start = stack.len() - 3;
-    stack[start..].rotate_left(1);
-}
-
-pub(super) fn drop(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op_idx: usize,
-    op: &Op,
-) {
-    match stack.pop() {
-        None => {
-            generate_stack_exhaustion_diag(source_store, op, 0, 1);
-            *had_error = true;
-        }
-        Some(val_id) => {
-            analyzer.consume(val_id, op_idx);
-            analyzer.set_io(op_idx, op.token, &[val_id], &[]);
-        }
-    }
+    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
+    new_value.const_val = Some(ConstVal::Int(v));
+    stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
 }
 
 pub(super) fn push_str(
@@ -197,28 +177,48 @@ pub(super) fn push_str(
     )
 }
 
-pub(super) fn push_int(
+pub(super) fn rot(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
     op_idx: usize,
     op: &Op,
-    v: u64,
 ) {
-    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
-    new_value.const_val = Some(ConstVal::Int(v));
-    stack.push(new_id);
-    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
+    match stack.as_slice() {
+        [.., _, _, _] => {}
+        _ => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
+            *had_error = true;
+            stack.resize_with(3, || {
+                analyzer
+                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
+                    .0
+            });
+        }
+    }
+    let start = stack.len() - 3;
+    stack[start..].rotate_left(1);
 }
 
-pub(super) fn push_bool(
+pub(super) fn swap(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
     op_idx: usize,
     op: &Op,
-    v: bool,
 ) {
-    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Bool, op_idx, op.token);
-    new_value.const_val = Some(ConstVal::Bool(v));
-    stack.push(new_id);
-    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
+    match stack.as_mut_slice() {
+        [.., a, b] => std::mem::swap(a, b),
+        _ => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.resize_with(2, || {
+                analyzer
+                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
+                    .0
+            });
+        }
+    }
 }
