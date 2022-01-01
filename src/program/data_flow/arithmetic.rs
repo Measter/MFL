@@ -14,13 +14,13 @@ use super::{
 };
 
 pub(super) fn add(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
-    had_error: &mut bool,
     interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);
@@ -87,13 +87,13 @@ pub(super) fn add(
 }
 
 pub(super) fn subtract(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
-    had_error: &mut bool,
     interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);

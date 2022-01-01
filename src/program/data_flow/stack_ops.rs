@@ -7,12 +7,12 @@ use crate::{
 use super::{generate_stack_exhaustion_diag, Analyzer, ConstVal, PtrId, ValueId};
 
 pub(super) fn dup(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
     had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
     depth: usize,
 ) {
     if stack.len() < (depth + 1) {
@@ -37,12 +37,12 @@ pub(super) fn dup(
 }
 
 pub(super) fn dup_pair(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
     had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     match &**stack {
         [.., a, b] => {
@@ -98,12 +98,12 @@ pub(super) fn dup_pair(
 }
 
 pub(super) fn swap(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
     had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     match stack.as_mut_slice() {
         [.., a, b] => std::mem::swap(a, b),
@@ -120,12 +120,12 @@ pub(super) fn swap(
 }
 
 pub(super) fn rot(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
     had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     match stack.as_slice() {
         [.., _, _, _] => {}
@@ -144,12 +144,12 @@ pub(super) fn rot(
 }
 
 pub(super) fn drop(
+    analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
     had_error: &mut bool,
-    analyzer: &mut Analyzer,
     op_idx: usize,
+    op: &Op,
 ) {
     match stack.pop() {
         None => {
@@ -164,13 +164,13 @@ pub(super) fn drop(
 }
 
 pub(super) fn push_str(
-    is_c_str: bool,
     analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    interner: &Interners,
     op_idx: usize,
     op: &Op,
-    interner: &Interners,
+    is_c_str: bool,
     id: Spur,
-    stack: &mut Vec<ValueId>,
 ) {
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Ptr {
@@ -199,10 +199,10 @@ pub(super) fn push_str(
 
 pub(super) fn push_int(
     analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
     op_idx: usize,
     op: &Op,
     v: u64,
-    stack: &mut Vec<ValueId>,
 ) {
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Int(v));
@@ -212,10 +212,10 @@ pub(super) fn push_int(
 
 pub(super) fn push_bool(
     analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
     op_idx: usize,
     op: &Op,
     v: bool,
-    stack: &mut Vec<ValueId>,
 ) {
     let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Bool, op_idx, op.token);
     new_value.const_val = Some(ConstVal::Bool(v));

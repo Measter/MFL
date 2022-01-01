@@ -14,13 +14,13 @@ use super::{
 };
 
 pub(super) fn equal(
-    stack: &mut Vec<ValueId>,
     analyzer: &mut Analyzer,
-    op_idx: usize,
+    stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
-    had_error: &mut bool,
     interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
         analyzer.consume(value_id, op_idx);

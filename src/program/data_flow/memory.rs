@@ -10,13 +10,13 @@ use super::{
 };
 
 pub(super) fn load(
+    analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    op: &Op,
-    had_error: &mut bool,
-    analyzer: &mut Analyzer,
-    op_idx: usize,
     interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
     width: crate::Width,
     kind: PorthTypeKind,
 ) {
