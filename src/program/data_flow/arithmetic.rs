@@ -86,6 +86,81 @@ pub(super) fn add(
     stack.push(new_id);
 }
 
+pub(super) fn divmod(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
+    }
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.clear();
+            (None, PorthTypeKind::Unknown, (None, None))
+        }
+        Some(vals) => {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
+                type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
+                    (PorthTypeKind::Int, (*a, *b))
+                }
+                vals => {
+                    // Type mismatch
+                    *had_error = true;
+                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
+                    }
+                    (PorthTypeKind::Unknown, (None, None))
+                }
+            };
+            (Some(vals), new_type, const_val)
+        }
+    };
+
+    if let Some(ConstVal::Int(0)) = const_val.1 {
+        let [div_val] = analyzer.get_values([inputs.unwrap()[1]]);
+        diagnostics::emit_error(
+            op.token.location,
+            "division by 0",
+            [
+                Label::new(op.token.location)
+                    .with_color(Color::Red)
+                    .with_message("division here"),
+                Label::new(div_val.creator_token.location)
+                    .with_color(Color::Cyan)
+                    .with_message("divisor from here")
+                    .with_order(1),
+            ],
+            None,
+            source_store,
+        )
+    }
+
+    let (quot_const_val, rem_const_val) = match const_val {
+        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b @ 1..))) => {
+            (Some(ConstVal::Int(a / b)), Some(ConstVal::Int(a % b)))
+        }
+        _ => (None, None),
+    };
+
+    let (quot_id, quot_val) = analyzer.new_value(new_type, op_idx, op.token);
+    quot_val.const_val = quot_const_val;
+    let (rem_id, rem_val) = analyzer.new_value(new_type, op_idx, op.token);
+    rem_val.const_val = rem_const_val;
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[quot_id, rem_id]);
+    stack.push(quot_id);
+    stack.push(rem_id);
+}
+
 pub(super) fn multiply_and_shift(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
