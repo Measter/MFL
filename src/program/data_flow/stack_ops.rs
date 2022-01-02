@@ -185,17 +185,14 @@ pub(super) fn rot(
     op_idx: usize,
     op: &Op,
 ) {
-    match stack.as_slice() {
-        [.., _, _, _] => {}
-        _ => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
-            *had_error = true;
-            stack.resize_with(3, || {
-                analyzer
-                    .new_value(PorthTypeKind::Unknown, op_idx, op.token)
-                    .0
-            });
-        }
+    if stack.len() < 3 {
+        generate_stack_exhaustion_diag(source_store, op, stack.len(), op.code.pop_count());
+        *had_error = true;
+        stack.resize_with(3, || {
+            analyzer
+                .new_value(PorthTypeKind::Unknown, op_idx, op.token)
+                .0
+        });
     }
     let start = stack.len() - 3;
     stack[start..].rotate_left(1);
