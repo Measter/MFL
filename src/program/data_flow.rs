@@ -221,6 +221,24 @@ pub fn analyze(
                 op,
             ),
 
+            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                interner,
+                &mut had_error,
+                op_idx,
+                op,
+            ),
+            OpCode::BitNot => arithmetic::bitnot(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                interner,
+                &mut had_error,
+                op_idx,
+                op,
+            ),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
                 arithmetic::multiply_and_shift(
                     &mut analyzer,

@@ -86,6 +86,129 @@ pub(super) fn add(
     stack.push(new_id);
 }
 
+pub(super) fn bitand_bitor(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
+    }
+
+    let (inputs, new_type, const_val) = match stack.popn::<2>() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.clear();
+
+            (None, PorthTypeKind::Unknown, None)
+        }
+        Some(vals) => {
+            let (new_type, const_val) = match analyzer.get_values(vals) {
+                type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
+                    (PorthTypeKind::Int, (*a).zip(*b))
+                }
+                type_pattern!(a @ PorthTypeKind::Bool, b @ PorthTypeKind::Bool) => {
+                    (PorthTypeKind::Bool, (*a).zip(*b))
+                }
+                vals => {
+                    // Type mismatch
+                    *had_error = true;
+                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
+                    }
+                    (PorthTypeKind::Unknown, None)
+                }
+            };
+
+            (Some(vals), new_type, const_val)
+        }
+    };
+
+    let const_val = const_val.map(|mut cv| {
+        match &mut cv {
+            (ConstVal::Int(a), ConstVal::Int(b)) => match op.code {
+                OpCode::BitAnd => *a &= *b,
+                OpCode::BitOr => *a |= *b,
+                _ => unreachable!(),
+            },
+            (ConstVal::Bool(a), ConstVal::Bool(b)) => match op.code {
+                OpCode::BitAnd => *a &= *b,
+                OpCode::BitOr => *a |= *b,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+        cv.0
+    });
+
+    let (new_id, new_val) = analyzer.new_value(new_type, op_idx, op.token);
+    new_val.const_val = const_val;
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    stack.push(new_id);
+}
+
+pub(super) fn bitnot(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    if let Some(&value_id) = stack.last() {
+        analyzer.consume(value_id, op_idx);
+    }
+
+    let (inputs, new_type, const_val) = match stack.pop() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.clear();
+
+            (None, PorthTypeKind::Unknown, None)
+        }
+        Some(val) => {
+            let (new_type, const_val) = match analyzer.get_values([val]) {
+                type_pattern!(a @ PorthTypeKind::Int) => (PorthTypeKind::Int, *a),
+                type_pattern!(a @ PorthTypeKind::Bool) => (PorthTypeKind::Bool, *a),
+                [val] => {
+                    // Type mismatch
+                    *had_error = true;
+                    if val.porth_type != PorthTypeKind::Unknown {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
+                    }
+                    (PorthTypeKind::Unknown, None)
+                }
+            };
+
+            (Some(val), new_type, const_val)
+        }
+    };
+
+    let const_val = const_val.map(|cv| match cv {
+        ConstVal::Int(a) => ConstVal::Int(!a),
+        ConstVal::Bool(a) => ConstVal::Bool(!a),
+        _ => unreachable!(),
+    });
+
+    let (new_id, new_val) = analyzer.new_value(new_type, op_idx, op.token);
+    new_val.const_val = const_val;
+
+    let inputs = inputs.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    stack.push(new_id);
+}
+
 pub(super) fn divmod(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
