@@ -1,12 +1,17 @@
 use ariadne::{Color, Label};
 
 use crate::{
-    diagnostics, interners::Interners, opcode::Op, source_file::SourceStorage,
+    diagnostics,
+    interners::Interners,
+    n_ops::{NOps, PopN},
+    opcode::Op,
+    source_file::SourceStorage,
     type_check::PorthTypeKind,
 };
 
 use super::{
-    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, ValueId,
+    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, Value,
+    ValueId,
 };
 
 pub(super) fn load(
@@ -85,4 +90,82 @@ pub(super) fn load(
     analyzer.set_io(op_idx, op.token, &[val_id], &[new_id]);
 
     stack.push(new_id);
+}
+
+pub(super) fn store(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+    kind: PorthTypeKind,
+) {
+    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+        analyzer.consume(value_id, op_idx);
+    }
+    let (inputs, const_val) = match stack.popn::<2>() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            *had_error = true;
+            stack.clear();
+
+            (None, None)
+        }
+        Some(vals) => {
+            let const_val = match analyzer.get_values(vals) {
+                [Value {
+                    porth_type: store_kind,
+                    ..
+                }, Value {
+                    porth_type: PorthTypeKind::Ptr,
+                    const_val,
+                    ..
+                }] if *store_kind == kind => *const_val,
+                vals => {
+                    // Type mismatch
+                    *had_error = true;
+                    // Don't emit an diagnostic here if any are Unknown, as it's a result of
+                    // an earlier error.
+                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
+                    }
+
+                    None
+                }
+            };
+
+            (Some(vals), const_val)
+        }
+    };
+
+    if let Some(ConstVal::Ptr {
+        id: PtrId::Str(_),
+        src_op_loc,
+        ..
+    }) = const_val
+    {
+        diagnostics::emit_error(
+            op.token.location,
+            "storing to static string",
+            [
+                Label::new(op.token.location)
+                    .with_color(Color::Red)
+                    .with_message("here"),
+                Label::new(src_op_loc)
+                    .with_color(Color::Cyan)
+                    .with_message("this string")
+                    .with_order(1),
+            ],
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+    }
+
+    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[]);
 }

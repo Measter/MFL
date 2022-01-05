@@ -346,6 +346,16 @@ pub fn analyze(
                 width,
                 kind,
             ),
+            OpCode::Store { kind, .. } => memory::store(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                interner,
+                &mut had_error,
+                op_idx,
+                op,
+                kind,
+            ),
 
             OpCode::Prologue | OpCode::Epilogue => {
                 // TODO: These should do some handling
