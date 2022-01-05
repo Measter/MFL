@@ -11,7 +11,7 @@ use crate::{
     opcode::{Op, OpCode},
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
-    type_check::PorthTypeKind,
+    type_check::{PorthType, PorthTypeKind},
 };
 
 #[macro_export]
@@ -122,6 +122,48 @@ impl Analyzer {
 
         assert!(prev.is_none(), "Set operands twice");
     }
+}
+
+fn failed_compare_stack_types(
+    analyzer: &mut Analyzer,
+    source_store: &SourceStorage,
+    actual_stack: &[ValueId],
+    expected_stack: &[PorthType],
+    cur_op: &Op,
+    open_token: Token,
+    msg: &str,
+) {
+    let mut note = "\n\t\tDepth | Expected |   Actual\n\
+        \t\t______|__________|_________"
+        .to_owned();
+
+    let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
+    for (idx, (expected, actual_id)) in pairs {
+        let [actual_value] = analyzer.get_values([*actual_id]);
+        write!(
+            &mut note,
+            "\n\t\t{:<5} | {:<8} | {:>8}",
+            actual_stack.len() - idx - 1,
+            expected.kind,
+            actual_value.porth_type
+        )
+        .unwrap();
+    }
+
+    diagnostics::emit_error(
+        open_token.location,
+        msg,
+        [
+            Label::new(cur_op.token.location)
+                .with_color(Color::Red)
+                .with_message("actual sampled here"),
+            Label::new(open_token.location)
+                .with_color(Color::Cyan)
+                .with_message("expected sampled here"),
+        ],
+        note,
+        source_store,
+    );
 }
 
 fn generate_type_mismatch_diag(
@@ -359,9 +401,15 @@ pub fn analyze(
             ),
 
             OpCode::Prologue => control::prologue(&mut analyzer, &mut stack, op_idx, op, proc),
-            OpCode::Epilogue | OpCode::Return => {
-                // TODO: Final stack check here.
-            }
+            OpCode::Epilogue | OpCode::Return => control::epilogue_return(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                &mut had_error,
+                op_idx,
+                op,
+                proc,
+            ),
             _ => unimplemented!("{:?}", op.code),
         }
     }
