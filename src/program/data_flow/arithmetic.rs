@@ -393,7 +393,7 @@ pub(super) fn subtract(
                 type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Ptr) => {
                     (PorthTypeKind::Int, (*a, *b))
                 }
-                type_pattern!(b @ PorthTypeKind::Ptr, a @ PorthTypeKind::Int) => {
+                type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Int) => {
                     (PorthTypeKind::Ptr, (*a, *b))
                 }
                 vals => {
