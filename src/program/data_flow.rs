@@ -25,6 +25,7 @@ macro_rules! type_pattern {
 
 mod arithmetic;
 mod comparative;
+mod control;
 mod memory;
 mod stack_ops;
 
@@ -357,10 +358,8 @@ pub fn analyze(
                 kind,
             ),
 
-            OpCode::Prologue | OpCode::Epilogue => {
-                // TODO: These should do some handling
-            }
-            OpCode::Return => {
+            OpCode::Prologue => control::prologue(&mut analyzer, &mut stack, op_idx, op, proc),
+            OpCode::Epilogue | OpCode::Return => {
                 // TODO: Final stack check here.
             }
             _ => unimplemented!("{:?}", op.code),
