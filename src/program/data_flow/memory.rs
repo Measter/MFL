@@ -59,7 +59,8 @@ pub(super) fn load(
         let end_idx = offset + width.byte_size();
 
         // Remember that string literals are always null-terminated.
-        if end_idx > string.len() as u64 - 1 {
+        let str_len = string.len() as u64 - 1;
+        if end_idx > str_len || offset > str_len {
             diagnostics::emit_error(
                 op.token.location,
                 "index out of bounds",
