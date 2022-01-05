@@ -76,9 +76,9 @@ pub(super) fn equal(
                 ..
             },
         )) if a_id != b_id => {
-            diagnostics::emit_warning(
+            diagnostics::emit_error(
                 op.token.location,
-                "pointers never equal",
+                "pointers have different sources",
                 [
                     Label::new(op.token.location)
                         .with_color(Color::Yellow)
@@ -102,12 +102,12 @@ pub(super) fn equal(
         Some((
             ConstVal::Ptr {
                 src_op_loc: a_op,
-                offset: off_a,
+                offset: Some(off_a),
                 ..
             },
             ConstVal::Ptr {
                 src_op_loc: b_op,
-                offset: off_b,
+                offset: Some(off_b),
                 ..
             },
         )) => {
