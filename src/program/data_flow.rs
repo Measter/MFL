@@ -260,6 +260,17 @@ pub fn analyze(
                 op,
             ),
 
+            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
+                comparative::compare(
+                    &mut analyzer,
+                    &mut stack,
+                    source_store,
+                    interner,
+                    &mut had_error,
+                    op_idx,
+                    op,
+                )
+            }
             OpCode::Equal | OpCode::NotEq => comparative::equal(
                 &mut analyzer,
                 &mut stack,
