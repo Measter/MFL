@@ -32,7 +32,11 @@ fn expect_token<'a>(
                     kind_str,
                     interner.resolve_lexeme(ident.lexeme)
                 ),
-                Some(Label::new(ident.location).with_color(Color::Red)),
+                Some(
+                    Label::new(ident.location)
+                        .with_color(Color::Red)
+                        .with_message("here"),
+                ),
                 None,
                 source_store,
             );
@@ -41,8 +45,12 @@ fn expect_token<'a>(
         None => {
             diagnostics::emit_error(
                 prev.location,
-                "unexpected end of file",
-                Some(Label::new(prev.location).with_color(Color::Red)),
+                "unexpected end of tokens",
+                Some(
+                    Label::new(prev.location)
+                        .with_color(Color::Red)
+                        .with_message("here"),
+                ),
                 None,
                 source_store,
             );
