@@ -105,8 +105,8 @@ pub enum OpCode {
     Swap,
     SysCall(usize),
     UnresolvedIdent {
-        token: Token,
-        sub_token: Option<Token>,
+        module: Option<Token>,
+        proc: Token,
     },
     While {
         ip: usize,

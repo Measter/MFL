@@ -310,14 +310,14 @@ impl Program {
                 match op.code {
                     // Symbol in own module.
                     OpCode::UnresolvedIdent {
-                        token,
-                        sub_token: None,
+                        proc: proc_token,
+                        module: None,
                     } => {
                         // Obviously a symbol is visible to itself.
-                        let visible_id = if token.lexeme == proc.name.lexeme {
+                        let visible_id = if proc_token.lexeme == proc.name.lexeme {
                             Some(proc_id)
                         } else {
-                            self.get_visible_symbol(&proc, token.lexeme)
+                            self.get_visible_symbol(&proc, proc_token.lexeme)
                         };
                         if let Some(id) = visible_id {
                             op.code = OpCode::ResolvedIdent {
@@ -326,17 +326,17 @@ impl Program {
                             };
                         } else {
                             let module = &self.modules[&proc.module];
-                            let token_lexeme = interner.resolve_lexeme(token.lexeme);
+                            let token_lexeme = interner.resolve_lexeme(proc_token.lexeme);
                             let module_lexeme = interner.resolve_lexeme(module.name);
                             had_error = true;
                             diagnostics::emit_error(
-                                token.location,
+                                proc_token.location,
                                 format!(
                                     "symbol `{}` not found in module `{}`",
                                     token_lexeme, module_lexeme
                                 ),
                                 Some(
-                                    Label::new(token.location)
+                                    Label::new(proc_token.location)
                                         .with_color(Color::Red)
                                         .with_message("not found"),
                                 ),
@@ -347,18 +347,18 @@ impl Program {
                     }
                     // Symbol in other module.
                     OpCode::UnresolvedIdent {
-                        token,
-                        sub_token: Some(sub_token),
+                        proc: proc_token,
+                        module: Some(module_token),
                     } => {
-                        let module_id = match self.module_ident_map.get(&token.lexeme) {
+                        let module_id = match self.module_ident_map.get(&module_token.lexeme) {
                             Some(id) => *id,
                             None => {
-                                let module_name = interner.resolve_lexeme(token.lexeme);
+                                let module_name = interner.resolve_lexeme(module_token.lexeme);
                                 diagnostics::emit_error(
-                                    token.location,
+                                    proc_token.location,
                                     format!("module `{}` not found", module_name),
                                     Some(
-                                        Label::new(token.location)
+                                        Label::new(proc_token.location)
                                             .with_color(Color::Red)
                                             .with_message("not found"),
                                     ),
@@ -371,7 +371,7 @@ impl Program {
                         };
 
                         let module = &self.modules[&module_id];
-                        match module.top_level_symbols.get(&sub_token.lexeme) {
+                        match module.top_level_symbols.get(&proc_token.lexeme) {
                             Some(proc_id) => {
                                 op.code = OpCode::ResolvedIdent {
                                     module: module_id,
@@ -379,16 +379,16 @@ impl Program {
                                 };
                             }
                             None => {
-                                let proc_name = interner.resolve_lexeme(sub_token.lexeme);
-                                let module_name = interner.resolve_lexeme(token.lexeme);
+                                let proc_name = interner.resolve_lexeme(proc_token.lexeme);
+                                let module_name = interner.resolve_lexeme(module_token.lexeme);
                                 diagnostics::emit_error(
-                                    sub_token.location,
+                                    proc_token.location,
                                     format!(
                                         "symbol `{}` not found in module `{}`",
                                         proc_name, module_name
                                     ),
                                     Some(
-                                        Label::new(sub_token.location)
+                                        Label::new(proc_token.location)
                                             .with_color(Color::Red)
                                             .with_message("not found"),
                                     ),

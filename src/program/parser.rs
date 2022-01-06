@@ -105,10 +105,10 @@ pub fn parse_procedure_body(
 
             TokenKind::Boolean(b) => OpCode::PushBool(b),
             TokenKind::Ident => {
-                let sub_token = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
+                let (module, proc) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
                 {
                     let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
-                    expect_token(
+                    let expected = expect_token(
                         &mut token_iter,
                         "ident",
                         |k| k == TokenKind::Ident,
@@ -117,15 +117,21 @@ pub fn parse_procedure_body(
                         source_store,
                     )
                     .ok()
-                    .map(|(_, t)| t)
+                    .map(|(_, t)| t);
+
+                    let proc_id = if let Some(t) = expected {
+                        t
+                    } else {
+                        had_error = true;
+                        continue;
+                    };
+
+                    (Some(*token), proc_id)
                 } else {
-                    None
+                    (None, *token)
                 };
 
-                OpCode::UnresolvedIdent {
-                    token: *token,
-                    sub_token,
-                }
+                OpCode::UnresolvedIdent { module, proc }
             }
             TokenKind::Integer(value) => OpCode::PushInt(value),
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
