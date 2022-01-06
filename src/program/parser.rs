@@ -573,23 +573,26 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
-    // Makes later logic a bit easier if we always have a prologue and epilogue.
-    body.insert(
-        0,
-        Op {
-            code: OpCode::Prologue,
+    let proc_header = program.get_proc_mut(procedure_id);
+
+    if !proc_header.kind().is_macro() {
+        // Makes later logic a bit easier if we always have a prologue and epilogue.
+        body.insert(
+            0,
+            Op {
+                code: OpCode::Prologue,
+                token: name_token,
+                expansions: Vec::new(),
+            },
+        );
+
+        body.push(Op {
+            code: OpCode::Epilogue,
             token: name_token,
             expansions: Vec::new(),
-        },
-    );
+        });
+    }
 
-    body.push(Op {
-        code: OpCode::Epilogue,
-        token: name_token,
-        expansions: Vec::new(),
-    });
-
-    let proc_header = program.get_proc_mut(procedure_id);
     *proc_header.body_mut() = body;
 
     // stupid borrow checker...
