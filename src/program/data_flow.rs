@@ -335,6 +335,21 @@ pub fn analyze(
                 is_c_str,
                 id,
             ),
+            OpCode::ArgC => unimplemented!(),
+            OpCode::ArgV => unimplemented!(),
+
+            OpCode::CastBool => unimplemented!(),
+            OpCode::CastInt => unimplemented!(),
+            OpCode::CastPtr => unimplemented!(),
+
+            OpCode::While { .. } => unimplemented!(),
+            OpCode::DoWhile { .. } => unimplemented!(),
+            OpCode::EndWhile { .. } => unimplemented!(),
+
+            OpCode::If => unimplemented!(),
+            OpCode::DoIf { .. } => unimplemented!(),
+            OpCode::Elif { .. } | OpCode::Else { .. } => unimplemented!(),
+            OpCode::EndIf { .. } => unimplemented!(),
 
             OpCode::Drop => stack_ops::drop(
                 &mut analyzer,
@@ -400,6 +415,9 @@ pub fn analyze(
                 kind,
             ),
 
+            OpCode::ResolvedIdent{..} => unimplemented!(),
+            OpCode::SysCall(0..=6) => unimplemented!(),
+
             OpCode::Prologue => control::prologue(&mut analyzer, &mut stack, op_idx, op, proc),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 &mut analyzer,
@@ -410,7 +428,16 @@ pub fn analyze(
                 op,
                 proc,
             ),
-            _ => unimplemented!("{:?}", op.code),
+
+            OpCode::SysCall(_) // No syscalls with this many args.
+            | OpCode::CallProc { .. } // These haven't been generated yet.
+            | OpCode::Memory { .. } // Nor have these.
+            | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
+            | OpCode::End // All of these should be specialized.
+            | OpCode::Do // As should these.
+            => {
+                panic!("ICE: Encountered {:?}", op.code)
+            }
         }
     }
 
