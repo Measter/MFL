@@ -335,8 +335,19 @@ pub fn analyze(
                 is_c_str,
                 id,
             ),
-            OpCode::ArgC => unimplemented!(),
-            OpCode::ArgV => unimplemented!(),
+            OpCode::ArgC => stack_ops::push_argc(
+                &mut analyzer,
+                &mut stack,
+                op_idx,
+                op
+            ),
+            
+            OpCode::ArgV => stack_ops::push_argv(
+                &mut analyzer,
+                &mut stack,
+                op_idx,
+                op
+            ),
 
             OpCode::CastBool => unimplemented!(),
             OpCode::CastInt => unimplemented!(),

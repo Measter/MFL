@@ -117,6 +117,18 @@ pub(super) fn dup_pair(
     }
 }
 
+pub(super) fn push_argc(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op_idx: usize, op: &Op) {
+    let (new_id, _) = analyzer.new_value(PorthTypeKind::Int, op_idx, op.token);
+    stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
+}
+
+pub(super) fn push_argv(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op_idx: usize, op: &Op) {
+    let (new_id, _) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
+    stack.push(new_id);
+    analyzer.set_io(op_idx, op.token, &[], &[new_id]);
+}
+
 pub(super) fn push_bool(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
