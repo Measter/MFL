@@ -4,7 +4,122 @@ use crate::{
     interners::Interners, opcode::Op, source_file::SourceStorage, type_check::PorthTypeKind,
 };
 
-use super::{generate_stack_exhaustion_diag, Analyzer, ConstVal, PtrId, ValueId};
+use super::{
+    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, Value,
+    ValueId,
+};
+
+pub(super) fn cast_int(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    if let Some(&value_id) = stack.last() {
+        analyzer.consume(value_id, op_idx);
+    }
+
+    let (input, new_type, const_val) = match stack.pop() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 1);
+            *had_error = true;
+
+            (None, PorthTypeKind::Unknown, None)
+        }
+        Some(val) => {
+            let (new_type, const_val) = match analyzer.get_values([val]) {
+                type_pattern!(a @ PorthTypeKind::Bool)
+                | type_pattern!(a @ PorthTypeKind::Int)
+                | type_pattern!(a @ PorthTypeKind::Ptr) => (PorthTypeKind::Int, *a),
+                [val] => {
+                    // Type mismatch. Only case at the moment is if the type was Unknown.
+                    // We'll handle it properly anyway.
+                    *had_error = true;
+                    if val.porth_type != PorthTypeKind::Unknown {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
+                    }
+
+                    (PorthTypeKind::Unknown, None)
+                }
+            };
+
+            (Some(val), new_type, const_val)
+        }
+    };
+
+    let const_val = match const_val {
+        Some(ConstVal::Int(v)) => Some(ConstVal::Int(v)),
+        Some(ConstVal::Bool(v)) => Some(ConstVal::Int(v as _)),
+
+        // The actual pointer address is a runtime address.
+        Some(ConstVal::Ptr { .. }) | None => None,
+    };
+
+    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    new_value.const_val = const_val;
+
+    let inputs = input.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    stack.push(new_id);
+}
+
+pub(super) fn cast_ptr(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op_idx: usize,
+    op: &Op,
+) {
+    if let Some(&value_id) = stack.last() {
+        analyzer.consume(value_id, op_idx);
+    }
+
+    let (input, new_type, const_val) = match stack.pop() {
+        None => {
+            generate_stack_exhaustion_diag(source_store, op, stack.len(), 1);
+            *had_error = true;
+
+            (None, PorthTypeKind::Unknown, None)
+        }
+        Some(val) => {
+            let (new_type, const_val) = match analyzer.get_values([val]) {
+                type_pattern!(a @ PorthTypeKind::Int) | type_pattern!(a @ PorthTypeKind::Ptr) => {
+                    (PorthTypeKind::Ptr, *a)
+                }
+                [val] => {
+                    // Type mismatch.
+                    *had_error = true;
+                    if val.porth_type != PorthTypeKind::Unknown {
+                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
+                    }
+
+                    (PorthTypeKind::Unknown, None)
+                }
+            };
+
+            (Some(val), new_type, const_val)
+        }
+    };
+
+    let const_val = match const_val {
+        Some(ptr @ ConstVal::Ptr { .. }) => Some(ptr),
+        _ => None,
+    };
+
+    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    new_value.const_val = const_val;
+
+    let inputs = input.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
+    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    stack.push(new_id);
+}
 
 pub(super) fn drop(
     analyzer: &mut Analyzer,

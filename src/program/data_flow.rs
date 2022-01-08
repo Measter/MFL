@@ -349,9 +349,24 @@ pub fn analyze(
                 op
             ),
 
-            OpCode::CastBool => unimplemented!(),
-            OpCode::CastInt => unimplemented!(),
-            OpCode::CastPtr => unimplemented!(),
+            OpCode::CastInt => stack_ops::cast_int(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                interner,
+                &mut had_error,
+                op_idx,
+                op
+            ),
+            OpCode::CastPtr => stack_ops::cast_ptr(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                interner,
+                &mut had_error,
+                op_idx,
+                op
+            ),  
 
             OpCode::While { .. } => unimplemented!(),
             OpCode::DoWhile { .. } => unimplemented!(),
@@ -426,8 +441,25 @@ pub fn analyze(
                 kind,
             ),
 
-            OpCode::ResolvedIdent{..} => unimplemented!(),
-            OpCode::SysCall(0..=6) => unimplemented!(),
+            OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
+                program,
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                &mut had_error,
+                op_idx,
+                op,
+                proc_id,
+            ),
+            OpCode::SysCall(num_args @ 0..=6) => control::syscall(
+                &mut analyzer,
+                &mut stack,
+                source_store,
+                &mut had_error,
+                op_idx,
+                op,
+                num_args,
+            ),
 
             OpCode::Prologue => control::prologue(&mut analyzer, &mut stack, op_idx, op, proc),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
@@ -439,6 +471,9 @@ pub fn analyze(
                 op,
                 proc,
             ),
+
+            // TODO: Remove this opcode.
+            OpCode::CastBool => panic!("Unsupported"),
 
             OpCode::SysCall(_) // No syscalls with this many args.
             | OpCode::CallProc { .. } // These haven't been generated yet.
