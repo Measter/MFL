@@ -3,13 +3,13 @@
 use std::{path::Path, process::Command};
 
 use ariadne::{Color, Label};
+use clap::Parser;
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
 use log::{info, Level, LevelFilter};
 use program::ProcedureId;
 use simplelog::{ConfigBuilder, TermLogger};
 use source_file::SourceStorage;
-use structopt::StructOpt;
 
 use crate::program::{ProcedureKind, Program};
 
@@ -47,20 +47,20 @@ impl Width {
     }
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Args {
     /// Print more to the console
-    #[structopt(short, parse(from_occurrences))]
+    #[clap(short, parse(from_occurrences))]
     verbose: u8,
 
     /// Comma-separated list of paths to search includes.
-    #[structopt(short = "I", require_delimiter = true)]
+    #[clap(short = 'I', require_value_delimiter = true)]
     library_paths: Vec<String>,
 
     file: String,
 
     /// Set optimization level
-    #[structopt(short, parse(from_occurrences))]
+    #[clap(short, parse(from_occurrences))]
     opt_level: u8,
 }
 
@@ -172,7 +172,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let args = Args::from_args();
+    let args = Args::parse();
     let log_level = match args.verbose {
         0 => LevelFilter::Warn,
         1 => LevelFilter::Info,
