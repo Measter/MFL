@@ -188,6 +188,8 @@ impl<'source> Scanner<'source> {
         self.chars.peek().map(|(_, c)| *c)
     }
 
+    // We need mutable access here because we're peeking the iterator.
+    #[allow(clippy::wrong_self_convention)]
     fn is_at_end(&mut self) -> bool {
         self.peek().is_none()
     }
