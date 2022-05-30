@@ -2,6 +2,7 @@ use ariadne::{Color, Label};
 
 use crate::{
     diagnostics,
+    interners::Interners,
     n_ops::NOps,
     opcode::{Op, OpCode},
     program::{Procedure, ProcedureId, ProcedureKind, Program},
@@ -17,25 +18,18 @@ pub(super) fn epilogue_return(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
+    interner: &Interners,
     had_error: &mut bool,
     op_idx: usize,
     op: &Op,
     proc: &Procedure,
 ) {
-    // The epilogue points to the procedure name, but we want the diagnostic
-    // to point at the last token.
-    let cur_op = if op.code == OpCode::Epilogue {
-        &proc.body()[proc.body().len() - 2]
-    } else {
-        op
-    };
-
-    let make_labels = || {
-        let mut labels = vec![Label::new(cur_op.token.location)
+    let expand_labels = |label_op: &Op, msg: &str| {
+        let mut labels = vec![Label::new(label_op.token.location)
             .with_color(Color::Red)
-            .with_message("here")];
+            .with_message(msg)];
 
-        for source in cur_op.expansions.iter() {
+        for source in label_op.expansions.iter() {
             labels.push(
                 Label::new(*source)
                     .with_color(Color::Blue)
@@ -51,20 +45,41 @@ pub(super) fn epilogue_return(
     }
 
     if stack.len() != proc.exit_stack().len() {
+        let mut labels = vec![
+            Label::new(op.token.location)
+                .with_color(Color::Red)
+                .with_message("returning here"),
+            Label::new(proc.exit_stack_location())
+                .with_color(Color::Cyan)
+                .with_message("return type defined here"),
+        ];
+
+        let stack_len = stack.len();
+        stack.truncate(stack.len().saturating_sub(proc.exit_stack().len()));
+
+        for &value_id in &**stack {
+            let [value] = analyzer.get_values([value_id]);
+            labels.push(
+                Label::new(value.creator_token.location)
+                    .with_color(Color::Green)
+                    .with_message("value created here"),
+            );
+        }
+
         diagnostics::emit_error(
-            cur_op.token.location,
+            op.token.location,
             format!(
-                "expected {} values on stack, found {}",
+                "function `{}` returns {} values, found {}",
+                interner.resolve_lexeme(proc.name().lexeme),
                 proc.exit_stack().len(),
-                stack.len()
+                stack_len
             ),
-            make_labels(),
+            labels,
             None,
             source_store,
         );
         *had_error = true;
 
-        stack.truncate(stack.len().saturating_sub(proc.exit_stack().len()));
         return;
     }
 
@@ -77,7 +92,7 @@ pub(super) fn epilogue_return(
                 source_store,
                 stack,
                 proc.exit_stack(),
-                cur_op,
+                op,
                 proc.name,
                 "procedure return stack mismatch",
             );

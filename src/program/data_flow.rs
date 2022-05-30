@@ -466,6 +466,7 @@ pub fn analyze(
                 &mut analyzer,
                 &mut stack,
                 source_store,
+                interner,
                 &mut had_error,
                 op_idx,
                 op,
