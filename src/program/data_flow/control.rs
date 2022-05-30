@@ -39,7 +39,7 @@ pub(super) fn epilogue_return(
             labels.push(
                 Label::new(*source)
                     .with_color(Color::Blue)
-                    .with_message("expended from..."),
+                    .with_message("expanded from..."),
             );
         }
 
