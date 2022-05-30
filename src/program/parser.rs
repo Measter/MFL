@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::{Op, OpCode},
-    source_file::SourceStorage,
+    source_file::{SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
     Width,
 };
@@ -307,8 +307,8 @@ fn parse_type_signature<'a>(
     interner: &Interners,
     name: Token,
     source_store: &SourceStorage,
-) -> Result<Vec<PorthType>, ()> {
-    expect_token(
+) -> Result<(Vec<PorthType>, SourceLocation), ()> {
+    let (_, open_token) = expect_token(
         token_iter,
         "[",
         |k| k == TokenKind::SquareBracketOpen,
@@ -346,7 +346,7 @@ fn parse_type_signature<'a>(
         })
     }
 
-    expect_token(
+    let (_, close_token) = expect_token(
         token_iter,
         "]",
         |k| k == TokenKind::SquareBracketClosed,
@@ -355,7 +355,9 @@ fn parse_type_signature<'a>(
         source_store,
     )?;
 
-    Ok(type_list)
+    let signature_range = open_token.location.merge(close_token.location);
+
+    Ok((type_list, signature_range))
 }
 
 fn parse_function_header<'a>(
@@ -367,7 +369,8 @@ fn parse_function_header<'a>(
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
 ) -> Result<(Token, ProcedureId), ()> {
-    let entry_stack = parse_type_signature(token_iter, interner, name, source_store)?;
+    let (entry_stack, entry_stack_location) =
+        parse_type_signature(token_iter, interner, name, source_store)?;
     expect_token(
         token_iter,
         "to",
@@ -376,7 +379,8 @@ fn parse_function_header<'a>(
         interner,
         source_store,
     )?;
-    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
+    let (exit_stack, exit_stack_location) =
+        parse_type_signature(token_iter, interner, name, source_store)?;
 
     let new_proc = program.new_procedure(
         name,
@@ -384,7 +388,9 @@ fn parse_function_header<'a>(
         ProcedureKind::Function(FunctionData::default()),
         parent,
         exit_stack,
+        exit_stack_location,
         entry_stack,
+        entry_stack_location,
     );
 
     let (_, is_token) = expect_token(
@@ -416,7 +422,9 @@ fn parse_memory_header<'a>(
             kind: PorthTypeKind::Int,
             location: name.location,
         }],
+        name.location,
         Vec::new(),
+        name.location,
     );
 
     let (_, is_token) = expect_token(
@@ -445,7 +453,9 @@ fn parse_macro_header<'a>(
         ProcedureKind::Macro,
         parent,
         Vec::new(),
+        name.location,
         Vec::new(),
+        name.location,
     );
 
     let (_, is_token) = expect_token(
@@ -468,7 +478,8 @@ fn parse_const_header<'a>(
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
 ) -> Result<(Token, ProcedureId), ()> {
-    let exit_stack = parse_type_signature(token_iter, interner, name, source_store)?;
+    let (exit_stack, exit_sig_location) =
+        parse_type_signature(token_iter, interner, name, source_store)?;
 
     let new_proc = program.new_procedure(
         name,
@@ -476,7 +487,9 @@ fn parse_const_header<'a>(
         ProcedureKind::Const { const_val: None },
         parent,
         exit_stack,
+        exit_sig_location,
         Vec::new(),
+        name.location,
     );
 
     let (_, is_token) = expect_token(
@@ -508,7 +521,9 @@ fn parse_assert_header<'a>(
             kind: PorthTypeKind::Bool,
             location: name.location,
         }],
+        name.location,
         Vec::new(),
+        name.location,
     );
 
     let (_, is_token) = expect_token(

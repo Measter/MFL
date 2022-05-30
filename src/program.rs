@@ -17,7 +17,7 @@ use crate::{
     lexer::{self, Token},
     opcode::{self, Op, OpCode},
     simulate::{simulate_execute_program, SimulationError},
-    source_file::SourceStorage,
+    source_file::{SourceLocation, SourceStorage},
     type_check::{self, PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
@@ -80,7 +80,9 @@ pub struct Procedure {
 
     body: Vec<Op>,
     exit_stack: Vec<PorthType>,
+    exit_stack_location: SourceLocation,
     entry_stack: Vec<PorthType>,
+    entry_stack_location: SourceLocation,
 }
 
 impl Procedure {
@@ -120,8 +122,16 @@ impl Procedure {
         &self.exit_stack
     }
 
+    pub fn exit_stack_location(&self) -> SourceLocation {
+        self.exit_stack_location
+    }
+
     pub fn entry_stack(&self) -> &[PorthType] {
         &self.entry_stack
+    }
+
+    pub fn entry_stack_location(&self) -> SourceLocation {
+        self.entry_stack_location
     }
 
     fn expand_macros(&mut self, program: &Program) {
@@ -875,7 +885,9 @@ impl Program {
         kind: ProcedureKind,
         parent: Option<ProcedureId>,
         exit_stack: Vec<PorthType>,
+        exit_stack_location: SourceLocation,
         entry_stack: Vec<PorthType>,
+        entry_stack_location: SourceLocation,
     ) -> ProcedureId {
         let id = ProcedureId(self.proc_counter);
         self.proc_counter += 1;
@@ -888,7 +900,9 @@ impl Program {
             body: Vec::new(),
             parent,
             exit_stack,
+            exit_stack_location,
             entry_stack,
+            entry_stack_location,
         };
 
         self.all_procedures.insert(id, proc);
