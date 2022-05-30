@@ -242,7 +242,7 @@ fn get_procedure_body<'a>(
     keyword: Token,
     mut last_token: Token,
     source_store: &SourceStorage,
-) -> Result<&'a [Token], ()> {
+) -> Result<(&'a [Token], Token), ()> {
     let body_start_idx = match token_iter.peek() {
         Some((idx, _)) => *idx,
         None => {
@@ -298,7 +298,7 @@ fn get_procedure_body<'a>(
 
     had_error
         .not()
-        .then(|| &tokens[body_start_idx..end_idx])
+        .then(|| (&tokens[body_start_idx..end_idx], last_token))
         .ok_or(())
 }
 
@@ -562,7 +562,8 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
-    let body = get_procedure_body(&mut *token_iter, tokens, keyword, is_token, source_store)?;
+    let (body, end_token) =
+        get_procedure_body(&mut *token_iter, tokens, keyword, is_token, source_store)?;
 
     let mut body = parse_procedure_body(
         program,
@@ -588,7 +589,7 @@ fn parse_procedure<'a>(
 
         body.push(Op {
             code: OpCode::Epilogue,
-            token: name_token,
+            token: end_token,
             expansions: Vec::new(),
         });
     }
