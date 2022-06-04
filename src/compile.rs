@@ -5,7 +5,7 @@ use log::{debug, trace};
 
 use crate::{
     interners::Interners,
-    opcode::OpCode,
+    opcode::{Op, OpCode},
     program::{Procedure, ProcedureId, Program},
     source_file::SourceStorage,
     Width, OPT_INSTR, OPT_STACK,
@@ -69,7 +69,7 @@ struct OpRange {
 }
 
 impl OpCode {
-    fn compile_arithmetic_op(self) -> &'static str {
+    fn compile_arithmetic_op(&self) -> &'static str {
         match self {
             OpCode::Add => "    add ",
             OpCode::BitOr => "    or ",
@@ -82,7 +82,7 @@ impl OpCode {
         }
     }
 
-    fn compile_compare_op_suffix(self) -> &'static str {
+    fn compile_compare_op_suffix(&self) -> &'static str {
         match self {
             OpCode::Equal => "e",
             OpCode::Greater => "g",
@@ -95,6 +95,36 @@ impl OpCode {
     }
 }
 
+fn build_assembly_for_block(
+    program: &Program,
+    proc: &Procedure,
+    mut block: &[Op],
+    global_ip: &mut usize,
+    interner: &mut Interners,
+    opt_level: u8,
+    assembler: &mut Assembler,
+) {
+    while !block.is_empty() {
+        let len_compiled = if opt_level >= OPT_INSTR {
+            PASSES
+                .iter()
+                .filter_map(|pass| {
+                    pass(
+                        program, proc, block, global_ip, opt_level, assembler, interner,
+                    )
+                })
+                .next()
+        } else {
+            optimizer_passes::compile_single_instruction(
+                program, proc, block, global_ip, opt_level, assembler, interner,
+            )
+        }
+        .expect("ICE: Failed to compile single instruction");
+        block = &block[len_compiled..];
+        *global_ip += len_compiled;
+    }
+}
+
 fn build_assembly(
     program: &Program,
     proc: &Procedure,
@@ -102,23 +132,12 @@ fn build_assembly(
     opt_level: u8,
     assembler: &mut Assembler,
 ) {
-    let mut proc_body = proc.body();
+    let proc_body = proc.body();
     let mut ip = 0;
-    while !proc_body.is_empty() {
-        let len_compiled = if opt_level >= OPT_INSTR {
-            PASSES
-                .iter()
-                .filter_map(|pass| pass(program, proc, proc_body, ip, assembler, interner))
-                .next()
-        } else {
-            optimizer_passes::compile_single_instruction(
-                program, proc, proc_body, ip, assembler, interner,
-            )
-        }
-        .expect("ICE: Failed to compile single instruction");
-        proc_body = &proc_body[len_compiled..];
-        ip += len_compiled;
-    }
+
+    build_assembly_for_block(
+        program, proc, proc_body, &mut ip, interner, opt_level, assembler,
+    );
 }
 
 /// Merges two dynamic registers by replacing all instances of `end_reg_id` into
@@ -850,31 +869,32 @@ fn assemble_procedure(
     for asm in assembler.assembly() {
         if last_op_range != asm.op_range {
             last_op_range = asm.op_range.clone();
-            for (op, ip) in proc.body()[asm.op_range.clone()]
-                .iter()
-                .zip(asm.op_range.clone())
-            {
-                // We get the file ID from the source store, and the offset was generated from the source
-                // while lexing.
-                writeln!(
-                    out_file,
-                    "  ;; IP{} -- {}:{}:{} -- {:?}",
-                    ip,
-                    source_store.name(op.token.location.file_id),
-                    op.token.location.line,
-                    op.token.location.column,
-                    op.code,
-                )?;
+            writeln!(out_file, "  ;; IP{}", asm.op_range.start)?;
+            //     for (op, ip) in proc.body()[asm.op_range.clone()]
+            //         .iter()
+            //         .zip(asm.op_range.clone())
+            //     {
+            //         // We get the file ID from the source store, and the offset was generated from the source
+            //         // while lexing.
+            //         writeln!(
+            //             out_file,
+            //             "  ;; IP{} -- {}:{}:{} -- {:?}",
+            //             ip,
+            //             source_store.name(op.token.location.file_id),
+            //             op.token.location.line,
+            //             op.token.location.column,
+            //             op.code,
+            //         )?;
 
-                trace!(
-                    "    ;; IP{} -- {}:{}:{} -- {:?}",
-                    ip,
-                    source_store.name(op.token.location.file_id),
-                    op.token.location.line,
-                    op.token.location.column,
-                    op.code,
-                )
-            }
+            //         trace!(
+            //             "    ;; IP{} -- {}:{}:{} -- {:?}",
+            //             ip,
+            //             source_store.name(op.token.location.file_id),
+            //             op.token.location.line,
+            //             op.token.location.column,
+            //             op.code,
+            //         )
+            //     }
         }
 
         asm.asm

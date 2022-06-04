@@ -29,17 +29,17 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
     diagnostics::emit_error(op.token.location, msg, labels, None, source_store);
 }
 
-pub(crate) fn simulate_execute_program(
+fn simulate_execute_program_block(
     program: &Program,
     procedure: &Procedure,
+    block: &[Op],
+    value_stack: &mut Vec<u64>,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<Vec<u64>, SimulationError> {
+) -> Result<(), SimulationError> {
     let mut ip = 0;
-    let mut value_stack: Vec<u64> = Vec::new();
-
-    while let Some(op) = procedure.body().get(ip) {
-        match op.code {
+    while let Some(op) = block.get(ip) {
+        match &op.code {
             OpCode::Add => {
                 let ([b], a) = value_stack.popn_last_mut().unwrap();
                 *a += b;
@@ -80,13 +80,13 @@ pub(crate) fn simulate_execute_program(
                 *a >>= b;
             }
 
-            OpCode::PushBool(val) => value_stack.push(val as _),
-            OpCode::PushInt(val) => value_stack.push(val),
+            OpCode::PushBool(val) => value_stack.push(*val as _),
+            OpCode::PushInt(val) => value_stack.push(*val),
             // It's a bit weird, given you can't do much with a string, but
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
             OpCode::PushStr { id, is_c_str } => {
-                let literal = interner.resolve_literal(id);
+                let literal = interner.resolve_literal(*id);
                 if !is_c_str {
                     // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
                     // include that character.
@@ -99,18 +99,31 @@ pub(crate) fn simulate_execute_program(
                 value_stack.pop().unwrap();
             }
 
-            OpCode::While { .. } => {}
-            OpCode::DoWhile { end_ip, .. } => {
+            OpCode::While {
+                condition, body, ..
+            } => loop {
+                simulate_execute_program_block(
+                    program,
+                    procedure,
+                    condition,
+                    value_stack,
+                    interner,
+                    source_store,
+                )?;
                 let a = value_stack.pop().unwrap();
-
                 if a == 0 {
-                    ip = end_ip + 1;
-                    continue;
+                    break;
                 }
-            }
-            OpCode::EndWhile { condition_ip, .. } => {
-                ip = condition_ip;
-            }
+                simulate_execute_program_block(
+                    program,
+                    procedure,
+                    body,
+                    value_stack,
+                    interner,
+                    source_store,
+                )?;
+            },
+
             OpCode::If => {}
             OpCode::DoIf { end_ip, .. } => {
                 let a = value_stack.pop().unwrap();
@@ -120,7 +133,7 @@ pub(crate) fn simulate_execute_program(
                     continue;
                 }
             }
-            OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = end_ip,
+            OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = *end_ip,
             OpCode::EndIf { .. } => {}
 
             OpCode::Greater => {
@@ -153,7 +166,7 @@ pub(crate) fn simulate_execute_program(
                 value_stack.push(a);
             }
             OpCode::DupPair => {
-                if let [.., _, _] = &*value_stack {
+                if let [.., _, _] = value_stack.as_slice() {
                     value_stack.extend_from_within(value_stack.len() - 2..);
                 }
             }
@@ -162,7 +175,7 @@ pub(crate) fn simulate_execute_program(
                 value_stack[start..].rotate_left(1);
             }
             OpCode::Swap => {
-                if let [.., a, b] = &mut *value_stack {
+                if let [.., a, b] = value_stack.as_mut_slice() {
                     std::mem::swap(a, b);
                 }
             }
@@ -174,7 +187,7 @@ pub(crate) fn simulate_execute_program(
             OpCode::Return { .. } => break,
 
             OpCode::ResolvedIdent { proc_id, .. } => {
-                let referenced_proc = program.get_proc(proc_id);
+                let referenced_proc = program.get_proc(*proc_id);
 
                 match referenced_proc.kind() {
                     ProcedureKind::Const {
@@ -214,6 +227,26 @@ pub(crate) fn simulate_execute_program(
 
         ip += 1;
     }
+
+    Ok(())
+}
+
+pub(crate) fn simulate_execute_program(
+    program: &Program,
+    procedure: &Procedure,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<Vec<u64>, SimulationError> {
+    let mut value_stack: Vec<u64> = Vec::new();
+
+    simulate_execute_program_block(
+        program,
+        procedure,
+        procedure.body(),
+        &mut value_stack,
+        interner,
+        source_store,
+    )?;
 
     Ok(value_stack)
 }

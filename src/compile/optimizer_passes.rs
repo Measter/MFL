@@ -11,8 +11,15 @@ use crate::{
 
 use super::assembly::{Assembler, InstructionPart, RegisterType};
 
-type OptimizerFunction =
-    fn(&Program, &Procedure, &[Op], usize, &mut Assembler, &mut Interners) -> Option<usize>;
+type OptimizerFunction = fn(
+    &Program,
+    &Procedure,
+    &[Op],
+    &mut usize,
+    u8,
+    &mut Assembler,
+    &mut Interners,
+) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
     dup_boundry,
@@ -59,17 +66,17 @@ impl Width {
 }
 
 impl OpCode {
-    fn is_compiler_opt_arithmetic(self) -> bool {
+    fn is_compiler_opt_arithmetic(&self) -> bool {
         use OpCode::*;
         matches!(self, Add | BitAnd | BitOr | Subtract)
     }
 
-    fn is_compiler_opt_shift(self) -> bool {
+    fn is_compiler_opt_shift(&self) -> bool {
         use OpCode::*;
         matches!(self, ShiftLeft | ShiftRight)
     }
 
-    pub fn is_compare(self) -> bool {
+    pub fn is_compare(&self) -> bool {
         use OpCode::*;
         matches!(
             self,
@@ -84,7 +91,8 @@ fn dup_boundry(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    ip: &mut usize,
+    opt_level: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
@@ -94,14 +102,7 @@ fn dup_boundry(
         [boundry, dup]
             if matches!(
                 boundry.code,
-                While { .. }
-                    | DoWhile { .. }
-                    | DoIf { .. }
-                    | If
-                    | Elif { .. }
-                    | Else { .. }
-                    | EndIf { .. }
-                    | EndWhile { .. }
+                DoIf { .. } | If | Elif { .. } | Else { .. } | EndIf { .. }
             ) && dup.code.is_dup() =>
         {
             dup
@@ -111,10 +112,10 @@ fn dup_boundry(
 
     // We don't actually need any special handling for the boundry token,
     // so we can just throw it into the single-instruction handler.
-    compile_single_instruction(program, proc, ops, ip, assembler, interner)?;
+    compile_single_instruction(program, proc, ops, ip, opt_level, assembler, interner)?;
 
     let depth = dup.code.unwrap_dup();
-    assembler.set_op_range(ip + 1, ip + 2);
+    assembler.set_op_range(*ip + 1, *ip + 2);
 
     let reg = assembler.reg_alloc_dyn_dup(depth);
     assembler.reg_free_dyn_push(reg);
@@ -128,7 +129,8 @@ fn duppair_boundry(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    ip: &mut usize,
+    opt_level: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
@@ -138,23 +140,16 @@ fn duppair_boundry(
         [boundry, dup]
             if matches!(
                 boundry.code,
-                While { .. }
-                    | DoWhile { .. }
-                    | DoIf { .. }
-                    | If
-                    | Elif { .. }
-                    | Else { .. }
-                    | EndIf { .. }
-                    | EndWhile { .. }
+                DoIf { .. } | If | Elif { .. } | Else { .. } | EndIf { .. }
             ) && dup.code.is_dup_pair() => {}
         _ => return None,
     }
 
     // We don't actually need any special handling for the boundry token,
     // so we can just throw it into the single-instruction handler.
-    compile_single_instruction(program, proc, ops, ip, assembler, interner)?;
+    compile_single_instruction(program, proc, ops, ip, opt_level, assembler, interner)?;
 
-    assembler.set_op_range(ip + 1, ip + 2);
+    assembler.set_op_range(*ip + 1, *ip + 2);
 
     let top_reg = assembler.reg_alloc_dyn_dup(0);
     let bottom_reg = assembler.reg_alloc_dyn_dup(1);
@@ -169,21 +164,23 @@ fn push_compare(
     _: &Program,
     _: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let (push, op) = match start {
-        [push, op]
-            if op.code.is_compare() && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX)) =>
+    let (push_val, op) = match start {
+        [Op {
+            code: OpCode::PushInt(push_val @ 0..=ARITH_OP_MAX),
+            ..
+        }, op]
+            if op.code.is_compare() =>
         {
-            (push, op)
+            (*push_val, op)
         }
         _ => return None,
     };
-
-    let push_val = push.code.unwrap_push_int();
 
     assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
@@ -210,21 +207,23 @@ fn push_shift(
     _: &Program,
     _: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let (push, op) = match start {
-        [push, op]
-            if op.code.is_compiler_opt_shift() && matches!(push.code, OpCode::PushInt(0..=255)) =>
+    let (push_val, op) = match start {
+        [Op {
+            code: OpCode::PushInt(push_val @ 0..=255),
+            ..
+        }, op]
+            if op.code.is_compiler_opt_shift() =>
         {
-            (push, op)
+            (push_val, op)
         }
         _ => return None,
     };
-
-    let push_val = push.code.unwrap_push_int();
 
     assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
@@ -245,22 +244,23 @@ fn push_arithmetic(
     _: &Program,
     _: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     _: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let (push, op) = match start {
-        [push, op]
-            if op.code.is_compiler_opt_arithmetic()
-                && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX)) =>
+    let (push_val, op) = match start {
+        [Op {
+            code: OpCode::PushInt(push_val @ 0..=ARITH_OP_MAX),
+            ..
+        }, op]
+            if op.code.is_compiler_opt_arithmetic() =>
         {
-            (push, op)
+            (push_val, op)
         }
         _ => return None,
     };
-
-    let push_val = push.code.unwrap_push_int();
 
     assembler.set_op_range(ip, ip + start.len());
     let reg = assembler.reg_alloc_dyn_pop();
@@ -281,24 +281,25 @@ fn mem_push_store(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
     let (start, _) = ops.firstn()?;
-    let (mem, push, store) = match start {
-        [push, mem, store]
-            if mem.code.is_memory()
-                && matches!(push.code, OpCode::PushInt(0..=ARITH_OP_MAX))
-                && store.code.is_store() =>
+    let (mem, push_val, store) = match start {
+        [Op {
+            code: OpCode::PushInt(push_val @ 0..=ARITH_OP_MAX),
+            ..
+        }, mem, store]
+            if mem.code.is_memory() && store.code.is_store() =>
         {
-            (mem, push, store)
+            (mem, *push_val, store)
         }
         _ => return None,
     };
 
     let (_, proc_id, offset, global) = mem.code.unwrap_memory();
-    let push_val = push.code.unwrap_push_int();
     let (width, ..) = store.code.unwrap_store();
     assembler.set_op_range(ip, ip + start.len());
 
@@ -336,7 +337,8 @@ fn mem_store(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
@@ -390,7 +392,8 @@ fn mem_load(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    &mut ip: &mut usize,
+    _: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
@@ -450,15 +453,16 @@ pub(super) fn compile_single_instruction(
     program: &Program,
     proc: &Procedure,
     ops: &[Op],
-    ip: usize,
+    ip: &mut usize,
+    opt_level: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
 ) -> Option<usize> {
     use super::{InstructionPart::EmitRegister, RegisterType::Fixed};
 
     let op = ops.get(0)?;
-    assembler.set_op_range(ip, ip + 1);
-    match op.code {
+    assembler.set_op_range(*ip, *ip + 1);
+    match &op.code {
         OpCode::Add | OpCode::Subtract | OpCode::BitOr | OpCode::BitAnd => {
             let b_id = assembler.reg_alloc_dyn_pop();
             let a_id = assembler.reg_alloc_dyn_pop();
@@ -554,7 +558,7 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::PushBool(val) => {
-            let reg = assembler.reg_alloc_dyn_literal((val as u64).to_string());
+            let reg = assembler.reg_alloc_dyn_literal((*val as u64).to_string());
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::PushInt(val) => {
@@ -562,12 +566,12 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::PushStr { id, is_c_str } => {
-            assembler.use_string(id);
+            assembler.use_string(*id);
 
-            let literal = interner.resolve_literal(id);
+            let literal = interner.resolve_literal(*id);
             let id = id.into_inner().get();
 
-            if !is_c_str {
+            if !*is_c_str {
                 // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
                 // include that character.
                 let len = literal.len() - 1;
@@ -585,7 +589,7 @@ pub(super) fn compile_single_instruction(
             ..
         } => {
             let proc_data = proc.kind().get_proc_data();
-            let base_offset = proc_data.alloc_size_and_offsets[&proc_id].offset;
+            let base_offset = proc_data.alloc_size_and_offsets[proc_id].offset;
             let reg = assembler.reg_alloc_dyn_lea(format!("rbp + {} + {}", base_offset, offset));
             assembler.reg_free_dyn_push(reg);
         }
@@ -595,9 +599,9 @@ pub(super) fn compile_single_instruction(
             global: true,
             ..
         } => {
-            assembler.use_global_alloc(proc_id);
+            assembler.use_global_alloc(*proc_id);
 
-            let alloc_name = interner.get_symbol_name(program, proc_id);
+            let alloc_name = interner.get_symbol_name(program, *proc_id);
             let reg = assembler.reg_alloc_dyn_literal(format!("__{} + {}", alloc_name, offset));
             assembler.reg_free_dyn_push(reg);
         }
@@ -621,7 +625,7 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_push(duped);
         }
         OpCode::Dup { depth } => {
-            let reg = assembler.reg_alloc_dyn_dup(depth);
+            let reg = assembler.reg_alloc_dyn_dup(*depth);
             assembler.reg_free_dyn_push(reg);
         }
         OpCode::DupPair => {
@@ -653,7 +657,7 @@ pub(super) fn compile_single_instruction(
 
         OpCode::Load { width, .. } => {
             let addr_reg = assembler.reg_alloc_dyn_pop();
-            let val_reg = if width == Width::Qword {
+            let val_reg = if *width == Width::Qword {
                 assembler.reg_alloc_dyn_nop()
             } else {
                 assembler.reg_alloc_dyn_literal("0")
@@ -661,7 +665,7 @@ pub(super) fn compile_single_instruction(
 
             assembler.push_instr([
                 str_lit("    mov "),
-                dyn_sized_reg(val_reg, width),
+                dyn_sized_reg(val_reg, *width),
                 str_lit(format!(", {} [", width.to_asm())),
                 dyn_reg(addr_reg),
                 str_lit("]"),
@@ -677,14 +681,51 @@ pub(super) fn compile_single_instruction(
                 str_lit(format!("    mov {} [", width.to_asm())),
                 dyn_reg(addr_reg),
                 str_lit("], "),
-                dyn_sized_reg(val_reg, width),
+                dyn_sized_reg(val_reg, *width),
             ]);
 
             assembler.reg_free_dyn_drop(val_reg);
             assembler.reg_free_dyn_drop(addr_reg);
         }
 
-        OpCode::DoWhile { end_ip, .. } | OpCode::DoIf { end_ip, .. } => {
+        OpCode::While {
+            condition, body, ..
+        } => {
+            let loop_id = *ip;
+            assembler.push_instr([str_lit(format!("  .LBL_WHILE_START{}:", loop_id))]);
+            assembler.block_boundry();
+
+            super::build_assembly_for_block(
+                program, proc, condition, ip, interner, opt_level, assembler,
+            );
+
+            assembler.block_boundry();
+            let reg_id = assembler.reg_alloc_dyn_pop();
+
+            assembler.push_instr([
+                str_lit("    test "),
+                dyn_reg(reg_id),
+                str_lit(", "),
+                dyn_reg(reg_id),
+            ]);
+            assembler.push_instr([str_lit(format!("    jz .LBL_WHILE_END{}", loop_id))]);
+
+            assembler.reg_free_dyn_drop(reg_id);
+            assembler.block_boundry();
+
+            super::build_assembly_for_block(
+                program, proc, body, ip, interner, opt_level, assembler,
+            );
+
+            assembler.push_instr([str_lit(format!("    jmp .LBL_WHILE_START{}", loop_id))]);
+            assembler.push_instr([str_lit(format!("  .LBL_WHILE_END{}:", loop_id))]);
+            assembler.block_boundry();
+        }
+
+        OpCode::If => {
+            assembler.block_boundry();
+        }
+        OpCode::DoIf { end_ip, .. } => {
             assembler.block_boundry();
             let reg_id = assembler.reg_alloc_dyn_pop();
 
@@ -699,22 +740,6 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(reg_id);
             assembler.block_boundry();
         }
-        OpCode::While { ip } => {
-            assembler.push_instr([str_lit(format!("  .LBL{}:", ip))]);
-            assembler.block_boundry();
-        }
-        OpCode::EndWhile {
-            condition_ip,
-            end_ip,
-        } => {
-            assembler.push_instr([str_lit(format!("    jmp .LBL{}", condition_ip))]);
-            assembler.push_instr([str_lit(format!("  .LBL{}:", end_ip))]);
-            assembler.block_boundry();
-        }
-
-        OpCode::If => {
-            assembler.block_boundry();
-        }
         OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
             assembler.block_boundry();
             assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
@@ -727,9 +752,9 @@ pub(super) fn compile_single_instruction(
         }
 
         OpCode::CallProc { proc_id, .. } => {
-            let callee = program.get_proc(proc_id);
-            assembler.use_function(proc_id);
-            let proc_name = interner.get_symbol_name(program, proc_id);
+            let callee = program.get_proc(*proc_id);
+            assembler.use_function(*proc_id);
+            let proc_name = interner.get_symbol_name(program, *proc_id);
 
             let num_regs = FIXED_REGS.len().min(callee.entry_stack().len());
             for &reg in &FIXED_REGS[..num_regs] {
@@ -785,6 +810,7 @@ pub(super) fn compile_single_instruction(
         }
 
         OpCode::SysCall(a @ 0..=6) => {
+            let a: usize = *a;
             for &reg in &FIXED_REGS[..=a] {
                 assembler.reg_alloc_fixed_pop(reg);
             }

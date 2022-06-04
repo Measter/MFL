@@ -28,7 +28,8 @@ fn over_over<'a>(
 ) -> Option<(Vec<Op>, &'a [Op])> {
     let (a, b, xs) = match ops {
         [a, b, xs @ ..]
-            if a.code == OpCode::Dup { depth: 1 } && b.code == OpCode::Dup { depth: 1 } =>
+            if matches!(a.code, OpCode::Dup { depth: 1 })
+                && matches!(b.code, OpCode::Dup { depth: 1 }) =>
         {
             (a, b, xs)
         }
@@ -65,12 +66,18 @@ fn push_not<'a>(
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
     let (start, rest) = ops.firstn()?;
-    let (int, not) = match start {
-        [int, not] if int.code.is_push_int() && not.code.is_bit_not() => (int, not),
+    let (int, int_val, not) = match start {
+        [int @ Op {
+            code: OpCode::PushInt(int_val),
+            ..
+        }, not]
+            if not.code.is_bit_not() =>
+        {
+            (int, *int_val, not)
+        }
         _ => return None,
     };
 
-    let int_val = !int.code.unwrap_push_int();
     let location = if int.token.location.file_id != not.token.location.file_id {
         not.token.location
     } else {
@@ -99,17 +106,20 @@ fn push_push_divmod<'a>(
     interners: &mut Interners,
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
-    let (a, b, op, xs) = match ops {
-        [a, b, op, xs @ ..]
-            if a.code.is_push_int() && b.code.is_push_int() && op.code.is_div_mod() =>
+    let (a, a_val, b_val, op, xs) = match ops {
+        [a @ Op {
+            code: OpCode::PushInt(a_val),
+            ..
+        }, Op {
+            code: OpCode::PushInt(b_val),
+            ..
+        }, op, xs @ ..]
+            if op.code.is_div_mod() =>
         {
-            (a, b, op, xs)
+            (a, *a_val, *b_val, op, xs)
         }
         _ => return None,
     };
-
-    let a_val = a.code.unwrap_push_int();
-    let b_val = b.code.unwrap_push_int();
 
     let rem = a_val % b_val;
     let quot = a_val / b_val;
@@ -153,18 +163,22 @@ fn binary_ops<'a>(
     interners: &mut Interners,
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
-    let (a, b, op, xs) = match ops {
-        [a, b, op, xs @ ..]
-            if a.code.is_push_int() && b.code.is_push_int() && op.code.is_binary_op() =>
+    let (a, a_val, b_val, op, xs) = match ops {
+        [a @ Op {
+            code: OpCode::PushInt(a_val),
+            ..
+        }, Op {
+            code: PushInt(b_val),
+            ..
+        }, op, xs @ ..]
+            if op.code.is_binary_op() =>
         {
-            (a, b, op, xs)
+            (a, *a_val, *b_val, op, xs)
         }
 
         _ => return None,
     };
 
-    let a_val = a.code.unwrap_push_int();
-    let b_val = b.code.unwrap_push_int();
     let res = op.code.get_binary_op()(a_val, b_val);
 
     let location = if a.token.location.file_id != op.token.location.file_id {
@@ -204,25 +218,26 @@ fn memory_offset<'a>(
     sources: &SourceStorage,
 ) -> Option<(Vec<Op>, &'a [Op])> {
     let (start, rest) = ops.firstn()?;
-    let (int, mem, op, mem_first) = match start {
-        [int, mem, op]
-            if int.code.is_push_int()
-                && mem.code.is_memory()
-                && matches!(op.code, Add | Subtract) =>
+    let (int, int_val, mem, op, mem_first) = match start {
+        [int @ Op {
+            code: OpCode::PushInt(int_val),
+            ..
+        }, mem, op]
+            if mem.code.is_memory() && matches!(op.code, Add | Subtract) =>
         {
-            (int, mem, op, false)
+            (int, *int_val, mem, op, false)
         }
-        [mem, int, op]
-            if mem.code.is_memory()
-                && int.code.is_push_int()
-                && matches!(op.code, Add | Subtract) =>
+        [mem, int @ Op {
+            code: OpCode::PushInt(int_val),
+            ..
+        }, op]
+            if mem.code.is_memory() && matches!(op.code, Add | Subtract) =>
         {
-            (int, mem, op, true)
+            (int, *int_val, mem, op, true)
         }
         _ => return None,
     };
 
-    let int_val = int.code.unwrap_push_int();
     let (module_id, proc_id, mem_offset, global) = mem.code.unwrap_memory();
     let res = mem_first
         .then(|| op.code.get_binary_op()(mem_offset as u64, int_val))

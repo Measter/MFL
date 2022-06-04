@@ -369,8 +369,6 @@ pub fn analyze(
             ),  
 
             OpCode::While { .. } => unimplemented!(),
-            OpCode::DoWhile { .. } => unimplemented!(),
-            OpCode::EndWhile { .. } => unimplemented!(),
 
             OpCode::If => unimplemented!(),
             OpCode::DoIf { .. } => unimplemented!(),

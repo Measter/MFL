@@ -142,7 +142,22 @@ pub fn parse_procedure_body(
             TokenKind::ArgC => OpCode::ArgC,
             TokenKind::ArgV => OpCode::ArgV,
 
-            TokenKind::While => OpCode::While { ip: usize::MAX },
+            TokenKind::While => match parse_while(
+                program,
+                module_id,
+                &mut token_iter,
+                tokens,
+                *token,
+                parent,
+                interner,
+                source_store,
+            ) {
+                Err(_) => {
+                    had_error = true;
+                    continue;
+                }
+                Ok(code) => code,
+            },
             TokenKind::Do => OpCode::Do,
 
             TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
@@ -241,6 +256,7 @@ fn get_procedure_body<'a>(
     tokens: &'a [Token],
     keyword: Token,
     mut last_token: Token,
+    target_token_type: TokenKind,
     source_store: &SourceStorage,
 ) -> Result<(&'a [Token], Token), ()> {
     let body_start_idx = match token_iter.peek() {
@@ -279,7 +295,7 @@ fn get_procedure_body<'a>(
 
         if token.kind.new_block() {
             block_depth += 1;
-        } else if token.kind.end_block() {
+        } else if token.kind == target_token_type {
             block_depth -= 1;
         }
 
@@ -291,7 +307,7 @@ fn get_procedure_body<'a>(
         }
     }
 
-    if last_token.kind != TokenKind::End {
+    if last_token.kind != target_token_type {
         diagnostics::end_of_file(last_token.location, source_store);
         return Err(());
     }
@@ -300,6 +316,53 @@ fn get_procedure_body<'a>(
         .not()
         .then(|| (&tokens[body_start_idx..end_idx], last_token))
         .ok_or(())
+}
+
+fn parse_while<'a>(
+    program: &mut Program,
+    module_id: ModuleId,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    tokens: &'a [Token],
+    keyword: Token,
+    parent: Option<ProcedureId>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<OpCode, ()> {
+    let (condition, do_token) = get_procedure_body(
+        token_iter,
+        tokens,
+        keyword,
+        keyword,
+        TokenKind::Do,
+        source_store,
+    )?;
+
+    let condition = parse_procedure_body(
+        program,
+        module_id,
+        condition,
+        interner,
+        parent,
+        source_store,
+    )?;
+
+    let (body, end_token) = get_procedure_body(
+        token_iter,
+        tokens,
+        keyword,
+        do_token,
+        TokenKind::End,
+        source_store,
+    )?;
+
+    let body = parse_procedure_body(program, module_id, body, interner, parent, source_store)?;
+
+    Ok(OpCode::While {
+        condition,
+        do_token,
+        body,
+        end_token,
+    })
 }
 
 fn parse_type_signature<'a>(
@@ -577,8 +640,14 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
-    let (body, end_token) =
-        get_procedure_body(&mut *token_iter, tokens, keyword, is_token, source_store)?;
+    let (body, end_token) = get_procedure_body(
+        &mut *token_iter,
+        tokens,
+        keyword,
+        is_token,
+        TokenKind::End,
+        source_store,
+    )?;
 
     let mut body = parse_procedure_body(
         program,

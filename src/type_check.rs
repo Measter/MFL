@@ -26,6 +26,7 @@ pub enum PorthTypeKind {
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct PorthType {
     pub kind: PorthTypeKind,
+    // TODO: Replace this with source token.
     pub location: SourceLocation,
 }
 
@@ -241,14 +242,14 @@ macro_rules! stack_check {
                 // This means one or more operands were the result of a failed type check.
                 // In order to avoid flooding the user with errors that resulted from the
                 // original failure, we'll not emit an error here.
-                $had_error = true;
+                *$had_error = true;
                 None
             }
             #[allow(unreachable_patterns)]
             Some(ts) => {
                 let lexeme = $interners.resolve_lexeme($op.token.lexeme);
                 generate_type_mismatch($source_store, lexeme, $op, &ts);
-                $had_error = true;
+                *$had_error = true;
                 None
             }
             None => {
@@ -258,7 +259,7 @@ macro_rules! stack_check {
                     $stack.len(),
                     $op.code.pop_count(),
                 );
-                $had_error = true;
+                *$had_error = true;
                 $stack.clear();
                 None
             }
@@ -338,18 +339,19 @@ struct BlockStackState {
     true_stack: Option<Vec<PorthType>>,
 }
 
-pub fn type_check(
+pub fn type_check_block(
     program: &Program,
     proc: &Procedure,
+    body: &[Op],
+    stack: &mut Vec<PorthType>,
+    had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(), ()> {
-    let mut stack: Vec<PorthType> = proc.entry_stack().to_owned();
+) {
     let mut block_stack_states: Vec<BlockStackState> = Vec::new();
-    let mut had_error = false;
 
-    for op in proc.body() {
-        match op.code {
+    for op in body {
+        match &op.code {
             OpCode::Add => {
                 let res = stack_check!(
                     source_store,
@@ -496,14 +498,15 @@ pub fn type_check(
                 stack_check!(source_store, had_error, stack, interner, op, [_]);
             }
 
-            OpCode::While { .. } => {
-                block_stack_states.push(BlockStackState {
+            OpCode::While { condition, body: while_body, ..} => {
+                let entry_stack_state = BlockStackState {
                     open_location: op.token.location,
                     entry_stack: stack.clone(),
-                    true_stack: None,
-                });
-            }
-            OpCode::DoWhile { .. } => {
+                    true_stack: None
+                };
+
+                type_check_block(program, proc, condition, stack, had_error, interner, source_store);
+
                 stack_check!(
                     source_store,
                     had_error,
@@ -512,41 +515,34 @@ pub fn type_check(
                     op,
                     kind_pat!([PorthTypeKind::Bool])
                 );
-                let entry_stack_state = block_stack_states
-                    .last()
-                    .expect("ICE: DoWhile requires a stack depth");
 
-                had_error |= compare_expected_stacks(
+                *had_error |= compare_expected_stacks(
                     &entry_stack_state.entry_stack,
-                    &stack,
+                    stack,
                     entry_stack_state.open_location,
                     op,
                     "while-do condition must leave the stack in the same state it entered with",
-                    source_store,
+                    source_store
                 );
 
-                // Restore the stack so that we know it's the expected state before the body executes.
+                // Restore the stack to the state it was in before the condition.
                 stack.clear();
                 stack.extend_from_slice(&entry_stack_state.entry_stack);
-            }
-            OpCode::EndWhile { .. } => {
-                let entry_stack_state = block_stack_states
-                    .pop()
-                    .expect("ICE: EndWhile/EndIf requires a stack depth");
 
-                had_error |= compare_expected_stacks(
+                type_check_block(program, proc, while_body, stack, had_error, interner, source_store);
+
+                *had_error |= compare_expected_stacks(
                     &entry_stack_state.entry_stack,
-                    &stack,
+                    stack,
                     entry_stack_state.open_location,
                     op,
-                    "while-do blocks must leave the stack in the same state it entered with",
-                    source_store,
+                    "while-do bodies must leave the stack in the same state it entered with",
+                    source_store
                 );
 
-                // Now that we've checked, we need to restore the stack to the state it was in
-                // prior to the branch, so that the remainder of the code can operate as if
-                // we never went down it.
-                stack = entry_stack_state.entry_stack;
+                // Now restore the stack again do where it was prior to the loop.
+                *stack = entry_stack_state.entry_stack;
+
             }
 
             OpCode::If => {
@@ -569,9 +565,9 @@ pub fn type_check(
                     .last()
                     .expect("ICE: DoIf requires a stack depth");
 
-                had_error |= compare_expected_stacks(
+                *had_error |= compare_expected_stacks(
                     &entry_stack_state.entry_stack,
-                    &stack,
+                    stack,
                     entry_stack_state.open_location,
                     op,
                     "if-do condition must leave the stack in the same state it entered with",
@@ -597,9 +593,9 @@ pub fn type_check(
                 // as if it were an end-branch and check the stack state.
                 match &mut entry_stack_state.true_stack {
                     Some(expected_stack) => {
-                        had_error |= compare_expected_stacks(
+                        *had_error |= compare_expected_stacks(
                             expected_stack,
-                            &stack,
+                            stack,
                             entry_stack_state.open_location,
                             op,
                             "all if-elif-else blocks must leave the stack in the same state",
@@ -634,9 +630,9 @@ pub fn type_check(
                     )
                 };
 
-                had_error |= compare_expected_stacks(
+                *had_error |= compare_expected_stacks(
                     &expected_stack,
-                    &stack,
+                    stack,
                     entry_stack_state.open_location,
                     op,
                     msg,
@@ -646,7 +642,7 @@ pub fn type_check(
                 // Now that we've checked, we need to restore the stack to the state it was in
                 // prior to the branch, so that the remainder of the code can operate as if
                 // we never went down it.
-                stack = expected_stack;
+                *stack = expected_stack;
             }
 
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
@@ -683,7 +679,7 @@ pub fn type_check(
             OpCode::Dup { depth } => {
                 if stack.len() < (depth + 1) {
                     generate_stack_exhaustion(source_store, op, stack.len(), depth + 1);
-                    had_error = true;
+                    *had_error = true;
                     // We don't know what was expected, but we need something there.
                     stack.push(PorthType::new(PorthTypeKind::Unknown, op.token.location));
                 } else {
@@ -691,7 +687,7 @@ pub fn type_check(
                     stack.push(ty);
                 }
             }
-            OpCode::DupPair => match &*stack {
+            OpCode::DupPair => match stack.as_slice() {
                 [.., a, b] => {
                     let a = *a;
                     let b = *b;
@@ -700,7 +696,7 @@ pub fn type_check(
                 [a] => {
                     let a = *a;
                     generate_stack_exhaustion(source_store, op, stack.len(), op.code.pop_count());
-                    had_error = true;
+                    *had_error = true;
                     stack.extend_from_slice(&[
                         PorthType::new(PorthTypeKind::Unknown, op.token.location),
                         a,
@@ -708,7 +704,7 @@ pub fn type_check(
                 }
                 [] => {
                     generate_stack_exhaustion(source_store, op, 0, op.code.pop_count());
-                    had_error = true;
+                    *had_error = true;
                     stack.extend_from_slice(&[
                         PorthType::new(PorthTypeKind::Unknown, op.token.location),
                         PorthType::new(PorthTypeKind::Unknown, op.token.location),
@@ -716,7 +712,7 @@ pub fn type_check(
                 }
             },
             OpCode::Rot => {
-                match &*stack {
+                match stack.as_slice() {
                     [.., _, _, _] => {}
                     _ => {
                         generate_stack_exhaustion(
@@ -725,7 +721,7 @@ pub fn type_check(
                             stack.len(),
                             op.code.pop_count(),
                         );
-                        had_error = true;
+                        *had_error = true;
                         stack.resize(3, PorthType::new(PorthTypeKind::Unknown, op.token.location));
                     }
                 }
@@ -738,7 +734,7 @@ pub fn type_check(
                 }
                 _ => {
                     generate_stack_exhaustion(source_store, op, stack.len(), op.code.pop_count());
-                    had_error = true;
+                    *had_error = true;
                     stack.resize(2, PorthType::new(PorthTypeKind::Unknown, op.token.location));
                 }
             },
@@ -752,7 +748,7 @@ pub fn type_check(
                     op,
                     kind_pat!([PorthTypeKind::Ptr])
                 );
-                stack.push(PorthType::new(kind, op.token.location));
+                stack.push(PorthType::new(*kind, op.token.location));
             }
             OpCode::Store{ kind, .. } => {
                 let res = stack_check!(
@@ -765,8 +761,8 @@ pub fn type_check(
                 );
 
                 match res {
-                    Some([store_kind, _]) if store_kind.kind != kind && store_kind.kind != PorthTypeKind::Unknown => {
-                        had_error = true;
+                    Some([store_kind, _]) if store_kind.kind != *kind && store_kind.kind != PorthTypeKind::Unknown => {
+                        *had_error = true;
                         let lexeme = interner.resolve_lexeme(op.token.lexeme);
                         generate_type_mismatch(source_store, lexeme, op, &[store_kind]);
                     }
@@ -812,7 +808,7 @@ pub fn type_check(
             }
 
             OpCode::ResolvedIdent { proc_id, .. } => {
-                let referenced_proc = program.get_proc(proc_id);
+                let referenced_proc = program.get_proc(*proc_id);
 
                 match referenced_proc.kind() {
                     ProcedureKind::Memory => {
@@ -826,7 +822,7 @@ pub fn type_check(
                                 stack.len(),
                                 referenced_proc.entry_stack().len(),
                             );
-                            had_error = true;
+                            *had_error = true;
                             stack.clear();
                         } else {
                             let last_n = stack.lastn(referenced_proc.entry_stack().len()).unwrap();
@@ -839,7 +835,7 @@ pub fn type_check(
                                     "incorrect types on stack",
                                     source_store,
                                 );
-                                had_error = true;
+                                *had_error = true;
                             }
                             stack.truncate(stack.len() - referenced_proc.entry_stack().len());
                         }
@@ -851,14 +847,14 @@ pub fn type_check(
 
             OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::Return => {
-                had_error |= final_stack_check(proc, Some(op), &stack, source_store);
+                *had_error |= final_stack_check(proc, Some(op), stack, source_store);
             }
 
             OpCode::SysCall(num_args @ 0..=6) => {
                 let required = num_args + 1; //
                 if stack.len() < required {
                     generate_stack_exhaustion(source_store, op, stack.len(), required);
-                    had_error = true;
+                    *had_error = true;
                     stack.clear();
                 } else {
                     stack.truncate(stack.len() - required);
@@ -877,6 +873,26 @@ pub fn type_check(
             }
         }
     }
+}
+
+pub fn type_check(
+    program: &Program,
+    proc: &Procedure,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut stack: Vec<PorthType> = proc.entry_stack().to_owned();
+    let mut had_error = false;
+
+    type_check_block(
+        program,
+        proc,
+        proc.body(),
+        &mut stack,
+        &mut had_error,
+        interner,
+        source_store,
+    );
 
     had_error |= final_stack_check(proc, None, &stack, source_store);
 

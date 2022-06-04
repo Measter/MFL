@@ -18,7 +18,7 @@ use self::optimizer_passes::PASSES;
 
 mod optimizer_passes;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
+#[derive(Debug, Clone, Variantly)]
 pub enum OpCode {
     Add,
     ArgC,
@@ -38,10 +38,6 @@ pub enum OpCode {
     DoIf {
         end_ip: usize,
     },
-    DoWhile {
-        end_ip: usize,
-        condition_ip: usize,
-    },
     Dup {
         depth: usize,
     },
@@ -58,10 +54,6 @@ pub enum OpCode {
     End,
     EndIf {
         ip: usize,
-    },
-    EndWhile {
-        condition_ip: usize,
-        end_ip: usize,
     },
     Epilogue,
     Equal,
@@ -109,12 +101,15 @@ pub enum OpCode {
         proc: Token,
     },
     While {
-        ip: usize,
+        condition: Vec<Op>,
+        do_token: Token,
+        body: Vec<Op>,
+        end_token: Token,
     },
 }
 
 impl OpCode {
-    pub fn pop_count(self) -> usize {
+    pub fn pop_count(&self) -> usize {
         match self {
             OpCode::Rot => 3,
 
@@ -141,7 +136,6 @@ impl OpCode {
             | OpCode::CastPtr
             | OpCode::Do
             | OpCode::DoIf { .. }
-            | OpCode::DoWhile { .. }
             | OpCode::Drop
             | OpCode::Load { .. } => 1,
 
@@ -154,7 +148,6 @@ impl OpCode {
             | OpCode::Else { .. }
             | OpCode::End { .. }
             | OpCode::EndIf { .. }
-            | OpCode::EndWhile { .. }
             | OpCode::If
             | OpCode::Memory { .. }
             | OpCode::PushBool(_)
@@ -176,7 +169,7 @@ impl OpCode {
     }
 
     // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
-    fn is_binary_op(self) -> bool {
+    fn is_binary_op(&self) -> bool {
         use OpCode::*;
         match self {
             Add | BitAnd | BitOr | Equal | Greater | GreaterEqual | Less | LessEqual | Multiply
@@ -192,7 +185,6 @@ impl OpCode {
             | DivMod
             | Do
             | DoIf { .. }
-            | DoWhile { .. }
             | Drop
             | Dup { .. }
             | DupPair
@@ -200,7 +192,6 @@ impl OpCode {
             | Else { .. }
             | End { .. }
             | EndIf { .. }
-            | EndWhile { .. }
             | Epilogue
             | If
             | Load { .. }
@@ -220,7 +211,7 @@ impl OpCode {
         }
     }
 
-    fn is_boolean_op(self) -> bool {
+    fn is_boolean_op(&self) -> bool {
         use OpCode::*;
         match self {
             Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
@@ -238,7 +229,6 @@ impl OpCode {
             | DivMod
             | Do
             | DoIf { .. }
-            | DoWhile { .. }
             | Drop
             | Dup { .. }
             | DupPair
@@ -246,7 +236,6 @@ impl OpCode {
             | Else { .. }
             | End { .. }
             | EndIf { .. }
-            | EndWhile { .. }
             | Epilogue
             | If
             | Load { .. }
@@ -270,7 +259,7 @@ impl OpCode {
         }
     }
 
-    pub fn get_binary_op(self) -> fn(u64, u64) -> u64 {
+    pub fn get_binary_op(&self) -> fn(u64, u64) -> u64 {
         use OpCode::*;
         match self {
             Add => |a, b| a + b,
@@ -297,7 +286,6 @@ impl OpCode {
             | DivMod
             | Do
             | DoIf { .. }
-            | DoWhile { .. }
             | Drop
             | Dup { .. }
             | DupPair
@@ -305,7 +293,6 @@ impl OpCode {
             | Else { .. }
             | End { .. }
             | EndIf { .. }
-            | EndWhile { .. }
             | Epilogue
             | If
             | Load { .. }
@@ -327,35 +314,35 @@ impl OpCode {
         }
     }
 
-    pub fn unwrap_memory(self) -> (ModuleId, ProcedureId, usize, bool) {
+    pub fn unwrap_memory(&self) -> (ModuleId, ProcedureId, usize, bool) {
         match self {
             Self::Memory {
                 module_id: module,
                 proc_id,
                 offset,
                 global,
-            } => (module, proc_id, offset, global),
+            } => (*module, *proc_id, *offset, *global),
             _ => panic!("expected OpCode::Memory"),
         }
     }
 
-    pub fn unwrap_dup(self) -> usize {
+    pub fn unwrap_dup(&self) -> usize {
         match self {
-            OpCode::Dup { depth } => depth,
+            OpCode::Dup { depth } => *depth,
             _ => panic!("expected OpCode::Dup"),
         }
     }
 
-    pub fn unwrap_load(self) -> (Width, PorthTypeKind) {
+    pub fn unwrap_load(&self) -> (Width, PorthTypeKind) {
         match self {
-            OpCode::Load { width, kind } => (width, kind),
+            OpCode::Load { width, kind } => (*width, *kind),
             _ => panic!("expected Opcode::Load"),
         }
     }
 
-    pub fn unwrap_store(self) -> (Width, PorthTypeKind) {
+    pub fn unwrap_store(&self) -> (Width, PorthTypeKind) {
         match self {
-            OpCode::Store { width, kind } => (width, kind),
+            OpCode::Store { width, kind } => (*width, *kind),
             _ => panic!("expected Opcode::Store"),
         }
     }
@@ -393,19 +380,6 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
     for ip in 0..ops.len() {
         let op = &ops[ip];
         match op.code {
-            OpCode::While { .. } => {
-                jump_ip_stack.push(JumpIpStack {
-                    ip,
-                    kind: op.token.kind,
-                    location: op.token.location,
-                });
-                // Update our own IP.
-                match &mut ops[ip].code {
-                    OpCode::While { ip: while_ip } => *while_ip = ip,
-                    _ => unreachable!(),
-                }
-            }
-
             OpCode::If => {
                 if_blocks_stack_ips.push(Vec::new());
                 jump_ip_stack.push(JumpIpStack {
@@ -444,24 +418,6 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                 };
                 match &mut ops[if_idx].code {
                     OpCode::DoIf { end_ip } => *end_ip = ip,
-                    OpCode::DoWhile { .. } => {
-                        let while_token = &ops[if_idx].token;
-
-                        diagnostics::emit_error(
-                            location,
-                            "`elif` can only be used with `if` blocks",
-                            [
-                                Label::new(location).with_color(Color::Red),
-                                Label::new(while_token.location)
-                                    .with_color(Color::Blue)
-                                    .with_message("opened here"),
-                            ],
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
                     _ => unreachable!(),
                 };
 
@@ -508,13 +464,13 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
                 let src_ip = match jump_ip_stack.pop() {
                     Some(JumpIpStack {
                         ip,
-                        kind: TokenKind::Elif | TokenKind::If | TokenKind::While,
+                        kind: TokenKind::Elif | TokenKind::If,
                         ..
                     }) => ip,
                     _ => {
                         diagnostics::emit_error(
                             op.token.location,
-                            "`do` requires a preceding `if`, `elif` or `while`",
+                            "`do` requires a preceding `if` or `elif`",
                             Some(Label::new(op.token.location)),
                             None,
                             source_store,
@@ -532,12 +488,6 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
 
                 // Now we need to specialize our own type based on our source.
                 match &mut ops[src_ip].code {
-                    OpCode::While { ip: condition_ip } => {
-                        ops[ip].code = OpCode::DoWhile {
-                            end_ip: usize::MAX,
-                            condition_ip: *condition_ip,
-                        };
-                    }
                     OpCode::Elif { .. } | OpCode::If => {
                         ops[ip].code = OpCode::DoIf { end_ip: usize::MAX }
                     }
@@ -567,16 +517,6 @@ pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Res
 
                 // Now we need to specialize our own type based on our source.
                 match &mut ops[src_ip].code {
-                    OpCode::DoWhile {
-                        end_ip,
-                        condition_ip,
-                    } => {
-                        *end_ip = ip;
-                        ops[ip].code = OpCode::EndWhile {
-                            condition_ip: *condition_ip,
-                            end_ip: ip,
-                        };
-                    }
                     OpCode::DoIf { end_ip } | OpCode::Else { end_ip, .. } => {
                         *end_ip = ip;
                         ops[ip].code = OpCode::EndIf { ip };
@@ -630,7 +570,29 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
                 src = xs;
                 changed = true;
             } else if let [op, xs @ ..] = src {
-                dst_vec.push(op.clone());
+                match &op.code {
+                    OpCode::While {
+                        condition: condition_block,
+                        do_token,
+                        body: loop_block,
+                        end_token,
+                    } => {
+                        dst_vec.push(Op {
+                            code: OpCode::While {
+                                condition: optimize(condition_block, interner, sources),
+                                do_token: *do_token,
+                                body: optimize(loop_block, interner, sources),
+                                end_token: *end_token,
+                            },
+                            token: op.token,
+                            expansions: op.expansions.clone(),
+                        });
+                    }
+                    _ => {
+                        dst_vec.push(op.clone());
+                    }
+                }
+
                 src = xs;
             }
         }

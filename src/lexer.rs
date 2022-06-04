@@ -124,10 +124,6 @@ impl TokenKind {
             TokenKind::If | TokenKind::Is | TokenKind::While => true,
         }
     }
-
-    pub fn end_block(self) -> bool {
-        self == TokenKind::End
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

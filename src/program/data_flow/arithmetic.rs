@@ -324,7 +324,7 @@ pub(super) fn multiply_and_shift(
     };
 
     if let (OpCode::ShiftLeft | OpCode::ShiftRight, Some(ConstVal::Int(sv @ 64..))) =
-        (op.code, const_val.1)
+        (&op.code, const_val.1)
     {
         let [shift_val] = analyzer.get_values([inputs.unwrap()[1]]);
         diagnostics::emit_warning(

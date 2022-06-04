@@ -134,15 +134,23 @@ impl Procedure {
         self.entry_stack_location
     }
 
-    fn expand_macros(&mut self, program: &Program) {
+    fn expand_macros_in_block(block: &mut Vec<Op>, id: ProcedureId, program: &Program) {
         let mut i = 0;
-        while i < self.body.len() {
-            match self.body[i].code {
-                OpCode::ResolvedIdent { proc_id, .. } if proc_id != self.id => {
+        while i < block.len() {
+            match block[i].code {
+                OpCode::While {
+                    condition: ref mut condition_block,
+                    body: ref mut loop_block,
+                    ..
+                } => {
+                    Self::expand_macros_in_block(condition_block, id, program);
+                    Self::expand_macros_in_block(loop_block, id, program);
+                }
+                OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
                     let found_proc = program.get_proc(proc_id);
                     if found_proc.kind().is_macro() {
-                        let token = self.body[i].token;
-                        let expansions = self.body[i].expansions.clone();
+                        let token = block[i].token;
+                        let expansions = block[i].expansions.clone();
                         let new_ops = found_proc.body().iter().map(|new_op| {
                             let mut new_op = new_op.clone();
                             new_op.expansions.push(token.location);
@@ -150,7 +158,7 @@ impl Procedure {
                             new_op
                         });
 
-                        self.body.splice(i..i + 1, new_ops);
+                        block.splice(i..i + 1, new_ops);
 
                         // Want to continue with the current op index
                         continue;
@@ -161,6 +169,11 @@ impl Procedure {
 
             i += 1;
         }
+        //
+    }
+
+    fn expand_macros(&mut self, program: &Program) {
+        Self::expand_macros_in_block(&mut self.body, self.id, program);
     }
 }
 
@@ -308,42 +321,116 @@ impl Program {
         Ok(entry_module_id)
     }
 
-    fn resolve_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
-        let mut had_error = false;
-        let proc_ids: Vec<_> = self.all_procedures.keys().copied().collect();
-
-        for proc_id in proc_ids {
-            let mut proc = self.all_procedures.remove(&proc_id).unwrap();
-            let mut body = std::mem::take(&mut proc.body);
-
-            for op in &mut body {
-                match op.code {
-                    // Symbol in own module.
-                    OpCode::UnresolvedIdent {
-                        proc: proc_token,
-                        module: None,
-                    } => {
-                        // Obviously a symbol is visible to itself.
-                        let visible_id = if proc_token.lexeme == proc.name.lexeme {
-                            Some(proc_id)
-                        } else {
-                            self.get_visible_symbol(&proc, proc_token.lexeme)
+    fn resolve_idents_in_block(
+        &mut self,
+        proc: &Procedure,
+        mut body: Vec<Op>,
+        had_error: &mut bool,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Vec<Op> {
+        for op in &mut body {
+            match &mut op.code {
+                OpCode::While {
+                    condition: condition_body,
+                    body: loop_body,
+                    ..
+                } => {
+                    let temp_body = std::mem::take(condition_body);
+                    *condition_body = self.resolve_idents_in_block(
+                        proc,
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                    let temp_body = std::mem::take(loop_body);
+                    *loop_body = self.resolve_idents_in_block(
+                        proc,
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                }
+                // Symbol in own module.
+                OpCode::UnresolvedIdent {
+                    proc: proc_token,
+                    module: None,
+                } => {
+                    // Obviously a symbol is visible to itself.
+                    let visible_id = if proc_token.lexeme == proc.name.lexeme {
+                        Some(proc.id())
+                    } else {
+                        self.get_visible_symbol(&proc, proc_token.lexeme)
+                    };
+                    if let Some(id) = visible_id {
+                        op.code = OpCode::ResolvedIdent {
+                            module: proc.module,
+                            proc_id: id,
                         };
-                        if let Some(id) = visible_id {
+                    } else {
+                        let module = &self.modules[&proc.module];
+                        let token_lexeme = interner.resolve_lexeme(proc_token.lexeme);
+                        let module_lexeme = interner.resolve_lexeme(module.name);
+                        *had_error = true;
+                        diagnostics::emit_error(
+                            proc_token.location,
+                            format!(
+                                "symbol `{}` not found in module `{}`",
+                                token_lexeme, module_lexeme
+                            ),
+                            Some(
+                                Label::new(proc_token.location)
+                                    .with_color(Color::Red)
+                                    .with_message("not found"),
+                            ),
+                            None,
+                            source_store,
+                        );
+                    }
+                }
+                // Symbol in other module.
+                OpCode::UnresolvedIdent {
+                    proc: proc_token,
+                    module: Some(module_token),
+                } => {
+                    let module_id = match self.module_ident_map.get(&module_token.lexeme) {
+                        Some(id) => *id,
+                        None => {
+                            let module_name = interner.resolve_lexeme(module_token.lexeme);
+                            diagnostics::emit_error(
+                                proc_token.location,
+                                format!("module `{}` not found", module_name),
+                                Some(
+                                    Label::new(proc_token.location)
+                                        .with_color(Color::Red)
+                                        .with_message("not found"),
+                                ),
+                                None,
+                                source_store,
+                            );
+                            *had_error = true;
+                            continue;
+                        }
+                    };
+
+                    let module = &self.modules[&module_id];
+                    match module.top_level_symbols.get(&proc_token.lexeme) {
+                        Some(proc_id) => {
                             op.code = OpCode::ResolvedIdent {
-                                module: proc.module,
-                                proc_id: id,
+                                module: module_id,
+                                proc_id: *proc_id,
                             };
-                        } else {
-                            let module = &self.modules[&proc.module];
-                            let token_lexeme = interner.resolve_lexeme(proc_token.lexeme);
-                            let module_lexeme = interner.resolve_lexeme(module.name);
-                            had_error = true;
+                        }
+                        None => {
+                            let proc_name = interner.resolve_lexeme(proc_token.lexeme);
+                            let module_name = interner.resolve_lexeme(module_token.lexeme);
                             diagnostics::emit_error(
                                 proc_token.location,
                                 format!(
                                     "symbol `{}` not found in module `{}`",
-                                    token_lexeme, module_lexeme
+                                    proc_name, module_name
                                 ),
                                 Some(
                                     Label::new(proc_token.location)
@@ -353,68 +440,28 @@ impl Program {
                                 None,
                                 source_store,
                             );
+                            continue;
                         }
                     }
-                    // Symbol in other module.
-                    OpCode::UnresolvedIdent {
-                        proc: proc_token,
-                        module: Some(module_token),
-                    } => {
-                        let module_id = match self.module_ident_map.get(&module_token.lexeme) {
-                            Some(id) => *id,
-                            None => {
-                                let module_name = interner.resolve_lexeme(module_token.lexeme);
-                                diagnostics::emit_error(
-                                    proc_token.location,
-                                    format!("module `{}` not found", module_name),
-                                    Some(
-                                        Label::new(proc_token.location)
-                                            .with_color(Color::Red)
-                                            .with_message("not found"),
-                                    ),
-                                    None,
-                                    source_store,
-                                );
-                                had_error = true;
-                                continue;
-                            }
-                        };
-
-                        let module = &self.modules[&module_id];
-                        match module.top_level_symbols.get(&proc_token.lexeme) {
-                            Some(proc_id) => {
-                                op.code = OpCode::ResolvedIdent {
-                                    module: module_id,
-                                    proc_id: *proc_id,
-                                };
-                            }
-                            None => {
-                                let proc_name = interner.resolve_lexeme(proc_token.lexeme);
-                                let module_name = interner.resolve_lexeme(module_token.lexeme);
-                                diagnostics::emit_error(
-                                    proc_token.location,
-                                    format!(
-                                        "symbol `{}` not found in module `{}`",
-                                        proc_name, module_name
-                                    ),
-                                    Some(
-                                        Label::new(proc_token.location)
-                                            .with_color(Color::Red)
-                                            .with_message("not found"),
-                                    ),
-                                    None,
-                                    source_store,
-                                );
-                                continue;
-                            }
-                        }
-                    }
-
-                    _ => {}
                 }
-            }
 
-            proc.body = body;
+                _ => {}
+            }
+        }
+
+        body
+    }
+
+    fn resolve_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        let mut had_error = false;
+        let proc_ids: Vec<_> = self.all_procedures.keys().copied().collect();
+
+        for proc_id in proc_ids {
+            let mut proc = self.all_procedures.remove(&proc_id).unwrap();
+            let body = std::mem::take(&mut proc.body);
+
+            proc.body =
+                self.resolve_idents_in_block(&proc, body, &mut had_error, interner, source_store);
             self.all_procedures.insert(proc_id, proc);
         }
 
@@ -441,12 +488,84 @@ impl Program {
         }
     }
 
+    fn check_invalid_cyclic_refs_in_block<'a>(
+        &'a self,
+        own_proc: &Procedure,
+        block: &[Op],
+        cur_proc: &Procedure,
+        kind: &str,
+        already_checked: &mut HashSet<ProcedureId>,
+        check_queue: &mut Vec<&'a Procedure>,
+        had_error: &mut bool,
+        source_store: &SourceStorage,
+    ) {
+        for op in block {
+            match op.code {
+                OpCode::While {
+                    condition: ref condition_body,
+                    body: ref loop_body,
+                    ..
+                } => {
+                    self.check_invalid_cyclic_refs_in_block(
+                        own_proc,
+                        condition_body,
+                        cur_proc,
+                        kind,
+                        already_checked,
+                        check_queue,
+                        had_error,
+                        source_store,
+                    );
+                    self.check_invalid_cyclic_refs_in_block(
+                        own_proc,
+                        loop_body,
+                        cur_proc,
+                        kind,
+                        already_checked,
+                        check_queue,
+                        had_error,
+                        source_store,
+                    );
+                    //
+                }
+                OpCode::ResolvedIdent { proc_id, .. } => {
+                    // False means that there was already a value in the set with this proc_id
+                    #[allow(clippy::bool_comparison)]
+                    if already_checked.insert(proc_id) == false {
+                        continue;
+                    }
+
+                    if proc_id == own_proc.id() {
+                        *had_error = true;
+                        diagnostics::emit_error(
+                            cur_proc.name.location,
+                            format!("cyclic {} detected", kind),
+                            [
+                                Label::new(own_proc.name.location)
+                                    .with_color(Color::Red)
+                                    .with_message(format!("in this {}", kind)),
+                                Label::new(op.token.location)
+                                    .with_color(Color::Cyan)
+                                    .with_message("cyclic reference"),
+                            ],
+                            None,
+                            source_store,
+                        );
+                    } else {
+                        check_queue.push(self.get_proc(proc_id));
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
     fn check_invalid_cyclic_refs(&self, source_store: &SourceStorage) -> Result<()> {
         let mut had_error = false;
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for (&own_proc_id, own_proc) in &self.all_procedures {
+        for (_, own_proc) in &self.all_procedures {
             let kind = match own_proc.kind() {
                 ProcedureKind::Const { .. } => "const",
                 ProcedureKind::Macro => "macro",
@@ -459,35 +578,16 @@ impl Program {
             already_checked.clear();
 
             while let Some(proc) = check_queue.pop() {
-                for op in &proc.body {
-                    if let OpCode::ResolvedIdent { proc_id, .. } = op.code {
-                        // False means that there was already a value in the set with this proc_id
-                        #[allow(clippy::bool_comparison)]
-                        if already_checked.insert(proc_id) == false {
-                            continue;
-                        }
-
-                        if proc_id == own_proc_id {
-                            had_error = true;
-                            diagnostics::emit_error(
-                                proc.name.location,
-                                format!("cyclic {} detected", kind),
-                                [
-                                    Label::new(own_proc.name.location)
-                                        .with_color(Color::Red)
-                                        .with_message(format!("in this {}", kind)),
-                                    Label::new(op.token.location)
-                                        .with_color(Color::Cyan)
-                                        .with_message("cyclic reference"),
-                                ],
-                                None,
-                                source_store,
-                            );
-                        } else {
-                            check_queue.push(self.get_proc(proc_id));
-                        }
-                    }
-                }
+                self.check_invalid_cyclic_refs_in_block(
+                    own_proc,
+                    proc.body(),
+                    proc,
+                    kind,
+                    &mut already_checked,
+                    &mut check_queue,
+                    &mut had_error,
+                    source_store,
+                );
             }
         }
 
@@ -618,6 +718,120 @@ impl Program {
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
+    fn process_idents_in_block(
+        &mut self,
+        own_proc: &Procedure,
+        block: Vec<Op>,
+        had_error: &mut bool,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Vec<Op> {
+        let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
+        for op in block {
+            match op.code {
+                OpCode::While {
+                    condition: condition_block,
+                    body: loop_body,
+                    do_token,
+                    end_token,
+                } => {
+                    new_ops.push(Op {
+                        code: OpCode::While {
+                            condition: self.process_idents_in_block(
+                                own_proc,
+                                condition_block,
+                                had_error,
+                                interner,
+                                source_store,
+                            ),
+                            body: self.process_idents_in_block(
+                                own_proc,
+                                loop_body,
+                                had_error,
+                                interner,
+                                source_store,
+                            ),
+                            do_token,
+                            end_token,
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
+                }
+                OpCode::ResolvedIdent { module, proc_id } => {
+                    let found_proc = if proc_id == own_proc.id() {
+                        own_proc
+                    } else {
+                        self.get_proc(proc_id)
+                    };
+
+                    match found_proc.kind() {
+                        ProcedureKind::Const {
+                            const_val: Some(vals),
+                        } => {
+                            for (kind, val) in vals {
+                                let code = match kind {
+                                    PorthTypeKind::Int => OpCode::PushInt(*val),
+                                    PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
+                                    PorthTypeKind::Ptr => {
+                                        panic!("ICE: Const pointers not supported")
+                                    }
+                                    PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
+                                };
+                                new_ops.push(Op {
+                                    code,
+                                    token: op.token,
+                                    expansions: op.expansions.clone(),
+                                });
+                            }
+                        }
+                        ProcedureKind::Memory => {
+                            new_ops.push(Op {
+                                code: OpCode::Memory {
+                                    module_id: module,
+                                    proc_id,
+                                    offset: 0,
+                                    global: found_proc.parent().is_none(),
+                                },
+                                token: op.token,
+                                expansions: op.expansions,
+                            });
+                        }
+                        ProcedureKind::Function(_) => {
+                            new_ops.push(Op {
+                                code: OpCode::CallProc { module, proc_id },
+                                token: op.token,
+                                expansions: op.expansions,
+                            });
+                        }
+                        ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
+                            let name = interner.resolve_lexeme(own_proc.name.lexeme);
+                            panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {}", name);
+                        }
+
+                        ProcedureKind::Assert => {
+                            *had_error = true;
+                            diagnostics::emit_error(
+                                op.token.location,
+                                "asserts cannot be used in operations",
+                                Some(
+                                    Label::new(op.token.location)
+                                        .with_color(Color::Red)
+                                        .with_message("here"),
+                                ),
+                                None,
+                                source_store,
+                            );
+                            continue;
+                        }
+                    }
+                }
+                _ => new_ops.push(op),
+            }
+        }
+        new_ops
+    }
+
     fn process_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
         let mut had_error = false;
 
@@ -631,84 +845,16 @@ impl Program {
 
         for own_proc_id in all_proc_ids {
             let mut proc = self.all_procedures.remove(&own_proc_id).unwrap();
-            let mut new_ops = Vec::with_capacity(proc.body.len());
 
             let old_body = std::mem::take(&mut proc.body);
-            for op in old_body {
-                match op.code {
-                    OpCode::ResolvedIdent { module, proc_id } => {
-                        let found_proc = if proc_id == own_proc_id {
-                            &proc
-                        } else {
-                            self.get_proc(proc_id)
-                        };
+            proc.body = self.process_idents_in_block(
+                &proc,
+                old_body,
+                &mut had_error,
+                interner,
+                source_store,
+            );
 
-                        match found_proc.kind() {
-                            ProcedureKind::Const {
-                                const_val: Some(vals),
-                            } => {
-                                for (kind, val) in vals {
-                                    let code = match kind {
-                                        PorthTypeKind::Int => OpCode::PushInt(*val),
-                                        PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
-                                        PorthTypeKind::Ptr => {
-                                            panic!("ICE: Const pointers not supported")
-                                        }
-                                        PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
-                                    };
-                                    new_ops.push(Op {
-                                        code,
-                                        token: op.token,
-                                        expansions: op.expansions.clone(),
-                                    });
-                                }
-                            }
-                            ProcedureKind::Memory => {
-                                new_ops.push(Op {
-                                    code: OpCode::Memory {
-                                        module_id: module,
-                                        proc_id,
-                                        offset: 0,
-                                        global: found_proc.parent().is_none(),
-                                    },
-                                    token: op.token,
-                                    expansions: op.expansions,
-                                });
-                            }
-                            ProcedureKind::Function(_) => {
-                                new_ops.push(Op {
-                                    code: OpCode::CallProc { module, proc_id },
-                                    token: op.token,
-                                    expansions: op.expansions,
-                                });
-                            }
-                            ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
-                                let name = interner.resolve_lexeme(proc.name.lexeme);
-                                panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {}", name);
-                            }
-
-                            ProcedureKind::Assert => {
-                                had_error = true;
-                                diagnostics::emit_error(
-                                    op.token.location,
-                                    "asserts cannot be used in operations",
-                                    Some(
-                                        Label::new(op.token.location)
-                                            .with_color(Color::Red)
-                                            .with_message("here"),
-                                    ),
-                                    None,
-                                    source_store,
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                    _ => new_ops.push(op),
-                }
-            }
-
-            proc.body = new_ops;
             self.all_procedures.insert(own_proc_id, proc);
         }
 
@@ -845,8 +991,8 @@ impl Program {
 
         debug!("    Generating jump labels...");
         self.generate_jump_labels(source_store)?;
-        debug!("    Analyzing data flow...");
-        self.analyze_data_flow(interner, source_store)?;
+        // debug!("    Analyzing data flow...");
+        // self.analyze_data_flow(interner, source_store)?;
         debug!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
         debug!("    Evaluating const bodies...");
