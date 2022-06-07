@@ -6,7 +6,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Op, OpCode},
+    opcode::{ConditionalBlock, Op, OpCode},
     source_file::{SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
     Width,
@@ -158,7 +158,6 @@ pub fn parse_procedure_body(
                 }
                 Ok(code) => code,
             },
-            TokenKind::Do => OpCode::Do,
 
             TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
                 if parse_procedure(
@@ -193,16 +192,24 @@ pub fn parse_procedure_body(
                 continue;
             }
 
-            TokenKind::If => OpCode::If,
-            TokenKind::Elif => OpCode::Elif {
-                else_start: usize::MAX,
-                end_ip: usize::MAX,
-            },
-            TokenKind::Else => OpCode::Else {
-                else_start: usize::MAX,
-                end_ip: usize::MAX,
-            },
-            TokenKind::End => OpCode::End,
+            TokenKind::If => {
+                match parse_if(
+                    program,
+                    module_id,
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    parent,
+                    interner,
+                    source_store,
+                ) {
+                    Err(_) => {
+                        had_error = true;
+                        continue;
+                    }
+                    Ok(code) => code,
+                }
+            }
 
             TokenKind::Minus => OpCode::Subtract,
             TokenKind::Plus => OpCode::Add,
@@ -227,6 +234,10 @@ pub fn parse_procedure_body(
             TokenKind::ColonColon
             | TokenKind::GoesTo
             | TokenKind::Is
+            | TokenKind::Do
+            | TokenKind::Elif
+            | TokenKind::Else
+            | TokenKind::End
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
                 diagnostics::emit_error(
@@ -256,7 +267,7 @@ fn get_procedure_body<'a>(
     tokens: &'a [Token],
     keyword: Token,
     mut last_token: Token,
-    target_token_type: TokenKind,
+    target_token_type: fn(TokenKind) -> bool,
     source_store: &SourceStorage,
 ) -> Result<(&'a [Token], Token), ()> {
     let body_start_idx = match token_iter.peek() {
@@ -267,8 +278,8 @@ fn get_procedure_body<'a>(
         }
     };
 
-    // We need to keep track of block depth so we know which `end` token is ending the procedure.
-    // We've already consumed the `is` token that opened the procedure body.
+    // We need to keep track of block depth so we know which token is ending the block.
+    // We've already consumed the token that opened the block.
     let mut block_depth = 1;
     let mut end_idx = body_start_idx;
     let mut had_error = false;
@@ -293,9 +304,13 @@ fn get_procedure_body<'a>(
             had_error = true;
         }
 
+        // If the block_depth is greater than 1, it means we're in a sub-block. All sub-blocks
+        // will always close with an End token, so if we are in a sub-block only look for End.
         if token.kind.new_block() {
             block_depth += 1;
-        } else if token.kind == target_token_type {
+        } else if (block_depth > 1 && token.kind == TokenKind::End)
+            || (block_depth == 1 && target_token_type(token.kind))
+        {
             block_depth -= 1;
         }
 
@@ -307,7 +322,7 @@ fn get_procedure_body<'a>(
         }
     }
 
-    if last_token.kind != target_token_type {
+    if !target_token_type(last_token.kind) {
         diagnostics::end_of_file(last_token.location, source_store);
         return Err(());
     }
@@ -316,6 +331,144 @@ fn get_procedure_body<'a>(
         .not()
         .then(|| (&tokens[body_start_idx..end_idx], last_token))
         .ok_or(())
+}
+
+fn parse_if<'a>(
+    program: &mut Program,
+    module_id: ModuleId,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    tokens: &'a [Token],
+    keyword: Token,
+    parent: Option<ProcedureId>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<OpCode, ()> {
+    let (main_condition, do_token) = get_procedure_body(
+        token_iter,
+        tokens,
+        keyword,
+        keyword,
+        |t| matches!(t, TokenKind::Do),
+        source_store,
+    )?;
+
+    let main_condition = parse_procedure_body(
+        program,
+        module_id,
+        main_condition,
+        interner,
+        parent,
+        source_store,
+    )?;
+
+    let (main_block, mut close_token) = get_procedure_body(
+        token_iter,
+        tokens,
+        keyword,
+        keyword,
+        |t| matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif),
+        source_store,
+    )?;
+
+    let main_block = parse_procedure_body(
+        program,
+        module_id,
+        main_block,
+        interner,
+        parent,
+        source_store,
+    )?;
+
+    let main_conditional = ConditionalBlock {
+        condition: main_condition,
+        do_token,
+        block: main_block,
+        close_token,
+    };
+
+    let mut elif_blocks = Vec::new();
+
+    while close_token.kind == TokenKind::Elif {
+        let (elif_condition, do_token) = get_procedure_body(
+            token_iter,
+            tokens,
+            keyword,
+            keyword,
+            |t| matches!(t, TokenKind::Do),
+            source_store,
+        )?;
+
+        let elif_condition = parse_procedure_body(
+            program,
+            module_id,
+            elif_condition,
+            interner,
+            parent,
+            source_store,
+        )?;
+
+        let (elif_block, cur_close_token) = get_procedure_body(
+            token_iter,
+            tokens,
+            keyword,
+            keyword,
+            |t| matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif),
+            source_store,
+        )?;
+
+        let elif_block = parse_procedure_body(
+            program,
+            module_id,
+            elif_block,
+            interner,
+            parent,
+            source_store,
+        )?;
+
+        let elif_conditional = ConditionalBlock {
+            condition: elif_condition,
+            do_token,
+            block: elif_block,
+            close_token: cur_close_token,
+        };
+
+        elif_blocks.push(elif_conditional);
+        close_token = cur_close_token;
+    }
+
+    let else_block = if close_token.kind == TokenKind::Else {
+        let (else_block, end_token) = get_procedure_body(
+            token_iter,
+            tokens,
+            keyword,
+            keyword,
+            |t| matches!(t, TokenKind::End),
+            source_store,
+        )?;
+
+        let else_block = parse_procedure_body(
+            program,
+            module_id,
+            else_block,
+            interner,
+            parent,
+            source_store,
+        )?;
+
+        close_token = end_token;
+
+        Some(else_block)
+    } else {
+        None
+    };
+
+    Ok(OpCode::If {
+        open_token: keyword,
+        main: main_conditional,
+        elif_blocks,
+        else_block,
+        end_token: close_token,
+    })
 }
 
 fn parse_while<'a>(
@@ -333,7 +486,7 @@ fn parse_while<'a>(
         tokens,
         keyword,
         keyword,
-        TokenKind::Do,
+        |t| matches!(t, TokenKind::Do),
         source_store,
     )?;
 
@@ -351,17 +504,19 @@ fn parse_while<'a>(
         tokens,
         keyword,
         do_token,
-        TokenKind::End,
+        |t| matches!(t, TokenKind::End),
         source_store,
     )?;
 
-    let body = parse_procedure_body(program, module_id, body, interner, parent, source_store)?;
+    let block = parse_procedure_body(program, module_id, body, interner, parent, source_store)?;
 
     Ok(OpCode::While {
-        condition,
-        do_token,
-        body,
-        end_token,
+        body: ConditionalBlock {
+            do_token,
+            condition,
+            block,
+            close_token: end_token,
+        },
     })
 }
 
@@ -645,7 +800,7 @@ fn parse_procedure<'a>(
         tokens,
         keyword,
         is_token,
-        TokenKind::End,
+        |t| matches!(t, TokenKind::End),
         source_store,
     )?;
 

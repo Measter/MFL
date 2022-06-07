@@ -15,7 +15,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{self, Op, OpCode},
+    opcode::{self, ConditionalBlock, Op, OpCode},
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
     type_check::{self, PorthType, PorthTypeKind},
@@ -139,12 +139,28 @@ impl Procedure {
         while i < block.len() {
             match block[i].code {
                 OpCode::While {
-                    condition: ref mut condition_block,
-                    body: ref mut loop_block,
+                    body: ref mut while_block,
+                } => {
+                    Self::expand_macros_in_block(&mut while_block.condition, id, program);
+                    Self::expand_macros_in_block(&mut while_block.block, id, program);
+                }
+                OpCode::If {
+                    ref mut main,
+                    ref mut elif_blocks,
+                    ref mut else_block,
                     ..
                 } => {
-                    Self::expand_macros_in_block(condition_block, id, program);
-                    Self::expand_macros_in_block(loop_block, id, program);
+                    Self::expand_macros_in_block(&mut main.condition, id, program);
+                    Self::expand_macros_in_block(&mut main.block, id, program);
+
+                    for elif_block in elif_blocks {
+                        Self::expand_macros_in_block(&mut elif_block.condition, id, program);
+                        Self::expand_macros_in_block(&mut elif_block.block, id, program);
+                    }
+
+                    if let Some(else_block) = else_block.as_mut() {
+                        Self::expand_macros_in_block(else_block, id, program);
+                    }
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
                     let found_proc = program.get_proc(proc_id);
@@ -331,27 +347,77 @@ impl Program {
     ) -> Vec<Op> {
         for op in &mut body {
             match &mut op.code {
-                OpCode::While {
-                    condition: condition_body,
-                    body: loop_body,
+                OpCode::While { body: while_body } => {
+                    let temp_body = std::mem::take(&mut while_body.condition);
+                    while_body.condition = self.resolve_idents_in_block(
+                        proc,
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                    let temp_body = std::mem::take(&mut while_body.block);
+                    while_body.block = self.resolve_idents_in_block(
+                        proc,
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                }
+                OpCode::If {
+                    main,
+                    elif_blocks,
+                    else_block,
                     ..
                 } => {
-                    let temp_body = std::mem::take(condition_body);
-                    *condition_body = self.resolve_idents_in_block(
+                    // Mmmm.. repetition...
+                    let temp_body = std::mem::take(&mut main.condition);
+                    main.condition = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-                    let temp_body = std::mem::take(loop_body);
-                    *loop_body = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut main.block);
+                    main.block = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
+
+                    for elif_block in elif_blocks {
+                        let temp_body = std::mem::take(&mut elif_block.condition);
+                        elif_block.condition = self.resolve_idents_in_block(
+                            proc,
+                            temp_body,
+                            had_error,
+                            interner,
+                            source_store,
+                        );
+                        let temp_body = std::mem::take(&mut elif_block.block);
+                        elif_block.block = self.resolve_idents_in_block(
+                            proc,
+                            temp_body,
+                            had_error,
+                            interner,
+                            source_store,
+                        );
+                    }
+
+                    if let Some(else_block) = else_block.as_mut() {
+                        let temp_body = std::mem::take(else_block);
+                        *else_block = self.resolve_idents_in_block(
+                            proc,
+                            temp_body,
+                            had_error,
+                            interner,
+                            source_store,
+                        );
+                    }
                 }
                 // Symbol in own module.
                 OpCode::UnresolvedIdent {
@@ -362,7 +428,7 @@ impl Program {
                     let visible_id = if proc_token.lexeme == proc.name.lexeme {
                         Some(proc.id())
                     } else {
-                        self.get_visible_symbol(&proc, proc_token.lexeme)
+                        self.get_visible_symbol(proc, proc_token.lexeme)
                     };
                     if let Some(id) = visible_id {
                         op.code = OpCode::ResolvedIdent {
@@ -502,13 +568,12 @@ impl Program {
         for op in block {
             match op.code {
                 OpCode::While {
-                    condition: ref condition_body,
-                    body: ref loop_body,
+                    body: ref while_body,
                     ..
                 } => {
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        condition_body,
+                        &while_body.condition,
                         cur_proc,
                         kind,
                         already_checked,
@@ -518,7 +583,7 @@ impl Program {
                     );
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        loop_body,
+                        &while_body.block,
                         cur_proc,
                         kind,
                         already_checked,
@@ -527,6 +592,9 @@ impl Program {
                         source_store,
                     );
                     //
+                }
+                OpCode::If { .. } => {
+                    todo!()
                 }
                 OpCode::ResolvedIdent { proc_id, .. } => {
                     // False means that there was already a value in the set with this proc_id
@@ -565,7 +633,7 @@ impl Program {
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for (_, own_proc) in &self.all_procedures {
+        for own_proc in self.all_procedures.values() {
             let kind = match own_proc.kind() {
                 ProcedureKind::Const { .. } => "const",
                 ProcedureKind::Macro => "macro",
@@ -595,23 +663,6 @@ impl Program {
             .not()
             .then(|| ())
             .ok_or_else(|| eyre!("failed const self-check"))
-    }
-
-    fn generate_jump_labels(&mut self, source_store: &SourceStorage) -> Result<()> {
-        let mut had_error = false;
-
-        for proc in self
-            .all_procedures
-            .values_mut()
-            .filter(|p| !p.kind().is_macro())
-        {
-            had_error |= opcode::generate_jump_labels(&mut proc.body, source_store).is_err();
-        }
-
-        had_error
-            .not()
-            .then(|| ())
-            .ok_or_else(|| eyre!("failed generating jump labels"))
     }
 
     fn analyze_data_flow(
@@ -729,35 +780,94 @@ impl Program {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
         for op in block {
             match op.code {
-                OpCode::While {
-                    condition: condition_block,
-                    body: loop_body,
-                    do_token,
-                    end_token,
-                } => {
+                OpCode::While { body: while_body } => {
                     new_ops.push(Op {
                         code: OpCode::While {
+                            body: ConditionalBlock {
+                                condition: self.process_idents_in_block(
+                                    own_proc,
+                                    while_body.condition,
+                                    had_error,
+                                    interner,
+                                    source_store,
+                                ),
+                                block: self.process_idents_in_block(
+                                    own_proc,
+                                    while_body.block,
+                                    had_error,
+                                    interner,
+                                    source_store,
+                                ),
+                                ..while_body
+                            },
+                        },
+                        token: op.token,
+                        expansions: op.expansions,
+                    });
+                }
+                OpCode::If {
+                    open_token,
+                    main,
+                    elif_blocks,
+                    else_block,
+                    end_token,
+                } => {
+                    let new_main = ConditionalBlock {
+                        condition: self.process_idents_in_block(
+                            own_proc,
+                            main.condition,
+                            had_error,
+                            interner,
+                            source_store,
+                        ),
+                        block: self.process_idents_in_block(
+                            own_proc,
+                            main.block,
+                            had_error,
+                            interner,
+                            source_store,
+                        ),
+                        ..main
+                    };
+
+                    let new_elifs = elif_blocks
+                        .into_iter()
+                        .map(|b| ConditionalBlock {
                             condition: self.process_idents_in_block(
                                 own_proc,
-                                condition_block,
+                                b.condition,
                                 had_error,
                                 interner,
                                 source_store,
                             ),
-                            body: self.process_idents_in_block(
+                            block: self.process_idents_in_block(
                                 own_proc,
-                                loop_body,
+                                b.block,
                                 had_error,
                                 interner,
                                 source_store,
                             ),
-                            do_token,
+                            ..b
+                        })
+                        .collect();
+
+                    let new_else = else_block.map(|b| {
+                        self.process_idents_in_block(own_proc, b, had_error, interner, source_store)
+                    });
+
+                    new_ops.push(Op {
+                        code: OpCode::If {
+                            main: new_main,
+                            elif_blocks: new_elifs,
+                            else_block: new_else,
+                            open_token,
                             end_token,
                         },
                         token: op.token,
                         expansions: op.expansions,
                     });
                 }
+
                 OpCode::ResolvedIdent { module, proc_id } => {
                     let found_proc = if proc_id == own_proc.id() {
                         own_proc
@@ -989,8 +1099,6 @@ impl Program {
         debug!("    Expanding macros...");
         self.expand_macros();
 
-        debug!("    Generating jump labels...");
-        self.generate_jump_labels(source_store)?;
         // debug!("    Analyzing data flow...");
         // self.analyze_data_flow(interner, source_store)?;
         debug!("    Type checking...");

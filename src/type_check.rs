@@ -147,8 +147,8 @@ fn generate_block_depth_mismatch(
 fn failed_compare_stack_types(
     expected_stack: &[PorthType],
     actual_stack: &[PorthType],
-    open_block_loc: SourceLocation,
-    op: &Op,
+    sample_loc: SourceLocation,
+    error_loc: SourceLocation,
     msg: &str,
     source_store: &SourceStorage,
 ) {
@@ -182,13 +182,13 @@ fn failed_compare_stack_types(
     }
 
     diagnostics::emit_error(
-        open_block_loc,
+        sample_loc,
         msg,
         [
-            Label::new(op.token.location)
+            Label::new(error_loc)
                 .with_color(Color::Red)
                 .with_message("actual sampled here"),
-            Label::new(open_block_loc)
+            Label::new(sample_loc)
                 .with_color(Color::Cyan)
                 .with_message("expected sampled here"),
         ],
@@ -201,8 +201,8 @@ fn failed_compare_stack_types(
 fn compare_expected_stacks(
     expected_stack: &[PorthType],
     actual_stack: &[PorthType],
-    open_loc: SourceLocation,
-    op: &Op,
+    sample_loc: SourceLocation,
+    error_loc: SourceLocation,
     msg: &str,
     source_store: &SourceStorage,
 ) -> bool {
@@ -210,8 +210,8 @@ fn compare_expected_stacks(
         Ordering::Less | Ordering::Greater => {
             generate_block_depth_mismatch(
                 source_store,
-                open_loc,
-                op.token.location,
+                sample_loc,
+                error_loc,
                 expected_stack.len(),
                 actual_stack.len(),
                 msg,
@@ -222,8 +222,8 @@ fn compare_expected_stacks(
             failed_compare_stack_types(
                 expected_stack,
                 actual_stack,
-                open_loc,
-                op,
+                sample_loc,
+                error_loc,
                 msg,
                 source_store,
             );
@@ -322,8 +322,8 @@ fn final_stack_check(
         failed_compare_stack_types(
             procedure.exit_stack(),
             stack,
+            procedure.exit_stack_location(),
             op.token.location,
-            op,
             "procedure return stack mismatch",
             source_store,
         );
@@ -332,11 +332,6 @@ fn final_stack_check(
     }
 
     false
-}
-struct BlockStackState {
-    open_location: SourceLocation,
-    entry_stack: Vec<PorthType>,
-    true_stack: Option<Vec<PorthType>>,
 }
 
 pub fn type_check_block(
@@ -348,8 +343,6 @@ pub fn type_check_block(
     interner: &Interners,
     source_store: &SourceStorage,
 ) {
-    let mut block_stack_states: Vec<BlockStackState> = Vec::new();
-
     for op in body {
         match &op.code {
             OpCode::Add => {
@@ -498,14 +491,10 @@ pub fn type_check_block(
                 stack_check!(source_store, had_error, stack, interner, op, [_]);
             }
 
-            OpCode::While { condition, body: while_body, ..} => {
-                let entry_stack_state = BlockStackState {
-                    open_location: op.token.location,
-                    entry_stack: stack.clone(),
-                    true_stack: None
-                };
+            OpCode::While {  body: while_body } => {
+                let entry_stack = stack.clone();
 
-                type_check_block(program, proc, condition, stack, had_error, interner, source_store);
+                type_check_block(program, proc, &while_body.condition, stack, had_error, interner, source_store);
 
                 stack_check!(
                     source_store,
@@ -517,42 +506,41 @@ pub fn type_check_block(
                 );
 
                 *had_error |= compare_expected_stacks(
-                    &entry_stack_state.entry_stack,
+                    &entry_stack,
                     stack,
-                    entry_stack_state.open_location,
-                    op,
+                    op.token.location,
+                    while_body.do_token.location,
                     "while-do condition must leave the stack in the same state it entered with",
                     source_store
                 );
 
                 // Restore the stack to the state it was in before the condition.
+                // We do this because the stack check may have failed.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.entry_stack);
+                stack.extend_from_slice(&entry_stack);
 
-                type_check_block(program, proc, while_body, stack, had_error, interner, source_store);
+                type_check_block(program, proc, &while_body.block, stack, had_error, interner, source_store);
 
                 *had_error |= compare_expected_stacks(
-                    &entry_stack_state.entry_stack,
+                    &entry_stack,
                     stack,
-                    entry_stack_state.open_location,
-                    op,
+                    op.token.location,
+                    while_body.close_token.location,
                     "while-do bodies must leave the stack in the same state it entered with",
                     source_store
                 );
 
                 // Now restore the stack again do where it was prior to the loop.
-                *stack = entry_stack_state.entry_stack;
+                *stack = entry_stack;
 
             }
 
-            OpCode::If => {
-                block_stack_states.push(BlockStackState {
-                    open_location: op.token.location,
-                    entry_stack: stack.clone(),
-                    true_stack: None,
-                });
-            }
-            OpCode::DoIf { .. } => {
+            OpCode::If { main, elif_blocks, else_block, open_token, end_token } => {
+                let entry_stack = stack.clone();
+                let mut expected_stack = stack.clone();
+                let mut stack_sample_location = open_token.location;
+
+                type_check_block(program, proc, &main.condition, stack, had_error, interner, source_store);
                 stack_check!(
                     source_store,
                     had_error,
@@ -561,87 +549,100 @@ pub fn type_check_block(
                     op,
                     kind_pat!([PorthTypeKind::Bool])
                 );
-                let entry_stack_state = block_stack_states
-                    .last()
-                    .expect("ICE: DoIf requires a stack depth");
 
                 *had_error |= compare_expected_stacks(
-                    &entry_stack_state.entry_stack,
+                    &entry_stack, 
                     stack,
-                    entry_stack_state.open_location,
-                    op,
-                    "if-do condition must leave the stack in the same state it entered with",
-                    source_store,
+                    stack_sample_location,
+                    main.do_token.location,
+                    "if condition must leave the stack in the same state it entered with",
+                    source_store
                 );
 
-                // Restore the stack so that we know it's the expected state before the body executes.
+                // Restore the stack to the state it was in before the condition.
+                // We do this because the stack check may have failed.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.entry_stack);
-            }
-            OpCode::Elif { .. } | OpCode::Else { .. } => {
-                // If the if-expr has an else- or elif-branch, then all branches are allowed to alter the
-                // state of the stack *as long as* all alter it in the same way.
-                // We need to restore the stack to how it was when we entered the if-expr, but need to store
-                // the exit state of the first branch to enforce that all branches leave the stack in the same
-                // state.
+                stack.extend_from_slice(&entry_stack);
 
-                let entry_stack_state = block_stack_states
-                    .last_mut()
-                    .expect("ICE: Else/Elif requires a stack depth");
+                type_check_block(program, proc, &main.block,  stack, had_error, interner, source_store);
 
-                // As there can be arbitrarily many branches, we should treat each elif-else opcode
-                // as if it were an end-branch and check the stack state.
-                match &mut entry_stack_state.true_stack {
-                    Some(expected_stack) => {
-                        *had_error |= compare_expected_stacks(
-                            expected_stack,
-                            stack,
-                            entry_stack_state.open_location,
-                            op,
-                            "all if-elif-else blocks must leave the stack in the same state",
-                            source_store,
-                        );
-                    }
-                    true_stack => {
-                        *true_stack = Some(stack.clone());
-                        entry_stack_state.open_location = op.token.location;
-                    }
+                // If we have an else-block, we should be allowed to change the state of the stack.
+                // We just have to make sure all the branches leave the stack in the same state,
+                // which we can do by overwriting our entry stack, since that's what we compare it to.
+                if else_block.is_some() {
+                    expected_stack = stack.clone();
+                    stack_sample_location = main.close_token.location;
+                } else {
+                    *had_error |= compare_expected_stacks(
+                        &expected_stack,
+                        stack,
+                        stack_sample_location,
+                        main.close_token.location,
+                        "if-block cannot change the types on the stack",
+                        source_store
+                    );
+
                 }
 
-                // Now we need to restore the stack to the state it was in prior to entering the if-expr, so
-                // that the subsequent branches can operate on the same state.
                 stack.clear();
-                stack.extend_from_slice(&entry_stack_state.entry_stack);
-            }
-            OpCode::EndIf { .. } => {
-                let entry_stack_state = block_stack_states
-                    .pop()
-                    .expect("ICE: EndWhile/EndIf requires a stack depth");
+                stack.extend_from_slice(&entry_stack);
 
-                let (msg, expected_stack) = if let Some(true_stack) = entry_stack_state.true_stack {
-                    (
-                        "all if-elif-else blocks must leave the stack in the same state",
-                        true_stack,
-                    )
-                } else {
-                    (
-                        "if-end blocks must leave the stack in the same state it entered with",
-                        entry_stack_state.entry_stack,
-                    )
-                };
+                for elif_block in elif_blocks {
+                    type_check_block(program, proc, &elif_block.condition, stack, had_error, interner, source_store);
+                    stack_check!(
+                        source_store,
+                        had_error,
+                        stack,
+                        interner,
+                        op,
+                        kind_pat!([PorthTypeKind::Bool])
+                    );
 
-                *had_error |= compare_expected_stacks(
-                    &expected_stack,
-                    stack,
-                    entry_stack_state.open_location,
-                    op,
-                    msg,
-                    source_store,
-                );
+                    *had_error |= compare_expected_stacks(
+                        &entry_stack, 
+                        stack,
+                        stack_sample_location,
+                        elif_block.do_token.location,
+                        "if condition must leave the stack in the same state it entered with",
+                        source_store
+                    );
 
-                // Now that we've checked, we need to restore the stack to the state it was in
-                // prior to the branch, so that the remainder of the code can operate as if
-                // we never went down it.
+                    // Restore the stack to the state it was in before the condition.
+                    // We do this because the stack check may have failed.
+                    stack.clear();
+                    stack.extend_from_slice(&entry_stack);
+
+                    type_check_block(program, proc, &elif_block.block,  stack, had_error, interner, source_store);
+
+                    *had_error |= compare_expected_stacks(
+                        &expected_stack,
+                        stack,
+                        stack_sample_location,
+                        elif_block.close_token.location,
+                        "all if-elif-else blocks cannot change the types on the stack",
+                        source_store
+                    );
+
+                    stack.clear();
+                    stack.extend_from_slice(&entry_stack);
+                }
+
+                if let Some(else_block) = else_block.as_ref() {
+                    type_check_block(program, proc, else_block, stack, had_error, interner, source_store);
+
+                    *had_error |= compare_expected_stacks(
+                        &expected_stack, 
+                        stack,
+                        stack_sample_location,
+                        end_token.location,
+                        "else-block cannot change the types on the stack",
+                        source_store
+                    );
+
+                    stack.clear();
+                    stack.extend_from_slice(&entry_stack);
+                }
+
                 *stack = expected_stack;
             }
 
@@ -831,7 +832,7 @@ pub fn type_check_block(
                                     referenced_proc.entry_stack(),
                                     last_n,
                                     referenced_proc.name().location,
-                                    op,
+                                    op.token.location,
                                     "incorrect types on stack",
                                     source_store,
                                 );
@@ -867,8 +868,7 @@ pub fn type_check_block(
             | OpCode::CallProc{..} // These haven't been generated yet
             | OpCode::Memory{..} // These haven't been generated yet
             | OpCode::UnresolvedIdent { .. }
-            | OpCode::End
-            | OpCode::Do => {
+            => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

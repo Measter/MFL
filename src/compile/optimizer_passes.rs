@@ -22,8 +22,6 @@ type OptimizerFunction = fn(
 ) -> Option<usize>;
 
 pub(super) const PASSES: &[OptimizerFunction] = &[
-    dup_boundry,
-    duppair_boundry,
     push_compare,
     push_shift,
     push_arithmetic,
@@ -83,80 +81,6 @@ impl OpCode {
             Equal | Greater | GreaterEqual | Less | LessEqual | NotEq
         )
     }
-}
-
-/// Optimize a Dup immediately following a block boundry
-/// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
-fn dup_boundry(
-    program: &Program,
-    proc: &Procedure,
-    ops: &[Op],
-    ip: &mut usize,
-    opt_level: u8,
-    assembler: &mut Assembler,
-    interner: &mut Interners,
-) -> Option<usize> {
-    use OpCode::*;
-    let (start, _) = ops.firstn()?;
-    let dup = match start {
-        [boundry, dup]
-            if matches!(
-                boundry.code,
-                DoIf { .. } | If | Elif { .. } | Else { .. } | EndIf { .. }
-            ) && dup.code.is_dup() =>
-        {
-            dup
-        }
-        _ => return None,
-    };
-
-    // We don't actually need any special handling for the boundry token,
-    // so we can just throw it into the single-instruction handler.
-    compile_single_instruction(program, proc, ops, ip, opt_level, assembler, interner)?;
-
-    let depth = dup.code.unwrap_dup();
-    assembler.set_op_range(*ip + 1, *ip + 2);
-
-    let reg = assembler.reg_alloc_dyn_dup(depth);
-    assembler.reg_free_dyn_push(reg);
-
-    Some(start.len())
-}
-
-/// Optimize a DupPair immediately following a block boundry
-/// (While, DoWhile, If, DoIf, Elif, Else, EndIf, EndWhile)
-fn duppair_boundry(
-    program: &Program,
-    proc: &Procedure,
-    ops: &[Op],
-    ip: &mut usize,
-    opt_level: u8,
-    assembler: &mut Assembler,
-    interner: &mut Interners,
-) -> Option<usize> {
-    use OpCode::*;
-    let (start, _) = ops.firstn()?;
-    match start {
-        [boundry, dup]
-            if matches!(
-                boundry.code,
-                DoIf { .. } | If | Elif { .. } | Else { .. } | EndIf { .. }
-            ) && dup.code.is_dup_pair() => {}
-        _ => return None,
-    }
-
-    // We don't actually need any special handling for the boundry token,
-    // so we can just throw it into the single-instruction handler.
-    compile_single_instruction(program, proc, ops, ip, opt_level, assembler, interner)?;
-
-    assembler.set_op_range(*ip + 1, *ip + 2);
-
-    let top_reg = assembler.reg_alloc_dyn_dup(0);
-    let bottom_reg = assembler.reg_alloc_dyn_dup(1);
-    assembler.reg_free_dyn_push(bottom_reg);
-    assembler.reg_free_dyn_push(top_reg);
-
-    Some(start.len())
 }
 
 /// Optimize a Push-Compare
@@ -688,15 +612,19 @@ pub(super) fn compile_single_instruction(
             assembler.reg_free_dyn_drop(addr_reg);
         }
 
-        OpCode::While {
-            condition, body, ..
-        } => {
+        OpCode::While { body, .. } => {
             let loop_id = *ip;
             assembler.push_instr([str_lit(format!("  .LBL_WHILE_START{}:", loop_id))]);
             assembler.block_boundry();
 
             super::build_assembly_for_block(
-                program, proc, condition, ip, interner, opt_level, assembler,
+                program,
+                proc,
+                &body.condition,
+                ip,
+                interner,
+                opt_level,
+                assembler,
             );
 
             assembler.block_boundry();
@@ -714,7 +642,13 @@ pub(super) fn compile_single_instruction(
             assembler.block_boundry();
 
             super::build_assembly_for_block(
-                program, proc, body, ip, interner, opt_level, assembler,
+                program,
+                proc,
+                &body.block,
+                ip,
+                interner,
+                opt_level,
+                assembler,
             );
 
             assembler.push_instr([str_lit(format!("    jmp .LBL_WHILE_START{}", loop_id))]);
@@ -722,10 +656,26 @@ pub(super) fn compile_single_instruction(
             assembler.block_boundry();
         }
 
-        OpCode::If => {
+        OpCode::If {
+            main,
+            elif_blocks,
+            else_block,
+            ..
+        } => {
+            let if_id = *ip;
             assembler.block_boundry();
-        }
-        OpCode::DoIf { end_ip, .. } => {
+
+            // Main condition
+            super::build_assembly_for_block(
+                program,
+                proc,
+                &main.condition,
+                ip,
+                interner,
+                opt_level,
+                assembler,
+            );
+
             assembler.block_boundry();
             let reg_id = assembler.reg_alloc_dyn_pop();
 
@@ -735,22 +685,136 @@ pub(super) fn compile_single_instruction(
                 str_lit(", "),
                 dyn_reg(reg_id),
             ]);
-            assembler.push_instr([str_lit(format!("    jz .LBL{}", end_ip))]);
+
+            // Condition failed.
+            if !elif_blocks.is_empty() {
+                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELIF0", if_id,))]);
+            } else if else_block.is_some() {
+                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
+            } else {
+                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_END", if_id))]);
+            }
 
             assembler.reg_free_dyn_drop(reg_id);
             assembler.block_boundry();
-        }
-        OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
+
+            // Main body.
+            super::build_assembly_for_block(
+                program,
+                proc,
+                &main.block,
+                ip,
+                interner,
+                opt_level,
+                assembler,
+            );
+
             assembler.block_boundry();
-            assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
-            assembler.push_instr([str_lit(format!("  .LBL{}:", else_start))]);
+            if !elif_blocks.is_empty() || else_block.is_some() {
+                assembler.push_instr([str_lit(format!("    jmp .LBL_IF{}_END", if_id))]);
+            }
+
+            // Now to do the ELIF blocks...
+            for (elif_id, elif_block) in elif_blocks.iter().enumerate() {
+                assembler.push_instr([str_lit(format!("  .LBL_IF{}_ELIF{}:", if_id, elif_id))]);
+                assembler.block_boundry();
+
+                // Elif condition.
+                super::build_assembly_for_block(
+                    program,
+                    proc,
+                    &elif_block.condition,
+                    ip,
+                    interner,
+                    opt_level,
+                    assembler,
+                );
+
+                assembler.block_boundry();
+                let reg_id = assembler.reg_alloc_dyn_pop();
+
+                assembler.push_instr([
+                    str_lit("    test "),
+                    dyn_reg(reg_id),
+                    str_lit(", "),
+                    dyn_reg(reg_id),
+                ]);
+
+                // Condition failed.
+                // If we're not the last elif block
+                if elif_id + 1 < elif_blocks.len() {
+                    assembler.push_instr([str_lit(format!(
+                        "    jz .LBL_IF{}_ELIF{}",
+                        if_id,
+                        elif_id + 1
+                    ))]);
+                } else if else_block.is_some() {
+                    assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
+                } else {
+                    assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_END", if_id))]);
+                }
+
+                assembler.reg_free_dyn_drop(reg_id);
+                assembler.block_boundry();
+
+                // Elif body.
+                super::build_assembly_for_block(
+                    program,
+                    proc,
+                    &elif_block.block,
+                    ip,
+                    interner,
+                    opt_level,
+                    assembler,
+                );
+
+                assembler.block_boundry();
+                // If we're the last elif, and there's no else, just fall through.
+                if elif_id + 1 != elif_blocks.len() || else_block.is_some() {
+                    assembler.push_instr([str_lit(format!("    jmp .LBL_IF{}_END", if_id))]);
+                }
+            }
+
+            if let Some(else_block) = else_block.as_ref() {
+                assembler.push_instr([str_lit(format!("  .LBL_IF{}_ELSE:", if_id))]);
+                assembler.block_boundry();
+
+                super::build_assembly_for_block(
+                    program, proc, else_block, ip, interner, opt_level, assembler,
+                );
+
+                assembler.block_boundry();
+            }
+
             assembler.block_boundry();
-        }
-        OpCode::EndIf { ip } => {
-            assembler.push_instr([str_lit(format!("  .LBL{}:", ip))]);
-            assembler.block_boundry();
+            assembler.push_instr([str_lit(format!("  .LBL_IF{}_END:", if_id))]);
         }
 
+        // OpCode::DoIf { end_ip, .. } => {
+        //     assembler.block_boundry();
+        //     let reg_id = assembler.reg_alloc_dyn_pop();
+
+        //     assembler.push_instr([
+        //         str_lit("    test "),
+        //         dyn_reg(reg_id),
+        //         str_lit(", "),
+        //         dyn_reg(reg_id),
+        //     ]);
+        //     assembler.push_instr([str_lit(format!("    jz .LBL{}", end_ip))]);
+
+        //     assembler.reg_free_dyn_drop(reg_id);
+        //     assembler.block_boundry();
+        // }
+        // OpCode::Elif { end_ip, else_start } | OpCode::Else { end_ip, else_start } => {
+        //     assembler.block_boundry();
+        //     assembler.push_instr([str_lit(format!("    jmp .LBL{}", end_ip))]);
+        //     assembler.push_instr([str_lit(format!("  .LBL{}:", else_start))]);
+        //     assembler.block_boundry();
+        // }
+        // OpCode::EndIf { ip } => {
+        //     assembler.push_instr([str_lit(format!("  .LBL{}:", ip))]);
+        //     assembler.block_boundry();
+        // }
         OpCode::CallProc { proc_id, .. } => {
             let callee = program.get_proc(*proc_id);
             assembler.use_function(*proc_id);
@@ -838,10 +902,7 @@ pub(super) fn compile_single_instruction(
         OpCode::SysCall(arg_count) => {
             panic!("ICE: Invalid syscall argument count: {}", arg_count)
         }
-        OpCode::Do
-        | OpCode::End
-        | OpCode::UnresolvedIdent { .. }
-        | OpCode::ResolvedIdent { .. } => {
+        OpCode::UnresolvedIdent { .. } | OpCode::ResolvedIdent { .. } => {
             panic!("ICE: Encountered: {:?}", op.code)
         }
     }

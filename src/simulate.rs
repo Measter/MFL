@@ -99,13 +99,11 @@ fn simulate_execute_program_block(
                 value_stack.pop().unwrap();
             }
 
-            OpCode::While {
-                condition, body, ..
-            } => loop {
+            OpCode::While { body, .. } => loop {
                 simulate_execute_program_block(
                     program,
                     procedure,
-                    condition,
+                    &body.condition,
                     value_stack,
                     interner,
                     source_store,
@@ -117,25 +115,26 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     procedure,
-                    body,
+                    &body.block,
                     value_stack,
                     interner,
                     source_store,
                 )?;
             },
 
-            OpCode::If => {}
-            OpCode::DoIf { end_ip, .. } => {
-                let a = value_stack.pop().unwrap();
-
-                if a == 0 {
-                    ip = end_ip + 1;
-                    continue;
-                }
+            OpCode::If { .. } => {
+                todo!()
             }
-            OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = *end_ip,
-            OpCode::EndIf { .. } => {}
+            // OpCode::DoIf { end_ip, .. } => {
+            //     let a = value_stack.pop().unwrap();
 
+            //     if a == 0 {
+            //         ip = end_ip + 1;
+            //         continue;
+            //     }
+            // }
+            // OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = *end_ip,
+            // OpCode::EndIf { .. } => {}
             OpCode::Greater => {
                 let [a, b] = value_stack.popn().unwrap();
                 value_stack.push((a > b) as u64);
@@ -220,7 +219,7 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::Do | OpCode::End | OpCode::UnresolvedIdent { .. } => {
+            OpCode::UnresolvedIdent { .. } => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

@@ -1,13 +1,9 @@
-use std::ops::Not;
-
-use ariadne::{Color, Label};
 use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
-    diagnostics,
     interners::Interners,
-    lexer::{Token, TokenKind},
+    lexer::Token,
     program::{ModuleId, ProcedureId},
     source_file::{SourceLocation, SourceStorage},
     type_check::PorthTypeKind,
@@ -17,6 +13,14 @@ use crate::{
 use self::optimizer_passes::PASSES;
 
 mod optimizer_passes;
+
+#[derive(Debug, Clone)]
+pub struct ConditionalBlock {
+    pub condition: Vec<Op>,
+    pub do_token: Token,
+    pub block: Vec<Op>,
+    pub close_token: Token,
+}
 
 #[derive(Debug, Clone, Variantly)]
 pub enum OpCode {
@@ -34,30 +38,20 @@ pub enum OpCode {
     CastInt,
     CastPtr,
     DivMod,
-    Do,
-    DoIf {
-        end_ip: usize,
-    },
     Dup {
         depth: usize,
     },
     DupPair,
     Drop,
-    Elif {
-        else_start: usize,
-        end_ip: usize,
-    },
-    Else {
-        else_start: usize,
-        end_ip: usize,
-    },
-    End,
-    EndIf {
-        ip: usize,
-    },
     Epilogue,
     Equal,
-    If,
+    If {
+        open_token: Token,
+        main: ConditionalBlock,
+        elif_blocks: Vec<ConditionalBlock>,
+        else_block: Option<Vec<Op>>,
+        end_token: Token,
+    },
     Less,
     LessEqual,
     Load {
@@ -101,10 +95,7 @@ pub enum OpCode {
         proc: Token,
     },
     While {
-        condition: Vec<Op>,
-        do_token: Token,
-        body: Vec<Op>,
-        end_token: Token,
+        body: ConditionalBlock,
     },
 }
 
@@ -134,8 +125,6 @@ impl OpCode {
             | OpCode::CastBool
             | OpCode::CastInt
             | OpCode::CastPtr
-            | OpCode::Do
-            | OpCode::DoIf { .. }
             | OpCode::Drop
             | OpCode::Load { .. } => 1,
 
@@ -144,11 +133,7 @@ impl OpCode {
             OpCode::ArgC
             | OpCode::ArgV
             | OpCode::DupPair
-            | OpCode::Elif { .. }
-            | OpCode::Else { .. }
-            | OpCode::End { .. }
-            | OpCode::EndIf { .. }
-            | OpCode::If
+            | OpCode::If { .. }
             | OpCode::Memory { .. }
             | OpCode::PushBool(_)
             | OpCode::PushInt(_)
@@ -183,17 +168,11 @@ impl OpCode {
             | CastInt
             | CastPtr
             | DivMod
-            | Do
-            | DoIf { .. }
             | Drop
             | Dup { .. }
             | DupPair
-            | Elif { .. }
-            | Else { .. }
-            | End { .. }
-            | EndIf { .. }
             | Epilogue
-            | If
+            | If { .. }
             | Load { .. }
             | Memory { .. }
             | Prologue
@@ -227,17 +206,11 @@ impl OpCode {
             | CastInt
             | CastPtr
             | DivMod
-            | Do
-            | DoIf { .. }
             | Drop
             | Dup { .. }
             | DupPair
-            | Elif { .. }
-            | Else { .. }
-            | End { .. }
-            | EndIf { .. }
             | Epilogue
-            | If
+            | If { .. }
             | Load { .. }
             | Memory { .. }
             | Multiply
@@ -284,17 +257,11 @@ impl OpCode {
             | CastInt
             | CastPtr
             | DivMod
-            | Do
-            | DoIf { .. }
             | Drop
             | Dup { .. }
             | DupPair
-            | Elif { .. }
-            | Else { .. }
-            | End { .. }
-            | EndIf { .. }
             | Epilogue
-            | If
+            | If { .. }
             | Load { .. }
             | Memory { .. }
             | Prologue
@@ -323,13 +290,6 @@ impl OpCode {
                 global,
             } => (*module, *proc_id, *offset, *global),
             _ => panic!("expected OpCode::Memory"),
-        }
-    }
-
-    pub fn unwrap_dup(&self) -> usize {
-        match self {
-            OpCode::Dup { depth } => *depth,
-            _ => panic!("expected OpCode::Dup"),
         }
     }
 
@@ -365,192 +325,6 @@ impl Op {
     }
 }
 
-struct JumpIpStack {
-    ip: usize,
-    kind: TokenKind,
-    location: SourceLocation,
-}
-
-pub fn generate_jump_labels(ops: &mut [Op], source_store: &SourceStorage) -> Result<(), ()> {
-    let mut jump_ip_stack: Vec<JumpIpStack> = Vec::new();
-    // Stores the IPs of the Elif opcodes so we can update their end IPs when we encounter an End opcode.
-    let mut if_blocks_stack_ips: Vec<Vec<usize>> = Vec::new();
-    let mut had_error = false;
-
-    for ip in 0..ops.len() {
-        let op = &ops[ip];
-        match op.code {
-            OpCode::If => {
-                if_blocks_stack_ips.push(Vec::new());
-                jump_ip_stack.push(JumpIpStack {
-                    ip,
-                    kind: op.token.kind,
-                    location: op.token.location,
-                })
-            }
-            OpCode::Elif { .. } => {
-                let if_idx = match jump_ip_stack.pop() {
-                    Some(JumpIpStack {
-                        ip: if_idx,
-                        kind: TokenKind::Do,
-                        ..
-                    }) => if_idx,
-                    _ => {
-                        diagnostics::emit_error(
-                            op.token.location,
-                            "`elif` requires a preceding `if-do`",
-                            Some(Label::new(op.token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
-                };
-
-                let kind = op.token.kind;
-                let location = op.token.location;
-
-                // update our own IP.
-                match &mut ops[ip].code {
-                    OpCode::Elif { else_start, .. } => *else_start = ip,
-                    _ => unreachable!(),
-                };
-                match &mut ops[if_idx].code {
-                    OpCode::DoIf { end_ip } => *end_ip = ip,
-                    _ => unreachable!(),
-                };
-
-                if_blocks_stack_ips.last_mut().unwrap().push(ip);
-                jump_ip_stack.push(JumpIpStack { ip, kind, location });
-            }
-            OpCode::Else { .. } => {
-                let if_idx = match jump_ip_stack.pop() {
-                    Some(JumpIpStack {
-                        ip: if_idx,
-                        kind: TokenKind::Do,
-                        ..
-                    }) => if_idx,
-                    _ => {
-                        diagnostics::emit_error(
-                            op.token.location,
-                            "`else` requires a preceding `if-do`",
-                            Some(Label::new(op.token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
-                };
-
-                let kind = op.token.kind;
-                let location = op.token.location;
-
-                // Update our own IP.
-                match &mut ops[ip].code {
-                    OpCode::Else { else_start, .. } => *else_start = ip,
-                    _ => unreachable!(),
-                }
-                match &mut ops[if_idx].code {
-                    OpCode::DoIf { end_ip } => *end_ip = ip,
-                    _ => unreachable!(),
-                }
-
-                jump_ip_stack.push(JumpIpStack { ip, kind, location });
-            }
-
-            OpCode::Do => {
-                let src_ip = match jump_ip_stack.pop() {
-                    Some(JumpIpStack {
-                        ip,
-                        kind: TokenKind::Elif | TokenKind::If,
-                        ..
-                    }) => ip,
-                    _ => {
-                        diagnostics::emit_error(
-                            op.token.location,
-                            "`do` requires a preceding `if` or `elif`",
-                            Some(Label::new(op.token.location)),
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
-                };
-
-                jump_ip_stack.push(JumpIpStack {
-                    ip,
-                    kind: op.token.kind,
-                    location: op.token.location,
-                });
-
-                // Now we need to specialize our own type based on our source.
-                match &mut ops[src_ip].code {
-                    OpCode::Elif { .. } | OpCode::If => {
-                        ops[ip].code = OpCode::DoIf { end_ip: usize::MAX }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            OpCode::End { .. } => {
-                let src_ip = match jump_ip_stack.pop() {
-                    Some(JumpIpStack {
-                        ip,
-                        kind: TokenKind::Else | TokenKind::Do,
-                        ..
-                    }) => ip,
-                    _ => {
-                        diagnostics::emit_error(
-                            op.token.location,
-                            "`end` requires a preceding `if-do`, `else`, or `while-do`",
-                            Some(Label::new(op.token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
-                };
-
-                // Now we need to specialize our own type based on our source.
-                match &mut ops[src_ip].code {
-                    OpCode::DoIf { end_ip } | OpCode::Else { end_ip, .. } => {
-                        *end_ip = ip;
-                        ops[ip].code = OpCode::EndIf { ip };
-
-                        // Update any Elifs in the block.
-                        for elif_ip in if_blocks_stack_ips.pop().unwrap() {
-                            match &mut ops[elif_ip].code {
-                                OpCode::Elif { end_ip, .. } => *end_ip = ip,
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            _ => {}
-        }
-    }
-
-    while let Some(JumpIpStack { location, .. }) = jump_ip_stack.pop() {
-        diagnostics::emit_error(
-            location,
-            "unclosed `if`, `else`, or `while-do` block",
-            Some(Label::new(location).with_color(Color::Red)),
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
-    had_error.not().then(|| ()).ok_or(())
-}
-
 pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -> Vec<Op> {
     let mut src_vec = ops.to_owned();
     let mut dst_vec: Vec<Op> = Vec::with_capacity(ops.len());
@@ -571,19 +345,56 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
                 changed = true;
             } else if let [op, xs @ ..] = src {
                 match &op.code {
-                    OpCode::While {
-                        condition: condition_block,
-                        do_token,
-                        body: loop_block,
+                    OpCode::If {
+                        main,
+                        elif_blocks,
+                        else_block,
+                        open_token,
                         end_token,
                     } => {
+                        //
+                        let new_main = ConditionalBlock {
+                            condition: optimize(&main.condition, interner, sources),
+                            block: optimize(&main.block, interner, sources),
+                            do_token: main.do_token,
+                            close_token: main.close_token,
+                        };
+
+                        let new_elif_blocks = elif_blocks
+                            .iter()
+                            .map(|b| ConditionalBlock {
+                                condition: optimize(&b.condition, interner, sources),
+                                block: optimize(&b.block, interner, sources),
+                                do_token: b.do_token,
+                                close_token: b.close_token,
+                            })
+                            .collect();
+
+                        let new_else_block =
+                            else_block.as_ref().map(|b| optimize(b, interner, sources));
+
                         dst_vec.push(Op {
-                            code: OpCode::While {
-                                condition: optimize(condition_block, interner, sources),
-                                do_token: *do_token,
-                                body: optimize(loop_block, interner, sources),
+                            code: OpCode::If {
+                                main: new_main,
+                                elif_blocks: new_elif_blocks,
+                                else_block: new_else_block,
+                                open_token: *open_token,
                                 end_token: *end_token,
                             },
+                            token: op.token,
+                            expansions: op.expansions.clone(),
+                        });
+                    }
+                    OpCode::While { body } => {
+                        let new_body = ConditionalBlock {
+                            condition: optimize(&body.condition, interner, sources),
+                            block: optimize(&body.block, interner, sources),
+                            do_token: body.do_token,
+                            close_token: body.close_token,
+                        };
+
+                        dst_vec.push(Op {
+                            code: OpCode::While { body: new_body },
                             token: op.token,
                             expansions: op.expansions.clone(),
                         });

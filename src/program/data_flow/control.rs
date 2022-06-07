@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::NOps,
-    opcode::{Op, OpCode},
+    opcode::Op,
     program::{Procedure, ProcedureId, ProcedureKind, Program},
     source_file::SourceStorage,
     type_check::PorthTypeKind,

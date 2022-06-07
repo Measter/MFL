@@ -369,11 +369,7 @@ pub fn analyze(
             ),  
 
             OpCode::While { .. } => unimplemented!(),
-
-            OpCode::If => unimplemented!(),
-            OpCode::DoIf { .. } => unimplemented!(),
-            OpCode::Elif { .. } | OpCode::Else { .. } => unimplemented!(),
-            OpCode::EndIf { .. } => unimplemented!(),
+            OpCode::If {..} => unimplemented!(),
 
             OpCode::Drop => stack_ops::drop(
                 &mut analyzer,
@@ -478,8 +474,6 @@ pub fn analyze(
             | OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
-            | OpCode::End // All of these should be specialized.
-            | OpCode::Do // As should these.
             => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
