@@ -4,14 +4,15 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::NOps,
-    opcode::Op,
-    program::{Procedure, ProcedureId, ProcedureKind, Program},
-    source_file::SourceStorage,
+    opcode::{ConditionalBlock, Op},
+    program::{data_flow::Value, Procedure, ProcedureId, ProcedureKind, Program},
+    source_file::{SourceLocation, SourceStorage},
     type_check::PorthTypeKind,
 };
 
 use super::{
-    failed_compare_stack_types, generate_stack_exhaustion_diag, Analyzer, ConstVal, PtrId, ValueId,
+    failed_compare_stack_types, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
+    Analyzer, ConstVal, PtrId, ValueId,
 };
 
 pub(super) fn epilogue_return(
@@ -20,7 +21,6 @@ pub(super) fn epilogue_return(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
     proc: &Procedure,
 ) {
@@ -41,7 +41,7 @@ pub(super) fn epilogue_return(
     };
 
     for &value_id in stack.lastn(proc.exit_stack().len()).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
 
     if stack.len() != proc.exit_stack().len() {
@@ -87,13 +87,15 @@ pub(super) fn epilogue_return(
         let [actual_value] = analyzer.get_values([*actual_id]);
 
         if expected.kind != actual_value.porth_type {
+            let expected_kinds: Vec<_> = proc.exit_stack().iter().map(|t| t.kind).collect();
+
             failed_compare_stack_types(
                 analyzer,
                 source_store,
                 stack,
-                proc.exit_stack(),
-                op,
-                proc.name,
+                &expected_kinds,
+                proc.exit_stack_location(),
+                op.token.location,
                 "procedure return stack mismatch",
             );
             *had_error = true;
@@ -106,18 +108,17 @@ pub(super) fn epilogue_return(
 pub(super) fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    op_idx: usize,
     op: &Op,
     proc: &Procedure,
 ) {
     let mut outputs = Vec::new();
     for input_type in proc.entry_stack() {
-        let (new_id, _) = analyzer.new_value(input_type.kind, op_idx, op.token);
+        let (new_id, _) = analyzer.new_value(input_type.kind, op.id, op.token);
         outputs.push(new_id);
         stack.push(new_id);
     }
 
-    analyzer.set_io(op_idx, op.token, &[], &outputs);
+    analyzer.set_io(op.id, op.token, &[], &outputs);
 }
 
 pub(super) fn resolved_ident(
@@ -126,7 +127,6 @@ pub(super) fn resolved_ident(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
     proc_id: ProcedureId,
 ) {
@@ -134,20 +134,26 @@ pub(super) fn resolved_ident(
 
     match referenced_proc.kind() {
         ProcedureKind::Memory => {
-            let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op_idx, op.token);
+            let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op.id, op.token);
             new_value.const_val = Some(ConstVal::Ptr {
                 id: PtrId::Mem(proc_id),
                 src_op_loc: op.token.location,
                 offset: Some(0),
             });
-            analyzer.set_io(op_idx, op.token, &[], &[new_id]);
+            analyzer.set_io(op.id, op.token, &[], &[new_id]);
 
             stack.push(new_id);
         }
         _ => {
             let num_args = referenced_proc.entry_stack().len();
             let inputs = if stack.len() < num_args {
-                generate_stack_exhaustion_diag(source_store, op, stack.len(), num_args);
+                generate_stack_length_mismatch_diag(
+                    source_store,
+                    op,
+                    op.token.location,
+                    stack.len(),
+                    num_args,
+                );
                 *had_error = true;
                 stack.clear();
                 Vec::new()
@@ -158,13 +164,19 @@ pub(super) fn resolved_ident(
                 for (expected, actual_id) in stacks {
                     let [actual_value] = analyzer.get_values([*actual_id]);
                     if expected.kind != actual_value.porth_type {
+                        let expected_kinds: Vec<_> = referenced_proc
+                            .entry_stack()
+                            .iter()
+                            .map(|t| t.kind)
+                            .collect();
+
                         failed_compare_stack_types(
                             analyzer,
                             source_store,
                             stack,
-                            referenced_proc.entry_stack(),
-                            op,
-                            op.token,
+                            &expected_kinds,
+                            referenced_proc.entry_stack_location(),
+                            op.token.location,
                             "incorrect arguments for function",
                         );
                         *had_error = true;
@@ -178,12 +190,12 @@ pub(super) fn resolved_ident(
             let mut outputs = Vec::new();
 
             for output in referenced_proc.exit_stack() {
-                let (new_id, _) = analyzer.new_value(output.kind, op_idx, op.token);
+                let (new_id, _) = analyzer.new_value(output.kind, op.id, op.token);
                 outputs.push(new_id);
                 stack.push(new_id);
             }
 
-            analyzer.set_io(op_idx, op.token, &inputs, &outputs);
+            analyzer.set_io(op.id, op.token, &inputs, &outputs);
         }
     }
 }
@@ -193,7 +205,6 @@ pub(super) fn syscall(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
     mut num_args: usize,
 ) {
@@ -202,14 +213,20 @@ pub(super) fn syscall(
     num_args += 1;
 
     for &value_id in stack.lastn(num_args).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
 
     // Only 7 arguments are support. Anything else will ICE.
     let mut args = [ValueId(usize::MAX); 7];
 
     let (inputs, new_type) = if stack.len() < num_args {
-        generate_stack_exhaustion_diag(source_store, op, stack.len(), num_args);
+        generate_stack_length_mismatch_diag(
+            source_store,
+            op,
+            op.token.location,
+            stack.len(),
+            num_args,
+        );
         *had_error = true;
         stack.clear();
         (None, PorthTypeKind::Unknown)
@@ -220,8 +237,152 @@ pub(super) fn syscall(
         (Some(args), PorthTypeKind::Int)
     };
 
-    let (new_id, _) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, _) = analyzer.new_value(new_type, op.id, op.token);
     let inputs = inputs.map(|i| &*i).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
+}
+
+fn check_stack_length_and_types(
+    initial_stack: &[ValueId],
+    stack: &[ValueId],
+    op: &Op,
+    sample_location: SourceLocation,
+    msg: &str,
+    had_error: &mut bool,
+    source_store: &SourceStorage,
+    analyzer: &mut Analyzer,
+) {
+    if stack.len() != initial_stack.len() {
+        generate_stack_length_mismatch_diag(
+            source_store,
+            op,
+            sample_location,
+            stack.len(),
+            initial_stack.len(),
+        );
+        *had_error = true;
+    } else if !initial_stack.iter().zip(stack).all(|(expected, actual)| {
+        let [expected_val, actual_val] = analyzer.get_values([*expected, *actual]);
+        expected_val.porth_type == actual_val.porth_type
+    }) {
+        let expected_kinds: Vec<_> = initial_stack
+            .iter()
+            .map(|v| {
+                let [v] = analyzer.get_values([*v]);
+                v.porth_type
+            })
+            .collect();
+
+        failed_compare_stack_types(
+            analyzer,
+            source_store,
+            stack,
+            &expected_kinds,
+            op.token.location,
+            sample_location,
+            msg,
+        );
+
+        *had_error = true;
+    }
+}
+
+pub(super) fn analyze_while(
+    program: &Program,
+    proc: &Procedure,
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    had_error: &mut bool,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    op: &Op,
+    body: &ConditionalBlock,
+) {
+    let initial_stack = stack.clone();
+
+    // TODO: Force non-const
+    super::analyze_block(
+        program,
+        proc,
+        &body.condition,
+        analyzer,
+        stack,
+        had_error,
+        interner,
+        source_store,
+    );
+
+    if let Some(&value_id) = stack.last() {
+        analyzer.consume(value_id, op.id);
+    }
+
+    let (do_input, const_val) = match stack.pop() {
+        None => {
+            generate_stack_length_mismatch_diag(source_store, op, body.do_token.location, 0, 1);
+            *had_error = true;
+            stack.clear();
+
+            (None, None)
+        }
+        Some(val) => {
+            let const_val = match analyzer.get_values([val]) {
+                type_pattern!(a @ PorthTypeKind::Bool) => *a,
+                [val] => {
+                    // Type mismatch
+                    *had_error = true;
+                    if val.porth_type != PorthTypeKind::Unknown {
+                        let lexeme = interner.resolve_lexeme(body.do_token.lexeme);
+                        generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
+                    }
+                    None
+                }
+            };
+
+            (Some(val), const_val)
+        }
+    };
+
+    check_stack_length_and_types(
+        &initial_stack,
+        stack,
+        op,
+        body.do_token.location,
+        "while condition cannot change the length and types on the stack",
+        had_error,
+        source_store,
+        analyzer,
+    );
+
+    // TODO: Mark all stack slots changed by the condition as non-const.
+    // Ensure the stack is in the same state as before the condition.
+    stack.clear();
+    stack.extend_from_slice(&initial_stack);
+
+    super::analyze_block(
+        program,
+        proc,
+        &body.block,
+        analyzer,
+        stack,
+        had_error,
+        interner,
+        source_store,
+    );
+
+    // TODO: Force non-const
+    check_stack_length_and_types(
+        &initial_stack,
+        stack,
+        op,
+        body.close_token.location,
+        "while body cannot change the length and types on the stack",
+        had_error,
+        source_store,
+        analyzer,
+    );
+
+    // TODO: Mark all stack slots changed by the body as non-const.
+    stack.clear();
+    stack.extend_from_slice(&initial_stack);
 }

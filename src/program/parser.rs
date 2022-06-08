@@ -6,7 +6,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{ConditionalBlock, Op, OpCode},
+    opcode::{ConditionalBlock, Op, OpCode, OpId},
     source_file::{SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
     Width,
@@ -63,6 +63,7 @@ pub fn parse_procedure_body(
     program: &mut Program,
     module_id: ModuleId,
     tokens: &[Token],
+    op_id_gen: &mut impl FnMut() -> OpId,
     interner: &Interners,
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
@@ -142,22 +143,25 @@ pub fn parse_procedure_body(
             TokenKind::ArgC => OpCode::ArgC,
             TokenKind::ArgV => OpCode::ArgV,
 
-            TokenKind::While => match parse_while(
-                program,
-                module_id,
-                &mut token_iter,
-                tokens,
-                *token,
-                parent,
-                interner,
-                source_store,
-            ) {
-                Err(_) => {
-                    had_error = true;
-                    continue;
+            TokenKind::While => {
+                match parse_while(
+                    program,
+                    module_id,
+                    &mut token_iter,
+                    tokens,
+                    *token,
+                    op_id_gen,
+                    parent,
+                    interner,
+                    source_store,
+                ) {
+                    Err(_) => {
+                        had_error = true;
+                        continue;
+                    }
+                    Ok(code) => code,
                 }
-                Ok(code) => code,
-            },
+            }
 
             TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
                 if parse_procedure(
@@ -199,6 +203,7 @@ pub fn parse_procedure_body(
                     &mut token_iter,
                     tokens,
                     *token,
+                    op_id_gen,
                     parent,
                     interner,
                     source_store,
@@ -256,7 +261,7 @@ pub fn parse_procedure_body(
             }
         };
 
-        ops.push(Op::new(kind, *token));
+        ops.push(Op::new(op_id_gen(), kind, *token));
     }
 
     had_error.not().then(|| ops).ok_or(())
@@ -339,6 +344,7 @@ fn parse_if<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
+    op_id_gen: &mut impl FnMut() -> OpId,
     parent: Option<ProcedureId>,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -356,6 +362,7 @@ fn parse_if<'a>(
         program,
         module_id,
         main_condition,
+        op_id_gen,
         interner,
         parent,
         source_store,
@@ -374,6 +381,7 @@ fn parse_if<'a>(
         program,
         module_id,
         main_block,
+        op_id_gen,
         interner,
         parent,
         source_store,
@@ -402,6 +410,7 @@ fn parse_if<'a>(
             program,
             module_id,
             elif_condition,
+            op_id_gen,
             interner,
             parent,
             source_store,
@@ -420,6 +429,7 @@ fn parse_if<'a>(
             program,
             module_id,
             elif_block,
+            op_id_gen,
             interner,
             parent,
             source_store,
@@ -450,6 +460,7 @@ fn parse_if<'a>(
             program,
             module_id,
             else_block,
+            op_id_gen,
             interner,
             parent,
             source_store,
@@ -477,6 +488,7 @@ fn parse_while<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
+    op_id_gen: &mut impl FnMut() -> OpId,
     parent: Option<ProcedureId>,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -494,6 +506,7 @@ fn parse_while<'a>(
         program,
         module_id,
         condition,
+        op_id_gen,
         interner,
         parent,
         source_store,
@@ -508,7 +521,15 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let block = parse_procedure_body(program, module_id, body, interner, parent, source_store)?;
+    let block = parse_procedure_body(
+        program,
+        module_id,
+        body,
+        op_id_gen,
+        interner,
+        parent,
+        source_store,
+    )?;
 
     Ok(OpCode::While {
         body: ConditionalBlock {
@@ -804,10 +825,18 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
+    let mut op_id = 0;
+    let mut op_id_gen = || {
+        let id = op_id;
+        op_id += 1;
+        OpId(id)
+    };
+
     let mut body = parse_procedure_body(
         program,
         module_id,
         body,
+        &mut op_id_gen,
         interner,
         Some(procedure_id),
         source_store,
@@ -821,6 +850,7 @@ fn parse_procedure<'a>(
             0,
             Op {
                 code: OpCode::Prologue,
+                id: op_id_gen(),
                 token: name_token,
                 expansions: Vec::new(),
             },
@@ -828,6 +858,7 @@ fn parse_procedure<'a>(
 
         body.push(Op {
             code: OpCode::Epilogue,
+            id: op_id_gen(),
             token: end_token,
             expansions: Vec::new(),
         });

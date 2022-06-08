@@ -801,6 +801,7 @@ impl Program {
                                 ..while_body
                             },
                         },
+                        id: op.id,
                         token: op.token,
                         expansions: op.expansions,
                     });
@@ -863,6 +864,7 @@ impl Program {
                             open_token,
                             end_token,
                         },
+                        id: op.id,
                         token: op.token,
                         expansions: op.expansions,
                     });
@@ -890,6 +892,7 @@ impl Program {
                                 };
                                 new_ops.push(Op {
                                     code,
+                                    id: op.id,
                                     token: op.token,
                                     expansions: op.expansions.clone(),
                                 });
@@ -903,6 +906,7 @@ impl Program {
                                     offset: 0,
                                     global: found_proc.parent().is_none(),
                                 },
+                                id: op.id,
                                 token: op.token,
                                 expansions: op.expansions,
                             });
@@ -910,6 +914,7 @@ impl Program {
                         ProcedureKind::Function(_) => {
                             new_ops.push(Op {
                                 code: OpCode::CallProc { module, proc_id },
+                                id: op.id,
                                 token: op.token,
                                 expansions: op.expansions,
                             });
@@ -1099,8 +1104,8 @@ impl Program {
         debug!("    Expanding macros...");
         self.expand_macros();
 
-        // debug!("    Analyzing data flow...");
-        // self.analyze_data_flow(interner, source_store)?;
+        debug!("    Analyzing data flow...");
+        self.analyze_data_flow(interner, source_store)?;
         debug!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
         debug!("    Evaluating const bodies...");

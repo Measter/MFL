@@ -10,7 +10,8 @@ use crate::{
 };
 
 use super::{
-    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value, ValueId,
+    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value,
+    ValueId,
 };
 
 pub(super) fn add(
@@ -19,15 +20,20 @@ pub(super) fn add(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -78,11 +84,11 @@ pub(super) fn add(
         }
         cv.0
     });
-    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -92,16 +98,21 @@ pub(super) fn bitand_bitor(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
 
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -147,11 +158,11 @@ pub(super) fn bitand_bitor(
         cv.0
     });
 
-    let (new_id, new_val) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_val) = analyzer.new_value(new_type, op.id, op.token);
     new_val.const_val = const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -161,16 +172,21 @@ pub(super) fn bitnot(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     if let Some(&value_id) = stack.last() {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
 
     let (inputs, new_type, const_val) = match stack.pop() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -201,11 +217,11 @@ pub(super) fn bitnot(
         _ => unreachable!(),
     });
 
-    let (new_id, new_val) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_val) = analyzer.new_value(new_type, op.id, op.token);
     new_val.const_val = const_val;
 
     let inputs = inputs.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -215,15 +231,20 @@ pub(super) fn divmod(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
             (None, PorthTypeKind::Unknown, (None, None))
@@ -273,13 +294,13 @@ pub(super) fn divmod(
         _ => (None, None),
     };
 
-    let (quot_id, quot_val) = analyzer.new_value(new_type, op_idx, op.token);
+    let (quot_id, quot_val) = analyzer.new_value(new_type, op.id, op.token);
     quot_val.const_val = quot_const_val;
-    let (rem_id, rem_val) = analyzer.new_value(new_type, op_idx, op.token);
+    let (rem_id, rem_val) = analyzer.new_value(new_type, op.id, op.token);
     rem_val.const_val = rem_const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[quot_id, rem_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[quot_id, rem_id]);
     stack.push(quot_id);
     stack.push(rem_id);
 }
@@ -290,15 +311,20 @@ pub(super) fn multiply_and_shift(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
             (None, PorthTypeKind::Unknown, (None, None))
@@ -357,11 +383,11 @@ pub(super) fn multiply_and_shift(
         _ => None,
     };
 
-    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -371,15 +397,20 @@ pub(super) fn subtract(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -528,11 +559,11 @@ pub(super) fn subtract(
         _ => None,
     };
 
-    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
 
     stack.push(new_id);
 }

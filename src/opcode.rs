@@ -308,16 +308,21 @@ impl OpCode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct OpId(pub usize);
+
 #[derive(Debug, Clone)]
 pub struct Op {
     pub code: OpCode,
+    pub id: OpId,
     pub token: Token,
     pub expansions: Vec<SourceLocation>,
 }
 
 impl Op {
-    pub fn new(code: OpCode, token: Token) -> Self {
+    pub fn new(id: OpId, code: OpCode, token: Token) -> Self {
         Self {
+            id,
             code,
             token,
             expansions: Vec::new(),
@@ -381,6 +386,7 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
                                 open_token: *open_token,
                                 end_token: *end_token,
                             },
+                            id: op.id,
                             token: op.token,
                             expansions: op.expansions.clone(),
                         });
@@ -395,6 +401,7 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
 
                         dst_vec.push(Op {
                             code: OpCode::While { body: new_body },
+                            id: op.id,
                             token: op.token,
                             expansions: op.expansions.clone(),
                         });

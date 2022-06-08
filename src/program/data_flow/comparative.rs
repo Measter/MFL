@@ -10,7 +10,8 @@ use crate::{
 };
 
 use super::{
-    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value, ValueId,
+    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value,
+    ValueId,
 };
 
 pub(super) fn compare(
@@ -19,16 +20,21 @@ pub(super) fn compare(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
 
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -108,11 +114,11 @@ pub(super) fn compare(
         _ => None,
     };
 
-    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val.map(ConstVal::Bool);
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -122,15 +128,20 @@ pub(super) fn equal(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, new_type, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -243,10 +254,10 @@ pub(super) fn equal(
         _ => None,
     };
 
-    let (new_id, new_value) = analyzer.new_value(new_type, op_idx, op.token);
+    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val.map(ConstVal::Bool);
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }

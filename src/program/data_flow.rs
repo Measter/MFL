@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{collections::HashMap, fmt::Write, ops::Not};
 
 use ariadne::{Color, Label};
@@ -8,7 +10,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::Token,
-    opcode::{Op, OpCode},
+    opcode::{Op, OpCode, OpId},
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
     type_check::{PorthType, PorthTypeKind},
@@ -52,17 +54,17 @@ struct ValueId(usize);
 #[derive(Debug)]
 struct Value {
     value_id: ValueId,
-    creator_op_idx: usize,
+    creator_id: OpId,
     creator_token: Token,
     porth_type: PorthTypeKind,
     const_val: Option<ConstVal>,
-    consumer: Vec<usize>,
+    consumer: Vec<OpId>,
 }
 
 #[derive(Debug)]
 struct OpData {
     op: Token,
-    idx: usize,
+    idx: OpId,
     inputs: Vec<ValueId>,
     outputs: Vec<ValueId>,
 }
@@ -71,14 +73,14 @@ struct OpData {
 struct Analyzer {
     values: HashMap<ValueId, Value>,
     current_id: usize,
-    ios: HashMap<usize, OpData>,
+    ios: HashMap<OpId, OpData>,
 }
 
 impl Analyzer {
     fn new_value(
         &mut self,
         porth_type: PorthTypeKind,
-        creator_idx: usize,
+        creator_id: OpId,
         creator_token: Token,
     ) -> (ValueId, &mut Value) {
         let id = ValueId(self.current_id);
@@ -87,7 +89,7 @@ impl Analyzer {
             id,
             self.values.entry(id).or_insert(Value {
                 value_id: id,
-                creator_op_idx: creator_idx,
+                creator_id,
                 creator_token,
                 porth_type,
                 const_val: None,
@@ -104,12 +106,12 @@ impl Analyzer {
         self.values.get_mut(&id).unwrap()
     }
 
-    fn consume(&mut self, value: ValueId, consumer_id: usize) {
+    fn consume(&mut self, value: ValueId, consumer_id: OpId) {
         let val = self.values.get_mut(&value).unwrap();
         val.consumer.push(consumer_id);
     }
 
-    fn set_io(&mut self, op_idx: usize, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
+    fn set_io(&mut self, op_idx: OpId, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
         let prev = self.ios.insert(
             op_idx,
             OpData {
@@ -120,7 +122,7 @@ impl Analyzer {
             },
         );
 
-        assert!(prev.is_none(), "Set operands twice");
+        assert!(prev.is_none(), "Set operands twice - {:?}", op);
     }
 }
 
@@ -128,9 +130,9 @@ fn failed_compare_stack_types(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     actual_stack: &[ValueId],
-    expected_stack: &[PorthType],
-    cur_op: &Op,
-    open_token: Token,
+    expected_stack: &[PorthTypeKind],
+    sample_location: SourceLocation,
+    error_location: SourceLocation,
     msg: &str,
 ) {
     let mut note = "\n\t\tDepth | Expected |   Actual\n\
@@ -144,20 +146,20 @@ fn failed_compare_stack_types(
             &mut note,
             "\n\t\t{:<5} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
-            expected.kind,
+            expected,
             actual_value.porth_type
         )
         .unwrap();
     }
 
     diagnostics::emit_error(
-        open_token.location,
+        error_location,
         msg,
         [
-            Label::new(cur_op.token.location)
+            Label::new(error_location)
                 .with_color(Color::Red)
                 .with_message("actual sampled here"),
-            Label::new(open_token.location)
+            Label::new(sample_location)
                 .with_color(Color::Cyan)
                 .with_message("expected sampled here"),
         ],
@@ -186,9 +188,7 @@ fn generate_type_mismatch_diag(
         }
     }
 
-    let mut labels = vec![Label::new(op.token.location)
-        .with_color(Color::Red)
-        .with_message(" ")];
+    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
 
     for source in op.expansions.iter() {
         labels.push(
@@ -210,15 +210,16 @@ fn generate_type_mismatch_diag(
     diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 
-fn generate_stack_exhaustion_diag(
+fn generate_stack_length_mismatch_diag(
     source_store: &SourceStorage,
     op: &Op,
+    sample_location: SourceLocation,
     actual: usize,
     expected: usize,
 ) {
     let message = format!("expected {} items, found {}", expected, actual);
 
-    let mut labels = vec![Label::new(op.token.location)
+    let mut labels = vec![Label::new(sample_location)
         .with_color(Color::Red)
         .with_message("here")];
 
@@ -230,239 +231,228 @@ fn generate_stack_exhaustion_diag(
         );
     }
 
-    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(sample_location, message, labels, None, source_store);
 }
 
-pub fn analyze(
+fn analyze_block(
     program: &Program,
     proc: &Procedure,
+    block: &[Op],
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(), ()> {
-    let mut analyzer = Analyzer::default();
-    let mut stack = Vec::new();
-    let mut had_error = false;
-
-    for (op_idx, op) in proc.body().iter().enumerate() {
+) {
+    for op in block {
         match op.code {
             OpCode::Add => arithmetic::add(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::Subtract => arithmetic::subtract(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
 
             OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::BitNot => arithmetic::bitnot(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
                 arithmetic::multiply_and_shift(
-                    &mut analyzer,
-                    &mut stack,
+                    analyzer,
+                    stack,
                     source_store,
                     interner,
-                    &mut had_error,
-                    op_idx,
+                    had_error,
                     op,
                 )
             }
             OpCode::DivMod => arithmetic::divmod(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
 
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
                 comparative::compare(
-                    &mut analyzer,
-                    &mut stack,
+                    analyzer,
+                    stack,
                     source_store,
                     interner,
-                    &mut had_error,
-                    op_idx,
+                    had_error,
                     op,
                 )
             }
             OpCode::Equal | OpCode::NotEq => comparative::equal(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
 
-            OpCode::PushBool(v) => stack_ops::push_bool(&mut analyzer, &mut stack, op_idx, op, v),
-            OpCode::PushInt(v) => stack_ops::push_int(&mut analyzer, &mut stack, op_idx, op, v),
+            OpCode::PushBool(v) => stack_ops::push_bool(analyzer,  stack,  op, v),
+            OpCode::PushInt(v) => stack_ops::push_int(analyzer,  stack,  op, v),
             OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 interner,
-                op_idx,
                 op,
                 is_c_str,
                 id,
             ),
             OpCode::ArgC => stack_ops::push_argc(
-                &mut analyzer,
-                &mut stack,
-                op_idx,
+                analyzer,
+                stack,
                 op
             ),
             
             OpCode::ArgV => stack_ops::push_argv(
-                &mut analyzer,
-                &mut stack,
-                op_idx,
+                analyzer,
+                stack,
                 op
             ),
 
             OpCode::CastInt => stack_ops::cast_int(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op
             ),
             OpCode::CastPtr => stack_ops::cast_ptr(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op
             ),  
 
-            OpCode::While { .. } => unimplemented!(),
+            OpCode::While { ref body  } => {
+                control::analyze_while(
+                    program,
+                    proc,
+                    analyzer,
+                    stack,
+                    had_error,
+                    interner,
+                    source_store,
+                    op,
+                    body,
+                )
+            },
             OpCode::If {..} => unimplemented!(),
 
             OpCode::Drop => stack_ops::drop(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::Dup { depth } => stack_ops::dup(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 depth,
             ),
             OpCode::DupPair => stack_ops::dup_pair(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::Swap => stack_ops::swap(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
             OpCode::Rot => stack_ops::rot(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
             ),
 
             OpCode::Load { width, kind } => memory::load(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 width,
                 kind,
             ),
             OpCode::Store { kind, .. } => memory::store(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 kind,
             ),
 
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 proc_id,
             ),
             OpCode::SysCall(num_args @ 0..=6) => control::syscall(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 num_args,
             ),
 
-            OpCode::Prologue => control::prologue(&mut analyzer, &mut stack, op_idx, op, proc),
+            OpCode::Prologue => control::prologue(analyzer,  stack,  op, proc),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
-                &mut analyzer,
-                &mut stack,
+                analyzer,
+                stack,
                 source_store,
                 interner,
-                &mut had_error,
-                op_idx,
+                had_error,
                 op,
                 proc,
             ),
@@ -479,6 +469,28 @@ pub fn analyze(
             }
         }
     }
+}
+
+pub fn analyze(
+    program: &Program,
+    proc: &Procedure,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut analyzer = Analyzer::default();
+    let mut stack = Vec::new();
+    let mut had_error = false;
+
+    analyze_block(
+        program,
+        proc,
+        proc.body(),
+        &mut analyzer,
+        &mut stack,
+        &mut had_error,
+        interner,
+        source_store,
+    );
 
     // dbg!(analyzer);
 

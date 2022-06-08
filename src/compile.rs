@@ -822,7 +822,7 @@ fn assemble_procedure(
     program: &Program,
     assembler: &mut Assembler,
     proc: &Procedure,
-    source_store: &SourceStorage,
+    _source_store: &SourceStorage,
     interner: &mut Interners,
     out_file: &mut BufWriter<File>,
     opt_level: u8,

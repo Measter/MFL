@@ -52,6 +52,7 @@ fn over_over<'a>(
 
     let op = Op {
         code: OpCode::DupPair,
+        id: b.id,
         token,
         expansions: Vec::new(),
     };
@@ -93,6 +94,7 @@ fn push_not<'a>(
     };
     let op = Op {
         code: PushInt(int_val),
+        id: not.id,
         token,
         expansions: Vec::new(),
     };
@@ -145,11 +147,13 @@ fn push_push_divmod<'a>(
 
     let rem_opt = Op {
         code: PushInt(rem),
+        id: op.id,
         token: rem_token,
         expansions: Vec::new(),
     };
     let quot_opt = Op {
         code: PushInt(quot),
+        id: op.id,
         token: quot_token,
         expansions: Vec::new(),
     };
@@ -203,6 +207,7 @@ fn binary_ops<'a>(
 
     let opt = Op {
         code,
+        id: op.id,
         token,
         expansions: Vec::new(),
     };
@@ -265,6 +270,7 @@ fn memory_offset<'a>(
             offset: res as _,
             global,
         },
+        id: op.id,
         token,
         expansions: Vec::new(),
     };

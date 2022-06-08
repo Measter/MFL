@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::{
-    generate_stack_exhaustion_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, Value,
-    ValueId,
+    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId,
+    Value, ValueId,
 };
 
 pub(super) fn load(
@@ -20,7 +20,6 @@ pub(super) fn load(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
     width: crate::Width,
     kind: PorthTypeKind,
@@ -28,15 +27,15 @@ pub(super) fn load(
     let val_id = if let Some(val_id) = stack.pop() {
         val_id
     } else {
-        generate_stack_exhaustion_diag(source_store, op, 0, 1);
+        generate_stack_length_mismatch_diag(source_store, op, op.token.location, 0, 1);
         *had_error = true;
 
-        let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
+        let (new_id, _) = analyzer.new_value(kind, op.id, op.token);
         stack.push(new_id);
         return;
     };
 
-    analyzer.consume(val_id, op_idx);
+    analyzer.consume(val_id, op.id);
     let [value] = analyzer.get_values([val_id]);
 
     // Type mismatch
@@ -48,7 +47,7 @@ pub(super) fn load(
             generate_type_mismatch_diag(source_store, lexeme, op, &[value]);
         }
 
-        let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
+        let (new_id, _) = analyzer.new_value(kind, op.id, op.token);
         stack.push(new_id);
         return;
     }
@@ -86,8 +85,8 @@ pub(super) fn load(
         }
     }
 
-    let (new_id, _) = analyzer.new_value(kind, op_idx, op.token);
-    analyzer.set_io(op_idx, op.token, &[val_id], &[new_id]);
+    let (new_id, _) = analyzer.new_value(kind, op.id, op.token);
+    analyzer.set_io(op.id, op.token, &[val_id], &[new_id]);
 
     stack.push(new_id);
 }
@@ -98,16 +97,21 @@ pub(super) fn store(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    op_idx: usize,
     op: &Op,
     kind: PorthTypeKind,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op_idx);
+        analyzer.consume(value_id, op.id);
     }
     let (inputs, const_val) = match stack.popn::<2>() {
         None => {
-            generate_stack_exhaustion_diag(source_store, op, stack.len(), 2);
+            generate_stack_length_mismatch_diag(
+                source_store,
+                op,
+                op.token.location,
+                stack.len(),
+                2,
+            );
             *had_error = true;
             stack.clear();
 
@@ -167,5 +171,5 @@ pub(super) fn store(
     }
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op_idx, op.token, inputs, &[]);
+    analyzer.set_io(op.id, op.token, inputs, &[]);
 }
