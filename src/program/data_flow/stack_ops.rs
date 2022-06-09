@@ -15,6 +15,7 @@ pub(super) fn cast_int(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     if let Some(&value_id) = stack.last() {
@@ -56,12 +57,18 @@ pub(super) fn cast_int(
         }
     };
 
-    let const_val = match const_val {
-        Some(ConstVal::Int(v)) => Some(ConstVal::Int(v)),
-        Some(ConstVal::Bool(v)) => Some(ConstVal::Int(v as _)),
+    let allow_const = super::check_allowed_const(input.map(|a| [a]), force_non_const_before);
 
-        // The actual pointer address is a runtime address.
-        Some(ConstVal::Ptr { .. }) | None => None,
+    let const_val = if allow_const {
+        match const_val {
+            Some(ConstVal::Int(v)) => Some(ConstVal::Int(v)),
+            Some(ConstVal::Bool(v)) => Some(ConstVal::Int(v as _)),
+
+            // The actual pointer address is a runtime address.
+            Some(ConstVal::Ptr { .. }) | None => None,
+        }
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
@@ -78,6 +85,7 @@ pub(super) fn cast_ptr(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     if let Some(&value_id) = stack.last() {
@@ -118,9 +126,15 @@ pub(super) fn cast_ptr(
         }
     };
 
-    let const_val = match const_val {
-        Some(ptr @ ConstVal::Ptr { .. }) => Some(ptr),
-        _ => None,
+    let allow_const = super::check_allowed_const(input.map(|a| [a]), force_non_const_before);
+
+    let const_val = if allow_const {
+        match const_val {
+            Some(ptr @ ConstVal::Ptr { .. }) => Some(ptr),
+            _ => None,
+        }
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
@@ -155,6 +169,7 @@ pub(super) fn dup(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
     depth: usize,
 ) {
@@ -175,7 +190,9 @@ pub(super) fn dup(
     let val_id = stack[stack.len() - 1 - depth];
     let value = analyzer.value_mut(val_id);
     let val_type = value.porth_type;
-    let val_const_val = value.const_val;
+
+    let allow_const = super::check_allowed_const(Some([val_id]), force_non_const_before);
+    let val_const_val = if allow_const { value.const_val } else { None };
 
     let (new_id, new_val) = analyzer.new_value(val_type, op.id, op.token);
     new_val.const_val = val_const_val;
@@ -190,6 +207,7 @@ pub(super) fn dup_pair(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     match &**stack {
@@ -204,11 +222,13 @@ pub(super) fn dup_pair(
             let b_const = b_val.const_val;
 
             let (dup_a_id, dup_a) = analyzer.new_value(a_type, op.id, op.token);
-            dup_a.const_val = a_const;
+            let allow_const = super::check_allowed_const(Some([a]), force_non_const_before);
+            dup_a.const_val = if allow_const { a_const } else { None };
             stack.push(dup_a_id);
 
             let (dup_b_id, dup_b) = analyzer.new_value(b_type, op.id, op.token);
-            dup_b.const_val = b_const;
+            let allow_const = super::check_allowed_const(Some([b]), force_non_const_before);
+            dup_b.const_val = if allow_const { b_const } else { None };
             stack.push(dup_b_id);
 
             analyzer.set_io(op.id, op.token, &[a, b], &[dup_a_id, dup_b_id]);
@@ -232,7 +252,8 @@ pub(super) fn dup_pair(
             let a_const = a_val.const_val;
 
             let (dup_a_id, dup_a) = analyzer.new_value(a_type, op.id, op.token);
-            dup_a.const_val = a_const;
+            let allow_const = super::check_allowed_const(Some([a]), force_non_const_before);
+            dup_a.const_val = if allow_const { a_const } else { None };
             stack.push(dup_a_id);
 
             analyzer.set_io(op.id, op.token, &[a], &[dup_b_id, dup_a_id]);

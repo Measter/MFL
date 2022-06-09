@@ -20,6 +20,7 @@ pub(super) fn compare(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -61,57 +62,63 @@ pub(super) fn compare(
         }
     };
 
-    let const_val = match const_val {
-        Some((ConstVal::Int(a), ConstVal::Int(b))) => Some(op.code.get_binary_op()(a, b) != 0),
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
-        // Static pointers with different IDs.
-        Some((
-            ConstVal::Ptr {
-                id: a_id,
-                src_op_loc: a_op,
-                ..
-            },
-            ConstVal::Ptr {
-                id: b_id,
-                src_op_loc: b_op,
-                ..
-            },
-        )) if a_id != b_id => {
-            diagnostics::emit_error(
-                op.token.location,
-                "pointers have different sources",
-                [
-                    Label::new(op.token.location)
-                        .with_color(Color::Yellow)
-                        .with_message("here"),
-                    Label::new(a_op)
-                        .with_color(Color::Cyan)
-                        .with_message("...and this")
-                        .with_order(2),
-                    Label::new(b_op)
-                        .with_color(Color::Cyan)
-                        .with_message("comparing this...")
-                        .with_order(1),
-                ],
-                None,
-                source_store,
-            );
-            Some(op.code.get_binary_op()(0, 1) != 0)
+    let const_val = if allow_const {
+        match const_val {
+            Some((ConstVal::Int(a), ConstVal::Int(b))) => Some(op.code.get_binary_op()(a, b) != 0),
+
+            // Static pointers with different IDs.
+            Some((
+                ConstVal::Ptr {
+                    id: a_id,
+                    src_op_loc: a_op,
+                    ..
+                },
+                ConstVal::Ptr {
+                    id: b_id,
+                    src_op_loc: b_op,
+                    ..
+                },
+            )) if a_id != b_id => {
+                diagnostics::emit_error(
+                    op.token.location,
+                    "pointers have different sources",
+                    [
+                        Label::new(op.token.location)
+                            .with_color(Color::Yellow)
+                            .with_message("here"),
+                        Label::new(a_op)
+                            .with_color(Color::Cyan)
+                            .with_message("...and this")
+                            .with_order(2),
+                        Label::new(b_op)
+                            .with_color(Color::Cyan)
+                            .with_message("comparing this...")
+                            .with_order(1),
+                    ],
+                    None,
+                    source_store,
+                );
+                Some(op.code.get_binary_op()(0, 1) != 0)
+            }
+
+            // Static pointers with the same ID, but different static offsets.
+            Some((
+                ConstVal::Ptr {
+                    offset: Some(off_a),
+                    ..
+                },
+                ConstVal::Ptr {
+                    offset: Some(off_b),
+                    ..
+                },
+            )) => Some(op.code.get_binary_op()(off_a, off_b) != 0),
+
+            _ => None,
         }
-
-        // Static pointers with the same ID, but different static offsets.
-        Some((
-            ConstVal::Ptr {
-                offset: Some(off_a),
-                ..
-            },
-            ConstVal::Ptr {
-                offset: Some(off_b),
-                ..
-            },
-        )) => Some(op.code.get_binary_op()(off_a, off_b) != 0),
-
-        _ => None,
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
@@ -128,6 +135,7 @@ pub(super) fn equal(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -171,64 +179,31 @@ pub(super) fn equal(
         }
     };
 
-    let const_val = match const_val {
-        Some((ConstVal::Int(a), ConstVal::Int(b))) => Some(op.code.get_binary_op()(a, b) != 0),
-        Some((ConstVal::Bool(a), ConstVal::Bool(b))) => {
-            Some(op.code.get_binary_op()(a as _, b as _) != 0)
-        }
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
-        // Static pointers with different IDs.
-        Some((
-            ConstVal::Ptr {
-                id: a_id,
-                src_op_loc: a_op,
-                ..
-            },
-            ConstVal::Ptr {
-                id: b_id,
-                src_op_loc: b_op,
-                ..
-            },
-        )) if a_id != b_id => {
-            diagnostics::emit_error(
-                op.token.location,
-                "pointers have different sources",
-                [
-                    Label::new(op.token.location)
-                        .with_color(Color::Yellow)
-                        .with_message("here"),
-                    Label::new(a_op)
-                        .with_color(Color::Cyan)
-                        .with_message("...and this")
-                        .with_order(2),
-                    Label::new(b_op)
-                        .with_color(Color::Cyan)
-                        .with_message("comparing this...")
-                        .with_order(1),
-                ],
-                None,
-                source_store,
-            );
-            Some(op.code.get_binary_op()(0, 1) != 0)
-        }
+    let const_val = if allow_const {
+        match const_val {
+            Some((ConstVal::Int(a), ConstVal::Int(b))) => Some(op.code.get_binary_op()(a, b) != 0),
+            Some((ConstVal::Bool(a), ConstVal::Bool(b))) => {
+                Some(op.code.get_binary_op()(a as _, b as _) != 0)
+            }
 
-        // Static pointers with the same ID, but different static offsets.
-        Some((
-            ConstVal::Ptr {
-                src_op_loc: a_op,
-                offset: Some(off_a),
-                ..
-            },
-            ConstVal::Ptr {
-                src_op_loc: b_op,
-                offset: Some(off_b),
-                ..
-            },
-        )) => {
-            if off_a != off_b {
-                diagnostics::emit_warning(
+            // Static pointers with different IDs.
+            Some((
+                ConstVal::Ptr {
+                    id: a_id,
+                    src_op_loc: a_op,
+                    ..
+                },
+                ConstVal::Ptr {
+                    id: b_id,
+                    src_op_loc: b_op,
+                    ..
+                },
+            )) if a_id != b_id => {
+                diagnostics::emit_error(
                     op.token.location,
-                    "pointers never equal",
+                    "pointers have different sources",
                     [
                         Label::new(op.token.location)
                             .with_color(Color::Yellow)
@@ -246,12 +221,51 @@ pub(super) fn equal(
                     source_store,
                 );
                 Some(op.code.get_binary_op()(0, 1) != 0)
-            } else {
-                Some(op.code.get_binary_op()(1, 1) != 0)
             }
-        }
 
-        _ => None,
+            // Static pointers with the same ID, but different static offsets.
+            Some((
+                ConstVal::Ptr {
+                    src_op_loc: a_op,
+                    offset: Some(off_a),
+                    ..
+                },
+                ConstVal::Ptr {
+                    src_op_loc: b_op,
+                    offset: Some(off_b),
+                    ..
+                },
+            )) => {
+                if off_a != off_b {
+                    diagnostics::emit_warning(
+                        op.token.location,
+                        "pointers never equal",
+                        [
+                            Label::new(op.token.location)
+                                .with_color(Color::Yellow)
+                                .with_message("here"),
+                            Label::new(a_op)
+                                .with_color(Color::Cyan)
+                                .with_message("...and this")
+                                .with_order(2),
+                            Label::new(b_op)
+                                .with_color(Color::Cyan)
+                                .with_message("comparing this...")
+                                .with_order(1),
+                        ],
+                        None,
+                        source_store,
+                    );
+                    Some(op.code.get_binary_op()(0, 1) != 0)
+                } else {
+                    Some(op.code.get_binary_op()(1, 1) != 0)
+                }
+            }
+
+            _ => None,
+        }
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);

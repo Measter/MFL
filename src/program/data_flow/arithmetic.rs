@@ -20,6 +20,7 @@ pub(super) fn add(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -65,25 +66,32 @@ pub(super) fn add(
             (Some(vals), new_type, const_val)
         }
     };
-    let const_val = const_val.map(|mut cv| {
-        match &mut cv {
-            (ConstVal::Int(a), ConstVal::Int(b)) => *a += *b,
 
-            // Static pointer with a constant offset.
-            (
-                ConstVal::Ptr {
-                    offset: Some(offset),
-                    ..
-                },
-                ConstVal::Int(v),
-            ) => *offset += *v,
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
-            // Static pointer with a runtime offset.
-            (ConstVal::Ptr { .. }, ConstVal::Int(_)) => {}
-            _ => unreachable!(),
-        }
-        cv.0
-    });
+    let const_val = if allow_const {
+        const_val.map(|mut cv| {
+            match &mut cv {
+                (ConstVal::Int(a), ConstVal::Int(b)) => *a += *b,
+
+                // Static pointer with a constant offset.
+                (
+                    ConstVal::Ptr {
+                        offset: Some(offset),
+                        ..
+                    },
+                    ConstVal::Int(v),
+                ) => *offset += *v,
+
+                // Static pointer with a runtime offset.
+                (ConstVal::Ptr { .. }, ConstVal::Int(_)) => {}
+                _ => unreachable!(),
+            }
+            cv.0
+        })
+    } else {
+        None
+    };
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
     new_value.const_val = const_val;
 
@@ -98,6 +106,7 @@ pub(super) fn bitand_bitor(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -141,22 +150,28 @@ pub(super) fn bitand_bitor(
         }
     };
 
-    let const_val = const_val.map(|mut cv| {
-        match &mut cv {
-            (ConstVal::Int(a), ConstVal::Int(b)) => match op.code {
-                OpCode::BitAnd => *a &= *b,
-                OpCode::BitOr => *a |= *b,
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+
+    let const_val = if allow_const {
+        const_val.map(|mut cv| {
+            match &mut cv {
+                (ConstVal::Int(a), ConstVal::Int(b)) => match op.code {
+                    OpCode::BitAnd => *a &= *b,
+                    OpCode::BitOr => *a |= *b,
+                    _ => unreachable!(),
+                },
+                (ConstVal::Bool(a), ConstVal::Bool(b)) => match op.code {
+                    OpCode::BitAnd => *a &= *b,
+                    OpCode::BitOr => *a |= *b,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
-            },
-            (ConstVal::Bool(a), ConstVal::Bool(b)) => match op.code {
-                OpCode::BitAnd => *a &= *b,
-                OpCode::BitOr => *a |= *b,
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        }
-        cv.0
-    });
+            }
+            cv.0
+        })
+    } else {
+        None
+    };
 
     let (new_id, new_val) = analyzer.new_value(new_type, op.id, op.token);
     new_val.const_val = const_val;
@@ -172,6 +187,7 @@ pub(super) fn bitnot(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     if let Some(&value_id) = stack.last() {
@@ -211,11 +227,17 @@ pub(super) fn bitnot(
         }
     };
 
-    let const_val = const_val.map(|cv| match cv {
-        ConstVal::Int(a) => ConstVal::Int(!a),
-        ConstVal::Bool(a) => ConstVal::Bool(!a),
-        _ => unreachable!(),
-    });
+    let allow_const = super::check_allowed_const(inputs.map(|a| [a]), force_non_const_before);
+
+    let const_val = if allow_const {
+        const_val.map(|cv| match cv {
+            ConstVal::Int(a) => ConstVal::Int(!a),
+            ConstVal::Bool(a) => ConstVal::Bool(!a),
+            _ => unreachable!(),
+        })
+    } else {
+        None
+    };
 
     let (new_id, new_val) = analyzer.new_value(new_type, op.id, op.token);
     new_val.const_val = const_val;
@@ -231,6 +253,7 @@ pub(super) fn divmod(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -267,6 +290,8 @@ pub(super) fn divmod(
             (Some(vals), new_type, const_val)
         }
     };
+
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
     if let Some(ConstVal::Int(0)) = const_val.1 {
         let [div_val] = analyzer.get_values([inputs.unwrap()[1]]);
@@ -287,11 +312,15 @@ pub(super) fn divmod(
         )
     }
 
-    let (quot_const_val, rem_const_val) = match const_val {
-        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b @ 1..))) => {
-            (Some(ConstVal::Int(a / b)), Some(ConstVal::Int(a % b)))
+    let (quot_const_val, rem_const_val) = if allow_const {
+        match const_val {
+            (Some(ConstVal::Int(a)), Some(ConstVal::Int(b @ 1..))) => {
+                (Some(ConstVal::Int(a / b)), Some(ConstVal::Int(a % b)))
+            }
+            _ => (None, None),
         }
-        _ => (None, None),
+    } else {
+        (None, None)
     };
 
     let (quot_id, quot_val) = analyzer.new_value(new_type, op.id, op.token);
@@ -311,6 +340,7 @@ pub(super) fn multiply_and_shift(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -348,6 +378,8 @@ pub(super) fn multiply_and_shift(
             (Some(vals), new_type, const_val)
         }
     };
+
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
     if let (OpCode::ShiftLeft | OpCode::ShiftRight, Some(ConstVal::Int(sv @ 64..))) =
         (&op.code, const_val.1)
@@ -370,17 +402,21 @@ pub(super) fn multiply_and_shift(
         )
     }
 
-    let const_val = match const_val {
-        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => {
-            match op.code {
-                OpCode::Multiply => Some(ConstVal::Int(a * b)),
-                OpCode::ShiftLeft => Some(ConstVal::Int(a << b)),
-                OpCode::ShiftRight => Some(ConstVal::Int(a >> b)),
-                _ => unreachable!(),
+    let const_val = if allow_const {
+        match const_val {
+            (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => {
+                match op.code {
+                    OpCode::Multiply => Some(ConstVal::Int(a * b)),
+                    OpCode::ShiftLeft => Some(ConstVal::Int(a << b)),
+                    OpCode::ShiftRight => Some(ConstVal::Int(a >> b)),
+                    _ => unreachable!(),
+                }
+                //
             }
-            //
+            _ => None,
         }
-        _ => None,
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
@@ -397,6 +433,7 @@ pub(super) fn subtract(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     for &value_id in stack.lastn(2).unwrap_or(&*stack) {
@@ -443,94 +480,59 @@ pub(super) fn subtract(
         }
     };
 
-    let const_val = match const_val {
-        (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => Some(ConstVal::Int(a - b)),
+    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
 
-        // Static pointer, constant offset.
-        // Note that we don't emit a diagnostic if we subtract out of bounds
-        // because it could be part of a larger calculation.
-        (
-            Some(ConstVal::Ptr {
-                id,
-                offset,
-                src_op_loc,
-            }),
-            Some(ConstVal::Int(v)),
-        ) => Some(ConstVal::Ptr {
-            id,
-            src_op_loc,
-            offset: offset.map(|off| off - v),
-        }),
+    let const_val = if allow_const {
+        match const_val {
+            (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => Some(ConstVal::Int(a - b)),
 
-        // Static pointer, runtime offset.
-        (Some(ConstVal::Ptr { id, src_op_loc, .. }), None) => Some(ConstVal::Ptr {
-            id,
-            src_op_loc,
-            offset: None,
-        }),
-
-        // Pointers with differant static IDs.
-        // Obviously an error.
-        (
-            Some(ConstVal::Ptr { id, src_op_loc, .. }),
-            Some(ConstVal::Ptr {
-                id: id2,
-                src_op_loc: src_op_loc2,
-                ..
-            }),
-        ) if id != id2 => {
-            diagnostics::emit_error(
-                op.token.location,
-                "subtracting pointers of different sources",
-                [
-                    Label::new(op.token.location)
-                        .with_color(Color::Red)
-                        .with_message("here"),
-                    Label::new(src_op_loc)
-                        .with_color(Color::Cyan)
-                        .with_message("...from this")
-                        .with_order(2),
-                    Label::new(src_op_loc2)
-                        .with_color(Color::Cyan)
-                        .with_message("subtracting this...")
-                        .with_order(1),
-                ],
-                None,
-                source_store,
-            );
-            *had_error = true;
-            None
-        }
-
-        // Pointers with the same static ID, with constant offsets.
-        (
-            Some(ConstVal::Ptr {
+            // Static pointer, constant offset.
+            // Note that we don't emit a diagnostic if we subtract out of bounds
+            // because it could be part of a larger calculation.
+            (
+                Some(ConstVal::Ptr {
+                    id,
+                    offset,
+                    src_op_loc,
+                }),
+                Some(ConstVal::Int(v)),
+            ) => Some(ConstVal::Ptr {
                 id,
                 src_op_loc,
-                offset: Some(offset),
-                ..
+                offset: offset.map(|off| off - v),
             }),
-            Some(ConstVal::Ptr {
-                src_op_loc: src_op_loc2,
-                offset: Some(offset2),
-                ..
+
+            // Static pointer, runtime offset.
+            (Some(ConstVal::Ptr { id, src_op_loc, .. }), None) => Some(ConstVal::Ptr {
+                id,
+                src_op_loc,
+                offset: None,
             }),
-        ) => {
-            if offset2 > offset {
+
+            // Pointers with differant static IDs.
+            // Obviously an error.
+            (
+                Some(ConstVal::Ptr { id, src_op_loc, .. }),
+                Some(ConstVal::Ptr {
+                    id: id2,
+                    src_op_loc: src_op_loc2,
+                    ..
+                }),
+            ) if id != id2 => {
                 diagnostics::emit_error(
                     op.token.location,
-                    "subtracting out of bounds",
+                    "subtracting pointers of different sources",
                     [
                         Label::new(op.token.location)
                             .with_color(Color::Red)
                             .with_message("here"),
                         Label::new(src_op_loc)
                             .with_color(Color::Cyan)
-                            .with_message(format!("...from this offset {}", offset))
+                            .with_message("...from this")
                             .with_order(2),
                         Label::new(src_op_loc2)
                             .with_color(Color::Cyan)
-                            .with_message(format!("subtracting offset {}...", offset2))
+                            .with_message("subtracting this...")
                             .with_order(1),
                     ],
                     None,
@@ -538,25 +540,66 @@ pub(super) fn subtract(
                 );
                 *had_error = true;
                 None
-            } else {
+            }
+
+            // Pointers with the same static ID, with constant offsets.
+            (
                 Some(ConstVal::Ptr {
                     id,
                     src_op_loc,
-                    offset: Some(offset - offset2),
+                    offset: Some(offset),
+                    ..
+                }),
+                Some(ConstVal::Ptr {
+                    src_op_loc: src_op_loc2,
+                    offset: Some(offset2),
+                    ..
+                }),
+            ) => {
+                if offset2 > offset {
+                    diagnostics::emit_error(
+                        op.token.location,
+                        "subtracting out of bounds",
+                        [
+                            Label::new(op.token.location)
+                                .with_color(Color::Red)
+                                .with_message("here"),
+                            Label::new(src_op_loc)
+                                .with_color(Color::Cyan)
+                                .with_message(format!("...from this offset {}", offset))
+                                .with_order(2),
+                            Label::new(src_op_loc2)
+                                .with_color(Color::Cyan)
+                                .with_message(format!("subtracting offset {}...", offset2))
+                                .with_order(1),
+                        ],
+                        None,
+                        source_store,
+                    );
+                    *had_error = true;
+                    None
+                } else {
+                    Some(ConstVal::Ptr {
+                        id,
+                        src_op_loc,
+                        offset: Some(offset - offset2),
+                    })
+                }
+            }
+
+            // Pointers with the same ID, but we have a runtime offset for one or both.
+            (Some(ConstVal::Ptr { id, src_op_loc, .. }), Some(ConstVal::Ptr { .. })) => {
+                Some(ConstVal::Ptr {
+                    id,
+                    src_op_loc,
+                    offset: None,
                 })
             }
-        }
 
-        // Pointers with the same ID, but we have a runtime offset for one or both.
-        (Some(ConstVal::Ptr { id, src_op_loc, .. }), Some(ConstVal::Ptr { .. })) => {
-            Some(ConstVal::Ptr {
-                id,
-                src_op_loc,
-                offset: None,
-            })
+            _ => None,
         }
-
-        _ => None,
+    } else {
+        None
     };
 
     let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);

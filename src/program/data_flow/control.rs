@@ -288,6 +288,13 @@ fn check_stack_length_and_types(
     }
 }
 
+fn make_non_const(analyzer: &mut Analyzer, initial_stack: &[ValueId], cur_stack: &[ValueId]) {
+    for (&initial, &cur) in initial_stack.iter().zip(cur_stack).filter(|(a, b)| a != b) {
+        let val = analyzer.value_mut(initial);
+        val.const_val = None;
+    }
+}
+
 pub(super) fn analyze_while(
     program: &Program,
     proc: &Procedure,
@@ -301,13 +308,15 @@ pub(super) fn analyze_while(
 ) {
     let initial_stack = stack.clone();
 
-    // TODO: Force non-const
+    let last_value = analyzer.last_value_id();
+
     super::analyze_block(
         program,
         proc,
         &body.condition,
         analyzer,
         stack,
+        last_value,
         had_error,
         interner,
         source_store,
@@ -356,6 +365,7 @@ pub(super) fn analyze_while(
 
     // TODO: Mark all stack slots changed by the condition as non-const.
     // Ensure the stack is in the same state as before the condition.
+    make_non_const(analyzer, &initial_stack, stack);
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 
@@ -365,12 +375,12 @@ pub(super) fn analyze_while(
         &body.block,
         analyzer,
         stack,
+        last_value,
         had_error,
         interner,
         source_store,
     );
 
-    // TODO: Force non-const
     check_stack_length_and_types(
         &initial_stack,
         stack,
@@ -382,7 +392,7 @@ pub(super) fn analyze_while(
         analyzer,
     );
 
-    // TODO: Mark all stack slots changed by the body as non-const.
+    make_non_const(analyzer, &initial_stack, stack);
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 }

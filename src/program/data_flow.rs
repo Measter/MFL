@@ -48,7 +48,7 @@ pub enum ConstVal {
     },
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct ValueId(usize);
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ struct OpData {
 #[derive(Debug, Default)]
 struct Analyzer {
     values: HashMap<ValueId, Value>,
-    current_id: usize,
+    next_value_id: usize,
     ios: HashMap<OpId, OpData>,
 }
 
@@ -83,8 +83,8 @@ impl Analyzer {
         creator_id: OpId,
         creator_token: Token,
     ) -> (ValueId, &mut Value) {
-        let id = ValueId(self.current_id);
-        self.current_id += 1;
+        let id = ValueId(self.next_value_id);
+        self.next_value_id += 1;
         (
             id,
             self.values.entry(id).or_insert(Value {
@@ -122,7 +122,16 @@ impl Analyzer {
             },
         );
 
-        assert!(prev.is_none(), "Set operands twice - {:?}", op);
+        assert!(
+            prev.is_none(),
+            "Set operands twice - cur_token: {:#?}, prev_token: {:#?}",
+            op,
+            prev
+        );
+    }
+
+    fn last_value_id(&self) -> Option<ValueId> {
+        self.next_value_id.checked_sub(1).map(ValueId)
     }
 }
 
@@ -234,12 +243,22 @@ fn generate_stack_length_mismatch_diag(
     diagnostics::emit_error(sample_location, message, labels, None, source_store);
 }
 
+fn check_allowed_const<const N: usize>(inputs: Option<[ValueId; N]>, before: Option<ValueId>) -> bool {
+    match (inputs, before) {
+        // If the inputs are None, it means a stack exhaustion, so there can be no consts to begin with,
+        // if before is None then there's no limit to const values.
+        (Some(vals), Some(before_id)) => vals.iter().all(|&v| v > before_id),
+        _ => true
+    }
+}
+
 fn analyze_block(
     program: &Program,
     proc: &Procedure,
     block: &[Op],
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
+    force_non_const_before: Option<ValueId>,
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -252,6 +271,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Subtract => arithmetic::subtract(
@@ -260,6 +280,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
 
@@ -269,6 +290,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::BitNot => arithmetic::bitnot(
@@ -277,6 +299,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
@@ -286,6 +309,7 @@ fn analyze_block(
                     source_store,
                     interner,
                     had_error,
+                force_non_const_before,
                     op,
                 )
             }
@@ -295,6 +319,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
 
@@ -305,6 +330,7 @@ fn analyze_block(
                     source_store,
                     interner,
                     had_error,
+                    force_non_const_before,
                     op,
                 )
             }
@@ -314,11 +340,21 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
 
-            OpCode::PushBool(v) => stack_ops::push_bool(analyzer,  stack,  op, v),
-            OpCode::PushInt(v) => stack_ops::push_int(analyzer,  stack,  op, v),
+            OpCode::PushBool(v) => stack_ops::push_bool(
+                analyzer,
+                stack,
+                op,
+                v
+            ),
+            OpCode::PushInt(v) => stack_ops::push_int(
+                analyzer,
+                stack,
+                op,v
+            ),
             OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
                 analyzer,
                 stack,
@@ -327,12 +363,12 @@ fn analyze_block(
                 is_c_str,
                 id,
             ),
+
             OpCode::ArgC => stack_ops::push_argc(
                 analyzer,
                 stack,
                 op
             ),
-            
             OpCode::ArgV => stack_ops::push_argv(
                 analyzer,
                 stack,
@@ -345,6 +381,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op
             ),
             OpCode::CastPtr => stack_ops::cast_ptr(
@@ -353,6 +390,7 @@ fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op
             ),  
 
@@ -383,6 +421,7 @@ fn analyze_block(
                 stack,
                 source_store,
                 had_error,
+                force_non_const_before,
                 op,
                 depth,
             ),
@@ -391,6 +430,7 @@ fn analyze_block(
                 stack,
                 source_store,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Swap => stack_ops::swap(
@@ -487,6 +527,7 @@ pub fn analyze(
         proc.body(),
         &mut analyzer,
         &mut stack,
+        None,
         &mut had_error,
         interner,
         source_store,
