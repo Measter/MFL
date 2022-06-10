@@ -39,6 +39,7 @@ impl<T> PopN<T> for Vec<T> {
 pub trait NOps<T> {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)>;
     fn lastn(&self, n: usize) -> Option<&Self>;
+    fn as_arr<const N: usize>(&self) -> &[T; N];
 }
 
 impl<T> NOps<T> for [T] {
@@ -57,5 +58,9 @@ impl<T> NOps<T> for [T] {
             return None;
         }
         Some(&self[self.len() - n..])
+    }
+
+    fn as_arr<const N: usize>(&self) -> &[T; N] {
+        self.try_into().unwrap()
     }
 }
