@@ -2,12 +2,18 @@ use lasso::Interner;
 
 use crate::{
     interners::Interners,
-    opcode::Op,
+    opcode::{Op, OpCode},
     program::{Procedure, Program},
     source_file::SourceStorage,
 };
 
 use super::Analyzer;
+
+mod arithmetic;
+mod comparative;
+mod control;
+mod memory;
+mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
@@ -18,5 +24,188 @@ pub(super) fn analyze_block(
     interner: &Interners,
     source_store: &SourceStorage,
 ) {
-    todo!()
+    for op in block {
+        match op.code {
+            OpCode::Add => arithmetic::add(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+            OpCode::Subtract => arithmetic::subtract(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+
+            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+            OpCode::BitNot => arithmetic::bitnot(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
+                arithmetic::multiply_and_shift(
+                    analyzer,
+                    source_store,
+                    interner,
+                    had_error,
+                    op,
+                )
+            }
+            OpCode::DivMod => arithmetic::divmod(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+
+            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
+                comparative::compare(
+                    analyzer,
+                    source_store,
+                    interner,
+                    had_error,
+                    op,
+                )
+            }
+            OpCode::Equal | OpCode::NotEq => comparative::equal(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
+
+            OpCode::PushBool(v) => stack_ops::push_bool(
+                analyzer,
+                op,
+                v
+            ),
+            OpCode::PushInt(v) => stack_ops::push_int(
+                analyzer,
+                op,v
+            ),
+            OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
+                analyzer,
+                interner,
+                op,
+                is_c_str,
+                id,
+            ),
+
+            OpCode::ArgC => stack_ops::push_argc(
+                analyzer,
+                op
+            ),
+            OpCode::ArgV => stack_ops::push_argv(
+                analyzer,
+                op
+            ),
+
+            OpCode::CastInt => stack_ops::cast_int(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op
+            ),
+            OpCode::CastPtr => stack_ops::cast_ptr(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op
+            ),
+
+            OpCode::While { ref body  } => {
+                control::analyze_while(
+                    program,
+                    proc,
+                    analyzer,
+                    had_error,
+                    interner,
+                    source_store,
+                    op,
+                    body,
+                )
+            },
+            OpCode::If {..} => unimplemented!(),
+
+            // These either duplicate something already on the stack, or only
+            // manipulate stack order. Neither of which require type checking.
+            OpCode::Drop |
+            OpCode::Dup {..} |
+            OpCode::DupPair |
+            OpCode::Swap |
+            OpCode::Rot => {},
+
+            OpCode::Load { width, kind } => memory::load(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+                width,
+                kind,
+            ),
+            OpCode::Store { kind, .. } => memory::store(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+                kind,
+            ),
+
+            OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
+                program,
+                analyzer,
+                source_store,
+                had_error,
+                op,
+                proc_id,
+            ),
+            OpCode::SysCall(num_args @ 0..=6) => control::syscall(
+                analyzer,
+                source_store,
+                had_error,
+                op,
+                num_args,
+            ),
+
+            OpCode::Prologue => control::prologue(analyzer,    proc,op, ),
+            OpCode::Epilogue | OpCode::Return => control::epilogue_return(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+                proc,
+            ),
+
+            // TODO: Remove this opcode.
+            OpCode::CastBool => panic!("Unsupported"),
+
+            OpCode::SysCall(_) // No syscalls with this many args.
+            | OpCode::CallProc { .. } // These haven't been generated yet.
+            | OpCode::Memory { .. } // Nor have these.
+            | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
+            => {
+                panic!("ICE: Encountered {:?}", op.code)
+            }
+        }
+    }
 }
