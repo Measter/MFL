@@ -22,8 +22,8 @@ use crate::{
     OPT_OPCODE,
 };
 
-mod data_flow;
 mod parser;
+mod static_analysis;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AllocData {
@@ -680,7 +680,7 @@ impl Program {
 
         for id in proc_ids {
             let proc = &self.all_procedures[&id];
-            match data_flow::analyze(self, proc, interner, source_store) {
+            match static_analysis::analyze(self, proc, interner, source_store) {
                 Ok(_) => {}
                 Err(_) => had_error = true,
             }

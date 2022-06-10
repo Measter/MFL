@@ -5,7 +5,7 @@ use crate::{
     interners::Interners,
     n_ops::NOps,
     opcode::{ConditionalBlock, Op},
-    program::{data_flow::Value, Procedure, ProcedureId, ProcedureKind, Program},
+    program::{static_analysis::Value, Procedure, ProcedureId, ProcedureKind, Program},
     source_file::{SourceLocation, SourceStorage},
     type_check::PorthTypeKind,
 };
