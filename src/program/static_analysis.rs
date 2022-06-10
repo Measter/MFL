@@ -25,7 +25,9 @@ macro_rules! type_pattern {
     };
 }
 
+mod const_prop;
 mod data_flow;
+mod type_check2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum PtrId {
@@ -274,6 +276,50 @@ pub fn data_flow_analysis(
     );
 
     // dbg!(analyzer);
+
+    had_error.not().then(|| analyzer).ok_or(())
+}
+
+pub fn type_check(
+    program: &Program,
+    proc: &Procedure,
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut had_error = false;
+
+    type_check2::analyze_block(
+        program,
+        proc,
+        proc.body(),
+        analyzer,
+        &mut had_error,
+        interner,
+        source_store,
+    );
+
+    had_error.not().then(|| ()).ok_or(())
+}
+
+pub fn const_propagation(
+    program: &Program,
+    proc: &Procedure,
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut had_error = false;
+
+    const_prop::analyze_block(
+        program,
+        proc,
+        proc.body(),
+        analyzer,
+        &mut had_error,
+        interner,
+        source_store,
+    );
 
     had_error.not().then(|| ()).ok_or(())
 }
