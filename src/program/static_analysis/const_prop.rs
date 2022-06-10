@@ -7,7 +7,15 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::Analyzer;
+use super::{Analyzer, ValueId};
+
+macro_rules! const_pattern {
+    ($( $p:pat_param ),+) => {
+        [
+            $( Value {const_val: Some($p), ..}),+
+        ]
+    }
+}
 
 mod arithmetic;
 mod comparative;
@@ -20,6 +28,7 @@ pub(super) fn analyze_block(
     proc: &Procedure,
     block: &[Op],
     analyzer: &mut Analyzer,
+    force_non_const_before: Option<ValueId>,
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -31,6 +40,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Subtract => arithmetic::subtract(
@@ -89,32 +99,6 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::PushBool(v) => stack_ops::push_bool(
-                analyzer,
-                op,
-                v
-            ),
-            OpCode::PushInt(v) => stack_ops::push_int(
-                analyzer,
-                op,v
-            ),
-            OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
-                analyzer,
-                interner,
-                op,
-                is_c_str,
-                id,
-            ),
-
-            OpCode::ArgC => stack_ops::push_argc(
-                analyzer,
-                op
-            ),
-            OpCode::ArgV => stack_ops::push_argv(
-                analyzer,
-                op
-            ),
-
             OpCode::CastInt => stack_ops::cast_int(
                 analyzer,
                 source_store,
@@ -130,6 +114,22 @@ pub(super) fn analyze_block(
                 op
             ),
 
+            OpCode::Dup {depth} => stack_ops::dup(
+                analyzer,
+                source_store,
+                had_error,
+                force_non_const_before,
+                op,
+                depth
+            ),
+            OpCode::DupPair => stack_ops::dup_pair( 
+                analyzer,
+                source_store,
+                had_error,
+                force_non_const_before,
+                op
+             ),
+
             OpCode::While { ref body  } => {
                 control::analyze_while(
                     program,
@@ -144,11 +144,8 @@ pub(super) fn analyze_block(
             },
             OpCode::If {..} => unimplemented!(),
 
-            // These either duplicate something already on the stack, or only
-            // manipulate stack order. Neither of which require type checking.
+            // These only manipulate the order of the stack, so there's nothing to do here.
             OpCode::Drop |
-            OpCode::Dup {..} |
-            OpCode::DupPair |
             OpCode::Swap |
             OpCode::Rot => {},
 
@@ -178,23 +175,19 @@ pub(super) fn analyze_block(
                 op,
                 proc_id,
             ),
-            OpCode::SysCall(num_args @ 0..=6) => control::syscall(
-                analyzer,
-                source_store,
-                had_error,
-                op,
-                num_args,
-            ),
 
-            OpCode::Prologue => control::prologue(analyzer,    proc,op, ),
-            OpCode::Epilogue | OpCode::Return => control::epilogue_return(
-                analyzer,
-                source_store,
-                interner,
-                had_error,
-                op,
-                proc,
-            ),
+            // These are simple consts, and have known values during data flow.
+            // The const values are set there.
+            OpCode::PushBool(_) |
+            OpCode::PushInt(_) |
+            OpCode::PushStr{..} => {}
+            
+            // There's nothing to do with these, as they're always non-const.
+            OpCode::ArgC |
+            OpCode::ArgV |
+            OpCode::SysCall(0..=6) |
+            OpCode::Epilogue | OpCode::Return |
+            OpCode::Prologue => {},
 
             // TODO: Remove this opcode.
             OpCode::CastBool => panic!("Unsupported"),

@@ -89,31 +89,6 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::PushBool(v) => stack_ops::push_bool(
-                analyzer,
-                op,
-                v
-            ),
-            OpCode::PushInt(v) => stack_ops::push_int(
-                analyzer,
-                op,v
-            ),
-            OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
-                analyzer,
-                interner,
-                op,
-                is_c_str,
-                id,
-            ),
-
-            OpCode::ArgC => stack_ops::push_argc(
-                analyzer,
-                op
-            ),
-            OpCode::ArgV => stack_ops::push_argv(
-                analyzer,
-                op
-            ),
 
             OpCode::CastInt => stack_ops::cast_int(
                 analyzer,
@@ -144,13 +119,20 @@ pub(super) fn analyze_block(
             },
             OpCode::If {..} => unimplemented!(),
 
-            // These either duplicate something already on the stack, or only
-            // manipulate stack order. Neither of which require type checking.
-            OpCode::Drop |
-            OpCode::Dup {..} |
-            OpCode::DupPair |
-            OpCode::Swap |
-            OpCode::Rot => {},
+
+            OpCode::Dup { depth, } => stack_ops::dup(
+                analyzer,
+                source_store,
+                had_error,
+                op,
+                depth
+            ),
+            OpCode::DupPair => stack_ops::dup_pair(
+                analyzer, 
+                source_store, 
+                had_error,
+                op
+            ),
 
             OpCode::Load { width, kind } => memory::load(
                 analyzer,
@@ -186,7 +168,6 @@ pub(super) fn analyze_block(
                 num_args,
             ),
 
-            OpCode::Prologue => control::prologue(analyzer,    proc,op, ),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 analyzer,
                 source_store,
@@ -195,6 +176,19 @@ pub(super) fn analyze_block(
                 op,
                 proc,
             ),
+
+            // Nothing to check here, as all value types are known at creation, so it's set at that point.
+            OpCode::PushBool(_) |
+            OpCode::PushInt(_) |
+            OpCode::PushStr{..} |
+            OpCode::ArgC |
+            OpCode::ArgV |
+            OpCode::Prologue => {}, 
+            
+            // These only manipulate the stack order, so there's nothing to do here.
+            OpCode::Drop |
+            OpCode::Swap |
+            OpCode::Rot => {},
 
             // TODO: Remove this opcode.
             OpCode::CastBool => panic!("Unsupported"),

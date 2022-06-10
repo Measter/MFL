@@ -1,12 +1,44 @@
-use crate::{program::{Program, Procedure}, opcode::{Op, OpCode}, interners::Interners, source_file::SourceStorage};
+use crate::{
+    interners::Interners,
+    opcode::{Op, OpCode},
+    program::{Procedure, Program},
+    source_file::SourceStorage,
+    type_check::PorthTypeKind,
+};
 
-use super::{Analyzer, ValueId};
+use super::{generate_stack_length_mismatch_diag, Analyzer, ValueId};
 
 mod arithmetic;
 mod comparative;
 mod control;
 mod memory;
 mod stack_ops;
+
+fn ensure_stack_depth(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op: &Op,
+    depth: usize,
+) {
+    if stack.len() < depth {
+        generate_stack_length_mismatch_diag(
+            source_store,
+            op,
+            op.token.location,
+            stack.len(),
+            depth,
+        );
+        *had_error = true;
+
+        let num_missing = usize::saturating_sub(depth, stack.len());
+        for _ in 0..num_missing {
+            let (pad_value, _) = analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
+            stack.push(pad_value);
+        }
+    }
+}
 
 pub(super) fn analyze_block(
     program: &Program,
@@ -148,7 +180,7 @@ pub(super) fn analyze_block(
                 had_error,
                 force_non_const_before,
                 op
-            ),  
+            ),
 
             OpCode::While { ref body  } => {
                 control::analyze_while(

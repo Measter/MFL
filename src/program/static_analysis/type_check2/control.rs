@@ -1,13 +1,13 @@
 use crate::{
     interners::Interners,
     opcode::{ConditionalBlock, Op},
-    program::{static_analysis::Analyzer, Procedure, ProcedureId, Program},
+    program::{
+        static_analysis::{failed_compare_stack_types, Analyzer},
+        Procedure, ProcedureId, Program,
+    },
     source_file::SourceStorage,
 };
 
-pub(super) fn prologue(analyzer: &mut Analyzer, proc: &Procedure, op: &Op) {
-    todo!()
-}
 pub(super) fn epilogue_return(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
@@ -16,7 +16,26 @@ pub(super) fn epilogue_return(
     op: &Op,
     proc: &Procedure,
 ) {
-    todo!()
+    let op_data = analyzer.get_io(op.id);
+
+    for (expected, actual_id) in proc.exit_stack().iter().zip(&op_data.inputs) {
+        let [actual_value] = analyzer.get_values([*actual_id]);
+        if expected.kind != actual_value.porth_type {
+            let expected_kinds: Vec<_> = proc.exit_stack().iter().map(|t| t.kind).collect();
+
+            failed_compare_stack_types(
+                analyzer,
+                source_store,
+                &op_data.inputs,
+                &expected_kinds,
+                proc.exit_stack_location(),
+                op.token.location,
+                "procedure return stack mismatch",
+            );
+            *had_error = true;
+            break;
+        }
+    }
 }
 pub(super) fn syscall(
     analyzer: &mut Analyzer,

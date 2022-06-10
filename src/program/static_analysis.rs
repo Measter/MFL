@@ -25,6 +25,15 @@ macro_rules! type_pattern {
     };
 }
 
+#[macro_export]
+macro_rules! type_pattern2 {
+    ($( $p:pat_param ),+) => {
+        [
+            $( Value { porth_type: $p, .. } ),+
+        ]
+    };
+}
+
 mod const_prop;
 mod data_flow;
 mod type_check2;
@@ -128,13 +137,17 @@ impl Analyzer {
         );
     }
 
+    fn get_io(&self, op_idx: OpId) -> &OpData {
+        &self.ios[&op_idx]
+    }
+
     fn last_value_id(&self) -> Option<ValueId> {
         self.next_value_id.checked_sub(1).map(ValueId)
     }
 }
 
 fn failed_compare_stack_types(
-    analyzer: &mut Analyzer,
+    analyzer: &Analyzer,
     source_store: &SourceStorage,
     actual_stack: &[ValueId],
     expected_stack: &[PorthTypeKind],
@@ -253,6 +266,15 @@ fn check_allowed_const<const N: usize>(
     }
 }
 
+fn check_allowed_const2<const N: usize>(inputs: [ValueId; N], before: Option<ValueId>) -> bool {
+    match before {
+        // If the inputs are None, it means a stack exhaustion, so there can be no consts to begin with,
+        // if before is None then there's no limit to const values.
+        Some(before_id) => inputs.iter().all(|&v| v > before_id),
+        _ => true,
+    }
+}
+
 pub fn data_flow_analysis(
     program: &Program,
     proc: &Procedure,
@@ -316,6 +338,7 @@ pub fn const_propagation(
         proc,
         proc.body(),
         analyzer,
+        None,
         &mut had_error,
         interner,
         source_store,

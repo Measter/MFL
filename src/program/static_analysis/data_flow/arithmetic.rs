@@ -9,9 +9,12 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::super::{
-    check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
-    Analyzer, ConstVal, Value, ValueId,
+use super::{
+    super::{
+        check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
+        Analyzer, ConstVal, Value, ValueId,
+    },
+    ensure_stack_depth,
 };
 
 pub(super) fn add(
@@ -23,80 +26,15 @@ pub(super) fn add(
     force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
-    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+
+    let inputs = stack.popn::<2>().unwrap();
+    for value_id in inputs {
         analyzer.consume(value_id, op.id);
     }
-    let (inputs, new_type, const_val) = match stack.popn::<2>() {
-        None => {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                op,
-                op.token.location,
-                stack.len(),
-                2,
-            );
-            *had_error = true;
-            stack.clear();
+    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
 
-            (None, PorthTypeKind::Unknown, None)
-        }
-        Some(vals) => {
-            let (new_type, const_val) = match analyzer.get_values(vals) {
-                type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
-                    (PorthTypeKind::Int, (*a).zip(*b))
-                }
-
-                type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Int)
-                | type_pattern!(b @ PorthTypeKind::Int, a @ PorthTypeKind::Ptr) => {
-                    (PorthTypeKind::Ptr, (*a).zip(*b))
-                }
-                vals => {
-                    // Type mismatch
-                    *had_error = true;
-                    // Don't emit an diagnostic here if any are Unknown, as it's a result of
-                    // an earlier error.
-                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
-                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
-                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
-                    }
-                    (PorthTypeKind::Unknown, None)
-                }
-            };
-
-            (Some(vals), new_type, const_val)
-        }
-    };
-
-    let allow_const = check_allowed_const(inputs, force_non_const_before);
-
-    let const_val = if allow_const {
-        const_val.map(|mut cv| {
-            match &mut cv {
-                (ConstVal::Int(a), ConstVal::Int(b)) => *a += *b,
-
-                // Static pointer with a constant offset.
-                (
-                    ConstVal::Ptr {
-                        offset: Some(offset),
-                        ..
-                    },
-                    ConstVal::Int(v),
-                ) => *offset += *v,
-
-                // Static pointer with a runtime offset.
-                (ConstVal::Ptr { .. }, ConstVal::Int(_)) => {}
-                _ => unreachable!(),
-            }
-            cv.0
-        })
-    } else {
-        None
-    };
-    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
-    new_value.const_val = const_val;
-
-    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
+    analyzer.set_io(op.id, op.token, &inputs, &[new_id]);
     stack.push(new_id);
 }
 

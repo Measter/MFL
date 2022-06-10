@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use ariadne::{Color, Label};
 
 use crate::{
@@ -10,9 +12,12 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::super::{
-    failed_compare_stack_types, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
-    Analyzer, ConstVal, PtrId, ValueId,
+use super::{
+    super::{
+        failed_compare_stack_types, generate_stack_length_mismatch_diag,
+        generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, ValueId,
+    },
+    ensure_stack_depth,
 };
 
 pub(super) fn epilogue_return(
@@ -24,27 +29,10 @@ pub(super) fn epilogue_return(
     op: &Op,
     proc: &Procedure,
 ) {
-    let expand_labels = |label_op: &Op, msg: &str| {
-        let mut labels = vec![Label::new(label_op.token.location)
-            .with_color(Color::Red)
-            .with_message(msg)];
-
-        for source in label_op.expansions.iter() {
-            labels.push(
-                Label::new(*source)
-                    .with_color(Color::Blue)
-                    .with_message("expanded from..."),
-            );
-        }
-
-        labels
-    };
-
-    for &value_id in stack.lastn(proc.exit_stack().len()).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op.id);
-    }
-
     if stack.len() != proc.exit_stack().len() {
+        dbg!("epilogue-return error case");
+        *had_error = true;
+
         let mut labels = vec![
             Label::new(op.token.location)
                 .with_color(Color::Red)
@@ -54,16 +42,26 @@ pub(super) fn epilogue_return(
                 .with_message("return type defined here"),
         ];
 
-        let stack_len = stack.len();
-        stack.truncate(stack.len().saturating_sub(proc.exit_stack().len()));
-
-        for &value_id in &**stack {
-            let [value] = analyzer.get_values([value_id]);
-            labels.push(
-                Label::new(value.creator_token.location)
-                    .with_color(Color::Green)
-                    .with_message("value created here"),
-            );
+        match stack.len().cmp(&proc.exit_stack().len()) {
+            Ordering::Less => {
+                let num_missing = usize::saturating_sub(proc.exit_stack().len(), stack.len());
+                for _ in 0..num_missing {
+                    let (pad_value, _) =
+                        analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
+                    stack.push(pad_value);
+                }
+            }
+            Ordering::Greater => {
+                for &value_id in &stack[..stack.len() - proc.exit_stack().len()] {
+                    let [value] = analyzer.get_values([value_id]);
+                    labels.push(
+                        Label::new(value.creator_token.location)
+                            .with_color(Color::Green)
+                            .with_message("unused value created here"),
+                    );
+                }
+            }
+            Ordering::Equal => {}
         }
 
         diagnostics::emit_error(
@@ -72,37 +70,21 @@ pub(super) fn epilogue_return(
                 "function `{}` returns {} values, found {}",
                 interner.resolve_lexeme(proc.name().lexeme),
                 proc.exit_stack().len(),
-                stack_len
+                stack.len()
             ),
             labels,
             None,
             source_store,
         );
-        *had_error = true;
-
-        return;
     }
 
-    for (expected, actual_id) in proc.exit_stack().iter().zip(stack.iter()) {
-        let [actual_value] = analyzer.get_values([*actual_id]);
+    let inputs = stack.lastn(proc.exit_stack().len()).unwrap();
 
-        if expected.kind != actual_value.porth_type {
-            let expected_kinds: Vec<_> = proc.exit_stack().iter().map(|t| t.kind).collect();
-
-            failed_compare_stack_types(
-                analyzer,
-                source_store,
-                stack,
-                &expected_kinds,
-                proc.exit_stack_location(),
-                op.token.location,
-                "procedure return stack mismatch",
-            );
-            *had_error = true;
-            break;
-        }
+    for &value_id in inputs {
+        analyzer.consume(value_id, op.id);
     }
-    stack.truncate(stack.len().saturating_sub(proc.exit_stack().len()));
+
+    analyzer.set_io(op.id, op.token, inputs, &[]);
 }
 
 pub(super) fn prologue(
