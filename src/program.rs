@@ -24,6 +24,7 @@ use crate::{
 
 mod parser;
 mod static_analysis;
+use static_analysis::Analyzer;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AllocData {
@@ -77,6 +78,7 @@ pub struct Procedure {
     id: ProcedureId,
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
+    analyzer: Option<Analyzer>,
 
     body: Vec<Op>,
     exit_stack: Vec<PorthType>,
@@ -681,7 +683,10 @@ impl Program {
         for id in proc_ids {
             let proc = &self.all_procedures[&id];
             match static_analysis::data_flow_analysis(self, proc, interner, source_store) {
-                Ok(_) => {}
+                Ok(analyzer) => {
+                    let proc = self.all_procedures.get_mut(&id).unwrap();
+                    proc.analyzer = Some(analyzer);
+                }
                 Err(_) => had_error = true,
             }
         }
@@ -1158,6 +1163,7 @@ impl Program {
             kind,
             body: Vec::new(),
             parent,
+            analyzer: None,
             exit_stack,
             exit_stack_location,
             entry_stack,

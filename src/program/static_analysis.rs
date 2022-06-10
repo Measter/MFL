@@ -66,7 +66,7 @@ struct OpData {
 }
 
 #[derive(Debug, Default)]
-struct Analyzer {
+pub struct Analyzer {
     values: HashMap<ValueId, Value>,
     next_value_id: usize,
     ios: HashMap<OpId, OpData>,
@@ -256,7 +256,7 @@ pub fn data_flow_analysis(
     proc: &Procedure,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(), ()> {
+) -> Result<Analyzer, ()> {
     let mut analyzer = Analyzer::default();
     let mut stack = Vec::new();
     let mut had_error = false;
