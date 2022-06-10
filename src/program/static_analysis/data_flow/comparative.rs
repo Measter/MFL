@@ -9,9 +9,9 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::{
-    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value,
-    ValueId,
+use super::super::{
+    check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
+    Analyzer, ConstVal, Value, ValueId,
 };
 
 pub(super) fn compare(
@@ -62,7 +62,7 @@ pub(super) fn compare(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     let const_val = if allow_const {
         match const_val {
@@ -179,7 +179,7 @@ pub(super) fn equal(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     let const_val = if allow_const {
         match const_val {

@@ -680,7 +680,7 @@ impl Program {
 
         for id in proc_ids {
             let proc = &self.all_procedures[&id];
-            match static_analysis::analyze(self, proc, interner, source_store) {
+            match static_analysis::data_flow_analysis(self, proc, interner, source_store) {
                 Ok(_) => {}
                 Err(_) => had_error = true,
             }

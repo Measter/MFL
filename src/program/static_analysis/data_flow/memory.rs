@@ -9,7 +9,7 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::{
+use super::super::{
     generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId,
     Value, ValueId,
 };

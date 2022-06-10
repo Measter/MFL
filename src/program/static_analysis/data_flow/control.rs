@@ -10,7 +10,7 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::{
+use super::super::{
     failed_compare_stack_types, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
     Analyzer, ConstVal, PtrId, ValueId,
 };

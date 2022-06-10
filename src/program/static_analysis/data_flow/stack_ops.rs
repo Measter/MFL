@@ -4,9 +4,9 @@ use crate::{
     interners::Interners, opcode::Op, source_file::SourceStorage, type_check::PorthTypeKind,
 };
 
-use super::{
-    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, PtrId,
-    Value, ValueId,
+use super::super::{
+    check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
+    Analyzer, ConstVal, PtrId, Value, ValueId,
 };
 
 pub(super) fn cast_int(
@@ -57,7 +57,7 @@ pub(super) fn cast_int(
         }
     };
 
-    let allow_const = super::check_allowed_const(input.map(|a| [a]), force_non_const_before);
+    let allow_const = check_allowed_const(input.map(|a| [a]), force_non_const_before);
 
     let const_val = if allow_const {
         match const_val {
@@ -126,7 +126,7 @@ pub(super) fn cast_ptr(
         }
     };
 
-    let allow_const = super::check_allowed_const(input.map(|a| [a]), force_non_const_before);
+    let allow_const = check_allowed_const(input.map(|a| [a]), force_non_const_before);
 
     let const_val = if allow_const {
         match const_val {
@@ -191,7 +191,7 @@ pub(super) fn dup(
     let value = analyzer.value_mut(val_id);
     let val_type = value.porth_type;
 
-    let allow_const = super::check_allowed_const(Some([val_id]), force_non_const_before);
+    let allow_const = check_allowed_const(Some([val_id]), force_non_const_before);
     let val_const_val = if allow_const { value.const_val } else { None };
 
     let (new_id, new_val) = analyzer.new_value(val_type, op.id, op.token);
@@ -222,12 +222,12 @@ pub(super) fn dup_pair(
             let b_const = b_val.const_val;
 
             let (dup_a_id, dup_a) = analyzer.new_value(a_type, op.id, op.token);
-            let allow_const = super::check_allowed_const(Some([a]), force_non_const_before);
+            let allow_const = check_allowed_const(Some([a]), force_non_const_before);
             dup_a.const_val = if allow_const { a_const } else { None };
             stack.push(dup_a_id);
 
             let (dup_b_id, dup_b) = analyzer.new_value(b_type, op.id, op.token);
-            let allow_const = super::check_allowed_const(Some([b]), force_non_const_before);
+            let allow_const = check_allowed_const(Some([b]), force_non_const_before);
             dup_b.const_val = if allow_const { b_const } else { None };
             stack.push(dup_b_id);
 
@@ -252,7 +252,7 @@ pub(super) fn dup_pair(
             let a_const = a_val.const_val;
 
             let (dup_a_id, dup_a) = analyzer.new_value(a_type, op.id, op.token);
-            let allow_const = super::check_allowed_const(Some([a]), force_non_const_before);
+            let allow_const = check_allowed_const(Some([a]), force_non_const_before);
             dup_a.const_val = if allow_const { a_const } else { None };
             stack.push(dup_a_id);
 

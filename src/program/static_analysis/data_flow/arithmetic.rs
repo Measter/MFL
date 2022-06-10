@@ -9,9 +9,9 @@ use crate::{
     type_check::PorthTypeKind,
 };
 
-use super::{
-    generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal, Value,
-    ValueId,
+use super::super::{
+    check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
+    Analyzer, ConstVal, Value, ValueId,
 };
 
 pub(super) fn add(
@@ -67,7 +67,7 @@ pub(super) fn add(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     let const_val = if allow_const {
         const_val.map(|mut cv| {
@@ -150,7 +150,7 @@ pub(super) fn bitand_bitor(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     let const_val = if allow_const {
         const_val.map(|mut cv| {
@@ -227,7 +227,7 @@ pub(super) fn bitnot(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs.map(|a| [a]), force_non_const_before);
+    let allow_const = check_allowed_const(inputs.map(|a| [a]), force_non_const_before);
 
     let const_val = if allow_const {
         const_val.map(|cv| match cv {
@@ -291,7 +291,7 @@ pub(super) fn divmod(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     if let Some(ConstVal::Int(0)) = const_val.1 {
         let [div_val] = analyzer.get_values([inputs.unwrap()[1]]);
@@ -379,7 +379,7 @@ pub(super) fn multiply_and_shift(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     if let (OpCode::ShiftLeft | OpCode::ShiftRight, Some(ConstVal::Int(sv @ 64..))) =
         (&op.code, const_val.1)
@@ -480,7 +480,7 @@ pub(super) fn subtract(
         }
     };
 
-    let allow_const = super::check_allowed_const(inputs, force_non_const_before);
+    let allow_const = check_allowed_const(inputs, force_non_const_before);
 
     let const_val = if allow_const {
         match const_val {
