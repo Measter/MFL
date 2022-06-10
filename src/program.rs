@@ -18,7 +18,7 @@ use crate::{
     opcode::{self, ConditionalBlock, Op, OpCode},
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
-    type_check::{self, PorthType, PorthTypeKind},
+    type_check::{PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
 
@@ -697,16 +697,33 @@ impl Program {
             .ok_or_else(|| eyre!("data analysis error"))
     }
 
-    fn type_check_procs(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+    fn type_check_procs(
+        &mut self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
         let mut had_error = false;
+        let proc_ids: Vec<_> = self
+            .all_procedures
+            .iter()
+            .filter(|(_, p)| !p.kind().is_macro())
+            .map(|(id, _)| *id)
+            .collect();
 
-        for proc in self.all_procedures.values() {
-            // Macros have already been expanded, so we don't need to check them.
-            if proc.kind().is_macro() {
-                continue;
+        for id in proc_ids {
+            // If we get to this point in the program, we must have these.
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            let mut analyzer = proc.analyzer.take().unwrap();
+
+            // borrow checker, why? please...
+            let proc = &self.all_procedures[&id];
+
+            match static_analysis::type_check(self, proc, &mut analyzer, interner, source_store) {
+                Ok(_) => {
+                    self.all_procedures.get_mut(&id).unwrap().analyzer = Some(analyzer);
+                }
+                Err(_) => had_error = true,
             }
-
-            had_error |= type_check::type_check(self, proc, interner, source_store).is_err();
         }
 
         had_error
@@ -715,7 +732,48 @@ impl Program {
             .ok_or_else(|| eyre!("failed type checking"))
     }
 
-    fn evaluate_const_values(
+    fn const_propagate_procs(
+        &mut self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let mut had_error = false;
+        let proc_ids: Vec<_> = self
+            .all_procedures
+            .iter()
+            .filter(|(_, p)| !p.kind().is_macro())
+            .map(|(id, _)| *id)
+            .collect();
+
+        for id in proc_ids {
+            // If we get to this point in the program, we must have these.
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            let mut analyzer = proc.analyzer.take().unwrap();
+
+            // borrow checker, why? please...
+            let proc = &self.all_procedures[&id];
+
+            match static_analysis::const_propagation(
+                self,
+                proc,
+                &mut analyzer,
+                interner,
+                source_store,
+            ) {
+                Ok(_) => {
+                    self.all_procedures.get_mut(&id).unwrap().analyzer = Some(analyzer);
+                }
+                Err(_) => had_error = true,
+            }
+        }
+
+        had_error
+            .not()
+            .then(|| ())
+            .ok_or_else(|| eyre!("failed type checking"))
+    }
+
+    fn evaluate_const_procs(
         &mut self,
         interner: &Interners,
         source_store: &SourceStorage,
@@ -1113,8 +1171,10 @@ impl Program {
         self.analyze_data_flow(interner, source_store)?;
         debug!("    Type checking...");
         self.type_check_procs(interner, source_store)?;
-        debug!("    Evaluating const bodies...");
-        self.evaluate_const_values(interner, source_store)?;
+        debug!("    Propagating constants...");
+        self.const_propagate_procs(interner, source_store)?;
+        debug!("    Evaluating const procs...");
+        self.evaluate_const_procs(interner, source_store)?;
 
         debug!("    Processing idents...");
         self.process_idents(interner, source_store)?;
