@@ -4,9 +4,9 @@ use variantly::Variantly;
 use crate::{
     interners::Interners,
     lexer::Token,
+    program::static_analysis::PorthTypeKind,
     program::{ModuleId, ProcedureId},
     source_file::{SourceLocation, SourceStorage},
-    type_check::PorthTypeKind,
     Width,
 };
 

@@ -18,13 +18,12 @@ use crate::{
     opcode::{self, ConditionalBlock, Op, OpCode},
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
-    type_check::{PorthType, PorthTypeKind},
     OPT_OPCODE,
 };
 
 mod parser;
-mod static_analysis;
-use static_analysis::Analyzer;
+pub mod static_analysis;
+use static_analysis::{Analyzer, PorthType, PorthTypeKind};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AllocData {

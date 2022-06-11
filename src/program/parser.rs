@@ -8,11 +8,13 @@ use crate::{
     lexer::{Token, TokenKind},
     opcode::{ConditionalBlock, Op, OpCode, OpId},
     source_file::{SourceLocation, SourceStorage},
-    type_check::{PorthType, PorthTypeKind},
     Width,
 };
 
-use super::{FunctionData, ModuleId, ProcedureId, ProcedureKind, Program};
+use super::{
+    static_analysis::{PorthType, PorthTypeKind},
+    FunctionData, ModuleId, ProcedureId, ProcedureKind, Program,
+};
 
 fn expect_token<'a>(
     tokens: &mut impl Iterator<Item = (usize, &'a Token)>,

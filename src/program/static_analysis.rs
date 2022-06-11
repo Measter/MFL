@@ -1,8 +1,13 @@
 #![allow(unused)]
 
-use std::{collections::HashMap, fmt::Write, ops::Not};
+use std::{
+    fmt::{self, Write},
+    mem::MaybeUninit,
+    ops::Not,
+};
 
 use ariadne::{Color, Label};
+use hashbrown::HashMap;
 use lasso::Spur;
 use variantly::Variantly;
 
@@ -13,30 +18,43 @@ use crate::{
     opcode::{Op, OpCode, OpId},
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
-    type_check::{PorthType, PorthTypeKind},
 };
-
-#[macro_export]
-macro_rules! type_pattern {
-    ($( $const_name:tt @ $p:pat_param ),+) => {
-        [
-            $( Value { porth_type: $p, const_val: $const_name, .. } ),+
-        ]
-    };
-}
-
-#[macro_export]
-macro_rules! type_pattern2 {
-    ($( $p:pat_param ),+) => {
-        [
-            $( Value { porth_type: $p, .. } ),+
-        ]
-    };
-}
 
 mod const_prop;
 mod data_flow;
 mod type_check2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PorthTypeKind {
+    Int,
+    Ptr,
+    Bool,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Eq)]
+pub struct PorthType {
+    pub kind: PorthTypeKind,
+    // TODO: Replace this with source token.
+    pub location: SourceLocation,
+}
+
+impl PartialEq for PorthType {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl fmt::Display for PorthTypeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PorthTypeKind::Int => "Int".fmt(f),
+            PorthTypeKind::Ptr => "Ptr".fmt(f),
+            PorthTypeKind::Bool => "Bool".fmt(f),
+            PorthTypeKind::Unknown => "Unknown".fmt(f),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum PtrId {
@@ -63,8 +81,6 @@ struct Value {
     value_id: ValueId,
     creator_id: OpId,
     creator_token: Token,
-    porth_type: PorthTypeKind,
-    const_val: Option<ConstVal>,
     consumer: Vec<OpId>,
 }
 
@@ -78,7 +94,10 @@ struct OpData {
 
 #[derive(Debug, Default)]
 pub struct Analyzer {
-    values: HashMap<ValueId, Value>,
+    value_lifetime: HashMap<ValueId, Value>,
+    value_types: HashMap<ValueId, PorthTypeKind>,
+    value_consts: HashMap<ValueId, ConstVal>,
+
     next_value_id: usize,
     ios: HashMap<OpId, OpData>,
 }
@@ -89,36 +108,80 @@ impl Analyzer {
         porth_type: PorthTypeKind,
         creator_id: OpId,
         creator_token: Token,
-    ) -> (ValueId, &mut Value) {
+    ) -> ValueId {
         let id = ValueId(self.next_value_id);
         self.next_value_id += 1;
-        (
-            id,
-            self.values.entry(id).or_insert(Value {
-                value_id: id,
-                creator_id,
-                creator_token,
-                porth_type,
-                const_val: None,
-                consumer: Vec::new(),
-            }),
-        )
+
+        if self
+            .value_lifetime
+            .insert(
+                id,
+                Value {
+                    value_id: id,
+                    creator_id,
+                    creator_token,
+                    consumer: Vec::new(),
+                },
+            )
+            .is_some()
+        {
+            panic!("ICE: Created value with duplicate ID: {:?}", id);
+        };
+
+        id
     }
 
-    fn get_values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
-        ids.map(|id| &self.values[&id])
+    fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
+        ids.map(|id| &self.value_lifetime[&id])
     }
 
-    fn value_mut(&mut self, id: ValueId) -> &mut Value {
-        self.values.get_mut(&id).unwrap()
+    fn values_mut<const N: usize>(&mut self, ids: [&ValueId; N]) -> [&mut Value; N] {
+        self.value_lifetime
+            .get_many_mut(ids)
+            .expect("ICE: Attempted to values_mut with invalid IDs")
     }
 
-    fn consume(&mut self, value: ValueId, consumer_id: OpId) {
-        let val = self.values.get_mut(&value).unwrap();
+    fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
+        let val = self.value_lifetime.get_mut(&value).unwrap();
         val.consumer.push(consumer_id);
     }
 
-    fn set_io(&mut self, op_idx: OpId, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
+    fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> [PorthTypeKind; N] {
+        ids.map(|id| self.value_types[&id])
+    }
+
+    fn value_types_mut<const N: usize>(&mut self, ids: [&ValueId; N]) -> [&mut PorthTypeKind; N] {
+        self.value_types
+            .get_many_mut(ids)
+            .expect("ICE: Attempted to value_types_mut with invalid IDs")
+    }
+
+    fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
+        fn assert_copy<T: Copy>() {};
+        assert_copy::<ConstVal>();
+        assert!(N > 0);
+
+        // SAFETY: Because ConstVal is Copy, and therefore cannot have a Drop implementation,
+        // we don't need to specially handle dropping a partially initialized array
+        // and can just return None if a key doesn't exist.
+        unsafe {
+            let mut dest = [MaybeUninit::<ConstVal>::uninit(); N];
+
+            for (dst, id) in dest.iter_mut().zip(ids) {
+                dst.write(*self.value_consts.get(&id)?);
+            }
+
+            Some(std::mem::transmute_copy(&dest))
+        }
+    }
+
+    fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
+        self.value_consts
+            .insert(id, const_val)
+            .expect("ICE: Tried to overwrite const value");
+    }
+
+    fn set_op_io(&mut self, op_idx: OpId, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
         let prev = self.ios.insert(
             op_idx,
             OpData {
@@ -137,7 +200,7 @@ impl Analyzer {
         );
     }
 
-    fn get_io(&self, op_idx: OpId) -> &OpData {
+    fn get_op_io(&self, op_idx: OpId) -> &OpData {
         &self.ios[&op_idx]
     }
 
@@ -161,13 +224,13 @@ fn failed_compare_stack_types(
 
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
     for (idx, (expected, actual_id)) in pairs {
-        let [actual_value] = analyzer.get_values([*actual_id]);
+        let [value_type] = analyzer.value_types([*actual_id]);
         write!(
             &mut note,
             "\n\t\t{:<5} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
             expected,
-            actual_value.porth_type
+            value_type,
         )
         .unwrap();
     }
@@ -189,22 +252,31 @@ fn failed_compare_stack_types(
 }
 
 fn generate_type_mismatch_diag(
+    analyzer: &Analyzer,
     source_store: &SourceStorage,
     operator_str: &str,
     op: &Op,
-    types: &[&Value],
+    types: &[ValueId],
 ) {
     let mut message = format!("cannot use `{}` on ", operator_str);
     match types {
         [] => unreachable!(),
-        [a] => write!(&mut message, "`{}`", a.porth_type).unwrap(),
-        [a, b] => write!(&mut message, "`{}` and `{}`", a.porth_type, b.porth_type).unwrap(),
+        [a] => {
+            let [kind] = analyzer.value_types([*a]);
+            write!(&mut message, "`{}`", kind).unwrap();
+        }
+        [a, b] => {
+            let [a, b] = analyzer.value_types([*a, *b]);
+            write!(&mut message, "`{}` and `{}`", a, b).unwrap()
+        }
         [xs @ .., last] => {
             for x in xs {
-                write!(&mut message, "`{}`, ", x.porth_type).unwrap();
+                let [kind] = analyzer.value_types([*x]);
+                write!(&mut message, "`{}`, ", kind).unwrap();
             }
 
-            write!(&mut message, "and `{}`", last.porth_type).unwrap();
+            let [kind] = analyzer.value_types([*last]);
+            write!(&mut message, "and `{}`", kind).unwrap();
         }
     }
 
@@ -218,11 +290,13 @@ fn generate_type_mismatch_diag(
         );
     }
 
-    for (value, order) in types.iter().rev().zip(1..) {
+    for (value_id, order) in types.iter().rev().zip(1..) {
+        let [value] = analyzer.values([*value_id]);
+        let [value_type] = analyzer.value_types([*value_id]);
         labels.push(
             Label::new(value.creator_token.location)
                 .with_color(Color::Yellow)
-                .with_message(format!("{}", value.porth_type))
+                .with_message(format!("{}", value_type))
                 .with_order(order),
         )
     }

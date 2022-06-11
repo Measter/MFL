@@ -22,7 +22,6 @@ mod opcode;
 mod program;
 mod simulate;
 mod source_file;
-mod type_check;
 
 const OPT_OPCODE: u8 = 1;
 const OPT_INSTR: u8 = 2;

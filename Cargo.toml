@@ -13,6 +13,7 @@ ariadne = "0.1.5"
 clap = { version = "3.1.18", features = ["derive"] }
 color-eyre = "0.6.1"
 derive_more = "0.99.17"
+hashbrown = "0.12.1"
 lasso = "0.6.0"
 log = "0.4.17"
 simplelog = "0.12.0"
