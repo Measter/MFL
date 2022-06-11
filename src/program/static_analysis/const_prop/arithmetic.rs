@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::NOps,
-    opcode::Op,
+    opcode::{Op, OpCode},
     program::static_analysis::{Analyzer, ConstVal, Value, ValueId},
     source_file::SourceStorage,
 };
@@ -26,7 +26,7 @@ pub(super) fn add(
         return;
     }
 
-    let Some(types) = analyzer.value_consts(input_ids) else {return};
+    let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
         [ConstVal::Int(a), ConstVal::Int(b)] => ConstVal::Int(a + b),
@@ -181,9 +181,26 @@ pub(super) fn bitnot(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
-    todo!()
+    let op_data = analyzer.get_op_io(op.id);
+
+    let input_id = op_data.inputs[0];
+    if !check_allowed_const([input_id], force_non_const_before) {
+        return;
+    }
+
+    let Some([types]) = analyzer.value_consts([input_id]) else { return };
+
+    let new_const_val = match types {
+        ConstVal::Int(a) => ConstVal::Int(!a),
+        ConstVal::Bool(a) => ConstVal::Bool(!a),
+        _ => return,
+    };
+
+    let output_id = op_data.outputs[0];
+    analyzer.set_value_const(output_id, new_const_val);
 }
 
 pub(super) fn bitand_bitor(
@@ -191,9 +208,34 @@ pub(super) fn bitand_bitor(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
-    todo!()
+    let op_data = analyzer.get_op_io(op.id);
+
+    let input_ids = *op_data.inputs.as_arr::<2>();
+    if !check_allowed_const(input_ids, force_non_const_before) {
+        return;
+    }
+
+    let Some(types) = analyzer.value_consts(input_ids) else { return };
+
+    let new_const_val = match types {
+        [ConstVal::Int(a), ConstVal::Int(b)] => match op.code {
+            OpCode::BitAnd => ConstVal::Int(a & b),
+            OpCode::BitOr => ConstVal::Int(a | b),
+            _ => unreachable!(),
+        },
+        [ConstVal::Bool(a), ConstVal::Bool(b)] => match op.code {
+            OpCode::BitAnd => ConstVal::Bool(a & b),
+            OpCode::BitOr => ConstVal::Bool(a | b),
+            _ => unreachable!(),
+        },
+        _ => return,
+    };
+
+    let output_id = op_data.outputs[0];
+    analyzer.set_value_const(output_id, new_const_val);
 }
 
 pub(super) fn multiply_and_shift(
@@ -201,9 +243,50 @@ pub(super) fn multiply_and_shift(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
-    todo!()
+    let op_data = analyzer.get_op_io(op.id);
+
+    let input_ids = *op_data.inputs.as_arr::<2>();
+    if !check_allowed_const(input_ids, force_non_const_before) {
+        return;
+    }
+
+    let Some(types) = analyzer.value_consts(input_ids) else { return };
+
+    if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (op.code, types[1])
+    {
+        let [shift_val] = analyzer.values([input_ids[1]]);
+        diagnostics::emit_warning(
+            op.token.location,
+            "shift value exceeds 63",
+            [
+                Label::new(op.token.location)
+                    .with_color(Color::Yellow)
+                    .with_message("here"),
+                Label::new(shift_val.creator_token.location)
+                    .with_color(Color::Cyan)
+                    .with_message("Shift value from here")
+                    .with_order(1),
+            ],
+            format!("shift value ({}) will be masked to the lower 6 bits", sv),
+            source_store,
+        )
+    }
+
+    let new_const_val = match types {
+        [ConstVal::Int(a), ConstVal::Int(b)] => match op.code {
+            OpCode::Multiply => ConstVal::Int(a * b),
+            OpCode::ShiftLeft => ConstVal::Int(a << b),
+            OpCode::ShiftRight => ConstVal::Int(a >> b),
+            _ => return,
+        },
+        _ => return,
+    };
+
+    let output_id = op_data.outputs[0];
+    analyzer.set_value_const(output_id, new_const_val);
 }
 
 pub(super) fn divmod(
@@ -211,7 +294,43 @@ pub(super) fn divmod(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
+    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
-    todo!()
+    let op_data = analyzer.get_op_io(op.id);
+
+    let input_ids = *op_data.inputs.as_arr::<2>();
+    if !check_allowed_const(input_ids, force_non_const_before) {
+        return;
+    }
+
+    let Some(types) = analyzer.value_consts(input_ids) else { return };
+
+    if let ConstVal::Int(0) = types[1] {
+        let [div_val] = analyzer.values([input_ids[1]]);
+        diagnostics::emit_error(
+            op.token.location,
+            "division by 0",
+            [
+                Label::new(op.token.location)
+                    .with_color(Color::Red)
+                    .with_message("division here"),
+                Label::new(div_val.creator_token.location)
+                    .with_color(Color::Cyan)
+                    .with_message("divisor from here")
+                    .with_order(1),
+            ],
+            None,
+            source_store,
+        )
+    }
+
+    let [new_quot_val, new_rem_val] = match types {
+        [ConstVal::Int(a), ConstVal::Int(b @ 1..)] => [ConstVal::Int(a / b), ConstVal::Int(a % b)],
+        _ => return,
+    };
+
+    let [quot_id, rem_id] = *op_data.outputs.as_arr::<2>();
+    analyzer.set_value_const(quot_id, new_quot_val);
+    analyzer.set_value_const(rem_id, new_rem_val);
 }

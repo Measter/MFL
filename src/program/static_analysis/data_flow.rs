@@ -52,7 +52,13 @@ pub(super) fn analyze_block(
 ) {
     for op in block {
         match op.code {
-            OpCode::Add | OpCode::Subtract => arithmetic::eat_two_make_one(
+            OpCode::Add
+            | OpCode::Subtract
+            | OpCode::BitAnd
+            | OpCode::BitOr
+            | OpCode::Multiply
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight => arithmetic::eat_two_make_one(
                 analyzer,
                 stack,
                 source_store,
@@ -61,15 +67,6 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(
-                analyzer,
-                stack,
-                source_store,
-                interner,
-                had_error,
-                force_non_const_before,
-                op,
-            ),
             OpCode::BitNot => arithmetic::bitnot(
                 analyzer,
                 stack,
@@ -79,17 +76,6 @@ pub(super) fn analyze_block(
                 force_non_const_before,
                 op,
             ),
-            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
-                arithmetic::multiply_and_shift(
-                    analyzer,
-                    stack,
-                    source_store,
-                    interner,
-                    had_error,
-                force_non_const_before,
-                    op,
-                )
-            }
             OpCode::DivMod => arithmetic::divmod(
                 analyzer,
                 stack,

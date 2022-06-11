@@ -58,6 +58,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::BitNot => arithmetic::bitnot(
@@ -65,6 +66,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
@@ -72,6 +74,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::DivMod => arithmetic::divmod(
@@ -79,6 +82,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
 
