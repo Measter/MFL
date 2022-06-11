@@ -181,12 +181,12 @@ impl Analyzer {
             .expect("ICE: Tried to overwrite const value");
     }
 
-    fn set_op_io(&mut self, op_idx: OpId, op: Token, inputs: &[ValueId], outputs: &[ValueId]) {
+    fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
         let prev = self.ios.insert(
-            op_idx,
+            op.id,
             OpData {
-                op,
-                idx: op_idx,
+                op: op.token,
+                idx: op.id,
                 inputs: inputs.to_owned(),
                 outputs: outputs.to_owned(),
             },
