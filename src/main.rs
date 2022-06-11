@@ -1,3 +1,4 @@
+#![feature(let_else)]
 #![allow(clippy::too_many_arguments)]
 
 use std::{path::Path, process::Command};
