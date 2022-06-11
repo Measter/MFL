@@ -103,28 +103,28 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    fn new_value(
-        &mut self,
-        porth_type: PorthTypeKind,
-        creator_id: OpId,
-        creator_token: Token,
-    ) -> ValueId {
+    fn new_value(&mut self, creator: &Op) -> ValueId {
         let id = ValueId(self.next_value_id);
         self.next_value_id += 1;
 
-        if self
+        let value_exists = self
             .value_lifetime
             .insert(
                 id,
                 Value {
                     value_id: id,
-                    creator_id,
-                    creator_token,
+                    creator_id: creator.id,
+                    creator_token: creator.token,
                     consumer: Vec::new(),
                 },
             )
-            .is_some()
-        {
+            .is_some();
+        let type_exists = self
+            .value_types
+            .insert(id, PorthTypeKind::Unknown)
+            .is_some();
+
+        if value_exists || type_exists {
             panic!("ICE: Created value with duplicate ID: {:?}", id);
         };
 
@@ -150,10 +150,10 @@ impl Analyzer {
         ids.map(|id| self.value_types[&id])
     }
 
-    fn value_types_mut<const N: usize>(&mut self, ids: [&ValueId; N]) -> [&mut PorthTypeKind; N] {
-        self.value_types
-            .get_many_mut(ids)
-            .expect("ICE: Attempted to value_types_mut with invalid IDs")
+    fn set_value_types<const N: usize>(&mut self, ids: [(ValueId, PorthTypeKind); N]) {
+        for (id, kind) in ids {
+            self.value_types.insert(id, kind);
+        }
     }
 
     fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
