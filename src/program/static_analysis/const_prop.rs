@@ -65,15 +65,13 @@ pub(super) fn analyze_block(
                 had_error,
                 op,
             ),
-            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => {
-                arithmetic::multiply_and_shift(
-                    analyzer,
-                    source_store,
-                    interner,
-                    had_error,
-                    op,
-                )
-            }
+            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
             OpCode::DivMod => arithmetic::divmod(
                 analyzer,
                 source_store,
@@ -82,15 +80,13 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
-                comparative::compare(
-                    analyzer,
-                    source_store,
-                    interner,
-                    had_error,
-                    op,
-                )
-            }
+            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => comparative::compare(
+                analyzer,
+                source_store,
+                interner,
+                had_error,
+                op,
+            ),
             OpCode::Equal | OpCode::NotEq => comparative::equal(
                 analyzer,
                 source_store,
@@ -130,18 +126,16 @@ pub(super) fn analyze_block(
                 op
              ),
 
-            OpCode::While { ref body  } => {
-                control::analyze_while(
-                    program,
-                    proc,
-                    analyzer,
-                    had_error,
-                    interner,
-                    source_store,
-                    op,
-                    body,
-                )
-            },
+            OpCode::While { ref body  } => control::analyze_while(
+                program,
+                proc,
+                analyzer,
+                had_error,
+                interner,
+                source_store,
+                op,
+                body,
+            ),
             OpCode::If {..} => unimplemented!(),
 
             // These only manipulate the order of the stack, so there's nothing to do here.
