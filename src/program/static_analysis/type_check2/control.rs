@@ -16,11 +16,11 @@ pub(super) fn epilogue_return(
     op: &Op,
     proc: &Procedure,
 ) {
-    let op_data = analyzer.get_io(op.id);
+    let op_data = analyzer.get_op_io(op.id);
 
     for (expected, actual_id) in proc.exit_stack().iter().zip(&op_data.inputs) {
-        let [actual_value] = analyzer.get_values([*actual_id]);
-        if expected.kind != actual_value.porth_type {
+        let [actual_value_type] = analyzer.value_types([*actual_id]);
+        if expected.kind != actual_value_type {
             let expected_kinds: Vec<_> = proc.exit_stack().iter().map(|t| t.kind).collect();
 
             failed_compare_stack_types(

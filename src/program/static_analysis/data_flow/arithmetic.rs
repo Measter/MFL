@@ -6,35 +6,33 @@ use crate::{
     n_ops::{NOps, PopN},
     opcode::{Op, OpCode},
     source_file::SourceStorage,
-    type_check::PorthTypeKind,
 };
 
 use super::{
     super::{
-        check_allowed_const, generate_stack_length_mismatch_diag, generate_type_mismatch_diag,
-        Analyzer, ConstVal, Value, ValueId,
+        generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal,
+        Value, ValueId,
     },
     ensure_stack_depth,
 };
 
-pub(super) fn add(
+pub(super) fn eat_two_make_one(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {
-        analyzer.consume(value_id, op.id);
+        analyzer.consume_value(value_id, op.id);
     }
-    let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
+    let new_id = analyzer.new_value(op);
 
-    analyzer.set_io(op.id, op.token, &inputs, &[new_id]);
+    analyzer.set_op_io(op.id, op.token, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -361,190 +359,6 @@ pub(super) fn multiply_and_shift(
     new_value.const_val = const_val;
 
     let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
-    stack.push(new_id);
-}
-
-pub(super) fn subtract(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
-    op: &Op,
-) {
-    for &value_id in stack.lastn(2).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op.id);
-    }
-    let (inputs, new_type, const_val) = match stack.popn::<2>() {
-        None => {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                op,
-                op.token.location,
-                stack.len(),
-                2,
-            );
-            *had_error = true;
-            stack.clear();
-
-            (None, PorthTypeKind::Unknown, (None, None))
-        }
-        Some(vals) => {
-            let (new_type, const_val) = match analyzer.get_values(vals) {
-                type_pattern!(a @ PorthTypeKind::Int, b @ PorthTypeKind::Int) => {
-                    (PorthTypeKind::Int, (*a, *b))
-                }
-                type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Ptr) => {
-                    (PorthTypeKind::Int, (*a, *b))
-                }
-                type_pattern!(a @ PorthTypeKind::Ptr, b @ PorthTypeKind::Int) => {
-                    (PorthTypeKind::Ptr, (*a, *b))
-                }
-                vals => {
-                    // Type mismatch
-                    *had_error = true;
-                    // Don't emit an diagnostic here if any are Unknown, as it's a result of
-                    // an earlier error.
-                    if vals.iter().all(|v| v.porth_type != PorthTypeKind::Unknown) {
-                        let lexeme = interner.resolve_lexeme(op.token.lexeme);
-                        generate_type_mismatch_diag(source_store, lexeme, op, &vals);
-                    }
-                    (PorthTypeKind::Unknown, (None, None))
-                }
-            };
-            (Some(vals), new_type, const_val)
-        }
-    };
-
-    let allow_const = check_allowed_const(inputs, force_non_const_before);
-
-    let const_val = if allow_const {
-        match const_val {
-            (Some(ConstVal::Int(a)), Some(ConstVal::Int(b))) => Some(ConstVal::Int(a - b)),
-
-            // Static pointer, constant offset.
-            // Note that we don't emit a diagnostic if we subtract out of bounds
-            // because it could be part of a larger calculation.
-            (
-                Some(ConstVal::Ptr {
-                    id,
-                    offset,
-                    src_op_loc,
-                }),
-                Some(ConstVal::Int(v)),
-            ) => Some(ConstVal::Ptr {
-                id,
-                src_op_loc,
-                offset: offset.map(|off| off - v),
-            }),
-
-            // Static pointer, runtime offset.
-            (Some(ConstVal::Ptr { id, src_op_loc, .. }), None) => Some(ConstVal::Ptr {
-                id,
-                src_op_loc,
-                offset: None,
-            }),
-
-            // Pointers with differant static IDs.
-            // Obviously an error.
-            (
-                Some(ConstVal::Ptr { id, src_op_loc, .. }),
-                Some(ConstVal::Ptr {
-                    id: id2,
-                    src_op_loc: src_op_loc2,
-                    ..
-                }),
-            ) if id != id2 => {
-                diagnostics::emit_error(
-                    op.token.location,
-                    "subtracting pointers of different sources",
-                    [
-                        Label::new(op.token.location)
-                            .with_color(Color::Red)
-                            .with_message("here"),
-                        Label::new(src_op_loc)
-                            .with_color(Color::Cyan)
-                            .with_message("...from this")
-                            .with_order(2),
-                        Label::new(src_op_loc2)
-                            .with_color(Color::Cyan)
-                            .with_message("subtracting this...")
-                            .with_order(1),
-                    ],
-                    None,
-                    source_store,
-                );
-                *had_error = true;
-                None
-            }
-
-            // Pointers with the same static ID, with constant offsets.
-            (
-                Some(ConstVal::Ptr {
-                    id,
-                    src_op_loc,
-                    offset: Some(offset),
-                    ..
-                }),
-                Some(ConstVal::Ptr {
-                    src_op_loc: src_op_loc2,
-                    offset: Some(offset2),
-                    ..
-                }),
-            ) => {
-                if offset2 > offset {
-                    diagnostics::emit_error(
-                        op.token.location,
-                        "subtracting out of bounds",
-                        [
-                            Label::new(op.token.location)
-                                .with_color(Color::Red)
-                                .with_message("here"),
-                            Label::new(src_op_loc)
-                                .with_color(Color::Cyan)
-                                .with_message(format!("...from this offset {}", offset))
-                                .with_order(2),
-                            Label::new(src_op_loc2)
-                                .with_color(Color::Cyan)
-                                .with_message(format!("subtracting offset {}...", offset2))
-                                .with_order(1),
-                        ],
-                        None,
-                        source_store,
-                    );
-                    *had_error = true;
-                    None
-                } else {
-                    Some(ConstVal::Ptr {
-                        id,
-                        src_op_loc,
-                        offset: Some(offset - offset2),
-                    })
-                }
-            }
-
-            // Pointers with the same ID, but we have a runtime offset for one or both.
-            (Some(ConstVal::Ptr { id, src_op_loc, .. }), Some(ConstVal::Ptr { .. })) => {
-                Some(ConstVal::Ptr {
-                    id,
-                    src_op_loc,
-                    offset: None,
-                })
-            }
-
-            _ => None,
-        }
-    } else {
-        None
-    };
-
-    let (new_id, new_value) = analyzer.new_value(new_type, op.id, op.token);
-    new_value.const_val = const_val;
-
-    let inputs = inputs.as_ref().map(|i| i.as_slice()).unwrap_or(&[]);
-    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
-
+    analyzer.set_op_io(op.id, op.token, inputs, &[new_id]);
     stack.push(new_id);
 }

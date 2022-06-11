@@ -1,6 +1,9 @@
 use crate::{
-    interners::Interners, opcode::Op, program::static_analysis::Analyzer,
-    source_file::SourceStorage, type_check::PorthTypeKind, Width,
+    interners::Interners,
+    opcode::Op,
+    program::static_analysis::{Analyzer, PorthTypeKind},
+    source_file::SourceStorage,
+    Width,
 };
 
 pub(super) fn load(

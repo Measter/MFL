@@ -3,7 +3,6 @@ use crate::{
     opcode::{Op, OpCode},
     program::{Procedure, Program},
     source_file::SourceStorage,
-    type_check::PorthTypeKind,
 };
 
 use super::{generate_stack_length_mismatch_diag, Analyzer, ValueId};
@@ -34,7 +33,7 @@ fn ensure_stack_depth(
 
         let num_missing = usize::saturating_sub(depth, stack.len());
         for _ in 0..num_missing {
-            let (pad_value, _) = analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
+            let pad_value = analyzer.new_value(op);
             stack.push(pad_value);
         }
     }
@@ -53,22 +52,12 @@ pub(super) fn analyze_block(
 ) {
     for op in block {
         match op.code {
-            OpCode::Add => arithmetic::add(
+            OpCode::Add | OpCode::Subtract => arithmetic::eat_two_make_one(
                 analyzer,
                 stack,
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
-                op,
-            ),
-            OpCode::Subtract => arithmetic::subtract(
-                analyzer,
-                stack,
-                source_store,
-                interner,
-                had_error,
-                force_non_const_before,
                 op,
             ),
 
