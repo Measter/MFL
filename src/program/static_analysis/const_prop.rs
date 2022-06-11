@@ -9,19 +9,20 @@ use crate::{
 
 use super::{Analyzer, ValueId};
 
-macro_rules! const_pattern {
-    ($( $p:pat_param ),+) => {
-        [
-            $( Value {const_val: Some($p), ..}),+
-        ]
-    }
-}
-
 mod arithmetic;
 mod comparative;
 mod control;
 mod memory;
 mod stack_ops;
+
+fn check_allowed_const<const N: usize>(inputs: [ValueId; N], before: Option<ValueId>) -> bool {
+    match before {
+        // If the inputs are None, it means a stack exhaustion, so there can be no consts to begin with,
+        // if before is None then there's no limit to const values.
+        Some(before_id) => inputs.iter().all(|&v| v > before_id),
+        _ => true,
+    }
+}
 
 pub(super) fn analyze_block(
     program: &Program,

@@ -328,27 +328,6 @@ fn generate_stack_length_mismatch_diag(
     diagnostics::emit_error(sample_location, message, labels, None, source_store);
 }
 
-fn check_allowed_const<const N: usize>(
-    inputs: Option<[ValueId; N]>,
-    before: Option<ValueId>,
-) -> bool {
-    match (inputs, before) {
-        // If the inputs are None, it means a stack exhaustion, so there can be no consts to begin with,
-        // if before is None then there's no limit to const values.
-        (Some(vals), Some(before_id)) => vals.iter().all(|&v| v > before_id),
-        _ => true,
-    }
-}
-
-fn check_allowed_const2<const N: usize>(inputs: [ValueId; N], before: Option<ValueId>) -> bool {
-    match before {
-        // If the inputs are None, it means a stack exhaustion, so there can be no consts to begin with,
-        // if before is None then there's no limit to const values.
-        Some(before_id) => inputs.iter().all(|&v| v > before_id),
-        _ => true,
-    }
-}
-
 pub fn data_flow_analysis(
     program: &Program,
     proc: &Procedure,
