@@ -32,7 +32,7 @@ pub(super) fn compare(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn equal(
@@ -63,5 +63,5 @@ pub(super) fn equal(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }

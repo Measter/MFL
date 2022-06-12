@@ -151,12 +151,10 @@ impl Analyzer {
         self.value_types.get_n(ids)
     }
 
-    fn set_value_types<const N: usize>(&mut self, ids: [(ValueId, PorthTypeKind); N]) {
-        for (id, kind) in ids {
-            self.value_types
-                .insert(id, kind)
-                .expect("ICE: Tried to set a value type twice");
-        }
+    fn set_value_type(&mut self, id: ValueId, kind: PorthTypeKind) {
+        self.value_types
+            .insert(id, kind)
+            .expect("ICE: Tried to set a value type twice");
     }
 
     fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {

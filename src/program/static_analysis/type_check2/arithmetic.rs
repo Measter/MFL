@@ -35,7 +35,7 @@ pub(super) fn add(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn subtract(
@@ -66,7 +66,7 @@ pub(super) fn subtract(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn bitnot(
@@ -94,7 +94,7 @@ pub(super) fn bitnot(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn bitand_bitor(
@@ -122,7 +122,7 @@ pub(super) fn bitand_bitor(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn multiply_and_shift(
@@ -149,7 +149,7 @@ pub(super) fn multiply_and_shift(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_types([(output_id, new_type)]);
+    analyzer.set_value_type(output_id, new_type);
 }
 
 pub(super) fn divmod(
@@ -176,5 +176,6 @@ pub(super) fn divmod(
     };
 
     let [quot_id, rem_id] = *op_data.outputs.as_arr::<2>();
-    analyzer.set_value_types([(quot_id, new_type), (rem_id, new_type)]);
+    analyzer.set_value_type(quot_id, new_type);
+    analyzer.set_value_type(rem_id, new_type);
 }
