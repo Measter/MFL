@@ -91,6 +91,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
             OpCode::Equal | OpCode::NotEq => comparative::equal(
@@ -98,6 +99,7 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
             ),
 

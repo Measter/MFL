@@ -8,7 +8,6 @@ use crate::{
 use super::{generate_stack_length_mismatch_diag, Analyzer, ValueId};
 
 mod arithmetic;
-mod comparative;
 mod control;
 mod memory;
 mod stack_ops;
@@ -58,7 +57,13 @@ pub(super) fn analyze_block(
             | OpCode::BitOr
             | OpCode::Multiply
             | OpCode::ShiftLeft
-            | OpCode::ShiftRight => arithmetic::eat_two_make_one(
+            | OpCode::ShiftRight
+            | OpCode::Greater
+            | OpCode::GreaterEqual
+            | OpCode::Less
+            | OpCode::LessEqual
+            | OpCode::Equal
+            | OpCode::NotEq => arithmetic::eat_two_make_one(
                 analyzer,
                 stack,
                 source_store,
@@ -77,27 +82,6 @@ pub(super) fn analyze_block(
                 op,
             ),
             OpCode::DivMod => arithmetic::divmod(
-                analyzer,
-                stack,
-                source_store,
-                interner,
-                had_error,
-                force_non_const_before,
-                op,
-            ),
-
-            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
-                comparative::compare(
-                    analyzer,
-                    stack,
-                    source_store,
-                    interner,
-                    had_error,
-                    force_non_const_before,
-                    op,
-                )
-            }
-            OpCode::Equal | OpCode::NotEq => comparative::equal(
                 analyzer,
                 stack,
                 source_store,
