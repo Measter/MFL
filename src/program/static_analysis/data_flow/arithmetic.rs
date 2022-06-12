@@ -16,26 +16,6 @@ use super::{
     ensure_stack_depth,
 };
 
-pub(super) fn eat_two_make_one(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
-
-    let inputs = stack.popn::<2>().unwrap();
-    for value_id in inputs {
-        analyzer.consume_value(value_id, op.id);
-    }
-    let new_id = analyzer.new_value(op);
-
-    analyzer.set_op_io(op, &inputs, &[new_id]);
-    stack.push(new_id);
-}
-
 pub(super) fn bitnot(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
