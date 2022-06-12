@@ -1,11 +1,13 @@
 use std::mem::MaybeUninit;
 
-pub trait PopN<T> {
+use hashbrown::HashMap;
+
+pub trait VecNOps<T> {
     fn popn<const N: usize>(&mut self) -> Option<[T; N]>;
     fn popn_last_mut<const N: usize>(&mut self) -> Option<([T; N], &mut T)>;
 }
 
-impl<T> PopN<T> for Vec<T> {
+impl<T> VecNOps<T> for Vec<T> {
     fn popn<const N: usize>(&mut self) -> Option<[T; N]> {
         assert!(N > 0);
         if self.len() < N {
@@ -36,13 +38,13 @@ impl<T> PopN<T> for Vec<T> {
     }
 }
 
-pub trait NOps<T> {
+pub trait SliceNOps<T> {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)>;
     fn lastn(&self, n: usize) -> Option<&Self>;
     fn as_arr<const N: usize>(&self) -> &[T; N];
 }
 
-impl<T> NOps<T> for [T] {
+impl<T> SliceNOps<T> for [T] {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)> {
         assert!(N > 0);
         if self.len() < N {

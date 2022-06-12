@@ -5,7 +5,7 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     interners::Interners,
-    n_ops::NOps,
+    n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{static_analysis::Value, Procedure, ProcedureId, ProcedureKind, Program},
     source_file::{SourceLocation, SourceStorage},

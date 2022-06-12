@@ -3,7 +3,7 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     interners::Interners,
-    n_ops::NOps,
+    n_ops::SliceNOps,
     opcode::{Op, OpCode},
     program::static_analysis::{Analyzer, ConstVal, Value, ValueId},
     source_file::SourceStorage,

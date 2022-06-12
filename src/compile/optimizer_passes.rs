@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::{
     compile::{assembly::X86Register, FIXED_REGS},
     interners::Interners,
-    n_ops::NOps,
+    n_ops::SliceNOps,
     opcode::{Op, OpCode},
     program::{Procedure, Program},
     Width,

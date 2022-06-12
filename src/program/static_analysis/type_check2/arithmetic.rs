@@ -1,6 +1,6 @@
 use crate::{
     interners::Interners,
-    n_ops::NOps,
+    n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{generate_type_mismatch_diag, Analyzer, PorthTypeKind, Value},
     source_file::SourceStorage,

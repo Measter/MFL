@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
-    n_ops::NOps,
+    n_ops::SliceNOps,
     source_file::SourceStorage,
 };
 
