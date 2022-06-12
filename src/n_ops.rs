@@ -1,4 +1,4 @@
-use std::mem::MaybeUninit;
+use std::{hash::Hash, mem::MaybeUninit};
 
 use hashbrown::HashMap;
 
@@ -64,5 +64,32 @@ impl<T> SliceNOps<T> for [T] {
 
     fn as_arr<const N: usize>(&self) -> &[T; N] {
         self.try_into().unwrap()
+    }
+}
+
+pub trait HashMapNOps<K, V> {
+    fn get_n<const N: usize>(&self, keys: [K; N]) -> Option<[V; N]>;
+}
+
+impl<K, V> HashMapNOps<K, V> for HashMap<K, V>
+where
+    K: Hash + Eq,
+    V: Copy,
+{
+    fn get_n<const N: usize>(&self, keys: [K; N]) -> Option<[V; N]> {
+        assert!(N > 0);
+
+        // SAFETY: Because ConstVal is Copy, and therefore cannot have a Drop implementation,
+        // we don't need to specially handle dropping a partially initialized array
+        // and can just return None if a key doesn't exist.
+        unsafe {
+            let mut dest = [MaybeUninit::<V>::uninit(); N];
+
+            for (dst, id) in dest.iter_mut().zip(keys) {
+                dst.write(*self.get(&id)?);
+            }
+
+            Some(std::mem::transmute_copy(&dest))
+        }
     }
 }
