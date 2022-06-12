@@ -950,7 +950,6 @@ impl Program {
                                     PorthTypeKind::Ptr => {
                                         panic!("ICE: Const pointers not supported")
                                     }
-                                    PorthTypeKind::Unknown => panic!("ICE: Unknown const type"),
                                 };
                                 new_ops.push(Op {
                                     code,

@@ -15,6 +15,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::Token,
+    n_ops::HashMapNOps,
     opcode::{Op, OpCode, OpId},
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
@@ -29,7 +30,16 @@ pub enum PorthTypeKind {
     Int,
     Ptr,
     Bool,
-    Unknown,
+}
+
+impl PorthTypeKind {
+    fn name_str(self) -> &'static str {
+        match self {
+            PorthTypeKind::Int => "Int",
+            PorthTypeKind::Ptr => "Ptr",
+            PorthTypeKind::Bool => "Bool",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq)]
@@ -47,12 +57,7 @@ impl PartialEq for PorthType {
 
 impl fmt::Display for PorthTypeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PorthTypeKind::Int => "Int".fmt(f),
-            PorthTypeKind::Ptr => "Ptr".fmt(f),
-            PorthTypeKind::Bool => "Bool".fmt(f),
-            PorthTypeKind::Unknown => "Unknown".fmt(f),
-        }
+        f.write_str(self.name_str())
     }
 }
 
@@ -119,12 +124,8 @@ impl Analyzer {
                 },
             )
             .is_some();
-        let type_exists = self
-            .value_types
-            .insert(id, PorthTypeKind::Unknown)
-            .is_some();
 
-        if value_exists || type_exists {
+        if value_exists {
             panic!("ICE: Created value with duplicate ID: {:?}", id);
         };
 
@@ -146,33 +147,20 @@ impl Analyzer {
         val.consumer.push(consumer_id);
     }
 
-    fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> [PorthTypeKind; N] {
-        ids.map(|id| self.value_types[&id])
+    fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[PorthTypeKind; N]> {
+        self.value_types.get_n(ids)
     }
 
     fn set_value_types<const N: usize>(&mut self, ids: [(ValueId, PorthTypeKind); N]) {
         for (id, kind) in ids {
-            self.value_types.insert(id, kind);
+            self.value_types
+                .insert(id, kind)
+                .expect("ICE: Tried to set a value type twice");
         }
     }
 
     fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
-        fn assert_copy<T: Copy>() {};
-        assert_copy::<ConstVal>();
-        assert!(N > 0);
-
-        // SAFETY: Because ConstVal is Copy, and therefore cannot have a Drop implementation,
-        // we don't need to specially handle dropping a partially initialized array
-        // and can just return None if a key doesn't exist.
-        unsafe {
-            let mut dest = [MaybeUninit::<ConstVal>::uninit(); N];
-
-            for (dst, id) in dest.iter_mut().zip(ids) {
-                dst.write(*self.value_consts.get(&id)?);
-            }
-
-            Some(std::mem::transmute_copy(&dest))
-        }
+        self.value_consts.get_n(ids)
     }
 
     fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
@@ -224,7 +212,10 @@ fn failed_compare_stack_types(
 
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
     for (idx, (expected, actual_id)) in pairs {
-        let [value_type] = analyzer.value_types([*actual_id]);
+        let value_type = analyzer
+            .value_types([*actual_id])
+            .map_or("Unknown", |[v]| v.name_str());
+
         write!(
             &mut note,
             "\n\t\t{:<5} | {:<8} | {:>8}",
@@ -262,20 +253,28 @@ fn generate_type_mismatch_diag(
     match types {
         [] => unreachable!(),
         [a] => {
-            let [kind] = analyzer.value_types([*a]);
+            let kind = analyzer
+                .value_types([*a])
+                .map_or("Unknown", |[v]| v.name_str());
             write!(&mut message, "`{}`", kind).unwrap();
         }
         [a, b] => {
-            let [a, b] = analyzer.value_types([*a, *b]);
+            let [a, b] = analyzer
+                .value_types([*a, *b])
+                .map_or(["Unknown", "Unknown"], |k| k.map(PorthTypeKind::name_str));
             write!(&mut message, "`{}` and `{}`", a, b).unwrap()
         }
         [xs @ .., last] => {
             for x in xs {
-                let [kind] = analyzer.value_types([*x]);
+                let kind = analyzer
+                    .value_types([*x])
+                    .map_or("Unknown", |[v]| v.name_str());
                 write!(&mut message, "`{}`, ", kind).unwrap();
             }
 
-            let [kind] = analyzer.value_types([*last]);
+            let kind = analyzer
+                .value_types([*last])
+                .map_or("Unknown", |[v]| v.name_str());
             write!(&mut message, "and `{}`", kind).unwrap();
         }
     }
@@ -292,7 +291,9 @@ fn generate_type_mismatch_diag(
 
     for (value_id, order) in types.iter().rev().zip(1..) {
         let [value] = analyzer.values([*value_id]);
-        let [value_type] = analyzer.value_types([*value_id]);
+        let value_type = analyzer
+            .value_types([*value_id])
+            .map_or("Unknown", |[v]| v.name_str());
         labels.push(
             Label::new(value.creator_token.location)
                 .with_color(Color::Yellow)

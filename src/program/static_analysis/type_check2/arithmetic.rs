@@ -15,12 +15,10 @@ pub(super) fn add(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let inputs = analyzer.value_types(input_ids);
+    let Some(inputs) = analyzer.value_types(input_ids) else { return;};
 
     let new_type = match inputs {
         // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Unknown, _] | [_, PorthTypeKind::Unknown] => return,
-
         [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
         [PorthTypeKind::Ptr, PorthTypeKind::Int] | [PorthTypeKind::Int, PorthTypeKind::Ptr] => {
             PorthTypeKind::Ptr
@@ -32,7 +30,7 @@ pub(super) fn add(
 
             let lexeme = interner.resolve_lexeme(op.token.lexeme);
             generate_type_mismatch_diag(analyzer, source_store, lexeme, op, &input_ids);
-            PorthTypeKind::Unknown
+            return;
         }
     };
 
@@ -49,12 +47,10 @@ pub(super) fn subtract(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let inputs = analyzer.value_types(input_ids);
+    let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
         // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Unknown, _] | [_, PorthTypeKind::Unknown] => return,
-
         [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
         [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => PorthTypeKind::Int,
         [PorthTypeKind::Ptr, PorthTypeKind::Int] => PorthTypeKind::Ptr,
@@ -65,7 +61,7 @@ pub(super) fn subtract(
 
             let lexeme = interner.resolve_lexeme(op.token.lexeme);
             generate_type_mismatch_diag(analyzer, source_store, lexeme, op, &input_ids);
-            PorthTypeKind::Unknown
+            return;
         }
     };
 
@@ -82,12 +78,9 @@ pub(super) fn bitnot(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
-    let input = analyzer.value_types([input_id]);
+    let Some(input) = analyzer.value_types([input_id]) else { return };
 
     let new_type = match input[0] {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        PorthTypeKind::Unknown => return,
-
         PorthTypeKind::Int | PorthTypeKind::Bool => input[0],
 
         _ => {
@@ -113,12 +106,9 @@ pub(super) fn bitand_bitor(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let inputs = analyzer.value_types(input_ids);
+    let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Unknown, _] | [_, PorthTypeKind::Unknown] => return,
-
         [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
         [PorthTypeKind::Bool, PorthTypeKind::Bool] => PorthTypeKind::Bool,
 
@@ -144,12 +134,9 @@ pub(super) fn multiply_and_shift(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let inputs = analyzer.value_types(input_ids);
+    let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Unknown, _] | [_, PorthTypeKind::Unknown] => return,
-
         [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
 
         _ => {
@@ -174,11 +161,9 @@ pub(super) fn divmod(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let inputs = analyzer.value_types(input_ids);
+    let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Unknown, _] | [_, PorthTypeKind::Unknown] => return,
         [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
 
         _ => {
