@@ -16,25 +16,6 @@ use super::{
     ensure_stack_depth,
 };
 
-pub(super) fn bitnot(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
-    op: &Op,
-) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
-
-    let value_id = stack.pop().unwrap();
-    analyzer.consume_value(value_id, op.id);
-    let new_id = analyzer.new_value(op);
-
-    analyzer.set_op_io(op, &[value_id], &[new_id]);
-    stack.push(new_id);
-}
-
 pub(super) fn divmod(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,

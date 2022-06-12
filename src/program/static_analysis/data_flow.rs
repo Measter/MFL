@@ -39,6 +39,24 @@ fn ensure_stack_depth(
     }
 }
 
+pub(super) fn eat_one_make_one(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
+
+    let value_id = stack.pop().unwrap();
+    analyzer.consume_value(value_id, op.id);
+    let new_id = analyzer.new_value(op);
+
+    analyzer.set_op_io(op, &[value_id], &[new_id]);
+    stack.push(new_id);
+}
+
 pub(super) fn eat_two_make_one(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -58,6 +76,13 @@ pub(super) fn eat_two_make_one(
     analyzer.set_op_io(op, &inputs, &[new_id]);
     stack.push(new_id);
 }
+
+pub(super) fn make_one(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op) {
+    let new_id = analyzer.new_value(op);
+    stack.push(new_id);
+    analyzer.set_op_io(op, &[], &[new_id]);
+}
+
 pub(super) fn analyze_block(
     program: &Program,
     proc: &Procedure,
@@ -92,13 +117,14 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::BitNot => arithmetic::bitnot(
+            OpCode::BitNot
+            | OpCode::CastInt
+            | OpCode::CastPtr => eat_one_make_one(
                 analyzer,
                 stack,
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::DivMod => arithmetic::divmod(
@@ -111,16 +137,13 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::PushBool(v) => stack_ops::push_bool(
+            OpCode::PushBool(_)
+            | OpCode::PushInt(_)
+            | OpCode::ArgC
+            | OpCode::ArgV => make_one(
                 analyzer,
                 stack,
-                op,
-                v
-            ),
-            OpCode::PushInt(v) => stack_ops::push_int(
-                analyzer,
-                stack,
-                op,v
+                op
             ),
             OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
                 analyzer,
@@ -129,36 +152,6 @@ pub(super) fn analyze_block(
                 op,
                 is_c_str,
                 id,
-            ),
-
-            OpCode::ArgC => stack_ops::push_argc(
-                analyzer,
-                stack,
-                op
-            ),
-            OpCode::ArgV => stack_ops::push_argv(
-                analyzer,
-                stack,
-                op
-            ),
-
-            OpCode::CastInt => stack_ops::cast_int(
-                analyzer,
-                stack,
-                source_store,
-                interner,
-                had_error,
-                force_non_const_before,
-                op
-            ),
-            OpCode::CastPtr => stack_ops::cast_ptr(
-                analyzer,
-                stack,
-                source_store,
-                interner,
-                had_error,
-                force_non_const_before,
-                op
             ),
 
             OpCode::While { ref body  } => {

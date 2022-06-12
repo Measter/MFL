@@ -85,6 +85,30 @@ pub(super) fn analyze_block(
                 had_error,
                 op,
             ),
+            
+            OpCode::PushBool(_) => stack_ops::push_bool(
+                analyzer,
+                op,
+            ),
+            OpCode::PushInt(_) => stack_ops::push_int(
+                analyzer,
+                op,
+            ),
+            OpCode::PushStr{  is_c_str, .. } => stack_ops::push_str(
+                analyzer,
+                op,
+                is_c_str,
+            ),
+
+            OpCode::ArgC => stack_ops::push_int(
+                analyzer,
+                op,
+            ),
+            OpCode::ArgV => stack_ops::push_str(
+                analyzer,
+                op,
+                true,
+            ),
 
             OpCode::CastInt => stack_ops::cast_int(
                 analyzer,
@@ -171,13 +195,9 @@ pub(super) fn analyze_block(
                 proc,
             ),
 
-            // Nothing to check here, as all value types are known at creation, so it's set at that point.
-            OpCode::PushBool(_) |
-            OpCode::PushInt(_) |
-            OpCode::PushStr{..} |
-            OpCode::ArgC |
-            OpCode::ArgV |
-            OpCode::Prologue => {}, 
+            OpCode::Prologue => {
+                todo!()
+            },
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop |
