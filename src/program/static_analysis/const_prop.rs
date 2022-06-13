@@ -103,6 +103,10 @@ pub(super) fn analyze_block(
                 op,
             ),
 
+            OpCode::PushBool(v) => stack_ops::push_bool(analyzer, op, v),
+            OpCode::PushInt(v) => stack_ops::push_int(analyzer, op, v),
+            OpCode::PushStr{ id, is_c_str } => stack_ops::push_str(analyzer, interner, op, id, is_c_str),
+
             OpCode::CastInt => stack_ops::cast_int(
                 analyzer,
                 source_store,
@@ -176,12 +180,6 @@ pub(super) fn analyze_block(
                 proc_id,
             ),
 
-            // These are simple consts, and have known values during data flow.
-            // The const values are set there.
-            OpCode::PushBool(_) |
-            OpCode::PushInt(_) |
-            OpCode::PushStr{..} => {}
-            
             // There's nothing to do with these, as they're always non-const.
             OpCode::ArgC |
             OpCode::ArgV |
