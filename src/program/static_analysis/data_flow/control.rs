@@ -9,7 +9,6 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{static_analysis::Value, Procedure, ProcedureId, ProcedureKind, Program},
     source_file::{SourceLocation, SourceStorage},
-    type_check::PorthTypeKind,
 };
 
 use super::{
@@ -30,7 +29,6 @@ pub(super) fn epilogue_return(
     proc: &Procedure,
 ) {
     if stack.len() != proc.exit_stack().len() {
-        dbg!("epilogue-return error case");
         *had_error = true;
 
         let mut labels = vec![
@@ -46,14 +44,13 @@ pub(super) fn epilogue_return(
             Ordering::Less => {
                 let num_missing = usize::saturating_sub(proc.exit_stack().len(), stack.len());
                 for _ in 0..num_missing {
-                    let (pad_value, _) =
-                        analyzer.new_value(PorthTypeKind::Unknown, op.id, op.token);
+                    let pad_value = analyzer.new_value(op);
                     stack.push(pad_value);
                 }
             }
             Ordering::Greater => {
                 for &value_id in &stack[..stack.len() - proc.exit_stack().len()] {
-                    let [value] = analyzer.get_values([value_id]);
+                    let [value] = analyzer.values([value_id]);
                     labels.push(
                         Label::new(value.creator_token.location)
                             .with_color(Color::Green)
@@ -61,7 +58,7 @@ pub(super) fn epilogue_return(
                     );
                 }
             }
-            Ordering::Equal => {}
+            Ordering::Equal => unreachable!(),
         }
 
         diagnostics::emit_error(
@@ -81,10 +78,10 @@ pub(super) fn epilogue_return(
     let inputs = stack.lastn(proc.exit_stack().len()).unwrap();
 
     for &value_id in inputs {
-        analyzer.consume(value_id, op.id);
+        analyzer.consume_value(value_id, op.id);
     }
 
-    analyzer.set_io(op.id, op.token, inputs, &[]);
+    analyzer.set_op_io(op, inputs, &[]);
 }
 
 pub(super) fn prologue(
@@ -95,12 +92,12 @@ pub(super) fn prologue(
 ) {
     let mut outputs = Vec::new();
     for input_type in proc.entry_stack() {
-        let (new_id, _) = analyzer.new_value(input_type.kind, op.id, op.token);
+        let new_id = analyzer.new_value(op);
         outputs.push(new_id);
         stack.push(new_id);
     }
 
-    analyzer.set_io(op.id, op.token, &[], &outputs);
+    analyzer.set_op_io(op, &[], &outputs);
 }
 
 pub(super) fn resolved_ident(
@@ -116,68 +113,34 @@ pub(super) fn resolved_ident(
 
     match referenced_proc.kind() {
         ProcedureKind::Memory => {
-            let (new_id, new_value) = analyzer.new_value(PorthTypeKind::Ptr, op.id, op.token);
-            new_value.const_val = Some(ConstVal::Ptr {
-                id: PtrId::Mem(proc_id),
-                src_op_loc: op.token.location,
-                offset: Some(0),
-            });
-            analyzer.set_io(op.id, op.token, &[], &[new_id]);
-
+            let new_id = analyzer.new_value(op);
             stack.push(new_id);
+            analyzer.set_op_io(op, &[new_id], &[]);
         }
         _ => {
-            let num_args = referenced_proc.entry_stack().len();
-            let inputs = if stack.len() < num_args {
-                generate_stack_length_mismatch_diag(
-                    source_store,
-                    op,
-                    op.token.location,
-                    stack.len(),
-                    num_args,
-                );
-                *had_error = true;
-                stack.clear();
-                Vec::new()
-            } else {
-                let inputs = stack.split_off(stack.len() - num_args);
+            // TODO: Maybe do a custom error here so we can point to the expected signature.
+            ensure_stack_depth(
+                analyzer,
+                stack,
+                source_store,
+                had_error,
+                op,
+                referenced_proc.entry_stack().len(),
+            );
 
-                let stacks = referenced_proc.entry_stack().iter().zip(&inputs);
-                for (expected, actual_id) in stacks {
-                    let [actual_value] = analyzer.get_values([*actual_id]);
-                    if expected.kind != actual_value.porth_type {
-                        let expected_kinds: Vec<_> = referenced_proc
-                            .entry_stack()
-                            .iter()
-                            .map(|t| t.kind)
-                            .collect();
-
-                        failed_compare_stack_types(
-                            analyzer,
-                            source_store,
-                            stack,
-                            &expected_kinds,
-                            referenced_proc.entry_stack_location(),
-                            op.token.location,
-                            "incorrect arguments for function",
-                        );
-                        *had_error = true;
-                        break;
-                    }
-                }
-
-                inputs
-            };
-
+            let inputs = stack.split_off(stack.len() - referenced_proc.entry_stack().len());
+            for &value_id in &inputs {
+                analyzer.consume_value(value_id, op.id);
+            }
             let mut outputs = Vec::new();
 
             for output in referenced_proc.exit_stack() {
-                let (new_id, _) = analyzer.new_value(output.kind, op.id, op.token);
+                let new_id = analyzer.new_value(op);
                 outputs.push(new_id);
                 stack.push(new_id);
             }
 
-            analyzer.set_io(op.id, op.token, &inputs, &outputs);
+            analyzer.set_op_io(op, &inputs, &outputs);
         }
     }
 }
@@ -194,34 +157,15 @@ pub(super) fn syscall(
     // TODO: This is dumb. Make this not be dumb.
     num_args += 1;
 
-    for &value_id in stack.lastn(num_args).unwrap_or(&*stack) {
-        analyzer.consume(value_id, op.id);
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_args);
+
+    let inputs = stack.split_off(stack.len() - num_args);
+    for &value_id in &inputs {
+        analyzer.consume_value(value_id, op.id);
     }
 
-    // Only 7 arguments are support. Anything else will ICE.
-    let mut args = [ValueId(usize::MAX); 7];
-
-    let (inputs, new_type) = if stack.len() < num_args {
-        generate_stack_length_mismatch_diag(
-            source_store,
-            op,
-            op.token.location,
-            stack.len(),
-            num_args,
-        );
-        *had_error = true;
-        stack.clear();
-        (None, PorthTypeKind::Unknown)
-    } else {
-        let args = &mut args[..num_args];
-        args.copy_from_slice(&stack[stack.len() - num_args..]);
-        stack.truncate(stack.len() - num_args);
-        (Some(args), PorthTypeKind::Int)
-    };
-
-    let (new_id, _) = analyzer.new_value(new_type, op.id, op.token);
-    let inputs = inputs.map(|i| &*i).unwrap_or(&[]);
-    analyzer.set_io(op.id, op.token, inputs, &[new_id]);
+    let new_id = analyzer.new_value(op);
+    analyzer.set_op_io(op, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -245,13 +189,13 @@ fn check_stack_length_and_types(
         );
         *had_error = true;
     } else if !initial_stack.iter().zip(stack).all(|(expected, actual)| {
-        let [expected_val, actual_val] = analyzer.get_values([*expected, *actual]);
+        let [expected_val, actual_val] = analyzer.values([*expected, *actual]);
         expected_val.porth_type == actual_val.porth_type
     }) {
         let expected_kinds: Vec<_> = initial_stack
             .iter()
             .map(|v| {
-                let [v] = analyzer.get_values([*v]);
+                let [v] = analyzer.values([*v]);
                 v.porth_type
             })
             .collect();
@@ -272,7 +216,7 @@ fn check_stack_length_and_types(
 
 fn make_non_const(analyzer: &mut Analyzer, initial_stack: &[ValueId], cur_stack: &[ValueId]) {
     for (&initial, &cur) in initial_stack.iter().zip(cur_stack).filter(|(a, b)| a != b) {
-        let val = analyzer.value_mut(initial);
+        let val = analyzer.values_mut(initial);
         val.const_val = None;
     }
 }
@@ -305,7 +249,7 @@ pub(super) fn analyze_while(
     );
 
     if let Some(&value_id) = stack.last() {
-        analyzer.consume(value_id, op.id);
+        analyzer.consume_value(value_id, op.id);
     }
 
     let (do_input, const_val) = match stack.pop() {
@@ -317,7 +261,7 @@ pub(super) fn analyze_while(
             (None, None)
         }
         Some(val) => {
-            let const_val = match analyzer.get_values([val]) {
+            let const_val = match analyzer.values([val]) {
                 type_pattern!(a @ PorthTypeKind::Bool) => *a,
                 [val] => {
                     // Type mismatch
