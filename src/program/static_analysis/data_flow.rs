@@ -208,15 +208,13 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::Load { width, kind } => memory::load(
+            OpCode::Load { width, kind } => eat_one_make_one(
                 analyzer,
                 stack,
                 source_store,
                 interner,
                 had_error,
-                op,
-                width,
-                kind,
+                op
             ),
             OpCode::Store { kind, .. } => memory::store(
                 analyzer,

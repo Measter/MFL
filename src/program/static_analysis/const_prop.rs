@@ -158,18 +158,14 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
+                force_non_const_before,
                 op,
                 width,
                 kind,
             ),
-            OpCode::Store { kind, .. } => memory::store(
-                analyzer,
-                source_store,
-                interner,
-                had_error,
-                op,
-                kind,
-            ),
+
+            // Store doesn't produce a value, so there's nothing for const-propagation to do.
+            OpCode::Store { kind, .. } => {},
 
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
