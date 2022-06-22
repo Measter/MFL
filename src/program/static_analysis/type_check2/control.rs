@@ -1,5 +1,9 @@
+use ariadne::{Color, Label};
+
 use crate::{
+    diagnostics,
     interners::Interners,
+    n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer, PorthTypeKind},
@@ -123,6 +127,7 @@ pub(super) fn analyze_while(
     op: &Op,
     body: &ConditionalBlock,
 ) {
+    // Evaluate the condition.
     super::analyze_block(
         program,
         proc,
@@ -132,4 +137,58 @@ pub(super) fn analyze_while(
         interner,
         source_store,
     );
+
+    // We expect a boolean to be the result of evaluating the condition.
+    let op_data = analyzer.get_op_io(op.id);
+    let condition_inputs = *op_data.inputs.as_arr::<1>();
+    let Some([condition_type]) = analyzer.value_types(condition_inputs) else { return };
+
+    if condition_type != PorthTypeKind::Bool {
+        *had_error = true;
+        let body = op.code.unwrap_while();
+        let [value] = analyzer.values(condition_inputs);
+
+        diagnostics::emit_error(
+            body.do_token.location,
+            "condition must evaluate to a boolean",
+            [
+                Label::new(body.do_token.location)
+                    .with_color(Color::Cyan)
+                    .with_message("expected here"),
+                Label::new(value.creator_token.location)
+                    .with_color(Color::Red)
+                    .with_message(condition_type.name_str())
+                    .with_order(1),
+            ],
+            None,
+            source_store,
+        );
+    }
+
+    // Now to confirm that all the new created values have the same type as what they merge with.
+    for &new_id in &op_data.outputs {
+        let [new_value] = analyzer.values([new_id]);
+        let [old_value] = analyzer.values([new_value.merge_with().unwrap()]);
+        let Some([new_type]) = analyzer.value_types([new_id]) else { continue };
+        let Some([old_type]) = analyzer.value_types([old_value.value_id]) else { continue };
+
+        if new_type != old_type {
+            *had_error = true;
+            diagnostics::emit_error(
+                new_value.creator_token.location,
+                "conditional body cannot change types on the stack",
+                [
+                    Label::new(new_value.creator_token.location)
+                        .with_color(Color::Red)
+                        .with_message(new_type.name_str()),
+                    Label::new(old_value.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message(old_type.name_str())
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+        }
+    }
 }

@@ -169,58 +169,6 @@ pub(super) fn syscall(
     stack.push(new_id);
 }
 
-fn check_stack_length_and_types(
-    initial_stack: &[ValueId],
-    stack: &[ValueId],
-    op: &Op,
-    sample_location: SourceLocation,
-    msg: &str,
-    had_error: &mut bool,
-    source_store: &SourceStorage,
-    analyzer: &mut Analyzer,
-) {
-    if stack.len() != initial_stack.len() {
-        generate_stack_length_mismatch_diag(
-            source_store,
-            op,
-            sample_location,
-            stack.len(),
-            initial_stack.len(),
-        );
-        *had_error = true;
-    } else if !initial_stack.iter().zip(stack).all(|(expected, actual)| {
-        let [expected_val, actual_val] = analyzer.values([*expected, *actual]);
-        expected_val.porth_type == actual_val.porth_type
-    }) {
-        let expected_kinds: Vec<_> = initial_stack
-            .iter()
-            .map(|v| {
-                let [v] = analyzer.values([*v]);
-                v.porth_type
-            })
-            .collect();
-
-        failed_compare_stack_types(
-            analyzer,
-            source_store,
-            stack,
-            &expected_kinds,
-            op.token.location,
-            sample_location,
-            msg,
-        );
-
-        *had_error = true;
-    }
-}
-
-fn make_non_const(analyzer: &mut Analyzer, initial_stack: &[ValueId], cur_stack: &[ValueId]) {
-    for (&initial, &cur) in initial_stack.iter().zip(cur_stack).filter(|(a, b)| a != b) {
-        let val = analyzer.values_mut(initial);
-        val.const_val = None;
-    }
-}
-
 pub(super) fn analyze_while(
     program: &Program,
     proc: &Procedure,
@@ -234,91 +182,97 @@ pub(super) fn analyze_while(
 ) {
     let initial_stack = stack.clone();
 
-    let last_value = analyzer.last_value_id();
-
+    // Evaluate the condition.
     super::analyze_block(
         program,
         proc,
         &body.condition,
         analyzer,
         stack,
-        last_value,
         had_error,
         interner,
         source_store,
     );
 
-    if let Some(&value_id) = stack.last() {
-        analyzer.consume_value(value_id, op.id);
+    // We expect there to be a boolean value on the top of the stack afterwards.
+    // The condition cannot be allowed to otherwise change the depth of the stack as it could be
+    // executed an arbitrary number of times.
+    if stack.len() != initial_stack.len() + 1 {
+        generate_stack_length_mismatch_diag(
+            source_store,
+            op,
+            op.token.location,
+            body.do_token.location,
+            stack.len(),
+            initial_stack.len(),
+        );
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logic makes sense.
+        for _ in 0..(initial_stack.len() + 1).saturating_sub(stack.len()) {
+            analyzer.new_value(op);
+        }
+    }
+    let condition_value = stack.pop().unwrap();
+
+    // Might need something smarter than this for the codegen.
+    let mut new_values = Vec::new();
+
+    // Now we need to see which value IDs have been changed, so the codegen phase will know
+    // where to merge the new data.
+    for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
+        new_values.push(*new_value_id);
+        let [new_value] = analyzer.values_mut([new_value_id]);
+        new_value.set_merge_with(old_value_id);
     }
 
-    let (do_input, const_val) = match stack.pop() {
-        None => {
-            generate_stack_length_mismatch_diag(source_store, op, body.do_token.location, 0, 1);
-            *had_error = true;
-            stack.clear();
-
-            (None, None)
-        }
-        Some(val) => {
-            let const_val = match analyzer.values([val]) {
-                type_pattern!(a @ PorthTypeKind::Bool) => *a,
-                [val] => {
-                    // Type mismatch
-                    *had_error = true;
-                    if val.porth_type != PorthTypeKind::Unknown {
-                        let lexeme = interner.resolve_lexeme(body.do_token.lexeme);
-                        generate_type_mismatch_diag(source_store, lexeme, op, &[val]);
-                    }
-                    None
-                }
-            };
-
-            (Some(val), const_val)
-        }
-    };
-
-    check_stack_length_and_types(
-        &initial_stack,
-        stack,
-        op,
-        body.do_token.location,
-        "while condition cannot change the length and types on the stack",
-        had_error,
-        source_store,
-        analyzer,
-    );
-
-    // TODO: Mark all stack slots changed by the condition as non-const.
-    // Ensure the stack is in the same state as before the condition.
-    make_non_const(analyzer, &initial_stack, stack);
+    // Restore the stack to the initial stack, so we can evaluate the body with a clean slate.
+    // This allows us to know which values should be merged with.
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 
+    // Now we do the same thing as above, but with the body.
     super::analyze_block(
         program,
         proc,
         &body.block,
         analyzer,
         stack,
-        last_value,
         had_error,
         interner,
         source_store,
     );
 
-    check_stack_length_and_types(
-        &initial_stack,
-        stack,
-        op,
-        body.close_token.location,
-        "while body cannot change the length and types on the stack",
-        had_error,
-        source_store,
-        analyzer,
-    );
+    // In this case, we do not expect any new values, only that the stack has the same depth.
+    // Might be worth having a custom error here.
+    if stack.len() != initial_stack.len() {
+        generate_stack_length_mismatch_diag(
+            source_store,
+            op,
+            op.token.location,
+            body.close_token.location,
+            stack.len(),
+            initial_stack.len(),
+        );
+        *had_error = true;
+        // Pad the stack out to the expected length so the rest of the logic makes sense.
+        for _ in 0..initial_stack.len().saturating_sub(stack.len()) {
+            analyzer.new_value(op);
+        }
+    }
 
-    make_non_const(analyzer, &initial_stack, stack);
-    stack.clear();
-    stack.extend_from_slice(&initial_stack);
+    // Again, we need to see which value IDs have been changed, so the codegen phase will know
+    // where to merge the new data.
+    for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
+        new_values.push(*new_value_id);
+        let [new_value] = analyzer.values_mut([new_value_id]);
+        new_value.set_merge_with(old_value_id);
+    }
+
+    analyzer.set_op_io(op, &[condition_value], &new_values);
+    analyzer.consume_value(condition_value, op.id);
+
+    // Now restore the stack a second time so the rest of the proc can pretend the while block
+    // changed anything.
+    *stack = initial_stack;
 }

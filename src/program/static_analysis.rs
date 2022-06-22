@@ -88,6 +88,19 @@ struct Value {
     creator_id: OpId,
     creator_token: Token,
     consumer: Vec<OpId>,
+    merge_with: Option<ValueId>,
+}
+
+impl Value {
+    fn set_merge_with(&mut self, merge_id: ValueId) {
+        self.merge_with
+            .replace(merge_id)
+            .expect_none("ICE: A value cannot be merged with more than one other value");
+    }
+
+    fn merge_with(&self) -> Option<ValueId> {
+        self.merge_with
+    }
 }
 
 #[derive(Debug)]
@@ -122,6 +135,7 @@ impl Analyzer {
                     creator_id: creator.id,
                     creator_token: creator.token,
                     consumer: Vec::new(),
+                    merge_with: None,
                 },
             )
             .is_some();
@@ -296,7 +310,7 @@ fn generate_type_mismatch_diag(
         labels.push(
             Label::new(value.creator_token.location)
                 .with_color(Color::Yellow)
-                .with_message(format!("{}", value_type))
+                .with_message(value_type.to_string())
                 .with_order(order),
         )
     }
