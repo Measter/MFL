@@ -137,6 +137,16 @@ pub(super) fn analyze_while(
         interner,
         source_store,
     );
+    // Evaluate the body.
+    super::analyze_block(
+        program,
+        proc,
+        &body.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
 
     // We expect a boolean to be the result of evaluating the condition.
     let op_data = analyzer.get_op_io(op.id);
