@@ -308,22 +308,26 @@ fn generate_stack_length_mismatch_diag(
     source_store: &SourceStorage,
     op: &Op,
     sample_location: SourceLocation,
+    error_location: SourceLocation,
     actual: usize,
     expected: usize,
 ) {
     let message = format!("expected {} items, found {}", expected, actual);
 
-    let mut labels = vec![Label::new(sample_location)
-        .with_color(Color::Red)
-        .with_message("here")];
-
-    for source in op.expansions.iter() {
-        labels.push(
-            Label::new(*source)
-                .with_color(Color::Blue)
-                .with_message("expanded from here"),
-        );
-    }
+    let labels = if sample_location != error_location {
+        vec![
+            Label::new(sample_location)
+                .with_color(Color::Cyan)
+                .with_message(format!("{expected} values here...",)),
+            Label::new(error_location)
+                .with_color(Color::Red)
+                .with_message(format!("... but found {actual} values here")),
+        ]
+    } else {
+        vec![Label::new(error_location)
+            .with_color(Color::Red)
+            .with_message("here")]
+    };
 
     diagnostics::emit_error(sample_location, message, labels, None, source_store);
 }

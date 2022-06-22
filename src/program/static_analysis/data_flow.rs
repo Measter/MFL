@@ -26,6 +26,7 @@ fn ensure_stack_depth(
             source_store,
             op,
             op.token.location,
+            op.token.location,
             stack.len(),
             depth,
         );
