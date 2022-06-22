@@ -1,8 +1,5 @@
-#![allow(unused)]
-
 use std::{
     fmt::{self, Write},
-    mem::MaybeUninit,
     ops::Not,
 };
 
@@ -16,7 +13,7 @@ use crate::{
     interners::Interners,
     lexer::Token,
     n_ops::HashMapNOps,
-    opcode::{Op, OpCode, OpId},
+    opcode::{Op, OpId},
     option::OptionExt,
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
@@ -85,7 +82,6 @@ struct ValueId(usize);
 #[derive(Debug)]
 struct Value {
     value_id: ValueId,
-    creator_id: OpId,
     creator_token: Token,
     consumer: Vec<OpId>,
     merge_with: Option<ValueId>,
@@ -105,8 +101,6 @@ impl Value {
 
 #[derive(Debug)]
 struct OpData {
-    op: Token,
-    idx: OpId,
     inputs: Vec<ValueId>,
     outputs: Vec<ValueId>,
 }
@@ -132,7 +126,6 @@ impl Analyzer {
                 id,
                 Value {
                     value_id: id,
-                    creator_id: creator.id,
                     creator_token: creator.token,
                     consumer: Vec::new(),
                     merge_with: None,
@@ -190,8 +183,6 @@ impl Analyzer {
         let prev = self.ios.insert(
             op.id,
             OpData {
-                op: op.token,
-                idx: op.id,
                 inputs: inputs.to_owned(),
                 outputs: outputs.to_owned(),
             },
@@ -207,10 +198,6 @@ impl Analyzer {
 
     fn get_op_io(&self, op_idx: OpId) -> &OpData {
         &self.ios[&op_idx]
-    }
-
-    fn last_value_id(&self) -> Option<ValueId> {
-        self.next_value_id.checked_sub(1).map(ValueId)
     }
 }
 
@@ -324,7 +311,6 @@ fn generate_type_mismatch_diag(
 
 fn generate_stack_length_mismatch_diag(
     source_store: &SourceStorage,
-    op: &Op,
     sample_location: SourceLocation,
     error_location: SourceLocation,
     actual: usize,
@@ -416,6 +402,8 @@ pub fn const_propagation(
         interner,
         source_store,
     );
+
+    // dbg!(&analyzer);
 
     had_error.not().then(|| ()).ok_or(())
 }

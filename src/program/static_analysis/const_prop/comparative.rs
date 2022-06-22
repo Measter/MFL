@@ -2,19 +2,15 @@ use ariadne::{Color, Label};
 
 use crate::{
     diagnostics,
-    interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, ValueId},
+    program::static_analysis::{Analyzer, ConstVal},
     source_file::SourceStorage,
 };
-
-use super::check_allowed_const;
 
 pub(super) fn compare(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -79,7 +75,6 @@ pub(super) fn compare(
 pub(super) fn equal(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
 ) {

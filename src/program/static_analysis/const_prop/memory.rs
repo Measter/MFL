@@ -5,12 +5,10 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, PorthTypeKind, PtrId, ValueId},
+    program::static_analysis::{Analyzer, ConstVal, PorthTypeKind, PtrId},
     source_file::{SourceLocation, SourceStorage},
     Width,
 };
-
-use super::check_allowed_const;
 
 fn check_memory_bounds(
     source_store: &SourceStorage,

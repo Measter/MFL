@@ -1,3 +1,5 @@
+use log::trace;
+
 use crate::{
     interners::Interners,
     opcode::{ConditionalBlock, Op},
@@ -11,8 +13,6 @@ use crate::{
 pub(super) fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
     op: &Op,
     proc_id: ProcedureId,
 ) {
@@ -50,8 +50,7 @@ pub(super) fn analyze_while(
     for input_id in inputs {
         let [input_value] = analyzer.values([input_id]);
         let Some(merge_id) = input_value.merge_with() else { continue };
-        let [merge_value] = analyzer.values([merge_id]);
-        eprintln!(
+        trace!(
             "Merge {input_id:?} with {merge_id:?}, const: {:?}",
             analyzer.value_consts([merge_id])
         );

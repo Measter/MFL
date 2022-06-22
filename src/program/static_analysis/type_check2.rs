@@ -1,5 +1,3 @@
-use lasso::Interner;
-
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
@@ -138,27 +136,15 @@ pub(super) fn analyze_block(
             OpCode::If {..} => unimplemented!(),
 
 
-            OpCode::Dup { depth, } => stack_ops::dup(
-                analyzer,
-                source_store,
-                had_error,
-                op,
-                depth
-            ),
-            OpCode::DupPair => stack_ops::dup_pair(
-                analyzer, 
-                source_store, 
-                had_error,
-                op
-            ),
+            OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
+            OpCode::DupPair => stack_ops::dup_pair(analyzer, op),
 
-            OpCode::Load { width, kind } => memory::load(
+            OpCode::Load {  kind, .. } => memory::load(
                 analyzer,
                 source_store,
                 interner,
                 had_error,
                 op,
-                width,
                 kind,
             ),
             OpCode::Store { kind, .. } => memory::store(
@@ -178,18 +164,11 @@ pub(super) fn analyze_block(
                 op,
                 proc_id,
             ),
-            OpCode::SysCall(num_args @ 0..=6) => control::syscall(
-                analyzer,
-                source_store,
-                had_error,
-                op,
-                num_args,
-            ),
+            OpCode::SysCall(0..=6) => control::syscall(analyzer, op),
 
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 analyzer,
                 source_store,
-                interner,
                 had_error,
                 op,
                 proc,

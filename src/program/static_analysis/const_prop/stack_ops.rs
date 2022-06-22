@@ -4,19 +4,10 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
-    source_file::SourceStorage,
+    program::static_analysis::{Analyzer, ConstVal, PtrId},
 };
 
-use super::check_allowed_const;
-
-pub(super) fn cast_int(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn cast_int(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
@@ -30,13 +21,7 @@ pub(super) fn cast_int(
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
 }
 
-pub(super) fn cast_ptr(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn cast_ptr(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
@@ -48,25 +33,14 @@ pub(super) fn cast_ptr(
     analyzer.set_value_const(op_data.outputs[0], types);
 }
 
-pub(super) fn dup(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-    depth: usize,
-) {
+pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
     analyzer.set_value_const(op_data.outputs[0], types);
 }
 
-pub(super) fn dup_pair(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn dup_pair(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs = *op_data.inputs.as_arr::<2>();
     let outputs = *op_data.outputs.as_arr::<2>();

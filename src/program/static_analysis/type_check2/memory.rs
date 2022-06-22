@@ -4,7 +4,6 @@ use crate::{
     opcode::Op,
     program::static_analysis::{generate_type_mismatch_diag, Analyzer, PorthTypeKind},
     source_file::SourceStorage,
-    Width,
 };
 
 pub(super) fn load(
@@ -13,7 +12,6 @@ pub(super) fn load(
     interner: &Interners,
     had_error: &mut bool,
     op: &Op,
-    width: Width,
     kind: PorthTypeKind,
 ) {
     let op_data = analyzer.get_op_io(op.id);

@@ -7,15 +7,12 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
-    program::{static_analysis::Value, Procedure, ProcedureId, ProcedureKind, Program},
-    source_file::{SourceLocation, SourceStorage},
+    program::{Procedure, ProcedureId, ProcedureKind, Program},
+    source_file::SourceStorage,
 };
 
 use super::{
-    super::{
-        failed_compare_stack_types, generate_stack_length_mismatch_diag,
-        generate_type_mismatch_diag, Analyzer, ConstVal, PtrId, ValueId,
-    },
+    super::{generate_stack_length_mismatch_diag, Analyzer, ValueId},
     ensure_stack_depth,
 };
 
@@ -91,7 +88,7 @@ pub(super) fn prologue(
     proc: &Procedure,
 ) {
     let mut outputs = Vec::new();
-    for input_type in proc.entry_stack() {
+    for _ in proc.entry_stack() {
         let new_id = analyzer.new_value(op);
         outputs.push(new_id);
         stack.push(new_id);
@@ -134,7 +131,7 @@ pub(super) fn resolved_ident(
             }
             let mut outputs = Vec::new();
 
-            for output in referenced_proc.exit_stack() {
+            for _ in referenced_proc.exit_stack() {
                 let new_id = analyzer.new_value(op);
                 outputs.push(new_id);
                 stack.push(new_id);
@@ -200,7 +197,6 @@ pub(super) fn analyze_while(
     if stack.len() != initial_stack.len() + 1 {
         generate_stack_length_mismatch_diag(
             source_store,
-            op,
             op.token.location,
             body.do_token.location,
             stack.len(),
@@ -248,7 +244,6 @@ pub(super) fn analyze_while(
     if stack.len() != initial_stack.len() {
         generate_stack_length_mismatch_diag(
             source_store,
-            op,
             op.token.location,
             body.close_token.location,
             stack.len(),

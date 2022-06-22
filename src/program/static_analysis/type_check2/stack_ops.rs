@@ -1,14 +1,11 @@
 use ariadne::{Color, Label};
-use lasso::Spur;
 
 use crate::{
     diagnostics,
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{
-        self, generate_type_mismatch_diag, Analyzer, OpData, PorthTypeKind,
-    },
+    program::static_analysis::{generate_type_mismatch_diag, Analyzer, PorthTypeKind},
     source_file::SourceStorage,
 };
 
@@ -46,6 +43,7 @@ pub(super) fn cast_int(
 
         // No actual failure case at this time, but leaving this here later for if I get
         // round to adding other types where this is invalid.
+        #[allow(unreachable_patterns)]
         _ => {
             *had_error = true;
             let lexeme = interner.resolve_lexeme(op.token.lexeme);
@@ -56,6 +54,7 @@ pub(super) fn cast_int(
 
     analyzer.set_value_type(op_data.outputs[0], new_type);
 }
+
 pub(super) fn cast_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
@@ -99,13 +98,7 @@ pub(super) fn cast_ptr(
     analyzer.set_value_type(op_data.outputs[0], new_type);
 }
 
-pub(super) fn dup(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-    depth: usize,
-) {
+pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([input]) = analyzer.value_types(input_ids) else { return };
@@ -113,12 +106,7 @@ pub(super) fn dup(
     analyzer.set_value_type(op_data.outputs[0], input);
 }
 
-pub(super) fn dup_pair(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn dup_pair(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs = *op_data.inputs.as_arr::<2>();
     let outputs = *op_data.outputs.as_arr::<2>();

@@ -15,7 +15,6 @@ use crate::{
 pub(super) fn epilogue_return(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
     proc: &Procedure,
@@ -102,13 +101,7 @@ pub(super) fn resolved_ident(
     }
 }
 
-pub(super) fn syscall(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-    num_args: usize,
-) {
+pub(super) fn syscall(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
 
     // All syscall inputs are untyped.

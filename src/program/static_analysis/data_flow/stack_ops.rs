@@ -1,12 +1,7 @@
-use lasso::Spur;
-
-use crate::{interners::Interners, n_ops::SliceNOps, opcode::Op, source_file::SourceStorage};
+use crate::{n_ops::SliceNOps, opcode::Op, source_file::SourceStorage};
 
 use super::{
-    super::{
-        generate_stack_length_mismatch_diag, generate_type_mismatch_diag, Analyzer, ConstVal,
-        PtrId, Value, ValueId,
-    },
+    super::{Analyzer, ValueId},
     ensure_stack_depth,
 };
 
@@ -60,14 +55,7 @@ pub(super) fn dup_pair(
     analyzer.set_op_io(op, &[new_id1, new_id2], &input_ids);
 }
 
-pub(super) fn push_str(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    interner: &Interners,
-    op: &Op,
-    is_c_str: bool,
-    id: Spur,
-) {
+pub(super) fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c_str: bool) {
     let ptr_id = analyzer.new_value(op);
 
     if is_c_str {

@@ -2,22 +2,13 @@ use ariadne::{Color, Label};
 
 use crate::{
     diagnostics,
-    interners::Interners,
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
-    program::static_analysis::{Analyzer, ConstVal, Value, ValueId},
+    program::static_analysis::{Analyzer, ConstVal},
     source_file::SourceStorage,
 };
 
-use super::check_allowed_const;
-
-pub(super) fn add(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn add(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
@@ -56,7 +47,6 @@ pub(super) fn add(
 pub(super) fn subtract(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -114,13 +104,13 @@ pub(super) fn subtract(
 
         // Pointers with the same static ID, with constant offsets.
         [ConstVal::Ptr {
-            id: id1,
             src_op_loc: src_op1,
             offset: Some(offset1),
+            ..
         }, ConstVal::Ptr {
-            id: id2,
             src_op_loc: src_op2,
             offset: Some(offset2),
+            ..
         }] => {
             if offset2 > offset1 {
                 // Subtracting the end from the start.
@@ -164,13 +154,7 @@ pub(super) fn subtract(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitnot(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn bitnot(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
@@ -185,13 +169,7 @@ pub(super) fn bitnot(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitand_bitor(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn bitand_bitor(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
@@ -214,13 +192,7 @@ pub(super) fn bitand_bitor(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn multiply_and_shift(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn multiply_and_shift(analyzer: &mut Analyzer, source_store: &SourceStorage, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
@@ -259,13 +231,7 @@ pub(super) fn multiply_and_shift(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn divmod(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interners,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub(super) fn divmod(analyzer: &mut Analyzer, source_store: &SourceStorage, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };

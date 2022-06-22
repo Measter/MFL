@@ -24,7 +24,6 @@ fn ensure_stack_depth(
     if stack.len() < depth {
         generate_stack_length_mismatch_diag(
             source_store,
-            op,
             op.token.location,
             op.token.location,
             stack.len(),
@@ -44,7 +43,6 @@ pub(super) fn eat_one_make_one(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -62,7 +60,6 @@ pub(super) fn eat_two_make_one(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    interner: &Interners,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -112,18 +109,17 @@ pub(super) fn analyze_block(
                 analyzer,
                 stack,
                 source_store,
-                interner,
                 had_error,
                 op,
             ),
 
             OpCode::BitNot
             | OpCode::CastInt
-            | OpCode::CastPtr => eat_one_make_one(
+            | OpCode::CastPtr
+            | OpCode::Load{..} => eat_one_make_one(
                 analyzer,
                 stack,
                 source_store,
-                interner,
                 had_error,
                 op,
             ),
@@ -131,7 +127,6 @@ pub(super) fn analyze_block(
                 analyzer,
                 stack,
                 source_store,
-                interner,
                 had_error,
                 op,
             ),
@@ -144,13 +139,11 @@ pub(super) fn analyze_block(
                 stack,
                 op
             ),
-            OpCode::PushStr { is_c_str, id } => stack_ops::push_str(
+            OpCode::PushStr { is_c_str, .. } => stack_ops::push_str(
                 analyzer,
                 stack,
-                interner,
                 op,
                 is_c_str,
-                id,
             ),
 
             OpCode::While { ref body  } => {
@@ -205,22 +198,12 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::Load { width, kind } => eat_one_make_one(
+            OpCode::Store { .. } => memory::store(
                 analyzer,
                 stack,
                 source_store,
-                interner,
-                had_error,
-                op
-            ),
-            OpCode::Store { kind, .. } => memory::store(
-                analyzer,
-                stack,
-                source_store,
-                interner,
                 had_error,
                 op,
-                kind,
             ),
 
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
