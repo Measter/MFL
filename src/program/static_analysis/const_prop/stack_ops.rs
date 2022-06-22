@@ -87,7 +87,10 @@ pub(super) fn dup_pair(
 ) {
     let op_data = analyzer.get_op_io(op.id);
 
-    for (&input_id, &output_id) in op_data.inputs.iter().zip(&op_data.outputs) {
+    let inputs = *op_data.inputs.as_arr::<2>();
+    let outputs = *op_data.outputs.as_arr::<2>();
+
+    for (input_id, output_id) in inputs.into_iter().zip(outputs) {
         if !check_allowed_const([input_id], force_non_const_before) {
             continue;
         }
@@ -126,9 +129,10 @@ pub(super) fn push_str(
         );
     } else {
         let str_len = interner.resolve_literal(id).len() - 1; // All strings are null-terminated.
-        analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(str_len as u64));
+        let [len, ptr] = *op_data.outputs.as_arr::<2>();
+        analyzer.set_value_const(len, ConstVal::Int(str_len as u64));
         analyzer.set_value_const(
-            op_data.outputs[1],
+            ptr,
             ConstVal::Ptr {
                 id: PtrId::Str(id),
                 src_op_loc: op.token.location,

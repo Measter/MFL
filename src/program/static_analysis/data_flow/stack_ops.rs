@@ -53,13 +53,13 @@ pub(super) fn dup_pair(
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
 
-    let input_ids = &stack[stack.len() - 1 - 2..];
+    let input_ids = *stack.lastn(2).unwrap().as_arr::<2>();
     let new_id1 = analyzer.new_value(op);
     let new_id2 = analyzer.new_value(op);
     stack.push(new_id1);
     stack.push(new_id2);
 
-    analyzer.set_op_io(op, &[new_id1, new_id2], input_ids);
+    analyzer.set_op_io(op, &[new_id1, new_id2], &input_ids);
 }
 
 pub(super) fn push_str(

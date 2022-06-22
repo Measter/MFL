@@ -255,7 +255,7 @@ pub(super) fn multiply_and_shift(
 
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
-    if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (op.code, types[1])
+    if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (&op.code, types[1])
     {
         let [shift_val] = analyzer.values([input_ids[1]]);
         diagnostics::emit_warning(

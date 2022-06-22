@@ -6,7 +6,9 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{self, generate_type_mismatch_diag, Analyzer, PorthTypeKind},
+    program::static_analysis::{
+        self, generate_type_mismatch_diag, Analyzer, OpData, PorthTypeKind,
+    },
     source_file::SourceStorage,
 };
 
@@ -118,8 +120,10 @@ pub(super) fn dup_pair(
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
+    let inputs = *op_data.inputs.as_arr::<2>();
+    let outputs = *op_data.outputs.as_arr::<2>();
 
-    for (&input_id, &output_id) in op_data.inputs.iter().zip(&op_data.outputs) {
+    for (input_id, output_id) in inputs.into_iter().zip(outputs) {
         let Some([input_type]) = analyzer.value_types([input_id]) else { continue };
         analyzer.set_value_type(output_id, input_type);
     }
@@ -141,7 +145,8 @@ pub(super) fn push_str(analyzer: &mut Analyzer, op: &Op, is_c_str: bool) {
     if is_c_str {
         analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Ptr);
     } else {
-        analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int);
-        analyzer.set_value_type(op_data.outputs[1], PorthTypeKind::Ptr);
+        let [len, ptr] = *op_data.outputs.as_arr::<2>();
+        analyzer.set_value_type(len, PorthTypeKind::Int);
+        analyzer.set_value_type(ptr, PorthTypeKind::Ptr);
     }
 }

@@ -41,8 +41,9 @@ pub(super) fn epilogue_return(
 
 pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, proc: &Procedure) {
     let op_data = analyzer.get_op_io(op.id);
+    let outputs = op_data.outputs.clone();
 
-    for (&output_id, &output_type) in op_data.outputs.iter().zip(proc.entry_stack()) {
+    for (output_id, &output_type) in outputs.into_iter().zip(proc.entry_stack()) {
         analyzer.set_value_type(output_id, output_type.kind);
     }
 }
@@ -88,9 +89,9 @@ pub(super) fn resolved_ident(
                 }
             }
 
-            for (&output_type, &output_id) in
-                referenced_proc.exit_stack().iter().zip(&op_data.outputs)
-            {
+            let output_ids = op_data.outputs.clone();
+
+            for (&output_type, output_id) in referenced_proc.exit_stack().iter().zip(output_ids) {
                 analyzer.set_value_type(output_id, output_type.kind);
             }
         }
