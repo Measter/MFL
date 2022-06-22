@@ -20,14 +20,14 @@ fn check_memory_bounds(
     width: Width,
     offset: u64,
     memory_size: u64,
-) {
+) -> bool {
     // Let's make sure that the end of our access region doesn't overflow.
     let end_idx = match offset.checked_add(width.byte_size()) {
         Some(idx) => idx,
         None => {
             diagnostics::emit_error(
                 op.token.location,
-                "index + offset overflows",
+                "index + width overflows",
                 [Label::new(op.token.location)
                     .with_color(Color::Red)
                     .with_message(format!("index: {}, width: {}", offset, width.byte_size()))],
@@ -36,10 +36,10 @@ fn check_memory_bounds(
             );
 
             *had_error = true;
-            return;
+            return false;
         }
     };
-    if offset < memory_size && end_idx < memory_size {
+    if offset >= memory_size || end_idx >= memory_size {
         diagnostics::emit_error(
             op.token.location,
             "index out of bounds",
@@ -56,8 +56,10 @@ fn check_memory_bounds(
         );
 
         *had_error = true;
-        return;
+        return false;
     }
+
+    true
 }
 
 pub(super) fn load(
@@ -91,7 +93,7 @@ pub(super) fn load(
             // Remember that string literals are always null-terminated.
             let memory_size = string.len() as u64 - 1;
 
-            check_memory_bounds(
+            if !check_memory_bounds(
                 source_store,
                 had_error,
                 op,
@@ -99,7 +101,9 @@ pub(super) fn load(
                 width,
                 offset,
                 memory_size,
-            );
+            ) {
+                return;
+            }
 
             let range_start = offset as usize;
             let range_end = (offset + width.byte_size()) as usize;
