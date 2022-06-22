@@ -42,5 +42,39 @@ pub(super) fn analyze_while(
     op: &Op,
     body: &ConditionalBlock,
 ) {
-    todo!()
+    let op_data = analyzer.get_op_io(op.id);
+
+    // Because the loop will be executed an arbitrary number of times, we'll need to
+    // force all overwritten prior values to non-const.
+    let inputs = op_data.outputs.clone();
+    for input_id in inputs {
+        let [input_value] = analyzer.values([input_id]);
+        let Some(merge_id) = input_value.merge_with() else { continue };
+        let [merge_value] = analyzer.values([merge_id]);
+        eprintln!(
+            "Merge {input_id:?} with {merge_id:?}, const: {:?}",
+            analyzer.value_consts([merge_id])
+        );
+        analyzer.clear_value_const(merge_id);
+    }
+
+    // Now we can evaluate the condition and body.
+    super::analyze_block(
+        program,
+        proc,
+        &body.condition,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+    super::analyze_block(
+        program,
+        proc,
+        &body.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
 }

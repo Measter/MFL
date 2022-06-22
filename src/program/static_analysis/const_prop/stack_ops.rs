@@ -15,16 +15,10 @@ pub(super) fn cast_int(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<1>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
@@ -35,21 +29,16 @@ pub(super) fn cast_int(
 
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
 }
+
 pub(super) fn cast_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<1>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
 
     if !matches!(types, ConstVal::Ptr { .. }) {
@@ -63,17 +52,11 @@ pub(super) fn dup(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
     depth: usize,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<1>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
     analyzer.set_value_const(op_data.outputs[0], types);
 }
@@ -82,18 +65,13 @@ pub(super) fn dup_pair(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let inputs = *op_data.inputs.as_arr::<2>();
     let outputs = *op_data.outputs.as_arr::<2>();
 
     for (input_id, output_id) in inputs.into_iter().zip(outputs) {
-        if !check_allowed_const([input_id], force_non_const_before) {
-            continue;
-        }
         let Some([input_type]) = analyzer.value_consts([input_id]) else { continue };
         analyzer.set_value_const(output_id, input_type);
     }

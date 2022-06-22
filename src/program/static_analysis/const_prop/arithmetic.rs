@@ -16,16 +16,10 @@ pub(super) fn add(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
@@ -64,16 +58,10 @@ pub(super) fn subtract(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
@@ -181,16 +169,10 @@ pub(super) fn bitnot(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_id = op_data.inputs[0];
-    if !check_allowed_const([input_id], force_non_const_before) {
-        return;
-    }
-
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
 
     let new_const_val = match types {
@@ -208,16 +190,10 @@ pub(super) fn bitand_bitor(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
@@ -243,16 +219,10 @@ pub(super) fn multiply_and_shift(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (&op.code, types[1])
@@ -294,16 +264,10 @@ pub(super) fn divmod(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     if let ConstVal::Int(0) = types[1] {

@@ -182,6 +182,10 @@ impl Analyzer {
             .expect_none("ICE: Tried to overwrite const value");
     }
 
+    fn clear_value_const(&mut self, id: ValueId) {
+        self.value_consts.remove(&id);
+    }
+
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
         let prev = self.ios.insert(
             op.id,
@@ -408,7 +412,6 @@ pub fn const_propagation(
         proc,
         proc.body(),
         analyzer,
-        None,
         &mut had_error,
         interner,
         source_store,

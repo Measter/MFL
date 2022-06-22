@@ -16,16 +16,10 @@ pub(super) fn compare(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
@@ -87,15 +81,10 @@ pub(super) fn equal(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    if !check_allowed_const(input_ids, force_non_const_before) {
-        return;
-    }
-
     let Some(types) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {

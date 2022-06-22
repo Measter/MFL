@@ -67,18 +67,12 @@ pub(super) fn load(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
     width: Width,
     kind: PorthTypeKind,
 ) {
     let op_data = analyzer.get_op_io(op.id);
-
     let input_id = op_data.inputs[0];
-    if !check_allowed_const([input_id], force_non_const_before) {
-        return;
-    }
-
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
 
     let new_const_val = match types {

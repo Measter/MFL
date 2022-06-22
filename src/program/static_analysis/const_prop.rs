@@ -29,7 +29,6 @@ pub(super) fn analyze_block(
     proc: &Procedure,
     block: &[Op],
     analyzer: &mut Analyzer,
-    force_non_const_before: Option<ValueId>,
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -41,7 +40,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::Subtract => arithmetic::subtract(
@@ -49,7 +47,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
 
@@ -58,7 +55,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::BitNot => arithmetic::bitnot(
@@ -66,7 +62,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
@@ -74,7 +69,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::DivMod => arithmetic::divmod(
@@ -82,7 +76,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
 
@@ -91,7 +84,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::Equal | OpCode::NotEq => comparative::equal(
@@ -99,7 +91,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
 
@@ -112,7 +103,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op
             ),
             OpCode::CastPtr => stack_ops::cast_ptr(
@@ -120,7 +110,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op
             ),
 
@@ -128,7 +117,6 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 had_error,
-                force_non_const_before,
                 op,
                 depth
             ),
@@ -136,7 +124,6 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 had_error,
-                force_non_const_before,
                 op
              ),
 
@@ -162,7 +149,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
                 width,
                 kind,
