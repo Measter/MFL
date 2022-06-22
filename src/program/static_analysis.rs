@@ -17,6 +17,7 @@ use crate::{
     lexer::Token,
     n_ops::HashMapNOps,
     opcode::{Op, OpCode, OpId},
+    option::OptionExt,
     program::{Procedure, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
 };
@@ -154,7 +155,7 @@ impl Analyzer {
     fn set_value_type(&mut self, id: ValueId, kind: PorthTypeKind) {
         self.value_types
             .insert(id, kind)
-            .expect("ICE: Tried to set a value type twice");
+            .expect_none("ICE: Tried to set a value type twice");
     }
 
     fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
@@ -164,7 +165,7 @@ impl Analyzer {
     fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
         self.value_consts
             .insert(id, const_val)
-            .expect("ICE: Tried to overwrite const value");
+            .expect_none("ICE: Tried to overwrite const value");
     }
 
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
@@ -349,7 +350,7 @@ pub fn data_flow_analysis(
         source_store,
     );
 
-    // dbg!(analyzer);
+    // dbg!(&analyzer);
 
     had_error.not().then(|| analyzer).ok_or(())
 }

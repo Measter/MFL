@@ -20,6 +20,7 @@ mod interners;
 mod lexer;
 mod n_ops;
 mod opcode;
+mod option;
 mod program;
 mod simulate;
 mod source_file;
