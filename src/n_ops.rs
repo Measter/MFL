@@ -14,6 +14,7 @@ impl<T> VecNOps<T> for Vec<T> {
             return None;
         }
 
+        // SAFETY: We know the Vec has enough elements, so we won't be accessing uninitialized data.
         unsafe {
             let mut dest: MaybeUninit<[T; N]> = MaybeUninit::uninit();
             let dest_ptr = dest.as_mut_ptr() as *mut T;
@@ -79,7 +80,7 @@ where
     fn get_n<const N: usize>(&self, keys: [K; N]) -> Option<[V; N]> {
         assert!(N > 0);
 
-        // SAFETY: Because ConstVal is Copy, and therefore cannot have a Drop implementation,
+        // SAFETY: Because V is Copy, and therefore cannot have a Drop implementation,
         // we don't need to specially handle dropping a partially initialized array
         // and can just return None if a key doesn't exist.
         unsafe {
