@@ -195,9 +195,7 @@ pub(super) fn analyze_block(
                 proc,
             ),
 
-            OpCode::Prologue => {
-                todo!()
-            },
+            OpCode::Prologue => control::prologue(analyzer, op, proc),
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop |
