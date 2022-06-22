@@ -89,7 +89,6 @@ pub(super) fn analyze_block(
     block: &[Op],
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    force_non_const_before: Option<ValueId>,
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -133,7 +132,6 @@ pub(super) fn analyze_block(
                 source_store,
                 interner,
                 had_error,
-                force_non_const_before,
                 op,
             ),
 
@@ -181,7 +179,6 @@ pub(super) fn analyze_block(
                 stack,
                 source_store,
                 had_error,
-                force_non_const_before,
                 op,
                 depth,
             ),
@@ -190,7 +187,6 @@ pub(super) fn analyze_block(
                 stack,
                 source_store,
                 had_error,
-                force_non_const_before,
                 op,
             ),
             OpCode::Swap => stack_ops::swap(

@@ -22,7 +22,6 @@ pub(super) fn divmod(
     source_store: &SourceStorage,
     interner: &Interners,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);

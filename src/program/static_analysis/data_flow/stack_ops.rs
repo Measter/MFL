@@ -30,7 +30,6 @@ pub(super) fn dup(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
     depth: usize,
 ) {
@@ -48,7 +47,6 @@ pub(super) fn dup_pair(
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
     had_error: &mut bool,
-    force_non_const_before: Option<ValueId>,
     op: &Op,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);

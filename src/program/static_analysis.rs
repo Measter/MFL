@@ -344,7 +344,6 @@ pub fn data_flow_analysis(
         proc.body(),
         &mut analyzer,
         &mut stack,
-        None,
         &mut had_error,
         interner,
         source_store,
