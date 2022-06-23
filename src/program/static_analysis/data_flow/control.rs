@@ -112,7 +112,7 @@ pub(super) fn resolved_ident(
         ProcedureKind::Memory => {
             let new_id = analyzer.new_value(op);
             stack.push(new_id);
-            analyzer.set_op_io(op, &[new_id], &[]);
+            analyzer.set_op_io(op, &[], &[new_id]);
         }
         _ => {
             // TODO: Maybe do a custom error here so we can point to the expected signature.
