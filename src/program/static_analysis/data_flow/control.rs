@@ -206,7 +206,7 @@ pub(super) fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         for _ in 0..(initial_stack.len() + 1).saturating_sub(stack.len()) {
-            analyzer.new_value(op);
+            stack.push(analyzer.new_value(op));
         }
     }
     let condition_value = stack.pop().unwrap();
@@ -252,7 +252,7 @@ pub(super) fn analyze_while(
         *had_error = true;
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         for _ in 0..initial_stack.len().saturating_sub(stack.len()) {
-            analyzer.new_value(op);
+            stack.push(analyzer.new_value(op));
         }
     }
 
