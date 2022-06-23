@@ -867,6 +867,7 @@ fn parse_procedure<'a>(
     }
 
     *proc_header.body_mut() = body;
+    proc_header.new_op_id = op_id;
 
     // stupid borrow checker...
     let id = proc_header.id();

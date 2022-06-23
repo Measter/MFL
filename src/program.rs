@@ -15,7 +15,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{self, ConditionalBlock, Op, OpCode},
+    opcode::{self, ConditionalBlock, Op, OpCode, OpId},
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
     OPT_OPCODE,
@@ -78,6 +78,7 @@ pub struct Procedure {
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
     analyzer: Option<Analyzer>,
+    new_op_id: usize,
 
     body: Vec<Op>,
     exit_stack: Vec<PorthType>,
@@ -135,15 +136,25 @@ impl Procedure {
         self.entry_stack_location
     }
 
-    fn expand_macros_in_block(block: &mut Vec<Op>, id: ProcedureId, program: &Program) {
+    fn expand_macros_in_block(
+        block: &mut Vec<Op>,
+        id: ProcedureId,
+        new_op_id: &mut impl FnMut() -> OpId,
+        program: &Program,
+    ) {
         let mut i = 0;
         while i < block.len() {
             match block[i].code {
                 OpCode::While {
                     body: ref mut while_block,
                 } => {
-                    Self::expand_macros_in_block(&mut while_block.condition, id, program);
-                    Self::expand_macros_in_block(&mut while_block.block, id, program);
+                    Self::expand_macros_in_block(
+                        &mut while_block.condition,
+                        id,
+                        new_op_id,
+                        program,
+                    );
+                    Self::expand_macros_in_block(&mut while_block.block, id, new_op_id, program);
                 }
                 OpCode::If {
                     ref mut main,
@@ -151,16 +162,21 @@ impl Procedure {
                     ref mut else_block,
                     ..
                 } => {
-                    Self::expand_macros_in_block(&mut main.condition, id, program);
-                    Self::expand_macros_in_block(&mut main.block, id, program);
+                    Self::expand_macros_in_block(&mut main.condition, id, new_op_id, program);
+                    Self::expand_macros_in_block(&mut main.block, id, new_op_id, program);
 
                     for elif_block in elif_blocks {
-                        Self::expand_macros_in_block(&mut elif_block.condition, id, program);
-                        Self::expand_macros_in_block(&mut elif_block.block, id, program);
+                        Self::expand_macros_in_block(
+                            &mut elif_block.condition,
+                            id,
+                            new_op_id,
+                            program,
+                        );
+                        Self::expand_macros_in_block(&mut elif_block.block, id, new_op_id, program);
                     }
 
                     if let Some(else_block) = else_block.as_mut() {
-                        Self::expand_macros_in_block(else_block, id, program);
+                        Self::expand_macros_in_block(else_block, id, new_op_id, program);
                     }
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
@@ -170,6 +186,7 @@ impl Procedure {
                         let expansions = block[i].expansions.clone();
                         let new_ops = found_proc.body().iter().map(|new_op| {
                             let mut new_op = new_op.clone();
+                            new_op.id = new_op_id();
                             new_op.expansions.push(token.location);
                             new_op.expansions.extend_from_slice(&expansions);
                             new_op
@@ -190,7 +207,12 @@ impl Procedure {
     }
 
     fn expand_macros(&mut self, program: &Program) {
-        Self::expand_macros_in_block(&mut self.body, self.id, program);
+        let mut op_id_gen = || {
+            let id = self.new_op_id;
+            self.new_op_id += 1;
+            OpId(id)
+        };
+        Self::expand_macros_in_block(&mut self.body, self.id, &mut op_id_gen, program);
     }
 }
 
@@ -1222,6 +1244,7 @@ impl Program {
             body: Vec::new(),
             parent,
             analyzer: None,
+            new_op_id: 0,
             exit_stack,
             exit_stack_location,
             entry_stack,
