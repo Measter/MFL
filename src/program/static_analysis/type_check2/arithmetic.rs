@@ -15,7 +15,7 @@ pub(super) fn add(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return;};
+    let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
         // One of these was the result of an earlier error. Nothing else to do, just leave.
