@@ -271,3 +271,19 @@ pub(super) fn analyze_while(
     // changed anything.
     *stack = initial_stack;
 }
+
+pub(super) fn analyze_if(
+    program: &Program,
+    proc: &Procedure,
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    had_error: &mut bool,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    op: &Op,
+    main: &ConditionalBlock,
+    elif_blocks: &[ConditionalBlock],
+    else_block: Option<&[Op]>,
+) {
+    todo!()
+}

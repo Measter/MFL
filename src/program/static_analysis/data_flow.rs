@@ -159,7 +159,19 @@ pub(super) fn analyze_block(
                     body,
                 )
             },
-            OpCode::If {..} => unimplemented!(),
+            OpCode::If { ref main, ref elif_blocks, ref else_block, .. } => control::analyze_if(
+                program,
+                proc,
+                analyzer,
+                stack,
+                had_error,
+                interner,
+                source_store,
+                op,
+                main,
+                elif_blocks,
+                else_block.as_deref(),
+            ),
 
             OpCode::Drop => stack_ops::drop(
                 analyzer,

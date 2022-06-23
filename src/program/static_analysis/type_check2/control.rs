@@ -195,3 +195,18 @@ pub(super) fn analyze_while(
         }
     }
 }
+
+pub(super) fn analyze_if(
+    program: &Program,
+    proc: &Procedure,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    op: &Op,
+    main: &ConditionalBlock,
+    elifs: &[ConditionalBlock],
+    else_block: Option<&[Op]>,
+) {
+    todo!()
+}
