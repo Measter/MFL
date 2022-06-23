@@ -361,7 +361,7 @@ impl Program {
     }
 
     fn resolve_idents_in_block(
-        &mut self,
+        &self,
         proc: &Procedure,
         mut body: Vec<Op>,
         had_error: &mut bool,
