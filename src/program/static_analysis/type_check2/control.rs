@@ -214,5 +214,124 @@ pub(super) fn analyze_if(
     elifs: &[ConditionalBlock],
     else_block: Option<&[Op]>,
 ) {
-    todo!()
+    // Evaluate all the blocks.
+    // Thankfully the order is unimportant here.
+    super::analyze_block(
+        program,
+        proc,
+        &main.condition,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+    super::analyze_block(
+        program,
+        proc,
+        &main.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+    for elif_block in elifs {
+        super::analyze_block(
+            program,
+            proc,
+            &elif_block.condition,
+            analyzer,
+            had_error,
+            interner,
+            source_store,
+        );
+        super::analyze_block(
+            program,
+            proc,
+            &elif_block.block,
+            analyzer,
+            had_error,
+            interner,
+            source_store,
+        );
+    }
+    if let Some(else_block) = else_block {
+        super::analyze_block(
+            program,
+            proc,
+            else_block,
+            analyzer,
+            had_error,
+            interner,
+            source_store,
+        );
+    }
+
+    // All the conditions are stored in the op inputs.
+    let conditions_iter = std::iter::once(main).chain(elifs);
+    let op_data = analyzer.get_op_io(op.id);
+    for (&condition_id, block) in op_data.inputs.iter().zip(conditions_iter) {
+        let Some([condition_type]) = analyzer.value_types([condition_id]) else { continue };
+        if condition_type != PorthTypeKind::Bool {
+            *had_error = true;
+            let [value] = analyzer.values([condition_id]);
+
+            diagnostics::emit_error(
+                block.do_token.location,
+                "condition must evaluate to a boolean",
+                [
+                    Label::new(block.do_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message("expected here"),
+                    Label::new(value.creator_token.location)
+                        .with_color(Color::Red)
+                        .with_message(condition_type.name_str())
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+        }
+    }
+
+    // Now to type check all the merging values.
+    let Some(MergeInfo::If(merges)) = analyzer.get_op_merges(op.id) else {
+        panic!("ICE: Missing merges in If block");
+    };
+
+    let pairs = merges
+        .main
+        .condition_merges
+        .iter()
+        .chain(&merges.main.body_merges)
+        .chain(
+            merges
+                .elifs
+                .iter()
+                .flat_map(|m| m.condition_merges.iter().chain(&m.body_merges)),
+        )
+        .chain(&merges.else_block.body_merges);
+
+    for merge_pair in pairs {
+        let [new_value, old_value] = analyzer.values([merge_pair.src, merge_pair.dst]);
+        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.src, merge_pair.dst]) else { continue };
+
+        if new_type != old_type {
+            *had_error = true;
+            diagnostics::emit_error(
+                new_value.creator_token.location,
+                "conditional body cannot change types on the stack",
+                [
+                    Label::new(new_value.creator_token.location)
+                        .with_color(Color::Red)
+                        .with_message(new_type.name_str()),
+                    Label::new(old_value.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message(old_type.name_str())
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+        }
+    }
 }
