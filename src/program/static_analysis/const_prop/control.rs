@@ -42,18 +42,18 @@ pub(super) fn analyze_while(
     op: &Op,
     body: &ConditionalBlock,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
-
     // Because the loop will be executed an arbitrary number of times, we'll need to
     // force all overwritten prior values to non-const.
     let Some(MergeInfo::While(merge_info)) = analyzer.get_op_merges(op.id) else {
         panic!("ICE: While block should have merge info");
     };
-    for merge_pair in merge_info
+    let pairs: Vec<_> = merge_info
         .condition_merges
         .iter()
         .chain(&merge_info.body_merges)
-    {
+        .copied()
+        .collect();
+    for merge_pair in pairs {
         trace!(
             "Merge {:?} with {:?}, const: {:?}",
             merge_pair.src,
