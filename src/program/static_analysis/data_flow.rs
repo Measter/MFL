@@ -159,7 +159,7 @@ pub(super) fn analyze_block(
                     body,
                 )
             },
-            OpCode::If { ref main, ref elif_blocks, ref else_block, .. } => control::analyze_if(
+            OpCode::If { open_token,  end_token, ref main, ref elif_blocks, ref else_block } => control::analyze_if(
                 program,
                 proc,
                 analyzer,
@@ -171,6 +171,8 @@ pub(super) fn analyze_block(
                 main,
                 elif_blocks,
                 else_block.as_deref(),
+                open_token,
+                end_token,
             ),
 
             OpCode::Drop => stack_ops::drop(
