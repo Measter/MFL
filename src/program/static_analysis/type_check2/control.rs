@@ -6,7 +6,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{failed_compare_stack_types, Analyzer, PorthTypeKind},
+        static_analysis::{failed_compare_stack_types, Analyzer, MergeInfo, PorthTypeKind},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -169,11 +169,17 @@ pub(super) fn analyze_while(
     }
 
     // Now to confirm that all the new created values have the same type as what they merge with.
-    for &new_id in &op_data.outputs {
-        let [new_value] = analyzer.values([new_id]);
-        let [old_value] = analyzer.values([new_value.merge_with().unwrap()]);
-        let Some([new_type]) = analyzer.value_types([new_id]) else { continue };
-        let Some([old_type]) = analyzer.value_types([old_value.value_id]) else { continue };
+    let Some(MergeInfo::While(merge_info)) = analyzer.get_op_merges(op.id) else {
+        panic!("ICE: While block should have merge info");
+    };
+
+    for merge_pair in merge_info
+        .condition_merges
+        .iter()
+        .chain(&merge_info.body_merges)
+    {
+        let [new_value, old_value] = analyzer.values([merge_pair.src, merge_pair.dst]);
+        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.src, merge_pair.dst]) else { continue };
 
         if new_type != old_type {
             *had_error = true;

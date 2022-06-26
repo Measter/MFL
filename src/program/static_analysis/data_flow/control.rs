@@ -7,7 +7,10 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
-    program::{Procedure, ProcedureId, ProcedureKind, Program},
+    program::{
+        static_analysis::{MergeBlock, MergeInfo, MergePair},
+        Procedure, ProcedureId, ProcedureKind, Program,
+    },
     source_file::SourceStorage,
 };
 
@@ -212,14 +215,16 @@ pub(super) fn analyze_while(
     let condition_value = stack.pop().unwrap();
 
     // Might need something smarter than this for the codegen.
-    let mut new_values = Vec::new();
+    let mut condition_merges = Vec::new();
 
     // Now we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
     for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        new_values.push(*new_value_id);
+        condition_merges.push(MergePair {
+            src: *new_value_id,
+            dst: old_value_id,
+        });
         let [new_value] = analyzer.values_mut([new_value_id]);
-        new_value.set_merge_with(old_value_id);
     }
 
     // Restore the stack to the initial stack, so we can evaluate the body with a clean slate.
@@ -256,15 +261,26 @@ pub(super) fn analyze_while(
         }
     }
 
+    let mut body_merges = Vec::new();
+
     // Again, we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
     for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        new_values.push(*new_value_id);
+        body_merges.push(MergePair {
+            src: *new_value_id,
+            dst: old_value_id,
+        });
         let [new_value] = analyzer.values_mut([new_value_id]);
-        new_value.set_merge_with(old_value_id);
     }
 
-    analyzer.set_op_io(op, &[condition_value], &new_values);
+    analyzer.set_op_merges(
+        op,
+        MergeInfo::While(MergeBlock {
+            condition_merges,
+            body_merges,
+        }),
+    );
+    analyzer.set_op_io(op, &[condition_value], &[]);
     analyzer.consume_value(condition_value, op.id);
 
     // Now restore the stack a second time so the rest of the proc can pretend the while block

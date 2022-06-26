@@ -84,19 +84,6 @@ struct Value {
     value_id: ValueId,
     creator_token: Token,
     consumer: Vec<OpId>,
-    merge_with: Option<ValueId>,
-}
-
-impl Value {
-    fn set_merge_with(&mut self, merge_id: ValueId) {
-        self.merge_with
-            .replace(merge_id)
-            .expect_none("ICE: A value cannot be merged with more than one other value");
-    }
-
-    fn merge_with(&self) -> Option<ValueId> {
-        self.merge_with
-    }
 }
 
 #[derive(Debug)]
@@ -105,11 +92,37 @@ struct OpData {
     outputs: Vec<ValueId>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MergePair {
+    src: ValueId,
+    dst: ValueId,
+}
+
+#[derive(Debug)]
+struct MergeBlock {
+    condition_merges: Vec<MergePair>,
+    body_merges: Vec<MergePair>,
+}
+
+#[derive(Debug)]
+struct IfMerges {
+    main: MergeBlock,
+    elifs: Vec<MergeBlock>,
+    else_block: MergeBlock,
+}
+
+#[derive(Debug)]
+enum MergeInfo {
+    While(MergeBlock),
+    If(IfMerges),
+}
+
 #[derive(Debug, Default)]
 pub struct Analyzer {
     value_lifetime: HashMap<ValueId, Value>,
     value_types: HashMap<ValueId, PorthTypeKind>,
     value_consts: HashMap<ValueId, ConstVal>,
+    value_merges: HashMap<OpId, MergeInfo>,
 
     next_value_id: usize,
     ios: HashMap<OpId, OpData>,
@@ -128,7 +141,6 @@ impl Analyzer {
                     value_id: id,
                     creator_token: creator.token,
                     consumer: Vec::new(),
-                    merge_with: None,
                 },
             )
             .is_some();
@@ -177,6 +189,16 @@ impl Analyzer {
 
     fn clear_value_const(&mut self, id: ValueId) {
         self.value_consts.remove(&id);
+    }
+
+    fn set_op_merges(&mut self, op: &Op, merges: MergeInfo) {
+        self.value_merges
+            .insert(op.id, merges)
+            .expect_none("ICE: Tried to overwrite merges");
+    }
+
+    fn get_op_merges(&self, op_id: OpId) -> Option<&MergeInfo> {
+        self.value_merges.get(&op_id)
     }
 
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {

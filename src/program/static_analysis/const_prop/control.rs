@@ -4,7 +4,7 @@ use crate::{
     interners::Interners,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{Analyzer, ConstVal, PtrId},
+        static_analysis::{Analyzer, ConstVal, MergeInfo, PtrId},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -46,15 +46,21 @@ pub(super) fn analyze_while(
 
     // Because the loop will be executed an arbitrary number of times, we'll need to
     // force all overwritten prior values to non-const.
-    let inputs = op_data.outputs.clone();
-    for input_id in inputs {
-        let [input_value] = analyzer.values([input_id]);
-        let Some(merge_id) = input_value.merge_with() else { continue };
+    let Some(MergeInfo::While(merge_info)) = analyzer.get_op_merges(op.id) else {
+        panic!("ICE: While block should have merge info");
+    };
+    for merge_pair in merge_info
+        .condition_merges
+        .iter()
+        .chain(&merge_info.body_merges)
+    {
         trace!(
-            "Merge {input_id:?} with {merge_id:?}, const: {:?}",
-            analyzer.value_consts([merge_id])
+            "Merge {:?} with {:?}, const: {:?}",
+            merge_pair.src,
+            merge_pair.dst,
+            analyzer.value_consts([merge_pair.dst])
         );
-        analyzer.clear_value_const(merge_id);
+        analyzer.clear_value_const(merge_pair.dst);
     }
 
     // Now we can evaluate the condition and body.
