@@ -246,7 +246,7 @@ fn failed_compare_stack_types(
             &mut note,
             "\n\t\t{:<5} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
-            expected,
+            expected.name_str(),
             value_type,
         )
         .unwrap();
