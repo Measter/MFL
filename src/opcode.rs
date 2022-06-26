@@ -306,13 +306,6 @@ impl OpCode {
             _ => panic!("expected Opcode::Store"),
         }
     }
-
-    pub fn unwrap_while(&self) -> &ConditionalBlock {
-        match self {
-            OpCode::While { body } => body,
-            _ => panic!("expected OpCode::While"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

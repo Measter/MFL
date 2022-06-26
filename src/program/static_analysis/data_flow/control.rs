@@ -225,7 +225,6 @@ pub(super) fn analyze_while(
             src: *new_value_id,
             dst: old_value_id,
         });
-        let [new_value] = analyzer.values_mut([new_value_id]);
     }
 
     // Restore the stack to the initial stack, so we can evaluate the body with a clean slate.
@@ -271,7 +270,6 @@ pub(super) fn analyze_while(
             src: *new_value_id,
             dst: old_value_id,
         });
-        let [new_value] = analyzer.values_mut([new_value_id]);
     }
 
     analyzer.set_op_merges(
@@ -550,6 +548,8 @@ pub(super) fn analyze_if(
                 dst: old_value_id,
             });
         }
+
+        *stack = output_stack;
     }
 
     analyzer.set_op_io(op, &condition_values, &[]);

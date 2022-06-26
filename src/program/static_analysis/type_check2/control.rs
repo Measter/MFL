@@ -148,7 +148,6 @@ pub(super) fn analyze_while(
 
     if condition_type != PorthTypeKind::Bool {
         *had_error = true;
-        let body = op.code.unwrap_while();
         let [value] = analyzer.values(condition_inputs);
 
         diagnostics::emit_error(

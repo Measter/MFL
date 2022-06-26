@@ -156,12 +156,6 @@ impl Analyzer {
         ids.map(|id| &self.value_lifetime[&id])
     }
 
-    fn values_mut<const N: usize>(&mut self, ids: [&ValueId; N]) -> [&mut Value; N] {
-        self.value_lifetime
-            .get_many_mut(ids)
-            .expect("ICE: Attempted to values_mut with invalid IDs")
-    }
-
     fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
         let val = self.value_lifetime.get_mut(&value).unwrap();
         val.consumer.push(consumer_id);
