@@ -297,13 +297,12 @@ pub(super) fn analyze_if(
     source_store: &SourceStorage,
     op: &Op,
     main: &ConditionalBlock,
-    elif_blocks: &[ConditionalBlock],
     else_block: Option<&[Op]>,
     open_token: Token,
     close_token: Token,
 ) {
-    // We'll go with a simpler validity check:
-    // * If there's a single condition (no elifs) then the condition may change the stack.
+    // Validity checking is fairly simple:
+    // * The condition is always executed, so may change the stack.
     // * If there's an else block, then the bodies may change the stack.
 
     let mut initial_stack = stack.clone();
@@ -326,58 +325,20 @@ pub(super) fn analyze_if(
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
-    // The length we expected depends on whether we have elifs or not, as a block with
-    // no elifs can have it's main condition change the stack.
-    let expected_len = if elif_blocks.is_empty() {
-        1
-    } else {
-        initial_stack.len() + 1
-    };
-    if (elif_blocks.is_empty() && stack.is_empty())
-        || (!elif_blocks.is_empty() && stack.len() != expected_len)
-    {
+    if stack.is_empty() {
         generate_stack_length_mismatch_diag(
             source_store,
             main.do_token.location,
             main.do_token.location,
             stack.len(),
-            expected_len,
+            1,
         );
         *had_error = true;
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        for _ in 0..expected_len.saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op));
-        }
+        stack.push(analyzer.new_value(op));
     }
     condition_values.push(stack.pop().unwrap());
-
-    let mut main_condition_merges = Vec::new();
-
-    // If there are no elifs, then we can allow the stack to be changed.
-    if elif_blocks.is_empty() {
-        initial_stack.clear();
-        initial_stack.extend_from_slice(stack);
-        initial_stack_sample_location = main.do_token.location;
-        output_stack.clear();
-        output_stack.extend_from_slice(stack);
-        output_stack_sample_location = main.do_token.location;
-    } else {
-        // We need to see which IDs have been changed, so we know which are non-const and which
-        // values need to be merged.
-        for (&old_value_id, &new_value_id) in
-            initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
-        {
-            main_condition_merges.push(MergePair {
-                src: new_value_id,
-                dst: old_value_id,
-            })
-        }
-
-        // Restore the stack to the initial stack so the bady can be evaluated with a clean slate.
-        stack.clear();
-        stack.extend_from_slice(&initial_stack);
-    }
 
     // Now we can do the main body.
     super::analyze_block(
@@ -394,7 +355,8 @@ pub(super) fn analyze_if(
     let mut main_body_merges = Vec::new();
     // If we have an else block, then we're allowed to changed the expected output stack, otherwise
     // we must assert that the depth is unchanged.
-    // Additionally, we only need to set the merges if we cannot change it.
+    // Additionally, we only need to set the merges if we cannot change it because we need to merge
+    // into the previous location.
     if else_block.is_some() {
         output_stack = stack.clone();
         output_stack_sample_location = main.close_token.location;
@@ -423,7 +385,7 @@ pub(super) fn analyze_if(
     }
 
     let main_merges = MergeBlock {
-        condition_merges: main_condition_merges,
+        condition_merges: Vec::new(),
         body_merges: main_body_merges,
     };
 
@@ -431,91 +393,7 @@ pub(super) fn analyze_if(
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 
-    let mut elif_merges = Vec::new();
-
-    for elif_block in elif_blocks {
-        super::analyze_block(
-            program,
-            proc,
-            &elif_block.condition,
-            analyzer,
-            stack,
-            had_error,
-            interner,
-            source_store,
-        );
-
-        if stack.len() != initial_stack.len() + 1 {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                initial_stack_sample_location,
-                elif_block.do_token.location,
-                stack.len(),
-                initial_stack.len() + 1,
-            );
-            *had_error = true;
-            // Create a value for the condition boolean.
-            analyzer.new_value(op);
-        }
-
-        condition_values.push(stack.pop().unwrap());
-
-        let mut elif_condition_merges = Vec::new();
-        for (&old_value_id, &new_value_id) in
-            initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
-        {
-            elif_condition_merges.push(MergePair {
-                src: new_value_id,
-                dst: old_value_id,
-            });
-        }
-
-        // Restore the stack.
-        stack.clear();
-        stack.extend_from_slice(&initial_stack);
-
-        super::analyze_block(
-            program,
-            proc,
-            &elif_block.block,
-            analyzer,
-            stack,
-            had_error,
-            interner,
-            source_store,
-        );
-
-        if stack.len() != output_stack.len() {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                output_stack_sample_location,
-                elif_block.close_token.location,
-                stack.len(),
-                output_stack.len(),
-            );
-            *had_error = true;
-        }
-
-        let mut elif_body_merges = Vec::new();
-        for (&old_value_id, &new_value_id) in
-            output_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
-        {
-            elif_body_merges.push(MergePair {
-                src: new_value_id,
-                dst: old_value_id,
-            });
-        }
-
-        // Restore to the initial stack for the next elif.
-        stack.clear();
-        stack.extend_from_slice(&initial_stack);
-
-        elif_merges.push(MergeBlock {
-            condition_merges: elif_condition_merges,
-            body_merges: elif_body_merges,
-        });
-    }
-
+    // Now analyze the else block.
     let mut else_merges = Vec::new();
     if let Some(else_block) = else_block {
         super::analyze_block(
@@ -557,7 +435,6 @@ pub(super) fn analyze_if(
         op,
         MergeInfo::If(IfMerges {
             main: main_merges,
-            elifs: elif_merges,
             else_block: MergeBlock {
                 condition_merges: Vec::new(),
                 body_merges: else_merges,

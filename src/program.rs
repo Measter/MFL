@@ -157,23 +157,12 @@ impl Procedure {
                     Self::expand_macros_in_block(&mut while_block.block, id, new_op_id, program);
                 }
                 OpCode::If {
-                    ref mut main,
-                    ref mut elif_blocks,
+                    ref mut condition,
                     ref mut else_block,
                     ..
                 } => {
-                    Self::expand_macros_in_block(&mut main.condition, id, new_op_id, program);
-                    Self::expand_macros_in_block(&mut main.block, id, new_op_id, program);
-
-                    for elif_block in elif_blocks {
-                        Self::expand_macros_in_block(
-                            &mut elif_block.condition,
-                            id,
-                            new_op_id,
-                            program,
-                        );
-                        Self::expand_macros_in_block(&mut elif_block.block, id, new_op_id, program);
-                    }
+                    Self::expand_macros_in_block(&mut condition.condition, id, new_op_id, program);
+                    Self::expand_macros_in_block(&mut condition.block, id, new_op_id, program);
 
                     if let Some(else_block) = else_block.as_mut() {
                         Self::expand_macros_in_block(else_block, id, new_op_id, program);
@@ -389,47 +378,27 @@ impl Program {
                     );
                 }
                 OpCode::If {
-                    main,
-                    elif_blocks,
+                    condition,
                     else_block,
                     ..
                 } => {
                     // Mmmm.. repetition...
-                    let temp_body = std::mem::take(&mut main.condition);
-                    main.condition = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut condition.condition);
+                    condition.condition = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-                    let temp_body = std::mem::take(&mut main.block);
-                    main.block = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut condition.block);
+                    condition.block = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-
-                    for elif_block in elif_blocks {
-                        let temp_body = std::mem::take(&mut elif_block.condition);
-                        elif_block.condition = self.resolve_idents_in_block(
-                            proc,
-                            temp_body,
-                            had_error,
-                            interner,
-                            source_store,
-                        );
-                        let temp_body = std::mem::take(&mut elif_block.block);
-                        elif_block.block = self.resolve_idents_in_block(
-                            proc,
-                            temp_body,
-                            had_error,
-                            interner,
-                            source_store,
-                        );
-                    }
 
                     if let Some(else_block) = else_block.as_mut() {
                         let temp_body = std::mem::take(else_block);
@@ -892,49 +861,27 @@ impl Program {
                 }
                 OpCode::If {
                     open_token,
-                    main,
-                    elif_blocks,
+                    condition,
                     else_block,
                     end_token,
                 } => {
                     let new_main = ConditionalBlock {
                         condition: self.process_idents_in_block(
                             own_proc,
-                            main.condition,
+                            condition.condition,
                             had_error,
                             interner,
                             source_store,
                         ),
                         block: self.process_idents_in_block(
                             own_proc,
-                            main.block,
+                            condition.block,
                             had_error,
                             interner,
                             source_store,
                         ),
-                        ..main
+                        ..condition
                     };
-
-                    let new_elifs = elif_blocks
-                        .into_iter()
-                        .map(|b| ConditionalBlock {
-                            condition: self.process_idents_in_block(
-                                own_proc,
-                                b.condition,
-                                had_error,
-                                interner,
-                                source_store,
-                            ),
-                            block: self.process_idents_in_block(
-                                own_proc,
-                                b.block,
-                                had_error,
-                                interner,
-                                source_store,
-                            ),
-                            ..b
-                        })
-                        .collect();
 
                     let new_else = else_block.map(|b| {
                         self.process_idents_in_block(own_proc, b, had_error, interner, source_store)
@@ -942,8 +889,7 @@ impl Program {
 
                     new_ops.push(Op {
                         code: OpCode::If {
-                            main: new_main,
-                            elif_blocks: new_elifs,
+                            condition: new_main,
                             else_block: new_else,
                             open_token,
                             end_token,

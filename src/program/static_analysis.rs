@@ -107,7 +107,6 @@ struct MergeBlock {
 #[derive(Debug)]
 struct IfMerges {
     main: MergeBlock,
-    elifs: Vec<MergeBlock>,
     else_block: MergeBlock,
 }
 

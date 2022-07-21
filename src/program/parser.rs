@@ -444,11 +444,11 @@ fn parse_if<'a>(
             close_token: cur_close_token,
         };
 
-        elif_blocks.push(elif_conditional);
+        elif_blocks.push((close_token, elif_conditional));
         close_token = cur_close_token;
     }
 
-    let else_block = if close_token.kind == TokenKind::Else {
+    let mut else_block = if close_token.kind == TokenKind::Else {
         let (else_block, end_token) = get_procedure_body(
             token_iter,
             tokens,
@@ -475,10 +475,25 @@ fn parse_if<'a>(
         None
     };
 
+    // Normalize into an `if <cond> do <body> else <body> end` structure.
+    while let Some((open_token, elif)) = elif_blocks.pop() {
+        let if_op = Op::new(
+            op_id_gen(),
+            OpCode::If {
+                open_token,
+                end_token: elif.close_token,
+                condition: elif,
+                else_block,
+            },
+            open_token,
+        );
+
+        else_block = Some(vec![if_op]);
+    }
+
     Ok(OpCode::If {
         open_token: keyword,
-        main: main_conditional,
-        elif_blocks,
+        condition: main_conditional,
         else_block,
         end_token: close_token,
     })

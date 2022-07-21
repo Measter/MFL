@@ -47,8 +47,7 @@ pub enum OpCode {
     Equal,
     If {
         open_token: Token,
-        main: ConditionalBlock,
-        elif_blocks: Vec<ConditionalBlock>,
+        condition: ConditionalBlock,
         else_block: Option<Vec<Op>>,
         end_token: Token,
     },
@@ -351,37 +350,25 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
             } else if let [op, xs @ ..] = src {
                 match &op.code {
                     OpCode::If {
-                        main,
-                        elif_blocks,
+                        condition,
                         else_block,
                         open_token,
                         end_token,
                     } => {
                         //
                         let new_main = ConditionalBlock {
-                            condition: optimize(&main.condition, interner, sources),
-                            block: optimize(&main.block, interner, sources),
-                            do_token: main.do_token,
-                            close_token: main.close_token,
+                            condition: optimize(&condition.condition, interner, sources),
+                            block: optimize(&condition.block, interner, sources),
+                            do_token: condition.do_token,
+                            close_token: condition.close_token,
                         };
-
-                        let new_elif_blocks = elif_blocks
-                            .iter()
-                            .map(|b| ConditionalBlock {
-                                condition: optimize(&b.condition, interner, sources),
-                                block: optimize(&b.block, interner, sources),
-                                do_token: b.do_token,
-                                close_token: b.close_token,
-                            })
-                            .collect();
 
                         let new_else_block =
                             else_block.as_ref().map(|b| optimize(b, interner, sources));
 
                         dst_vec.push(Op {
                             code: OpCode::If {
-                                main: new_main,
-                                elif_blocks: new_elif_blocks,
+                                condition: new_main,
                                 else_block: new_else_block,
                                 open_token: *open_token,
                                 end_token: *end_token,

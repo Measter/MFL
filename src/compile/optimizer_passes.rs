@@ -657,8 +657,7 @@ pub(super) fn compile_single_instruction(
         }
 
         OpCode::If {
-            main,
-            elif_blocks,
+            condition,
             else_block,
             ..
         } => {
@@ -669,7 +668,7 @@ pub(super) fn compile_single_instruction(
             super::build_assembly_for_block(
                 program,
                 proc,
-                &main.condition,
+                &condition.condition,
                 ip,
                 interner,
                 opt_level,
@@ -687,9 +686,7 @@ pub(super) fn compile_single_instruction(
             ]);
 
             // Condition failed.
-            if !elif_blocks.is_empty() {
-                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELIF0", if_id,))]);
-            } else if else_block.is_some() {
+            if else_block.is_some() {
                 assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
             } else {
                 assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_END", if_id))]);
@@ -702,7 +699,7 @@ pub(super) fn compile_single_instruction(
             super::build_assembly_for_block(
                 program,
                 proc,
-                &main.block,
+                &condition.block,
                 ip,
                 interner,
                 opt_level,
@@ -710,69 +707,8 @@ pub(super) fn compile_single_instruction(
             );
 
             assembler.block_boundry();
-            if !elif_blocks.is_empty() || else_block.is_some() {
+            if else_block.is_some() {
                 assembler.push_instr([str_lit(format!("    jmp .LBL_IF{}_END", if_id))]);
-            }
-
-            // Now to do the ELIF blocks...
-            for (elif_id, elif_block) in elif_blocks.iter().enumerate() {
-                assembler.push_instr([str_lit(format!("  .LBL_IF{}_ELIF{}:", if_id, elif_id))]);
-                assembler.block_boundry();
-
-                // Elif condition.
-                super::build_assembly_for_block(
-                    program,
-                    proc,
-                    &elif_block.condition,
-                    ip,
-                    interner,
-                    opt_level,
-                    assembler,
-                );
-
-                assembler.block_boundry();
-                let reg_id = assembler.reg_alloc_dyn_pop();
-
-                assembler.push_instr([
-                    str_lit("    test "),
-                    dyn_reg(reg_id),
-                    str_lit(", "),
-                    dyn_reg(reg_id),
-                ]);
-
-                // Condition failed.
-                // If we're not the last elif block
-                if elif_id + 1 < elif_blocks.len() {
-                    assembler.push_instr([str_lit(format!(
-                        "    jz .LBL_IF{}_ELIF{}",
-                        if_id,
-                        elif_id + 1
-                    ))]);
-                } else if else_block.is_some() {
-                    assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
-                } else {
-                    assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_END", if_id))]);
-                }
-
-                assembler.reg_free_dyn_drop(reg_id);
-                assembler.block_boundry();
-
-                // Elif body.
-                super::build_assembly_for_block(
-                    program,
-                    proc,
-                    &elif_block.block,
-                    ip,
-                    interner,
-                    opt_level,
-                    assembler,
-                );
-
-                assembler.block_boundry();
-                // If we're the last elif, and there's no else, just fall through.
-                if elif_id + 1 != elif_blocks.len() || else_block.is_some() {
-                    assembler.push_instr([str_lit(format!("    jmp .LBL_IF{}_END", if_id))]);
-                }
             }
 
             if let Some(else_block) = else_block.as_ref() {

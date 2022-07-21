@@ -209,8 +209,7 @@ pub(super) fn analyze_if(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    main: &ConditionalBlock,
-    elifs: &[ConditionalBlock],
+    conditional: &ConditionalBlock,
     else_block: Option<&[Op]>,
 ) {
     // Evaluate all the blocks.
@@ -218,7 +217,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc,
-        &main.condition,
+        &conditional.condition,
         analyzer,
         had_error,
         interner,
@@ -227,32 +226,13 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc,
-        &main.block,
+        &conditional.block,
         analyzer,
         had_error,
         interner,
         source_store,
     );
-    for elif_block in elifs {
-        super::analyze_block(
-            program,
-            proc,
-            &elif_block.condition,
-            analyzer,
-            had_error,
-            interner,
-            source_store,
-        );
-        super::analyze_block(
-            program,
-            proc,
-            &elif_block.block,
-            analyzer,
-            had_error,
-            interner,
-            source_store,
-        );
-    }
+
     if let Some(else_block) = else_block {
         super::analyze_block(
             program,
@@ -266,19 +246,18 @@ pub(super) fn analyze_if(
     }
 
     // All the conditions are stored in the op inputs.
-    let conditions_iter = std::iter::once(main).chain(elifs);
     let op_data = analyzer.get_op_io(op.id);
-    for (&condition_id, block) in op_data.inputs.iter().zip(conditions_iter) {
-        let Some([condition_type]) = analyzer.value_types([condition_id]) else { continue };
+    let condition_value_id = op_data.inputs[0];
+    if let Some([condition_type]) = analyzer.value_types([condition_value_id]) {
         if condition_type != PorthTypeKind::Bool {
             *had_error = true;
-            let [value] = analyzer.values([condition_id]);
+            let [value] = analyzer.values([condition_value_id]);
 
             diagnostics::emit_error(
-                block.do_token.location,
+                conditional.do_token.location,
                 "condition must evaluate to a boolean",
                 [
-                    Label::new(block.do_token.location)
+                    Label::new(conditional.do_token.location)
                         .with_color(Color::Cyan)
                         .with_message("expected here"),
                     Label::new(value.creator_token.location)
@@ -299,15 +278,8 @@ pub(super) fn analyze_if(
 
     let pairs = merges
         .main
-        .condition_merges
+        .body_merges
         .iter()
-        .chain(&merges.main.body_merges)
-        .chain(
-            merges
-                .elifs
-                .iter()
-                .flat_map(|m| m.condition_merges.iter().chain(&m.body_merges)),
-        )
         .chain(&merges.else_block.body_merges);
 
     for merge_pair in pairs {

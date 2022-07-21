@@ -92,8 +92,7 @@ pub(super) fn analyze_if(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    main: &ConditionalBlock,
-    elif_blocks: &[ConditionalBlock],
+    condition: &ConditionalBlock,
     else_block: Option<&[Op]>,
 ) {
     todo!()
