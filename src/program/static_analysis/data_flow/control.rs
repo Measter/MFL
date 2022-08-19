@@ -9,7 +9,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{IfMerges, MergeBlock, MergeInfo, MergePair},
+        static_analysis::{MergeBlock, MergePair},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -274,10 +274,10 @@ pub(super) fn analyze_while(
 
     analyzer.set_op_merges(
         op,
-        MergeInfo::While(MergeBlock {
+        MergeBlock {
             condition_merges,
             body_merges,
-        }),
+        },
     );
     analyzer.set_op_io(op, &[condition_value], &[]);
     analyzer.consume_value(condition_value, op.id);
@@ -351,13 +351,6 @@ pub(super) fn analyze_if(
     let output_stack = stack.clone();
     let output_stack_sample_location = main.close_token.location;
 
-    // Because we do always have an else block, we can assume that the else block must
-    // merge with the main block, even if the else block is empty.
-    let main_merges = MergeBlock {
-        condition_merges: Vec::new(),
-        body_merges: Vec::new(),
-    };
-
     // And restore our stack back to the initial stack.
     stack.clear();
     stack.extend_from_slice(&initial_stack);
@@ -398,12 +391,9 @@ pub(super) fn analyze_if(
     analyzer.set_op_io(op, &condition_values, &[]);
     analyzer.set_op_merges(
         op,
-        MergeInfo::If(IfMerges {
-            main: main_merges,
-            else_block: MergeBlock {
-                condition_merges: Vec::new(),
-                body_merges: else_merges,
-            },
-        }),
+        MergeBlock {
+            condition_merges: Vec::new(),
+            body_merges: else_merges,
+        },
     );
 }

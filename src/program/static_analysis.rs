@@ -104,24 +104,12 @@ struct MergeBlock {
     body_merges: Vec<MergePair>,
 }
 
-#[derive(Debug)]
-struct IfMerges {
-    main: MergeBlock,
-    else_block: MergeBlock,
-}
-
-#[derive(Debug)]
-enum MergeInfo {
-    While(MergeBlock),
-    If(IfMerges),
-}
-
 #[derive(Debug, Default)]
 pub struct Analyzer {
     value_lifetime: HashMap<ValueId, Value>,
     value_types: HashMap<ValueId, PorthTypeKind>,
     value_consts: HashMap<ValueId, ConstVal>,
-    value_merges: HashMap<OpId, MergeInfo>,
+    value_merges: HashMap<OpId, MergeBlock>,
 
     next_value_id: usize,
     ios: HashMap<OpId, OpData>,
@@ -184,13 +172,13 @@ impl Analyzer {
         self.value_consts.remove(&id);
     }
 
-    fn set_op_merges(&mut self, op: &Op, merges: MergeInfo) {
+    fn set_op_merges(&mut self, op: &Op, merges: MergeBlock) {
         self.value_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    fn get_op_merges(&self, op_id: OpId) -> Option<&MergeInfo> {
+    fn get_op_merges(&self, op_id: OpId) -> Option<&MergeBlock> {
         self.value_merges.get(&op_id)
     }
 

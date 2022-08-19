@@ -4,7 +4,7 @@ use crate::{
     interners::Interners,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{Analyzer, ConstVal, MergeInfo, PtrId},
+        static_analysis::{Analyzer, ConstVal, PtrId},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -44,7 +44,7 @@ pub(super) fn analyze_while(
 ) {
     // Because the loop will be executed an arbitrary number of times, we'll need to
     // force all overwritten prior values to non-const.
-    let Some(MergeInfo::While(merge_info)) = analyzer.get_op_merges(op.id) else {
+    let Some(merge_info) = analyzer.get_op_merges(op.id) else {
         panic!("ICE: While block should have merge info");
     };
     let pairs: Vec<_> = merge_info
@@ -95,5 +95,52 @@ pub(super) fn analyze_if(
     condition: &ConditionalBlock,
     else_block: &[Op],
 ) {
-    todo!()
+    // The condition is always executed, so we can const prop that.
+    super::analyze_block(
+        program,
+        proc,
+        &condition.condition,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+
+    // Both blocks should be analyzed with const prop allowed.
+    super::analyze_block(
+        program,
+        proc,
+        &condition.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+    super::analyze_block(
+        program,
+        proc,
+        else_block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
+
+    // However, because we don't know which body was executed, we need to ensure that all merged
+    // values have their const value suppressed.
+    // TODO: Maybe look at being smarter about this.
+    let Some(merge_info) = analyzer.get_op_merges(op.id) else {
+        panic!("ICE: If block should have merge info");
+    };
+
+    for merge_pair in merge_info.body_merges.clone() {
+        trace!(
+            "Merge {:?} with {:?}, const: {:?}",
+            merge_pair.src,
+            merge_pair.dst,
+            analyzer.value_consts([merge_pair.dst])
+        );
+
+        analyzer.clear_value_const(merge_pair.dst);
+    }
 }
