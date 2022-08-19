@@ -519,7 +519,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
@@ -647,7 +647,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("failed const self-check"))
     }
 
@@ -677,7 +677,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("data analysis error"))
     }
 
@@ -712,7 +712,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("failed type checking"))
     }
 
@@ -753,7 +753,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("failed type checking"))
     }
 
@@ -812,7 +812,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
@@ -1002,7 +1002,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("error processing idents"))
     }
 
@@ -1063,7 +1063,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("allocation size evaluation failed"))
     }
 
@@ -1102,7 +1102,7 @@ impl Program {
 
         had_error
             .not()
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| eyre!("failed assert check"))
     }
 

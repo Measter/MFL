@@ -374,7 +374,7 @@ pub fn data_flow_analysis(
 
     // dbg!(&analyzer);
 
-    had_error.not().then(|| analyzer).ok_or(())
+    had_error.not().then_some(analyzer).ok_or(())
 }
 
 pub fn type_check(
@@ -396,7 +396,7 @@ pub fn type_check(
         source_store,
     );
 
-    had_error.not().then(|| ()).ok_or(())
+    had_error.not().then_some(()).ok_or(())
 }
 
 pub fn const_propagation(
@@ -420,5 +420,5 @@ pub fn const_propagation(
 
     // dbg!(&analyzer);
 
-    had_error.not().then(|| ()).ok_or(())
+    had_error.not().then_some(()).ok_or(())
 }

@@ -266,7 +266,7 @@ pub fn parse_procedure_body(
         ops.push(Op::new(op_id_gen(), kind, *token));
     }
 
-    had_error.not().then(|| ops).ok_or(())
+    had_error.not().then_some(ops).ok_or(())
 }
 
 fn get_procedure_body<'a>(
@@ -997,5 +997,5 @@ pub(super) fn parse_module(
         }
     }
 
-    had_error.not().then(|| ()).ok_or(())
+    had_error.not().then_some(()).ok_or(())
 }
