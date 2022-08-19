@@ -686,11 +686,7 @@ pub(super) fn compile_single_instruction(
             ]);
 
             // Condition failed.
-            if else_block.is_some() {
-                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
-            } else {
-                assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_END", if_id))]);
-            }
+            assembler.push_instr([str_lit(format!("    jz .LBL_IF{}_ELSE", if_id))]);
 
             assembler.reg_free_dyn_drop(reg_id);
             assembler.block_boundry();
@@ -707,20 +703,16 @@ pub(super) fn compile_single_instruction(
             );
 
             assembler.block_boundry();
-            if else_block.is_some() {
+            if !else_block.is_empty() {
                 assembler.push_instr([str_lit(format!("    jmp .LBL_IF{}_END", if_id))]);
             }
 
-            if let Some(else_block) = else_block.as_ref() {
-                assembler.push_instr([str_lit(format!("  .LBL_IF{}_ELSE:", if_id))]);
-                assembler.block_boundry();
+            assembler.push_instr([str_lit(format!("  .LBL_IF{}_ELSE:", if_id))]);
+            assembler.block_boundry();
 
-                super::build_assembly_for_block(
-                    program, proc, else_block, ip, interner, opt_level, assembler,
-                );
-
-                assembler.block_boundry();
-            }
+            super::build_assembly_for_block(
+                program, proc, else_block, ip, interner, opt_level, assembler,
+            );
 
             assembler.block_boundry();
             assembler.push_instr([str_lit(format!("  .LBL_IF{}_END:", if_id))]);

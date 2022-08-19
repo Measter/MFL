@@ -48,7 +48,7 @@ pub enum OpCode {
     If {
         open_token: Token,
         condition: ConditionalBlock,
-        else_block: Option<Vec<Op>>,
+        else_block: Vec<Op>,
         end_token: Token,
     },
     Less,
@@ -363,8 +363,7 @@ pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -
                             close_token: condition.close_token,
                         };
 
-                        let new_else_block =
-                            else_block.as_ref().map(|b| optimize(b, interner, sources));
+                        let new_else_block = optimize(else_block, interner, sources);
 
                         dst_vec.push(Op {
                             code: OpCode::If {

@@ -297,19 +297,14 @@ pub(super) fn analyze_if(
     source_store: &SourceStorage,
     op: &Op,
     main: &ConditionalBlock,
-    else_block: Option<&[Op]>,
-    open_token: Token,
+    else_block: &[Op],
     close_token: Token,
 ) {
     // Validity checking is fairly simple:
     // * The condition is always executed, so may change the stack.
     // * If there's an else block, then the bodies may change the stack.
 
-    let mut initial_stack = stack.clone();
-    let mut initial_stack_sample_location = open_token.location;
-    let mut output_stack = stack.clone();
-    let mut output_stack_sample_location = open_token.location;
-
+    let initial_stack = stack.clone();
     let mut condition_values = Vec::new();
 
     // Evaluate main condition.
@@ -352,41 +347,15 @@ pub(super) fn analyze_if(
         source_store,
     );
 
-    let mut main_body_merges = Vec::new();
-    // If we have an else block, then we're allowed to changed the expected output stack, otherwise
-    // we must assert that the depth is unchanged.
-    // Additionally, we only need to set the merges if we cannot change it because we need to merge
-    // into the previous location.
-    if else_block.is_some() {
-        output_stack = stack.clone();
-        output_stack_sample_location = main.close_token.location;
-    } else {
-        if stack.len() != output_stack.len() {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                output_stack_sample_location,
-                main.close_token.location,
-                stack.len(),
-                output_stack.len(),
-            );
-            *had_error = true;
-        }
+    // We always have an else block, so save our current stack state for comparison.
+    let output_stack = stack.clone();
+    let output_stack_sample_location = main.close_token.location;
 
-        // Now we need to see which value IDs have been changed, so the codegen phase will know
-        // where to merge the new data.
-        for (&old_value_id, &new_value_id) in
-            initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
-        {
-            main_body_merges.push(MergePair {
-                src: new_value_id,
-                dst: old_value_id,
-            });
-        }
-    }
-
+    // Because we do always have an else block, we can assume that the else block must
+    // merge with the main block, even if the else block is empty.
     let main_merges = MergeBlock {
         condition_merges: Vec::new(),
-        body_merges: main_body_merges,
+        body_merges: Vec::new(),
     };
 
     // And restore our stack back to the initial stack.
@@ -395,40 +364,36 @@ pub(super) fn analyze_if(
 
     // Now analyze the else block.
     let mut else_merges = Vec::new();
-    if let Some(else_block) = else_block {
-        super::analyze_block(
-            program,
-            proc,
-            else_block,
-            analyzer,
-            stack,
-            had_error,
-            interner,
+    super::analyze_block(
+        program,
+        proc,
+        else_block,
+        analyzer,
+        stack,
+        had_error,
+        interner,
+        source_store,
+    );
+
+    if stack.len() != output_stack.len() {
+        generate_stack_length_mismatch_diag(
             source_store,
+            output_stack_sample_location,
+            close_token.location,
+            stack.len(),
+            output_stack.len(),
         );
-
-        if stack.len() != output_stack.len() {
-            generate_stack_length_mismatch_diag(
-                source_store,
-                output_stack_sample_location,
-                close_token.location,
-                stack.len(),
-                output_stack.len(),
-            );
-            *had_error = true;
-        }
-
-        for (&old_value_id, &new_value_id) in
-            output_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
-        {
-            else_merges.push(MergePair {
-                src: new_value_id,
-                dst: old_value_id,
-            });
-        }
-
-        *stack = output_stack;
+        *had_error = true;
     }
+
+    for (&old_value_id, &new_value_id) in output_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
+        else_merges.push(MergePair {
+            src: new_value_id,
+            dst: old_value_id,
+        });
+    }
+
+    *stack = output_stack;
 
     analyzer.set_op_io(op, &condition_values, &[]);
     analyzer.set_op_merges(

@@ -163,10 +163,7 @@ impl Procedure {
                 } => {
                     Self::expand_macros_in_block(&mut condition.condition, id, new_op_id, program);
                     Self::expand_macros_in_block(&mut condition.block, id, new_op_id, program);
-
-                    if let Some(else_block) = else_block.as_mut() {
-                        Self::expand_macros_in_block(else_block, id, new_op_id, program);
-                    }
+                    Self::expand_macros_in_block(else_block, id, new_op_id, program);
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
                     let found_proc = program.get_proc(proc_id);
@@ -399,17 +396,14 @@ impl Program {
                         interner,
                         source_store,
                     );
-
-                    if let Some(else_block) = else_block.as_mut() {
-                        let temp_body = std::mem::take(else_block);
-                        *else_block = self.resolve_idents_in_block(
-                            proc,
-                            temp_body,
-                            had_error,
-                            interner,
-                            source_store,
-                        );
-                    }
+                    let temp_body = std::mem::take(else_block);
+                    *else_block = self.resolve_idents_in_block(
+                        proc,
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
                 }
                 // Symbol in own module.
                 OpCode::UnresolvedIdent {
@@ -883,9 +877,13 @@ impl Program {
                         ..condition
                     };
 
-                    let new_else = else_block.map(|b| {
-                        self.process_idents_in_block(own_proc, b, had_error, interner, source_store)
-                    });
+                    let new_else = self.process_idents_in_block(
+                        own_proc,
+                        else_block,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
 
                     new_ops.push(Op {
                         code: OpCode::If {

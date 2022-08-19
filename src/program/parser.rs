@@ -470,9 +470,9 @@ fn parse_if<'a>(
 
         close_token = end_token;
 
-        Some(else_block)
+        else_block
     } else {
-        None
+        Vec::new()
     };
 
     // Normalize into an `if <cond> do <body> else <body> end` structure.
@@ -488,7 +488,7 @@ fn parse_if<'a>(
             open_token,
         );
 
-        else_block = Some(vec![if_op]);
+        else_block = vec![if_op];
     }
 
     Ok(OpCode::If {

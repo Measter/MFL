@@ -210,7 +210,7 @@ pub(super) fn analyze_if(
     source_store: &SourceStorage,
     op: &Op,
     conditional: &ConditionalBlock,
-    else_block: Option<&[Op]>,
+    else_block: &[Op],
 ) {
     // Evaluate all the blocks.
     // Thankfully the order is unimportant here.
@@ -232,18 +232,15 @@ pub(super) fn analyze_if(
         interner,
         source_store,
     );
-
-    if let Some(else_block) = else_block {
-        super::analyze_block(
-            program,
-            proc,
-            else_block,
-            analyzer,
-            had_error,
-            interner,
-            source_store,
-        );
-    }
+    super::analyze_block(
+        program,
+        proc,
+        else_block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
 
     // All the conditions are stored in the op inputs.
     let op_data = analyzer.get_op_io(op.id);

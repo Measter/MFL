@@ -87,7 +87,7 @@ pub(super) fn analyze_block(
                 source_store,
                 op,
                 condition,
-                else_block.as_deref(),
+                else_block,
             ),
 
             // These only manipulate the order of the stack, so there's nothing to do here.

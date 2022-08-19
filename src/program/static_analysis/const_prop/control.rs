@@ -93,7 +93,7 @@ pub(super) fn analyze_if(
     source_store: &SourceStorage,
     op: &Op,
     condition: &ConditionalBlock,
-    else_block: Option<&[Op]>,
+    else_block: &[Op],
 ) {
     todo!()
 }
