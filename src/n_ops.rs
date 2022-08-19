@@ -63,6 +63,7 @@ impl<T> SliceNOps<T> for [T] {
         Some(&self[self.len() - n..])
     }
 
+    #[track_caller]
     fn as_arr<const N: usize>(&self) -> &[T; N] {
         self.try_into().unwrap()
     }
