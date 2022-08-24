@@ -7,7 +7,7 @@ use log::{debug, trace};
 
 use crate::{
     interners::Interners,
-    opcode::OpCode,
+    opcode::{Op, OpCode},
     program::{Procedure, ProcedureId, Program},
     source_file::SourceStorage,
 };
@@ -46,6 +46,15 @@ impl SymbolTracker {
 //
 // The stack order will be like this:
 // [r9, r8, r10, rdx, rsi, rdi, rax]
+const CALL_REGS: [X86Register; 7] = [
+    X86Register::Rax,
+    X86Register::Rdi,
+    X86Register::Rsi,
+    X86Register::Rdx,
+    X86Register::R10,
+    X86Register::R8,
+    X86Register::R9,
+];
 
 impl OpCode {
     fn compile_arithmetic_op(&self) -> &'static str {
@@ -74,15 +83,107 @@ impl OpCode {
     }
 }
 
-fn build_assembly(
+fn compile_single_instruction(
     program: &Program,
     proc: &Procedure,
+    local_alloc_count: usize,
+    op: &Op,
+    opt_level: u8,
+    assembler: &mut Assembler,
+    interner: &mut Interners,
+    symbol_tracker: &mut SymbolTracker,
+) {
+    match &op.code {
+        OpCode::Add => todo!(),
+        OpCode::ArgC => todo!(),
+        OpCode::ArgV => todo!(),
+        OpCode::BitAnd => todo!(),
+        OpCode::BitNot => todo!(),
+        OpCode::BitOr => todo!(),
+        OpCode::CallProc { module, proc_id } => todo!(),
+        OpCode::CastBool => todo!(),
+        OpCode::CastInt => todo!(),
+        OpCode::CastPtr => todo!(),
+        OpCode::DivMod => todo!(),
+        OpCode::Dup { depth } => todo!(),
+        OpCode::DupPair => todo!(),
+        OpCode::Drop => todo!(),
+        OpCode::Epilogue => todo!(),
+        OpCode::Equal => todo!(),
+        OpCode::If {
+            open_token,
+            condition,
+            else_block,
+            end_token,
+        } => todo!(),
+        OpCode::Less => todo!(),
+        OpCode::LessEqual => todo!(),
+        OpCode::Load { width, kind } => todo!(),
+        OpCode::Greater => todo!(),
+        OpCode::GreaterEqual => todo!(),
+        OpCode::Memory {
+            module_id,
+            proc_id,
+            offset,
+            global,
+        } => todo!(),
+        OpCode::Multiply => todo!(),
+        OpCode::NotEq => todo!(),
+        OpCode::Prologue => {
+            // Entry of the function. Our stack frame is already set up, so all we do
+            // here is allocate our registers.
+
+            // TODO: Figure out how to handle passing in more than 7 parameters.
+            if proc.entry_stack().len() > 7 {
+                panic!("ICE: Cannot handle more than 7 parameters");
+            }
+
+            let call_regs = &CALL_REGS[..proc.entry_stack().len()];
+            let fixups = assembler.allocate_fixed_registers(call_regs);
+            assert!(
+                fixups.is_empty(),
+                "Prologue should have no registers in use"
+            );
+        }
+        OpCode::PushBool(_) => todo!(),
+        OpCode::PushInt(_) => todo!(),
+        OpCode::PushStr { id, is_c_str } => todo!(),
+        OpCode::ResolvedIdent { module, proc_id } => todo!(),
+        OpCode::Return => todo!(),
+        OpCode::Rot => todo!(),
+        OpCode::ShiftLeft => todo!(),
+        OpCode::ShiftRight => todo!(),
+        OpCode::Store { width, kind } => todo!(),
+        OpCode::Subtract => todo!(),
+        OpCode::Swap => todo!(),
+        OpCode::SysCall(_) => todo!(),
+        OpCode::UnresolvedIdent { module, proc } => todo!(),
+        OpCode::While { body } => todo!(),
+    }
+}
+
+fn build_assembly_for_block(
+    program: &Program,
+    proc: &Procedure,
+    block: &[Op],
     local_alloc_count: usize,
     interner: &mut Interners,
     opt_level: u8,
     assembler: &mut Assembler,
     symbol_tracker: &mut SymbolTracker,
 ) {
+    for op in block {
+        compile_single_instruction(
+            program,
+            proc,
+            local_alloc_count,
+            op,
+            opt_level,
+            assembler,
+            interner,
+            symbol_tracker,
+        );
+    }
 }
 
 fn assemble_procedure(
@@ -102,9 +203,10 @@ fn assemble_procedure(
 
     debug!("  Building assembly...");
     let proc_data = proc.kind().get_proc_data();
-    build_assembly(
+    build_assembly_for_block(
         program,
         proc,
+        proc.body(),
         proc_data.allocs.len(),
         interner,
         opt_level,

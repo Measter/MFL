@@ -105,14 +105,14 @@ enum ValueLocation {
 }
 
 #[derive(Debug)]
-struct Fixups {
+pub struct Fixup {
     src: ValueLocation,
     dst: ValueLocation,
 }
 
 #[derive(Debug)]
 pub struct AsmInstruction {
-    fixups: Vec<Fixups>,
+    fixups: Vec<Fixup>,
     literal_parts: Vec<Cow<'static, str>>,
 }
 
@@ -146,16 +146,14 @@ impl Assembly {
 
 #[derive(Debug, Default)]
 pub struct Assembler {
-    name: String,
     assembly: Vec<Assembly>,
     used_stack_slots: usize,
     free_stack_slots: Vec<usize>,
 }
 
 impl Assembler {
-    pub fn new(name: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            name,
             assembly: Vec::new(),
             used_stack_slots: 0,
             free_stack_slots: Vec::new(),
@@ -172,5 +170,9 @@ impl Assembler {
 
     pub fn push_instr(&mut self) {
         // TODO
+    }
+
+    pub fn allocate_fixed_registers(&mut self, regs: &[X86Register]) -> Vec<Fixup> {
+        todo!()
     }
 }
