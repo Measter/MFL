@@ -680,37 +680,6 @@ impl Program {
             )
             .is_err();
 
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
-        }
-
-        had_error
-            .not()
-            .then_some(())
-            .ok_or_else(|| eyre!("data analysis error"))
-    }
-
-    fn type_check_procs(
-        &mut self,
-        interner: &Interners,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
-        let mut had_error = false;
-        let proc_ids: Vec<_> = self
-            .all_procedures
-            .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
-            .map(|(id, _)| *id)
-            .collect();
-
-        let mut local_analyzer = Analyzer::default();
-
-        for id in proc_ids {
-            // If we get to this point in the program, we must have these.
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
-
-            let proc = &self.all_procedures[&id];
             had_error |= static_analysis::type_check(
                 self,
                 proc,
@@ -727,7 +696,7 @@ impl Program {
         had_error
             .not()
             .then_some(())
-            .ok_or_else(|| eyre!("failed type checking"))
+            .ok_or_else(|| eyre!("data analysis error"))
     }
 
     fn const_propagate_procs(
@@ -1144,10 +1113,8 @@ impl Program {
         debug!("    Expanding macros...");
         self.expand_macros();
 
-        debug!("    Analyzing data flow...");
+        debug!("    Analyzing data flow and type checking...");
         self.analyze_data_flow(interner, source_store)?;
-        debug!("    Type checking...");
-        self.type_check_procs(interner, source_store)?;
         debug!("    Propagating constants...");
         self.const_propagate_procs(interner, source_store)?;
         debug!("    Evaluating const procs...");
