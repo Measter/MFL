@@ -342,10 +342,10 @@ fn generate_stack_length_mismatch_diag(
 pub fn data_flow_analysis(
     program: &Program,
     proc: &Procedure,
+    analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<Analyzer, ()> {
-    let mut analyzer = Analyzer::default();
+) -> Result<(), ()> {
     let mut stack = Vec::new();
     let mut had_error = false;
 
@@ -353,7 +353,7 @@ pub fn data_flow_analysis(
         program,
         proc,
         proc.body(),
-        &mut analyzer,
+        analyzer,
         &mut stack,
         &mut had_error,
         interner,
@@ -361,8 +361,7 @@ pub fn data_flow_analysis(
     );
 
     // dbg!(&analyzer);
-
-    had_error.not().then_some(analyzer).ok_or(())
+    Ok(())
 }
 
 pub fn type_check(

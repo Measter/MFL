@@ -77,7 +77,7 @@ pub struct Procedure {
     id: ProcedureId,
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
-    analyzer: Option<Analyzer>,
+    analyzer: Analyzer,
     new_op_id: usize,
 
     body: Vec<Op>,
@@ -664,15 +664,24 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
+        let mut local_analyzer = Analyzer::default();
+
         for id in proc_ids {
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
+
             let proc = &self.all_procedures[&id];
-            match static_analysis::data_flow_analysis(self, proc, interner, source_store) {
-                Ok(analyzer) => {
-                    let proc = self.all_procedures.get_mut(&id).unwrap();
-                    proc.analyzer = Some(analyzer);
-                }
-                Err(_) => had_error = true,
-            }
+            had_error |= static_analysis::data_flow_analysis(
+                self,
+                proc,
+                &mut local_analyzer,
+                interner,
+                source_store,
+            )
+            .is_err();
+
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
         }
 
         had_error
@@ -694,20 +703,25 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
+        let mut local_analyzer = Analyzer::default();
+
         for id in proc_ids {
             // If we get to this point in the program, we must have these.
             let proc = self.all_procedures.get_mut(&id).unwrap();
-            let mut analyzer = proc.analyzer.take().unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
 
-            // borrow checker, why? please...
             let proc = &self.all_procedures[&id];
+            had_error |= static_analysis::type_check(
+                self,
+                proc,
+                &mut local_analyzer,
+                interner,
+                source_store,
+            )
+            .is_err();
 
-            match static_analysis::type_check(self, proc, &mut analyzer, interner, source_store) {
-                Ok(_) => {
-                    self.all_procedures.get_mut(&id).unwrap().analyzer = Some(analyzer);
-                }
-                Err(_) => had_error = true,
-            }
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
         }
 
         had_error
@@ -729,26 +743,25 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
+        let mut local_analyzer = Analyzer::default();
+
         for id in proc_ids {
             // If we get to this point in the program, we must have these.
             let proc = self.all_procedures.get_mut(&id).unwrap();
-            let mut analyzer = proc.analyzer.take().unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
 
-            // borrow checker, why? please...
             let proc = &self.all_procedures[&id];
-
-            match static_analysis::const_propagation(
+            had_error |= static_analysis::const_propagation(
                 self,
                 proc,
-                &mut analyzer,
+                &mut local_analyzer,
                 interner,
                 source_store,
-            ) {
-                Ok(_) => {
-                    self.all_procedures.get_mut(&id).unwrap().analyzer = Some(analyzer);
-                }
-                Err(_) => had_error = true,
-            }
+            )
+            .is_err();
+
+            let proc = self.all_procedures.get_mut(&id).unwrap();
+            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
         }
 
         had_error
@@ -1187,7 +1200,7 @@ impl Program {
             kind,
             body: Vec::new(),
             parent,
-            analyzer: None,
+            analyzer: Analyzer::default(),
             new_op_id: 0,
             exit_stack,
             exit_stack_location,
