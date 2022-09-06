@@ -136,6 +136,10 @@ impl Procedure {
         self.entry_stack_location
     }
 
+    pub fn analyzer(&self) -> &Analyzer {
+        &self.analyzer
+    }
+
     fn expand_macros_in_block(
         block: &mut Vec<Op>,
         id: ProcedureId,

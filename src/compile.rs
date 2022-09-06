@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, io::Write, path::Path};
+use std::{borrow::Cow, fs::File, io::BufWriter, io::Write, path::Path};
 
 use color_eyre::eyre::{eyre, Context, Result};
 use hashbrown::HashSet;
@@ -7,13 +7,37 @@ use log::{debug, trace};
 
 use crate::{
     interners::Interners,
+    n_ops::SliceNOps,
     opcode::{Op, OpCode},
     program::{Procedure, ProcedureId, Program},
     source_file::SourceStorage,
+    Width,
 };
 
 mod assembly;
 use assembly::*;
+
+fn str_lit(lit: impl Into<Cow<'static, str>>) -> InstructionPart {
+    InstructionPart::Literal(lit.into())
+}
+
+fn reg(reg: X86Register) -> InstructionPart {
+    InstructionPart::EmitRegister {
+        reg,
+        width: Width::Qword,
+    }
+}
+
+fn stack_slot(slot: usize) -> InstructionPart {
+    InstructionPart::EmitStackLocation { slot }
+}
+
+fn location(loc: ValueLocation) -> InstructionPart {
+    match loc {
+        ValueLocation::Register(register) => reg(register),
+        ValueLocation::StackSlot(slot) => stack_slot(slot),
+    }
+}
 
 #[derive(Debug, Default)]
 struct SymbolTracker {
@@ -59,13 +83,13 @@ const CALL_REGS: [X86Register; 7] = [
 impl OpCode {
     fn compile_arithmetic_op(&self) -> &'static str {
         match self {
-            OpCode::Add => "    add ",
-            OpCode::BitOr => "    or ",
-            OpCode::BitAnd => "    and ",
-            OpCode::Multiply => "    mul ",
-            OpCode::ShiftLeft => "    shl ",
-            OpCode::ShiftRight => "    shr ",
-            OpCode::Subtract => "    sub ",
+            OpCode::Add => "add",
+            OpCode::BitOr => "or",
+            OpCode::BitAnd => "and",
+            OpCode::Multiply => "mul",
+            OpCode::ShiftLeft => "shl",
+            OpCode::ShiftRight => "shr",
+            OpCode::Subtract => "sub",
             _ => panic!("ICE: Attempted to compile_arithmetic_op a {:?}", self),
         }
     }
@@ -91,15 +115,56 @@ fn compile_single_instruction(
     opt_level: u8,
     assembler: &mut Assembler,
     interner: &mut Interners,
+    source_store: &SourceStorage,
     symbol_tracker: &mut SymbolTracker,
 ) {
     match &op.code {
-        OpCode::Add => todo!(),
+        OpCode::Add | OpCode::Subtract | OpCode::BitOr | OpCode::BitAnd => {
+            let op_ios = proc.analyzer().get_op_io(op.id);
+            let [input_a, input_b] = *op_ios.inputs().as_arr();
+            let [output] = *op_ios.outputs().as_arr();
+
+            let a_loc = assembler.get_value_location(input_a);
+            let b_loc = assembler.get_value_location(input_b);
+
+            // We can handle b_loc being in a stack slot, but let's make sure
+            // that a_loc is a register.
+            let fixups = Vec::new();
+            let ValueLocation::Register(a_reg) = a_loc else {
+                todo!()
+            };
+
+            // The destination register should be the same as a_loc, so we don't
+            // need to allocate a new one.
+
+            assembler.free_value_location(input_a);
+            assembler.free_value_location(input_b);
+            let output_reg = assembler.allocate_fixed_registers(&[a_reg]);
+            assert!(output_reg.is_empty(), "ICE: Register was just freed");
+            assembler.set_value_location(output, a_reg);
+
+            let instruction = AsmInstruction {
+                fixups,
+                literal_parts: vec![
+                    str_lit(op.code.compile_arithmetic_op()),
+                    reg(a_reg),
+                    str_lit(","),
+                    location(b_loc),
+                ],
+            };
+
+            let instruction = Assembly::new(instruction, op.id).comment(format!(
+                "{}:{}:{} -- {:?}",
+                source_store.name(op.token.location.file_id),
+                op.token.location.line,
+                op.token.location.column,
+                op.code
+            ));
+            assembler.push_instr(instruction);
+        }
         OpCode::ArgC => todo!(),
         OpCode::ArgV => todo!(),
-        OpCode::BitAnd => todo!(),
         OpCode::BitNot => todo!(),
-        OpCode::BitOr => todo!(),
         OpCode::CallProc { module, proc_id } => todo!(),
         OpCode::CastBool => todo!(),
         OpCode::CastInt => todo!(),
@@ -107,8 +172,21 @@ fn compile_single_instruction(
         OpCode::DivMod => todo!(),
         OpCode::Dup { depth } => todo!(),
         OpCode::DupPair => todo!(),
-        OpCode::Drop => todo!(),
-        OpCode::Epilogue => todo!(),
+        OpCode::Drop => {
+            let [input] = *proc.analyzer().get_op_io(op.id).inputs().as_arr();
+            assembler.free_value_location(input);
+        }
+        OpCode::Epilogue => {
+            let instruction = AsmInstruction {
+                fixups: Vec::new(),
+                literal_parts: vec![str_lit("ret")],
+            };
+            let instruction = Assembly::new(instruction, op.id);
+            assembler.push_instr(instruction);
+
+            // Punt this until later
+            assert!(proc.exit_stack().is_empty());
+        }
         OpCode::Equal => todo!(),
         OpCode::If {
             open_token,
@@ -138,15 +216,50 @@ fn compile_single_instruction(
                 panic!("ICE: Cannot handle more than 7 parameters");
             }
 
+            if proc.entry_stack().is_empty() {
+                return;
+            }
+
             let call_regs = &CALL_REGS[..proc.entry_stack().len()];
             let fixups = assembler.allocate_fixed_registers(call_regs);
             assert!(
                 fixups.is_empty(),
                 "Prologue should have no registers in use"
             );
+
+            let inputs = proc.analyzer().get_op_io(op.id).inputs();
+
+            for (&reg, &value) in call_regs.iter().rev().zip(inputs) {
+                println!("Value {value:?} -> {reg:?}");
+                assembler.set_value_location(value, reg);
+            }
         }
         OpCode::PushBool(_) => todo!(),
-        OpCode::PushInt(_) => todo!(),
+        OpCode::PushInt(val) => {
+            let (register, fixups) = assembler.allocate_register();
+            let [value_id] = *proc.analyzer().get_op_io(op.id).outputs().as_arr();
+
+            assembler.set_value_location(value_id, register);
+
+            let instruction = AsmInstruction {
+                fixups,
+                literal_parts: vec![
+                    str_lit("mov"),
+                    reg(register),
+                    str_lit(","),
+                    str_lit(format!("{val}")),
+                ],
+            };
+
+            let instruction = Assembly::new(instruction, op.id).comment(format!(
+                "{}:{}:{} -- {:?}",
+                source_store.name(op.token.location.file_id),
+                op.token.location.line,
+                op.token.location.column,
+                op.code
+            ));
+            assembler.push_instr(instruction);
+        }
         OpCode::PushStr { id, is_c_str } => todo!(),
         OpCode::ResolvedIdent { module, proc_id } => todo!(),
         OpCode::Return => todo!(),
@@ -154,7 +267,6 @@ fn compile_single_instruction(
         OpCode::ShiftLeft => todo!(),
         OpCode::ShiftRight => todo!(),
         OpCode::Store { width, kind } => todo!(),
-        OpCode::Subtract => todo!(),
         OpCode::Swap => todo!(),
         OpCode::SysCall(_) => todo!(),
         OpCode::UnresolvedIdent { module, proc } => todo!(),
@@ -168,6 +280,7 @@ fn build_assembly_for_block(
     block: &[Op],
     local_alloc_count: usize,
     interner: &mut Interners,
+    source_store: &SourceStorage,
     opt_level: u8,
     assembler: &mut Assembler,
     symbol_tracker: &mut SymbolTracker,
@@ -181,6 +294,7 @@ fn build_assembly_for_block(
             opt_level,
             assembler,
             interner,
+            source_store,
             symbol_tracker,
         );
     }
@@ -190,7 +304,7 @@ fn assemble_procedure(
     program: &Program,
     symbol_tracker: &mut SymbolTracker,
     proc: &Procedure,
-    _source_store: &SourceStorage,
+    source_store: &SourceStorage,
     interner: &mut Interners,
     out_file: &mut BufWriter<File>,
     opt_level: u8,
@@ -199,7 +313,7 @@ fn assemble_procedure(
     debug!("Compiling {}...", name);
     writeln!(out_file, "{name}:")?;
 
-    let mut assembler = Assembler::new(name.to_owned());
+    let mut assembler = Assembler::new();
 
     debug!("  Building assembly...");
     let proc_data = proc.kind().get_proc_data();
@@ -209,6 +323,7 @@ fn assemble_procedure(
         proc.body(),
         proc_data.allocs.len(),
         interner,
+        source_store,
         opt_level,
         &mut assembler,
         symbol_tracker,
@@ -242,7 +357,7 @@ fn assemble_procedure(
     for asm in assembler.assembly() {
         write!(out_file, "    ;; Op {}", asm.op_id.0)?;
         if let Some(comment) = &asm.comment {
-            writeln!(out_file, ", {comment}")?;
+            writeln!(out_file, " -- {comment}")?;
         } else {
             writeln!(out_file)?;
         }

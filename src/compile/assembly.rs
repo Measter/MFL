@@ -1,8 +1,8 @@
-use std::{borrow::Cow, io::Write};
+use std::{borrow::Cow, fmt::Display, io::Write};
 
 use color_eyre::eyre::Result;
 
-use crate::{opcode::OpId, Width};
+use crate::{opcode::OpId, program::static_analysis::ValueId, Width};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum X86Register {
@@ -98,8 +98,8 @@ impl X86Register {
     }
 }
 
-#[derive(Debug)]
-enum ValueLocation {
+#[derive(Debug, Clone, Copy)]
+pub enum ValueLocation {
     Register(X86Register),
     StackSlot(usize),
 }
@@ -111,9 +111,22 @@ pub struct Fixup {
 }
 
 #[derive(Debug)]
+pub enum InstructionPart {
+    Literal(Cow<'static, str>),
+    /// Used to actually emit a register as part of an instruction.
+    EmitRegister {
+        reg: X86Register,
+        width: Width,
+    },
+    EmitStackLocation {
+        slot: usize,
+    },
+}
+
+#[derive(Debug)]
 pub struct AsmInstruction {
-    fixups: Vec<Fixup>,
-    literal_parts: Vec<Cow<'static, str>>,
+    pub fixups: Vec<Fixup>,
+    pub literal_parts: Vec<InstructionPart>,
 }
 
 #[derive(Debug)]
@@ -140,7 +153,34 @@ impl Assembly {
     }
 
     pub fn render(&self, out_file: &mut impl Write) -> Result<()> {
-        todo!()
+        for fixup in &self.asm.fixups {
+            write!(out_file, "    mov ")?;
+            match fixup.dst {
+                ValueLocation::Register(reg) => write!(out_file, "{}", reg.as_width(Width::Qword))?,
+                ValueLocation::StackSlot(slot) => write!(out_file, "[rsp + {slot}")?,
+            }
+            write!(out_file, ", ")?;
+
+            match fixup.src {
+                ValueLocation::Register(reg) => write!(out_file, "{}", reg.as_width(Width::Qword))?,
+                ValueLocation::StackSlot(slot) => write!(out_file, "[rsp + {slot}")?,
+            }
+            writeln!(out_file)?;
+        }
+
+        out_file.write_all(b"    ")?;
+        for part in &self.asm.literal_parts {
+            match part {
+                InstructionPart::Literal(lit) => write!(out_file, "{lit} ")?,
+                InstructionPart::EmitRegister { reg, width } => {
+                    write!(out_file, "{}", reg.as_width(*width))?
+                }
+                InstructionPart::EmitStackLocation { slot } => write!(out_file, "[rsp + {slot}]")?,
+            }
+        }
+        writeln!(out_file)?;
+
+        Ok(())
     }
 }
 
@@ -149,14 +189,35 @@ pub struct Assembler {
     assembly: Vec<Assembly>,
     used_stack_slots: usize,
     free_stack_slots: Vec<usize>,
+
+    free_registers: Vec<X86Register>,
+    value_locations: Vec<(ValueId, ValueLocation)>,
 }
 
 impl Assembler {
     pub fn new() -> Self {
+        let regs = vec![
+            X86Register::Rax,
+            X86Register::Rbx,
+            X86Register::Rcx,
+            X86Register::Rdx,
+            X86Register::Rsi,
+            X86Register::Rdi,
+            X86Register::R8,
+            X86Register::R9,
+            X86Register::R10,
+            X86Register::R11,
+            X86Register::R12,
+            X86Register::R13,
+            X86Register::R14,
+            X86Register::R15,
+        ];
         Self {
             assembly: Vec::new(),
             used_stack_slots: 0,
             free_stack_slots: Vec::new(),
+            free_registers: regs,
+            value_locations: Vec::new(),
         }
     }
 
@@ -164,15 +225,101 @@ impl Assembler {
         &self.assembly
     }
 
+    fn next_stack_slot(&mut self) -> usize {
+        if let Some(slot) = self.free_stack_slots.pop() {
+            slot
+        } else {
+            let next = self.used_stack_slots;
+            self.used_stack_slots += 1;
+            next
+        }
+    }
+
     pub fn used_stack_slots(&self) -> usize {
         self.used_stack_slots
     }
 
-    pub fn push_instr(&mut self) {
-        // TODO
+    pub fn push_instr(&mut self, instr: Assembly) {
+        self.assembly.push(instr);
     }
 
     pub fn allocate_fixed_registers(&mut self, regs: &[X86Register]) -> Vec<Fixup> {
-        todo!()
+        let (to_alloc_regs, fixup_regs): (Vec<_>, Vec<_>) = self
+            .free_registers
+            .iter()
+            .copied()
+            .partition(|r| regs.contains(r));
+        let fixups = Vec::new();
+
+        self.free_registers.retain(|r| !to_alloc_regs.contains(r));
+
+        dbg!(&fixup_regs, &to_alloc_regs);
+        // TODO: Actually make fixups.
+        assert_eq!(to_alloc_regs.len(), regs.len());
+
+        fixups
+    }
+
+    pub fn allocate_register(&mut self) -> (X86Register, Vec<Fixup>) {
+        match self.free_registers.pop() {
+            Some(reg) => (reg, Vec::new()),
+            None => {
+                let next_stack_slot = self.next_stack_slot();
+                for (_value, loc) in &mut self.value_locations {
+                    if let ValueLocation::Register(reg) = loc {
+                        let reg = *reg;
+                        let new_loc = ValueLocation::StackSlot(next_stack_slot);
+                        let fixup = Fixup {
+                            src: *loc,
+                            dst: new_loc,
+                        };
+
+                        *loc = new_loc;
+                        return (reg, vec![fixup]);
+                    }
+                }
+
+                unreachable!()
+            }
+        }
+    }
+
+    #[track_caller]
+    pub fn get_value_location(&self, val: ValueId) -> ValueLocation {
+        for &(stored_val, loc) in &self.value_locations {
+            if stored_val == val {
+                return loc;
+            }
+        }
+
+        panic!("ICE: Tried to get location of unallocated value: {:?}", val);
+    }
+
+    #[track_caller]
+    pub fn set_value_location(&mut self, val: ValueId, reg: X86Register) {
+        for (old_value, loc) in &mut self.value_locations {
+            if *old_value == val || matches!(*loc, ValueLocation::Register(r) if r == reg) {
+                panic!(
+                    "ICE: Tried to set value location twice. {:?} from {:?} to {:?}",
+                    val, *loc, reg
+                );
+            }
+        }
+
+        self.value_locations
+            .push((val, ValueLocation::Register(reg)));
+    }
+
+    #[track_caller]
+    pub fn free_value_location(&mut self, val: ValueId) {
+        let Some(idx) = self.value_locations.iter().position(|(v, _)| *v == val) else {
+            panic!("ICE: Tried to remove unallocated value {:?}", val);
+        };
+
+        let (_, loc) = self.value_locations.remove(idx);
+        match loc {
+            ValueLocation::Register(reg) => self.free_registers.push(reg),
+            ValueLocation::StackSlot(slot) => self.free_stack_slots.push(slot),
+        }
     }
 }

@@ -77,7 +77,7 @@ pub enum ConstVal {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct ValueId(usize);
+pub struct ValueId(usize);
 
 #[derive(Debug)]
 struct Value {
@@ -87,9 +87,19 @@ struct Value {
 }
 
 #[derive(Debug)]
-struct OpData {
+pub struct OpData {
     inputs: Vec<ValueId>,
     outputs: Vec<ValueId>,
+}
+
+impl OpData {
+    pub fn inputs(&self) -> &[ValueId] {
+        self.inputs.as_ref()
+    }
+
+    pub fn outputs(&self) -> &[ValueId] {
+        self.outputs.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -199,7 +209,7 @@ impl Analyzer {
         );
     }
 
-    fn get_op_io(&self, op_idx: OpId) -> &OpData {
+    pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
         &self.ios[&op_idx]
     }
 }
