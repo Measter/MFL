@@ -244,6 +244,10 @@ impl Program {
         new_id
     }
 
+    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &Procedure)> {
+        self.all_procedures.iter().map(|(id, proc)| (*id, proc))
+    }
+
     pub fn get_module(&self, id: ModuleId) -> &Module {
         &self.modules[&id]
     }

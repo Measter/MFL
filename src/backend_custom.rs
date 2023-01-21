@@ -1,9 +1,17 @@
-use std::{borrow::Cow, fs::File, io::BufWriter, io::Write, path::Path};
+#![allow(unused)]
+use std::{
+    borrow::Cow,
+    fs::File,
+    io::BufWriter,
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use color_eyre::eyre::{eyre, Context, Result};
 use hashbrown::HashSet;
 use lasso::Spur;
-use log::{debug, trace};
+use log::{debug, info, trace};
 
 use crate::{
     interners::Interners,
@@ -395,7 +403,7 @@ fn assemble_entry(
     Ok(())
 }
 
-pub(crate) fn compile_program(
+fn compile_program(
     program: &Program,
     entry_function: ProcedureId,
     source_store: &SourceStorage,
@@ -465,4 +473,43 @@ pub(crate) fn compile_program(
     }
 
     Ok(())
+}
+
+pub(crate) fn compile(
+    program: &Program,
+    entry_function: ProcedureId,
+    source_storage: &SourceStorage,
+    interner: &mut Interners,
+    file: &str,
+    opt_level: u8,
+) -> Result<Vec<PathBuf>> {
+    let mut output_asm = Path::new(&file).to_path_buf();
+    output_asm.set_extension("asm");
+    let mut output_obj = output_asm.clone();
+    output_obj.set_extension("o");
+
+    info!(
+        "Compiling with custom codegen... to {}",
+        output_asm.display()
+    );
+    compile_program(
+        program,
+        entry_function,
+        source_storage,
+        interner,
+        &output_asm,
+        opt_level,
+    )?;
+
+    info!("Assembling... to {}", output_obj.display());
+    let nasm = Command::new("nasm")
+        .arg("-felf64")
+        .arg(&output_asm)
+        .status()
+        .with_context(|| eyre!("Failed to execute nasm"))?;
+    if !nasm.success() {
+        std::process::exit(-2);
+    }
+
+    Ok(vec![output_obj])
 }
