@@ -687,37 +687,6 @@ impl Program {
             )
             .is_err();
 
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
-        }
-
-        had_error
-            .not()
-            .then_some(())
-            .ok_or_else(|| eyre!("data analysis error"))
-    }
-
-    fn const_propagate_procs(
-        &mut self,
-        interner: &Interners,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
-        let mut had_error = false;
-        let proc_ids: Vec<_> = self
-            .all_procedures
-            .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
-            .map(|(id, _)| *id)
-            .collect();
-
-        let mut local_analyzer = Analyzer::default();
-
-        for id in proc_ids {
-            // If we get to this point in the program, we must have these.
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
-
-            let proc = &self.all_procedures[&id];
             had_error |= static_analysis::const_propagation(
                 self,
                 proc,
@@ -734,7 +703,7 @@ impl Program {
         had_error
             .not()
             .then_some(())
-            .ok_or_else(|| eyre!("failed type checking"))
+            .ok_or_else(|| eyre!("data analysis error"))
     }
 
     fn evaluate_const_procs(
