@@ -503,6 +503,7 @@ impl Program {
     }
 
     fn resolve_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        debug!("    Resolving idents...");
         let mut had_error = false;
         let proc_ids: Vec<_> = self.all_procedures.keys().copied().collect();
 
@@ -522,6 +523,7 @@ impl Program {
     }
 
     fn expand_macros(&mut self) {
+        debug!("    Expanding macros...");
         let non_macro_proc_ids: Vec<_> = self
             .all_procedures
             .iter()
@@ -613,6 +615,7 @@ impl Program {
     }
 
     fn check_invalid_cyclic_refs(&self, source_store: &SourceStorage) -> Result<()> {
+        debug!("    Checking for cyclic consts and macros...");
         let mut had_error = false;
 
         let mut check_queue = Vec::new();
@@ -654,6 +657,7 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
+        debug!("    Performing stack verification, type checking, const propagation...");
         let mut had_error = false;
         let proc_ids: Vec<_> = self
             .all_procedures
@@ -711,6 +715,7 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
+        debug!("    Evaluating const procs...");
         let mut had_error = false;
 
         let mut const_queue: Vec<_> = self
@@ -924,6 +929,7 @@ impl Program {
     }
 
     fn process_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        debug!("    Processing idents...");
         let mut had_error = false;
 
         // Macros should already have been expanded.
@@ -960,6 +966,7 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
+        debug!("    Evaluating allocation sizes...");
         let mut had_error = false;
 
         let all_mem_proc_ids: Vec<_> = self
@@ -1017,6 +1024,7 @@ impl Program {
     }
 
     fn check_asserts(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+        debug!("    Checking asserts...");
         let mut had_error = false;
 
         for proc in self.all_procedures.values() {
@@ -1056,6 +1064,7 @@ impl Program {
     }
 
     fn optimize_functions(&mut self, interner: &mut Interners, source_store: &SourceStorage) {
+        debug!("    Optimizing functions...");
         for proc in self.all_procedures.values_mut() {
             if !proc.kind().is_function() {
                 continue;
@@ -1071,33 +1080,21 @@ impl Program {
         source_store: &SourceStorage,
     ) -> Result<()> {
         debug!("Processing procs...");
-        debug!("    Resolving idents...");
         self.resolve_idents(interner, source_store)?;
 
-        debug!("    Checking for cyclic consts and macros...");
         self.check_invalid_cyclic_refs(source_store)?;
-        debug!("    Expanding macros...");
         self.expand_macros();
 
-        debug!("    Analyzing data flow and type checking...");
         self.analyze_data_flow(interner, source_store)?;
-        debug!("    Propagating constants...");
-        self.const_propagate_procs(interner, source_store)?;
-        debug!("    Evaluating const procs...");
         self.evaluate_const_procs(interner, source_store)?;
 
-        debug!("    Processing idents...");
         self.process_idents(interner, source_store)?;
-        debug!("    Evaluating allocation sizes...");
         self.evaluate_allocation_sizes(interner, source_store)?;
-        debug!("    Checking asserts...");
         self.check_asserts(interner, source_store)?;
 
-        debug!("    Optimizing functions...");
         self.optimize_functions(interner, source_store);
 
         debug!("    Finished processing procs.");
-        debug!("");
 
         Ok(())
     }
