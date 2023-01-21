@@ -46,17 +46,17 @@ impl Width {
 #[derive(Debug, Parser)]
 struct Args {
     /// Print more to the console
-    #[clap(short, parse(from_occurrences))]
+    #[arg(short, action = clap::ArgAction::Count)]
     verbose: u8,
 
     /// Comma-separated list of paths to search includes.
-    #[clap(short = 'I', require_value_delimiter = true)]
+    #[arg(short = 'I', value_delimiter = ',')]
     library_paths: Vec<String>,
 
     file: String,
 
     /// Set optimization level
-    #[clap(short, parse(from_occurrences))]
+    #[arg(short, action = clap::ArgAction::Count)]
     opt_level: u8,
 }
 

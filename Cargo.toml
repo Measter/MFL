@@ -10,11 +10,10 @@ edition = "2021"
 
 [dependencies]
 ariadne = "0.1.5"
-clap = { version = "3.1.18", features = ["derive"] }
+clap = { version = "4.1.1", features = ["derive"] }
 color-eyre = "0.6.1"
-derive_more = "0.99.17"
-hashbrown = "0.12.1"
 lasso = "0.6.0"
+hashbrown = "0.13.2"
 log = "0.4.17"
 simplelog = "0.12.0"
 variantly = "0.2.0"
