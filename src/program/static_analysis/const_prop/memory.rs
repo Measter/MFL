@@ -104,7 +104,7 @@ pub(super) fn load(
                 Width::Byte => bytes[0] as u64,
                 Width::Word => u16::from_le_bytes(*bytes.as_arr()) as u64,
                 Width::Dword => u32::from_le_bytes(*bytes.as_arr()) as u64,
-                Width::Qword => u64::from_le_bytes(*bytes.as_arr()) as u64,
+                Width::Qword => u64::from_le_bytes(*bytes.as_arr()),
             }
         }
         _ => return,
