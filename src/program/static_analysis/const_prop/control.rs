@@ -1,5 +1,3 @@
-use log::trace;
-
 use crate::{
     interners::Interners,
     opcode::{ConditionalBlock, Op},
@@ -54,12 +52,6 @@ pub(super) fn analyze_while(
         .copied()
         .collect();
     for merge_pair in pairs {
-        trace!(
-            "Merge {:?} with {:?}, const: {:?}",
-            merge_pair.src,
-            merge_pair.dst,
-            analyzer.value_consts([merge_pair.dst])
-        );
         analyzer.clear_value_const(merge_pair.dst);
     }
 
@@ -134,13 +126,6 @@ pub(super) fn analyze_if(
     };
 
     for merge_pair in merge_info.body_merges.clone() {
-        trace!(
-            "Merge {:?} with {:?}, const: {:?}",
-            merge_pair.src,
-            merge_pair.dst,
-            analyzer.value_consts([merge_pair.dst])
-        );
-
         analyzer.clear_value_const(merge_pair.dst);
     }
 }
