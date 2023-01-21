@@ -31,7 +31,6 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
 
 fn simulate_execute_program_block(
     program: &Program,
-    procedure: &Procedure,
     block: &[Op],
     value_stack: &mut Vec<u64>,
     interner: &Interners,
@@ -102,7 +101,6 @@ fn simulate_execute_program_block(
             OpCode::While { body, .. } => loop {
                 simulate_execute_program_block(
                     program,
-                    procedure,
                     &body.condition,
                     value_stack,
                     interner,
@@ -114,7 +112,6 @@ fn simulate_execute_program_block(
                 }
                 simulate_execute_program_block(
                     program,
-                    procedure,
                     &body.block,
                     value_stack,
                     interner,
@@ -240,7 +237,6 @@ pub(crate) fn simulate_execute_program(
 
     simulate_execute_program_block(
         program,
-        procedure,
         procedure.body(),
         &mut value_stack,
         interner,
