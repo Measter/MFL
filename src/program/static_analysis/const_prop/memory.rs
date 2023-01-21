@@ -28,7 +28,7 @@ fn check_memory_bounds(
                 "index + width overflows",
                 [Label::new(op.token.location)
                     .with_color(Color::Red)
-                    .with_message(format!("index: {}, width: {}", offset, width.byte_size()))],
+                    .with_message(format!("index: {offset}, width: {}", width.byte_size()))],
                 None,
                 source_store,
             );
@@ -44,10 +44,10 @@ fn check_memory_bounds(
             [
                 Label::new(op.token.location)
                     .with_color(Color::Red)
-                    .with_message(format!("index: {}", offset)),
+                    .with_message(format!("index: {offset}")),
                 Label::new(src_op_loc)
                     .with_color(Color::Cyan)
-                    .with_message(format!("length: {}", memory_size)),
+                    .with_message(format!("length: {memory_size}")),
             ],
             None,
             source_store,

@@ -254,7 +254,7 @@ impl<'source> Scanner<'source> {
             );
             diagnostics::emit_error(
                 loc,
-                format!("unclosed {} literal", kind),
+                format!("unclosed {kind} literal"),
                 Some(Label::new(loc).with_color(Color::Red)),
                 None,
                 source_store,

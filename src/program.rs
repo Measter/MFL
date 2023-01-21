@@ -329,7 +329,7 @@ impl Program {
                                 .with_color(Color::Red)
                                 .with_message("here"),
                         ),
-                        format!("{}", e),
+                        format!("{e}"),
                         source_store,
                     );
 
@@ -433,8 +433,7 @@ impl Program {
                         diagnostics::emit_error(
                             proc_token.location,
                             format!(
-                                "symbol `{}` not found in module `{}`",
-                                token_lexeme, module_lexeme
+                                "symbol `{token_lexeme}` not found in module `{module_lexeme}`"
                             ),
                             Some(
                                 Label::new(proc_token.location)
@@ -457,7 +456,7 @@ impl Program {
                             let module_name = interner.resolve_lexeme(module_token.lexeme);
                             diagnostics::emit_error(
                                 proc_token.location,
-                                format!("module `{}` not found", module_name),
+                                format!("module `{module_name}` not found"),
                                 Some(
                                     Label::new(proc_token.location)
                                         .with_color(Color::Red)
@@ -484,10 +483,7 @@ impl Program {
                             let module_name = interner.resolve_lexeme(module_token.lexeme);
                             diagnostics::emit_error(
                                 proc_token.location,
-                                format!(
-                                    "symbol `{}` not found in module `{}`",
-                                    proc_name, module_name
-                                ),
+                                format!("symbol `{proc_name}` not found in module `{module_name}`"),
                                 Some(
                                     Label::new(proc_token.location)
                                         .with_color(Color::Red)
@@ -597,11 +593,11 @@ impl Program {
                         *had_error = true;
                         diagnostics::emit_error(
                             cur_proc.name.location,
-                            format!("cyclic {} detected", kind),
+                            format!("cyclic {kind} detected"),
                             [
                                 Label::new(own_proc.name.location)
                                     .with_color(Color::Red)
-                                    .with_message(format!("in this {}", kind)),
+                                    .with_message(format!("in this {kind}")),
                                 Label::new(op.token.location)
                                     .with_color(Color::Cyan)
                                     .with_message("cyclic reference"),
@@ -934,7 +930,7 @@ impl Program {
                         }
                         ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
                             let name = interner.resolve_lexeme(own_proc.name.lexeme);
-                            panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {}", name);
+                            panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {name}");
                         }
 
                         ProcedureKind::Assert => {

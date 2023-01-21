@@ -143,7 +143,7 @@ impl Analyzer {
             .is_some();
 
         if value_exists {
-            panic!("ICE: Created value with duplicate ID: {:?}", id);
+            panic!("ICE: Created value with duplicate ID: {id:?}");
         };
 
         id
@@ -203,9 +203,7 @@ impl Analyzer {
 
         assert!(
             prev.is_none(),
-            "Set operands twice - cur_token: {:#?}, prev_token: {:#?}",
-            op,
-            prev
+            "Set operands twice - cur_token: {op:#?}, prev_token: {prev:#?}"
         );
     }
 
@@ -266,33 +264,33 @@ fn generate_type_mismatch_diag(
     op: &Op,
     types: &[ValueId],
 ) {
-    let mut message = format!("cannot use `{}` on ", operator_str);
+    let mut message = format!("cannot use `{operator_str}` on ");
     match types {
         [] => unreachable!(),
         [a] => {
             let kind = analyzer
                 .value_types([*a])
                 .map_or("Unknown", |[v]| v.name_str());
-            write!(&mut message, "`{}`", kind).unwrap();
+            write!(&mut message, "`{kind}`").unwrap();
         }
         [a, b] => {
             let [a, b] = analyzer
                 .value_types([*a, *b])
                 .map_or(["Unknown", "Unknown"], |k| k.map(PorthTypeKind::name_str));
-            write!(&mut message, "`{}` and `{}`", a, b).unwrap()
+            write!(&mut message, "`{a}` and `{b}`").unwrap()
         }
         [xs @ .., last] => {
             for x in xs {
                 let kind = analyzer
                     .value_types([*x])
                     .map_or("Unknown", |[v]| v.name_str());
-                write!(&mut message, "`{}`, ", kind).unwrap();
+                write!(&mut message, "`{kind}`, ").unwrap();
             }
 
             let kind = analyzer
                 .value_types([*last])
                 .map_or("Unknown", |[v]| v.name_str());
-            write!(&mut message, "and `{}`", kind).unwrap();
+            write!(&mut message, "and `{kind}`").unwrap();
         }
     }
 
@@ -329,7 +327,7 @@ fn generate_stack_length_mismatch_diag(
     actual: usize,
     expected: usize,
 ) {
-    let message = format!("expected {} items, found {}", expected, actual);
+    let message = format!("expected {expected} items, found {actual}");
 
     let labels = if sample_location != error_location {
         vec![

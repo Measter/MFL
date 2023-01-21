@@ -90,7 +90,7 @@ impl OpCode {
             OpCode::ShiftLeft => "shl",
             OpCode::ShiftRight => "shr",
             OpCode::Subtract => "sub",
-            _ => panic!("ICE: Attempted to compile_arithmetic_op a {:?}", self),
+            _ => panic!("ICE: Attempted to compile_arithmetic_op a {self:?}"),
         }
     }
 
@@ -102,7 +102,7 @@ impl OpCode {
             OpCode::Less => "l",
             OpCode::LessEqual => "le",
             OpCode::NotEq => "ne",
-            _ => panic!("ICE: Attempted to compile_compare_op a {:?}", self),
+            _ => panic!("ICE: Attempted to compile_compare_op a {self:?}"),
         }
     }
 }
@@ -443,7 +443,7 @@ pub(crate) fn compile_program(
             .get_global_alloc(id)
             .expect("ICE: Tried to fetch a non-global alloc proc");
         let name = interner.get_symbol_name(program, id);
-        writeln!(&mut out_file, "    __{}: resb {} ; {:?}", name, size, id)?;
+        writeln!(&mut out_file, "    __{name}: resb {size} ; {id:?}")?;
     }
 
     // Finally emit our string literals
@@ -454,11 +454,11 @@ pub(crate) fn compile_program(
         // and it'll clean up the comment.
         let literal = &literal[..literal.len() - 1];
         let id = id.into_inner().get();
-        writeln!(out_file, "    ; {:?}", literal)?;
-        write!(out_file, "    __string_literal{}: db ", id)?;
+        writeln!(out_file, "    ; {literal:?}")?;
+        write!(out_file, "    __string_literal{id}: db ")?;
 
         for b in literal.as_bytes() {
-            write!(out_file, "{},", b)?;
+            write!(out_file, "{b},")?;
         }
 
         out_file.write_all(b"0\n")?;

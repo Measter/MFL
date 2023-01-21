@@ -275,7 +275,7 @@ impl OpCode {
             | SysCall(_)
             | UnresolvedIdent { .. }
             | While { .. } => {
-                panic!("ICE: Attempted to get the binary_op of a {:?}", self)
+                panic!("ICE: Attempted to get the binary_op of a {self:?}")
             }
         }
     }

@@ -123,11 +123,11 @@ pub(super) fn subtract(
                             .with_message("here"),
                         Label::new(src_op1)
                             .with_color(Color::Cyan)
-                            .with_message(format!("...from this offset {}", offset1))
+                            .with_message(format!("...from this offset {offset1}"))
                             .with_order(2),
                         Label::new(src_op2)
                             .with_color(Color::Cyan)
-                            .with_message(format!("subtracting offset {}...", offset2))
+                            .with_message(format!("subtracting offset {offset2}..."))
                             .with_order(1),
                     ],
                     None,
@@ -212,7 +212,7 @@ pub(super) fn multiply_and_shift(analyzer: &mut Analyzer, source_store: &SourceS
                     .with_message("Shift value from here")
                     .with_order(1),
             ],
-            format!("shift value ({}) will be masked to the lower 6 bits", sv),
+            format!("shift value ({sv}) will be masked to the lower 6 bits"),
             source_store,
         )
     }

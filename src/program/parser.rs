@@ -586,7 +586,7 @@ fn parse_type_signature<'a>(
             _ => {
                 diagnostics::emit_error(
                     token.location,
-                    format!("unknown type {}", lexeme),
+                    format!("unknown type {lexeme}"),
                     Some(Label::new(token.location).with_color(Color::Red)),
                     None,
                     source_store,

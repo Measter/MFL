@@ -292,7 +292,7 @@ impl Assembler {
             }
         }
 
-        panic!("ICE: Tried to get location of unallocated value: {:?}", val);
+        panic!("ICE: Tried to get location of unallocated value: {val:?}");
     }
 
     #[track_caller]
@@ -313,7 +313,7 @@ impl Assembler {
     #[track_caller]
     pub fn free_value_location(&mut self, val: ValueId) {
         let Some(idx) = self.value_locations.iter().position(|(v, _)| *v == val) else {
-            panic!("ICE: Tried to remove unallocated value {:?}", val);
+            panic!("ICE: Tried to remove unallocated value {val:?}");
         };
 
         let (_, loc) = self.value_locations.remove(idx);

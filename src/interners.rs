@@ -44,7 +44,7 @@ impl Interners {
         let proc_name = self.lexemes.resolve(&proc.name().lexeme);
         let module_name = self.lexemes.resolve(&module.name());
 
-        let name = format!("{}${}", module_name, proc_name);
+        let name = format!("{module_name}${proc_name}");
         let spur = self.intern_lexeme(&name);
 
         self.resolve_lexeme(spur)
