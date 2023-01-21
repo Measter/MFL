@@ -168,7 +168,7 @@ impl Analyzer {
             .expect_none("ICE: Tried to set a value type twice");
     }
 
-    fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
+    pub fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
         self.value_consts.get_n(ids)
     }
 
