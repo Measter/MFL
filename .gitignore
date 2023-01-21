@@ -1,5 +1,7 @@
 /target
 /tests
+/examples
+/vendor
 
 Cargo.lock
 *.asm

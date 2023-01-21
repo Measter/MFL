@@ -24,10 +24,6 @@ mod program;
 mod simulate;
 mod source_file;
 
-const OPT_OPCODE: u8 = 1;
-const OPT_INSTR: u8 = 2;
-const OPT_STACK: u8 = 3;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Width {
     Byte,
@@ -66,20 +62,14 @@ struct Args {
 
 fn load_program(
     file: &str,
-    opt_level: u8,
     include_paths: Vec<String>,
 ) -> Result<(Program, SourceStorage, Interners, ProcedureId)> {
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
     let mut program = Program::new();
-    let entry_module_id = program.load_program(
-        file,
-        &mut interner,
-        &mut source_storage,
-        opt_level,
-        &include_paths,
-    )?;
+    let entry_module_id =
+        program.load_program(file, &mut interner, &mut source_storage, &include_paths)?;
 
     let entry_symbol = interner.intern_lexeme("entry");
     let entry_module = program.get_module(entry_module_id);
@@ -133,7 +123,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     output_binary.set_extension("");
 
     let (program, source_storage, mut interner, entry_function) =
-        load_program(&file, opt_level, include_paths)?;
+        load_program(&file, include_paths)?;
 
     info!("Compiling... to {}", output_asm.display());
     compile::compile_program(

@@ -99,59 +99,6 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn pop_count(&self) -> usize {
-        match self {
-            OpCode::Rot => 3,
-
-            OpCode::Add
-            | OpCode::BitOr
-            | OpCode::BitAnd
-            | OpCode::DivMod
-            | OpCode::Equal
-            | OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Multiply
-            | OpCode::NotEq
-            | OpCode::ShiftLeft
-            | OpCode::ShiftRight
-            | OpCode::Store { .. }
-            | OpCode::Swap
-            | OpCode::Subtract => 2,
-
-            OpCode::BitNot
-            | OpCode::CastBool
-            | OpCode::CastInt
-            | OpCode::CastPtr
-            | OpCode::Drop
-            | OpCode::Load { .. } => 1,
-
-            OpCode::Dup { depth } => depth + 1,
-
-            OpCode::ArgC
-            | OpCode::ArgV
-            | OpCode::DupPair
-            | OpCode::If { .. }
-            | OpCode::Memory { .. }
-            | OpCode::PushBool(_)
-            | OpCode::PushInt(_)
-            | OpCode::PushStr { .. }
-            | OpCode::ResolvedIdent { .. }
-            | OpCode::UnresolvedIdent { .. }
-            | OpCode::While { .. } => 0,
-
-            OpCode::CallProc { .. }
-            | OpCode::Return { .. }
-            | OpCode::Prologue
-            | OpCode::Epilogue => {
-                panic!("ICE: called pop_count on function opcodes")
-            }
-
-            OpCode::SysCall(a) => a + 1,
-        }
-    }
-
     // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
     fn is_binary_op(&self) -> bool {
         use OpCode::*;
@@ -289,20 +236,6 @@ impl OpCode {
                 global,
             } => (*module, *proc_id, *offset, *global),
             _ => panic!("expected OpCode::Memory"),
-        }
-    }
-
-    pub fn unwrap_load(&self) -> (Width, PorthTypeKind) {
-        match self {
-            OpCode::Load { width, kind } => (*width, *kind),
-            _ => panic!("expected Opcode::Load"),
-        }
-    }
-
-    pub fn unwrap_store(&self) -> (Width, PorthTypeKind) {
-        match self {
-            OpCode::Store { width, kind } => (*width, *kind),
-            _ => panic!("expected Opcode::Store"),
         }
     }
 }

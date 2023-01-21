@@ -18,7 +18,6 @@ use crate::{
     opcode::{self, ConditionalBlock, Op, OpCode, OpId},
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
-    OPT_OPCODE,
 };
 
 mod parser;
@@ -258,7 +257,6 @@ impl Program {
         file: &str,
         interner: &mut Interners,
         source_store: &mut SourceStorage,
-        opt_level: u8,
         library_paths: &[String],
     ) -> Result<ModuleId> {
         let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
@@ -345,7 +343,7 @@ impl Program {
             return Err(eyre!("failed to load program"));
         }
 
-        self.post_process_procs(opt_level, interner, source_store)?;
+        self.post_process_procs(interner, source_store)?;
 
         Ok(entry_module_id)
     }
@@ -1100,7 +1098,6 @@ impl Program {
 
     fn post_process_procs(
         &mut self,
-        opt_level: u8,
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
@@ -1127,10 +1124,8 @@ impl Program {
         debug!("    Checking asserts...");
         self.check_asserts(interner, source_store)?;
 
-        if opt_level >= OPT_OPCODE {
-            debug!("    Optimizing functions...");
-            self.optimize_functions(interner, source_store);
-        }
+        debug!("    Optimizing functions...");
+        self.optimize_functions(interner, source_store);
 
         debug!("    Finished processing procs.");
         debug!("");
