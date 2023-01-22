@@ -103,15 +103,21 @@ impl OpData {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct MergePair {
-    src: ValueId,
-    dst: ValueId,
+pub struct MergePair {
+    pub src: ValueId,
+    pub dst: ValueId,
 }
 
 #[derive(Debug)]
-struct MergeBlock {
+pub struct MergeBlock {
     condition_merges: Vec<MergePair>,
     body_merges: Vec<MergePair>,
+}
+
+impl MergeBlock {
+    pub fn body_merges(&self) -> &[MergePair] {
+        &self.body_merges
+    }
 }
 
 #[derive(Debug, Default)]
@@ -158,7 +164,7 @@ impl Analyzer {
         val.consumer.push(consumer_id);
     }
 
-    fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[PorthTypeKind; N]> {
+    pub fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[PorthTypeKind; N]> {
         self.value_types.get_n(ids)
     }
 
@@ -188,7 +194,7 @@ impl Analyzer {
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    fn get_op_merges(&self, op_id: OpId) -> Option<&MergeBlock> {
+    pub fn get_op_merges(&self, op_id: OpId) -> Option<&MergeBlock> {
         self.value_merges.get(&op_id)
     }
 
