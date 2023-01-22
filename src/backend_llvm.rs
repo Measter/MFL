@@ -289,6 +289,8 @@ impl<'ctx> CodeGen<'ctx> {
             let function = self.proc_function_map[&proc_id];
             self.compile_procedure(program, proc_id, proc, function, source_storage, interner);
         }
+
+        self.pass_manager.run_on(&self.module);
     }
 
     fn module(&self) -> &Module<'ctx> {
