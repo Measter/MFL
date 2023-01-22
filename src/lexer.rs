@@ -28,7 +28,6 @@ pub enum TokenKind {
     Do,
     Drop,
     Dup(usize),
-    DupPair,
     Elif,
     Else,
     End,
@@ -86,7 +85,6 @@ impl TokenKind {
             | TokenKind::Do
             | TokenKind::Drop
             | TokenKind::Dup(_)
-            | TokenKind::DupPair
             | TokenKind::Elif
             | TokenKind::Else
             | TokenKind::End

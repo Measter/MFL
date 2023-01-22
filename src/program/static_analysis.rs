@@ -81,7 +81,6 @@ pub struct ValueId(usize);
 
 #[derive(Debug)]
 struct Value {
-    value_id: ValueId,
     creator_token: Token,
     consumer: Vec<OpId>,
 }
@@ -104,8 +103,8 @@ impl OpData {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MergePair {
-    pub src: ValueId,
-    pub dst: ValueId,
+    pub a: ValueId,
+    pub b: ValueId,
 }
 
 #[derive(Debug)]
@@ -141,7 +140,6 @@ impl Analyzer {
             .insert(
                 id,
                 Value {
-                    value_id: id,
                     creator_token: creator.token,
                     consumer: Vec::new(),
                 },
@@ -178,7 +176,7 @@ impl Analyzer {
         self.value_consts.get_n(ids)
     }
 
-    fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
+    pub fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
         self.value_consts
             .insert(id, const_val)
             .expect_none("ICE: Tried to overwrite const value");

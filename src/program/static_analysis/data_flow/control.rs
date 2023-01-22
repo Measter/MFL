@@ -222,8 +222,8 @@ pub(super) fn analyze_while(
     // where to merge the new data.
     for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
         condition_merges.push(MergePair {
-            src: *new_value_id,
-            dst: old_value_id,
+            a: *new_value_id,
+            b: old_value_id,
         });
     }
 
@@ -267,8 +267,8 @@ pub(super) fn analyze_while(
     // where to merge the new data.
     for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
         body_merges.push(MergePair {
-            src: *new_value_id,
-            dst: old_value_id,
+            a: *new_value_id,
+            b: old_value_id,
         });
     }
 
@@ -381,8 +381,8 @@ pub(super) fn analyze_if(
 
     for (&old_value_id, &new_value_id) in output_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
         else_merges.push(MergePair {
-            src: new_value_id,
-            dst: old_value_id,
+            a: new_value_id,
+            b: old_value_id,
         });
     }
 

@@ -78,7 +78,6 @@ pub fn parse_procedure_body(
         let kind = match token.kind {
             TokenKind::Drop => OpCode::Drop,
             TokenKind::Dup(depth) => OpCode::Dup { depth },
-            TokenKind::DupPair => OpCode::DupPair,
             TokenKind::Rot => OpCode::Rot,
             TokenKind::Swap => OpCode::Swap,
 

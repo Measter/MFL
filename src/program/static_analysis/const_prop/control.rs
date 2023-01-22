@@ -52,7 +52,7 @@ pub(super) fn analyze_while(
         .copied()
         .collect();
     for merge_pair in pairs {
-        analyzer.clear_value_const(merge_pair.dst);
+        analyzer.clear_value_const(merge_pair.b);
     }
 
     // Now we can evaluate the condition and body.
@@ -126,6 +126,6 @@ pub(super) fn analyze_if(
     };
 
     for merge_pair in merge_info.body_merges.clone() {
-        analyzer.clear_value_const(merge_pair.dst);
+        analyzer.clear_value_const(merge_pair.b);
     }
 }

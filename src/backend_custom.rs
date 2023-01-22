@@ -179,7 +179,6 @@ fn compile_single_instruction(
         OpCode::CastPtr => todo!(),
         OpCode::DivMod => todo!(),
         OpCode::Dup { depth } => todo!(),
-        OpCode::DupPair => todo!(),
         OpCode::Drop => {
             let [input] = *proc.analyzer().get_op_io(op.id).inputs().as_arr();
             assembler.free_value_location(input);

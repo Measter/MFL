@@ -161,11 +161,6 @@ fn simulate_execute_program_block(
                 let a = value_stack[value_stack.len() - 1 - depth];
                 value_stack.push(a);
             }
-            OpCode::DupPair => {
-                if let [.., _, _] = value_stack.as_slice() {
-                    value_stack.extend_from_within(value_stack.len() - 2..);
-                }
-            }
             OpCode::Rot => {
                 let start = value_stack.len() - 3;
                 value_stack[start..].rotate_left(1);

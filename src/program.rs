@@ -8,14 +8,15 @@ use std::{
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use lasso::Spur;
-use log::debug;
+use log::{debug, trace};
 use variantly::Variantly;
 
 use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{self, ConditionalBlock, Op, OpCode, OpId},
+    opcode::{ConditionalBlock, Op, OpCode, OpId},
+    program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
 };
@@ -658,7 +659,7 @@ impl Program {
 
     fn analyze_data_flow(
         &mut self,
-        interner: &Interners,
+        interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
         debug!("    Performing stack verification, type checking, const propagation...");
@@ -673,6 +674,7 @@ impl Program {
         let mut local_analyzer = Analyzer::default();
 
         for id in proc_ids {
+            trace!("      Analyzing {}", interner.get_symbol_name(self, id));
             let proc = self.all_procedures.get_mut(&id).unwrap();
             std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
 
@@ -778,6 +780,7 @@ impl Program {
         &mut self,
         own_proc: &Procedure,
         block: Vec<Op>,
+        analyzer: &mut Analyzer,
         had_error: &mut bool,
         interner: &Interners,
         source_store: &SourceStorage,
@@ -792,6 +795,7 @@ impl Program {
                                 condition: self.process_idents_in_block(
                                     own_proc,
                                     while_body.condition,
+                                    analyzer,
                                     had_error,
                                     interner,
                                     source_store,
@@ -799,6 +803,7 @@ impl Program {
                                 block: self.process_idents_in_block(
                                     own_proc,
                                     while_body.block,
+                                    analyzer,
                                     had_error,
                                     interner,
                                     source_store,
@@ -821,6 +826,7 @@ impl Program {
                         condition: self.process_idents_in_block(
                             own_proc,
                             condition.condition,
+                            analyzer,
                             had_error,
                             interner,
                             source_store,
@@ -828,6 +834,7 @@ impl Program {
                         block: self.process_idents_in_block(
                             own_proc,
                             condition.block,
+                            analyzer,
                             had_error,
                             interner,
                             source_store,
@@ -838,6 +845,7 @@ impl Program {
                     let new_else = self.process_idents_in_block(
                         own_proc,
                         else_block,
+                        analyzer,
                         had_error,
                         interner,
                         source_store,
@@ -868,9 +876,13 @@ impl Program {
                             const_val: Some(vals),
                         } => {
                             for (kind, val) in vals {
-                                let code = match kind {
-                                    PorthTypeKind::Int => OpCode::PushInt(*val),
-                                    PorthTypeKind::Bool => OpCode::PushBool(*val != 0),
+                                let (code, const_val) = match kind {
+                                    PorthTypeKind::Int => {
+                                        (OpCode::PushInt(*val), ConstVal::Int(*val))
+                                    }
+                                    PorthTypeKind::Bool => {
+                                        (OpCode::PushBool(*val != 0), ConstVal::Bool(*val != 0))
+                                    }
                                     PorthTypeKind::Ptr => {
                                         panic!("ICE: Const pointers not supported")
                                     }
@@ -881,6 +893,10 @@ impl Program {
                                     token: op.token,
                                     expansions: op.expansions.clone(),
                                 });
+
+                                let op_io = analyzer.get_op_io(op.id);
+                                let out_id = op_io.outputs()[0];
+                                analyzer.set_value_const(out_id, const_val);
                             }
                         }
                         ProcedureKind::Memory => {
@@ -932,7 +948,11 @@ impl Program {
         new_ops
     }
 
-    fn process_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+    fn process_idents(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
         debug!("    Processing idents...");
         let mut had_error = false;
 
@@ -944,17 +964,26 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
+        let mut local_analyzer = Analyzer::default();
         for own_proc_id in all_proc_ids {
+            trace!(
+                "      Processing {}",
+                interner.get_symbol_name(self, own_proc_id)
+            );
             let mut proc = self.all_procedures.remove(&own_proc_id).unwrap();
 
+            std::mem::swap(&mut local_analyzer, &mut proc.analyzer);
             let old_body = std::mem::take(&mut proc.body);
             proc.body = self.process_idents_in_block(
                 &proc,
                 old_body,
+                &mut local_analyzer,
                 &mut had_error,
                 interner,
                 source_store,
             );
+
+            std::mem::swap(&mut local_analyzer, &mut proc.analyzer);
 
             self.all_procedures.insert(own_proc_id, proc);
         }
@@ -1067,17 +1096,6 @@ impl Program {
             .ok_or_else(|| eyre!("failed assert check"))
     }
 
-    fn optimize_functions(&mut self, interner: &mut Interners, source_store: &SourceStorage) {
-        debug!("    Optimizing functions...");
-        for proc in self.all_procedures.values_mut() {
-            if !proc.kind().is_function() {
-                continue;
-            }
-
-            proc.body = opcode::optimize(&proc.body, interner, source_store);
-        }
-    }
-
     fn post_process_procs(
         &mut self,
         interner: &mut Interners,
@@ -1096,7 +1114,7 @@ impl Program {
         self.evaluate_allocation_sizes(interner, source_store)?;
         self.check_asserts(interner, source_store)?;
 
-        self.optimize_functions(interner, source_store);
+        // self.optimize_functions(interner, source_store);
 
         debug!("    Finished processing procs.");
 

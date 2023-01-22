@@ -188,13 +188,7 @@ pub(super) fn analyze_block(
                 op,
                 depth,
             ),
-            OpCode::DupPair => stack_ops::dup_pair(
-                analyzer,
-                stack,
-                source_store,
-                had_error,
-                op,
-            ),
+
             OpCode::Swap => stack_ops::swap(
                 analyzer,
                 stack,

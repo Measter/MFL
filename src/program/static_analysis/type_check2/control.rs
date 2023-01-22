@@ -177,8 +177,8 @@ pub(super) fn analyze_while(
         .iter()
         .chain(&merge_info.body_merges)
     {
-        let [new_value, old_value] = analyzer.values([merge_pair.src, merge_pair.dst]);
-        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.src, merge_pair.dst]) else { continue };
+        let [new_value, old_value] = analyzer.values([merge_pair.a, merge_pair.b]);
+        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.a, merge_pair.b]) else { continue };
 
         if new_type != old_type {
             *had_error = true;
@@ -274,8 +274,8 @@ pub(super) fn analyze_if(
     };
 
     for merge_pair in &merges.body_merges {
-        let [new_value, old_value] = analyzer.values([merge_pair.src, merge_pair.dst]);
-        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.src, merge_pair.dst]) else { continue };
+        let [new_value, old_value] = analyzer.values([merge_pair.a, merge_pair.b]);
+        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.a, merge_pair.b]) else { continue };
 
         if new_type != old_type {
             *had_error = true;

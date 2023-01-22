@@ -19,7 +19,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op, OpCode},
     program::{
-        static_analysis::{Analyzer, ConstVal, PorthTypeKind, ValueId},
+        static_analysis::{Analyzer, ConstVal, PorthTypeKind, PtrId, ValueId},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -162,6 +162,7 @@ impl<'ctx> CodeGen<'ctx> {
         &self,
         id: ValueId,
         value_map: &mut HashMap<ValueId, BasicValueEnum<'ctx>>,
+        variable_map: &HashMap<ProcedureId, PointerValue<'ctx>>,
         merge_pair_map: &HashMap<ValueId, PointerValue<'ctx>>,
         analyzer: &Analyzer,
     ) -> BasicValueEnum<'ctx> {
@@ -169,7 +170,19 @@ impl<'ctx> CodeGen<'ctx> {
             Some([const_val]) => match const_val {
                 ConstVal::Int(val) => self.ctx.i64_type().const_int(val, true).into(),
                 ConstVal::Bool(val) => self.ctx.bool_type().const_int(val as u64, false).into(),
-                ConstVal::Ptr { .. } => todo!(),
+                ConstVal::Ptr { id, offset, .. } => {
+                    let ptr = match id {
+                        PtrId::Mem(id) => variable_map[&id],
+                        PtrId::Str(_) => todo!(),
+                    };
+
+                    if let Some(offset) = offset {
+                        let offset = self.ctx.i64_type().const_int(offset, false);
+                        unsafe { self.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
+                    } else {
+                        ptr.into()
+                    }
+                }
             },
             _ => {
                 if let Some(&ptr) = merge_pair_map.get(&id) {
@@ -253,10 +266,10 @@ impl<'ctx> CodeGen<'ctx> {
                     let res: BasicValueEnum = match [a_type, b_type] {
                         [PorthTypeKind::Int, PorthTypeKind::Int] => {
                             let a_val = self
-                                .load_value(a, value_map, merge_pair_map, analyzer)
+                                .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                                 .into_int_value();
                             let b_val = self
-                                .load_value(b, value_map, merge_pair_map, analyzer)
+                                .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                                 .into_int_value();
                             let (func, name) = op.code.get_arith_fn();
                             func(&self.builder, a_val, b_val, name).into()
@@ -267,10 +280,10 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                         [PorthTypeKind::Ptr, PorthTypeKind::Int] => {
                             let offset = self
-                                .load_value(b, value_map, merge_pair_map, analyzer)
+                                .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                                 .into_int_value();
                             let ptr = self
-                                .load_value(a, value_map, merge_pair_map, analyzer)
+                                .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                                 .into_pointer_value();
 
                             // If we're subtracting, then we need to negate the offset.
@@ -294,10 +307,10 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
                     let b_val = self
-                        .load_value(b, value_map, merge_pair_map, analyzer)
+                        .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let (func, name) = op.code.get_arith_fn();
@@ -307,10 +320,10 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::DivMod => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
                     let b_val = self
-                        .load_value(b, value_map, merge_pair_map, analyzer)
+                        .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let rem_res = self.builder.build_int_unsigned_rem(a_val, b_val, "rem");
@@ -329,10 +342,10 @@ impl<'ctx> CodeGen<'ctx> {
                 | OpCode::LessEqual => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
                     let b_val = self
-                        .load_value(b, value_map, merge_pair_map, analyzer)
+                        .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let (pred, name) = op.code.get_predicate();
@@ -343,10 +356,10 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::ShiftLeft => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
                     let b_val = self
-                        .load_value(b, value_map, merge_pair_map, analyzer)
+                        .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let res = self.builder.build_left_shift(a_val, b_val, "shl");
@@ -355,10 +368,10 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::ShiftRight => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
                     let b_val = self
-                        .load_value(b, value_map, merge_pair_map, analyzer)
+                        .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let res = self.builder.build_right_shift(a_val, b_val, false, "shr");
@@ -367,7 +380,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::BitNot => {
                     let a = op_io.inputs()[0];
                     let a_val = self
-                        .load_value(a, value_map, merge_pair_map, analyzer)
+                        .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
                         .into_int_value();
 
                     let res = self.builder.build_not(a_val, "not");
@@ -382,7 +395,9 @@ impl<'ctx> CodeGen<'ctx> {
                     let args: Vec<BasicMetadataValueEnum> = op_io
                         .inputs()
                         .iter()
-                        .map(|id| self.load_value(*id, value_map, merge_pair_map, analyzer))
+                        .map(|id| {
+                            self.load_value(*id, value_map, variable_map, merge_pair_map, analyzer)
+                        })
                         .map(Into::into)
                         .collect();
 
@@ -418,16 +433,9 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Dup { .. } => {
                     let input = op_io.inputs()[0];
                     let output = op_io.outputs()[0];
-                    let value = self.load_value(input, value_map, merge_pair_map, analyzer);
+                    let value =
+                        self.load_value(input, value_map, variable_map, merge_pair_map, analyzer);
                     self.store_value(output, value, value_map, merge_pair_map);
-                }
-                OpCode::DupPair => {
-                    let [ina, inb] = *op_io.inputs().as_arr();
-                    let [outa, outb] = *op_io.outputs().as_arr();
-                    let vala = self.load_value(ina, value_map, merge_pair_map, analyzer);
-                    let valb = self.load_value(inb, value_map, merge_pair_map, analyzer);
-                    self.store_value(outa, vala, value_map, merge_pair_map);
-                    self.store_value(outb, valb, value_map, merge_pair_map);
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
@@ -443,7 +451,9 @@ impl<'ctx> CodeGen<'ctx> {
                     let return_values: Vec<BasicValueEnum> = op_io
                         .inputs()
                         .iter()
-                        .map(|id| self.load_value(*id, value_map, merge_pair_map, analyzer))
+                        .map(|id| {
+                            self.load_value(*id, value_map, variable_map, merge_pair_map, analyzer)
+                        })
                         .collect();
                     self.builder.build_aggregate_return(&return_values);
                 }
@@ -483,6 +493,8 @@ impl<'ctx> CodeGen<'ctx> {
                         trace!("      Const condition");
                     }
 
+                    trace!("    Defining merge variables");
+
                     // Allocate variables for merges.
                     // These need to store at the end of each block.
                     // We might ourselves be merging into another block, so we should pass a clone
@@ -490,7 +502,7 @@ impl<'ctx> CodeGen<'ctx> {
                     let mut sub_block_merges = merge_pair_map.clone();
                     let op_merges = analyzer.get_op_merges(op.id).unwrap();
                     for pair in op_merges.body_merges() {
-                        let typ = match analyzer.value_types([pair.dst]).unwrap()[0] {
+                        let typ = match analyzer.value_types([pair.b]).unwrap()[0] {
                             PorthTypeKind::Int => self.ctx.i64_type().as_basic_type_enum(),
                             PorthTypeKind::Ptr => self
                                 .ctx
@@ -501,9 +513,22 @@ impl<'ctx> CodeGen<'ctx> {
                         };
                         let var = self
                             .builder
-                            .build_alloca(typ, &format!("{:?}_{:?}_var", pair.src, pair.dst));
-                        sub_block_merges.insert(pair.src, var);
-                        sub_block_merges.insert(pair.dst, var);
+                            .build_alloca(typ, &format!("{:?}_{:?}_var", pair.a, pair.b));
+
+                        // TODO: This will be wrong if the values are set only in a branch, not before
+                        // the IF.
+                        self.builder.build_store(
+                            var,
+                            self.load_value(
+                                pair.a,
+                                value_map,
+                                variable_map,
+                                merge_pair_map,
+                                analyzer,
+                            ),
+                        );
+                        sub_block_merges.insert(pair.a, var);
+                        sub_block_merges.insert(pair.b, var);
                     }
 
                     // Generate new blocks for Then, Else, and Post.
@@ -514,8 +539,14 @@ impl<'ctx> CodeGen<'ctx> {
                     // Make conditional jump.
                     if const_condition.is_none() {
                         self.builder.build_conditional_branch(
-                            self.load_value(condition_value, value_map, merge_pair_map, analyzer)
-                                .into_int_value(),
+                            self.load_value(
+                                condition_value,
+                                value_map,
+                                variable_map,
+                                merge_pair_map,
+                                analyzer,
+                            )
+                            .into_int_value(),
                             then_basic_block,
                             else_basic_block,
                         );
@@ -568,12 +599,12 @@ impl<'ctx> CodeGen<'ctx> {
                     // Free variables
                     for pair in op_merges.body_merges() {
                         let &ptr = merge_pair_map
-                            .get(&pair.dst)
+                            .get(&pair.b)
                             .expect("ICE: Tried to merge missing value ID");
                         let data = self.builder.build_load(ptr, "merge");
                         self.builder.build_free(ptr);
 
-                        self.store_value(pair.dst, data, value_map, merge_pair_map);
+                        self.store_value(pair.b, data, value_map, merge_pair_map);
                     }
 
                     todo!()
@@ -581,10 +612,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Load { width, kind } => todo!(),
                 OpCode::Store { width, kind } => {
+                    log::error!("STORE not implemented correctly");
                     let [data, ptr] = *op_io.inputs().as_arr();
-                    let data = self.load_value(data, value_map, merge_pair_map, analyzer);
+                    let data =
+                        self.load_value(data, value_map, variable_map, merge_pair_map, analyzer);
                     let ptr = self
-                        .load_value(ptr, value_map, merge_pair_map, analyzer)
+                        .load_value(ptr, value_map, variable_map, merge_pair_map, analyzer)
                         .into_pointer_value();
 
                     self.builder.build_store(ptr, data);
@@ -642,7 +675,7 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let mut value_map = HashMap::new();
         let mut variable_map = HashMap::new();
-        let mut merge_pair_map = HashMap::new();
+        let merge_pair_map = HashMap::new();
         let name = interner.get_symbol_name(program, id);
         debug!("Compiling {name}...");
 
@@ -667,7 +700,7 @@ impl<'ctx> CodeGen<'ctx> {
             function,
             &mut value_map,
             &variable_map,
-            &mut merge_pair_map,
+            &merge_pair_map,
             source_storage,
             interner,
         );

@@ -1,4 +1,4 @@
-use crate::{n_ops::SliceNOps, opcode::Op, source_file::SourceStorage};
+use crate::{opcode::Op, source_file::SourceStorage};
 
 use super::{
     super::{Analyzer, ValueId},
@@ -35,24 +35,6 @@ pub(super) fn dup(
     stack.push(new_id);
 
     analyzer.set_op_io(op, &[src_id], &[new_id]);
-}
-
-pub(super) fn dup_pair(
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    had_error: &mut bool,
-    op: &Op,
-) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
-
-    let input_ids = *stack.lastn(2).unwrap().as_arr::<2>();
-    let new_id1 = analyzer.new_value(op);
-    let new_id2 = analyzer.new_value(op);
-    stack.push(new_id1);
-    stack.push(new_id2);
-
-    analyzer.set_op_io(op, &[new_id1, new_id2], &input_ids);
 }
 
 pub(super) fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c_str: bool) {

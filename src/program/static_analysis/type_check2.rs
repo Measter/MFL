@@ -147,7 +147,6 @@ pub(super) fn analyze_block(
 
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
-            OpCode::DupPair => stack_ops::dup_pair(analyzer, op),
 
             OpCode::Load {  kind, .. } => memory::load(
                 analyzer,

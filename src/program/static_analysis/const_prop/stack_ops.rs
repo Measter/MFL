@@ -40,17 +40,6 @@ pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_const(op_data.outputs[0], types);
 }
 
-pub(super) fn dup_pair(analyzer: &mut Analyzer, op: &Op) {
-    let op_data = analyzer.get_op_io(op.id);
-    let inputs = *op_data.inputs.as_arr::<2>();
-    let outputs = *op_data.outputs.as_arr::<2>();
-
-    for (input_id, output_id) in inputs.into_iter().zip(outputs) {
-        let Some([input_type]) = analyzer.value_consts([input_id]) else { continue };
-        analyzer.set_value_const(output_id, input_type);
-    }
-}
-
 pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op, value: bool) {
     let op_data = analyzer.get_op_io(op.id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Bool(value));

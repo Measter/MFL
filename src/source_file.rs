@@ -64,11 +64,6 @@ impl SourceLocation {
     }
 
     #[inline(always)]
-    pub fn range(&self) -> Range<usize> {
-        self.source_start..self.source_end
-    }
-
-    #[inline(always)]
     #[allow(unused)]
     pub fn merge(self, other: Self) -> Self {
         assert!(self.file_id == other.file_id);

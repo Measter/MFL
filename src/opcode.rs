@@ -2,17 +2,12 @@ use lasso::Spur;
 use variantly::Variantly;
 
 use crate::{
-    interners::Interners,
     lexer::Token,
     program::static_analysis::PorthTypeKind,
     program::{ModuleId, ProcedureId},
-    source_file::{SourceLocation, SourceStorage},
+    source_file::SourceLocation,
     Width,
 };
-
-use self::optimizer_passes::PASSES;
-
-mod optimizer_passes;
 
 #[derive(Debug, Clone)]
 pub struct ConditionalBlock {
@@ -41,7 +36,6 @@ pub enum OpCode {
     Dup {
         depth: usize,
     },
-    DupPair,
     Drop,
     Epilogue,
     Equal,
@@ -99,85 +93,6 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    // Used by the opcode optimizer to detect whether it can optimize Push-Push-Op.
-    fn is_binary_op(&self) -> bool {
-        use OpCode::*;
-        match self {
-            Add | BitAnd | BitOr | Equal | Greater | GreaterEqual | Less | LessEqual | Multiply
-            | NotEq | ShiftLeft | ShiftRight | Subtract => true,
-
-            ArgC
-            | ArgV
-            | BitNot
-            | CallProc { .. }
-            | CastBool
-            | CastInt
-            | CastPtr
-            | DivMod
-            | Drop
-            | Dup { .. }
-            | DupPair
-            | Epilogue
-            | If { .. }
-            | Load { .. }
-            | Memory { .. }
-            | Prologue
-            | PushBool(_)
-            | PushInt(_)
-            | PushStr { .. }
-            | ResolvedIdent { .. }
-            | Return { .. }
-            | Rot
-            | Store { .. }
-            | Swap
-            | SysCall(_)
-            | UnresolvedIdent { .. }
-            | While { .. } => false,
-        }
-    }
-
-    fn is_boolean_op(&self) -> bool {
-        use OpCode::*;
-        match self {
-            Equal | Greater | GreaterEqual | Less | LessEqual | NotEq => true,
-
-            Add
-            | ArgC
-            | ArgV
-            | BitAnd
-            | BitNot
-            | BitOr
-            | CallProc { .. }
-            | CastBool
-            | CastInt
-            | CastPtr
-            | DivMod
-            | Drop
-            | Dup { .. }
-            | DupPair
-            | Epilogue
-            | If { .. }
-            | Load { .. }
-            | Memory { .. }
-            | Multiply
-            | Prologue
-            | PushBool(_)
-            | PushInt(_)
-            | PushStr { .. }
-            | ResolvedIdent { .. }
-            | Return { .. }
-            | Rot
-            | ShiftLeft
-            | ShiftRight
-            | Store { .. }
-            | Subtract
-            | Swap
-            | SysCall(_)
-            | UnresolvedIdent { .. }
-            | While { .. } => false,
-        }
-    }
-
     pub fn get_binary_op(&self) -> fn(u64, u64) -> u64 {
         use OpCode::*;
         match self {
@@ -205,7 +120,6 @@ impl OpCode {
             | DivMod
             | Drop
             | Dup { .. }
-            | DupPair
             | Epilogue
             | If { .. }
             | Load { .. }
@@ -224,18 +138,6 @@ impl OpCode {
             | While { .. } => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")
             }
-        }
-    }
-
-    pub fn unwrap_memory(&self) -> (ModuleId, ProcedureId, usize, bool) {
-        match self {
-            Self::Memory {
-                module_id: module,
-                proc_id,
-                offset,
-                global,
-            } => (*module, *proc_id, *offset, *global),
-            _ => panic!("expected OpCode::Memory"),
         }
     }
 }
@@ -260,87 +162,4 @@ impl Op {
             expansions: Vec::new(),
         }
     }
-}
-
-pub fn optimize(ops: &[Op], interner: &mut Interners, sources: &SourceStorage) -> Vec<Op> {
-    let mut src_vec = ops.to_owned();
-    let mut dst_vec: Vec<Op> = Vec::with_capacity(ops.len());
-
-    // Keep making passes until we get no changes.
-    loop {
-        let mut src = src_vec.as_slice();
-        let mut changed = false;
-
-        while !src.is_empty() {
-            if let Some((ops, xs)) = PASSES
-                .iter()
-                .filter_map(|pass| pass(src, interner, sources))
-                .next()
-            {
-                dst_vec.extend(ops);
-                src = xs;
-                changed = true;
-            } else if let [op, xs @ ..] = src {
-                match &op.code {
-                    OpCode::If {
-                        condition,
-                        else_block,
-                        open_token,
-                        end_token,
-                    } => {
-                        //
-                        let new_main = ConditionalBlock {
-                            condition: optimize(&condition.condition, interner, sources),
-                            block: optimize(&condition.block, interner, sources),
-                            do_token: condition.do_token,
-                            close_token: condition.close_token,
-                        };
-
-                        let new_else_block = optimize(else_block, interner, sources);
-
-                        dst_vec.push(Op {
-                            code: OpCode::If {
-                                condition: new_main,
-                                else_block: new_else_block,
-                                open_token: *open_token,
-                                end_token: *end_token,
-                            },
-                            id: op.id,
-                            token: op.token,
-                            expansions: op.expansions.clone(),
-                        });
-                    }
-                    OpCode::While { body } => {
-                        let new_body = ConditionalBlock {
-                            condition: optimize(&body.condition, interner, sources),
-                            block: optimize(&body.block, interner, sources),
-                            do_token: body.do_token,
-                            close_token: body.close_token,
-                        };
-
-                        dst_vec.push(Op {
-                            code: OpCode::While { body: new_body },
-                            id: op.id,
-                            token: op.token,
-                            expansions: op.expansions.clone(),
-                        });
-                    }
-                    _ => {
-                        dst_vec.push(op.clone());
-                    }
-                }
-
-                src = xs;
-            }
-        }
-
-        if !changed {
-            break;
-        }
-
-        src_vec.clear();
-        std::mem::swap(&mut src_vec, &mut dst_vec);
-    }
-
-    dst_vec
 }

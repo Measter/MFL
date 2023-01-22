@@ -66,7 +66,6 @@ pub(super) fn analyze_block(
             OpCode::CastPtr => stack_ops::cast_ptr(analyzer, op),
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
-            OpCode::DupPair => stack_ops::dup_pair(analyzer, op),
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
