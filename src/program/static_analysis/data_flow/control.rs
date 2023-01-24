@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use ariadne::{Color, Label};
+use log::trace;
 
 use crate::{
     diagnostics,
@@ -9,7 +10,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{MergeBlock, MergePair},
+        static_analysis::{IfMerge, WhileMerge, WhileMerges},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -220,15 +221,15 @@ pub(super) fn analyze_while(
 
     // Now we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
-    for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        condition_merges.push(MergePair {
-            a: *new_value_id,
-            b: old_value_id,
+    for (&output_value, &input_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
+        trace!("      Defining merge for {input_value:?} into {output_value:?}");
+        condition_merges.push(WhileMerge {
+            input_value,
+            output_value,
         });
     }
 
-    // Restore the stack to the initial stack, so we can evaluate the body with a clean slate.
-    // This allows us to know which values should be merged with.
+    // Because the condition cannot change the stack state, we'll just restore to the initial stap for the body.
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 
@@ -244,8 +245,7 @@ pub(super) fn analyze_while(
         source_store,
     );
 
-    // In this case, we do not expect any new values, only that the stack has the same depth.
-    // Might be worth having a custom error here.
+    // Again, the body cannot change the depth of the stack.
     if stack.len() != initial_stack.len() {
         generate_stack_length_mismatch_diag(
             source_store,
@@ -265,26 +265,24 @@ pub(super) fn analyze_while(
 
     // Again, we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
-    for (&old_value_id, new_value_id) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        body_merges.push(MergePair {
-            a: *new_value_id,
-            b: old_value_id,
+    for (&output_value, &input_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
+        trace!("      Defining merge for {input_value:?} into {output_value:?}");
+
+        body_merges.push(WhileMerge {
+            input_value,
+            output_value,
         });
     }
 
-    analyzer.set_op_merges(
+    analyzer.set_while_merges(
         op,
-        MergeBlock {
-            condition_merges,
-            body_merges,
+        WhileMerges {
+            condition: condition_merges,
+            body: body_merges,
         },
     );
     analyzer.set_op_io(op, &[condition_value], &[]);
     analyzer.consume_value(condition_value, op.id);
-
-    // Now restore the stack a second time so the rest of the proc can pretend the while block
-    // changed anything.
-    *stack = initial_stack;
 }
 
 pub(super) fn analyze_if(
@@ -300,14 +298,9 @@ pub(super) fn analyze_if(
     else_block: &[Op],
     close_token: Token,
 ) {
-    // Validity checking is fairly simple:
-    // * The condition is always executed, so may change the stack.
-    // * If there's an else block, then the bodies may change the stack.
-
-    let initial_stack = stack.clone();
     let mut condition_values = Vec::new();
 
-    // Evaluate main condition.
+    // Evaluate condition.
     super::analyze_block(
         program,
         proc,
@@ -335,7 +328,9 @@ pub(super) fn analyze_if(
     }
     condition_values.push(stack.pop().unwrap());
 
-    // Now we can do the main body.
+    let initial_stack = stack.clone();
+
+    // Now we can do the then-block.
     super::analyze_block(
         program,
         proc,
@@ -348,15 +343,14 @@ pub(super) fn analyze_if(
     );
 
     // We always have an else block, so save our current stack state for comparison.
-    let output_stack = stack.clone();
-    let output_stack_sample_location = main.close_token.location;
+    let then_block_stack = stack.clone();
+    let then_block_sample_location = main.close_token.location;
 
     // And restore our stack back to the initial stack.
     stack.clear();
     stack.extend_from_slice(&initial_stack);
 
     // Now analyze the else block.
-    let mut else_merges = Vec::new();
     super::analyze_block(
         program,
         proc,
@@ -368,32 +362,29 @@ pub(super) fn analyze_if(
         source_store,
     );
 
-    if stack.len() != output_stack.len() {
+    if stack.len() != then_block_stack.len() {
         generate_stack_length_mismatch_diag(
             source_store,
-            output_stack_sample_location,
+            then_block_sample_location,
             close_token.location,
             stack.len(),
-            output_stack.len(),
+            then_block_stack.len(),
         );
         *had_error = true;
     }
 
-    for (&old_value_id, &new_value_id) in output_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        else_merges.push(MergePair {
-            a: new_value_id,
-            b: old_value_id,
+    let mut body_merges = Vec::new();
+    for (&then_value, else_value) in then_block_stack.iter().zip(stack).filter(|(a, b)| a != b) {
+        let output_value = analyzer.new_value(op);
+        trace!("      Defining merge for {then_value:?} and {else_value:?} into {output_value:?}");
+        body_merges.push(IfMerge {
+            then_value,
+            else_value: *else_value,
+            output_value,
         });
+        *else_value = output_value;
     }
 
-    *stack = output_stack;
-
     analyzer.set_op_io(op, &condition_values, &[]);
-    analyzer.set_op_merges(
-        op,
-        MergeBlock {
-            condition_merges: Vec::new(),
-            body_merges: else_merges,
-        },
-    );
+    analyzer.set_if_merges(op, body_merges);
 }

@@ -167,23 +167,26 @@ impl<'ctx> CodeGen<'ctx> {
         analyzer: &Analyzer,
     ) -> BasicValueEnum<'ctx> {
         match analyzer.value_consts([id]) {
-            Some([const_val]) => match const_val {
-                ConstVal::Int(val) => self.ctx.i64_type().const_int(val, true).into(),
-                ConstVal::Bool(val) => self.ctx.bool_type().const_int(val as u64, false).into(),
-                ConstVal::Ptr { id, offset, .. } => {
-                    let ptr = match id {
-                        PtrId::Mem(id) => variable_map[&id],
-                        PtrId::Str(_) => todo!(),
-                    };
+            Some([const_val]) => {
+                trace!("      Fetching const {id:?}");
+                match const_val {
+                    ConstVal::Int(val) => self.ctx.i64_type().const_int(val, true).into(),
+                    ConstVal::Bool(val) => self.ctx.bool_type().const_int(val as u64, false).into(),
+                    ConstVal::Ptr { id, offset, .. } => {
+                        let ptr = match id {
+                            PtrId::Mem(id) => variable_map[&id],
+                            PtrId::Str(_) => todo!(),
+                        };
 
-                    if let Some(offset) = offset {
-                        let offset = self.ctx.i64_type().const_int(offset, false);
-                        unsafe { self.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
-                    } else {
-                        ptr.into()
+                        if let Some(offset) = offset {
+                            let offset = self.ctx.i64_type().const_int(offset, false);
+                            unsafe { self.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
+                        } else {
+                            ptr.into()
+                        }
                     }
                 }
-            },
+            }
             _ => {
                 if let Some(&ptr) = merge_pair_map.get(&id) {
                     trace!(
@@ -467,147 +470,120 @@ impl<'ctx> CodeGen<'ctx> {
                     else_block,
                     ..
                 } => {
-                    // Compile condition
-                    let condition_value = op_io.inputs()[0];
-                    let const_condition =
-                        analyzer.value_consts([condition_value]).map(|[v]| match v {
-                            ConstVal::Bool(v) => v,
-                            _ => panic!("ICE: Non-bool const val for if-condition"),
-                        });
-
-                    if const_condition.is_none() {
-                        trace!("      Compiling condition");
-                        self.compile_block(
-                            program,
-                            id,
-                            procedure,
-                            condition_block,
-                            function,
-                            value_map,
-                            variable_map,
-                            merge_pair_map,
-                            source_storage,
-                            interner,
-                        );
-                    } else {
-                        trace!("      Const condition");
-                    }
-
-                    trace!("    Defining merge variables");
-
-                    // Allocate variables for merges.
-                    // These need to store at the end of each block.
-                    // We might ourselves be merging into another block, so we should pass a clone
-                    // into our children so we don't clobber our parent's merge block.
-                    let mut sub_block_merges = merge_pair_map.clone();
-                    let op_merges = analyzer.get_op_merges(op.id).unwrap();
-                    for pair in op_merges.body_merges() {
-                        let typ = match analyzer.value_types([pair.b]).unwrap()[0] {
-                            PorthTypeKind::Int => self.ctx.i64_type().as_basic_type_enum(),
-                            PorthTypeKind::Ptr => self
-                                .ctx
-                                .i8_type()
-                                .ptr_type(AddressSpace::default())
-                                .as_basic_type_enum(),
-                            PorthTypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
-                        };
-                        let var = self
-                            .builder
-                            .build_alloca(typ, &format!("{:?}_{:?}_var", pair.a, pair.b));
-
-                        // TODO: This will be wrong if the values are set only in a branch, not before
-                        // the IF.
-                        self.builder.build_store(
-                            var,
-                            self.load_value(
-                                pair.a,
-                                value_map,
-                                variable_map,
-                                merge_pair_map,
-                                analyzer,
-                            ),
-                        );
-                        sub_block_merges.insert(pair.a, var);
-                        sub_block_merges.insert(pair.b, var);
-                    }
+                    let current_block = self.builder.get_insert_block().unwrap();
 
                     // Generate new blocks for Then, Else, and Post.
                     let then_basic_block = self.ctx.append_basic_block(function, "then");
                     let else_basic_block = self.ctx.append_basic_block(function, "else");
                     let post_basic_block = self.ctx.append_basic_block(function, "post");
 
+                    self.builder.position_at_end(current_block);
+                    // Compile condition
+                    trace!("      Compiling condition");
+                    self.compile_block(
+                        program,
+                        id,
+                        procedure,
+                        condition_block,
+                        function,
+                        value_map,
+                        variable_map,
+                        merge_pair_map,
+                        source_storage,
+                        interner,
+                    );
+
+                    trace!("    Compiling jump");
                     // Make conditional jump.
-                    if const_condition.is_none() {
-                        self.builder.build_conditional_branch(
-                            self.load_value(
-                                condition_value,
+                    let op_io = analyzer.get_op_io(op.id);
+                    self.builder.build_conditional_branch(
+                        self.load_value(
+                            op_io.inputs()[0],
+                            value_map,
+                            variable_map,
+                            merge_pair_map,
+                            analyzer,
+                        )
+                        .into_int_value(),
+                        then_basic_block,
+                        else_basic_block,
+                    );
+
+                    // Compile Then
+                    self.builder.position_at_end(then_basic_block);
+                    trace!("");
+                    trace!("      Compiling then-block");
+                    self.compile_block(
+                        program,
+                        id,
+                        procedure,
+                        then_block,
+                        function,
+                        value_map,
+                        variable_map,
+                        merge_pair_map,
+                        source_storage,
+                        interner,
+                    );
+
+                    trace!("");
+                    trace!("      Transfering to merge vars");
+                    {
+                        let Some(merges) = analyzer.get_if_merges(op.id) else {
+                            panic!("ICE: If block doesn't have merges");
+                        };
+                        for merge in merges {
+                            let data = self.load_value(
+                                merge.then_value,
                                 value_map,
                                 variable_map,
                                 merge_pair_map,
                                 analyzer,
-                            )
-                            .into_int_value(),
-                            then_basic_block,
-                            else_basic_block,
-                        );
+                            );
+                            self.store_value(merge.output_value, data, value_map, merge_pair_map);
+                        }
                     }
 
-                    // Compile Then
-                    if const_condition.is_none() || const_condition == Some(true) {
-                        trace!("");
-                        trace!("      Compiling then-block");
-                        self.compile_block(
-                            program,
-                            id,
-                            procedure,
-                            then_block,
-                            function,
-                            value_map,
-                            variable_map,
-                            &sub_block_merges,
-                            source_storage,
-                            interner,
-                        );
-                    }
+                    self.builder.build_unconditional_branch(post_basic_block);
 
                     // Compile Else
-                    if const_condition.is_none() || const_condition == Some(false) {
-                        trace!("");
-                        trace!("      Compiling else-block");
-                        self.compile_block(
-                            program,
-                            id,
-                            procedure,
-                            else_block,
-                            function,
-                            value_map,
-                            variable_map,
-                            &sub_block_merges,
-                            source_storage,
-                            interner,
-                        );
+                    self.builder.position_at_end(else_basic_block);
+                    trace!("");
+                    trace!("      Compiling else-block");
+                    self.compile_block(
+                        program,
+                        id,
+                        procedure,
+                        else_block,
+                        function,
+                        value_map,
+                        variable_map,
+                        merge_pair_map,
+                        source_storage,
+                        interner,
+                    );
+
+                    trace!("");
+                    trace!("      Transfering to merge vars");
+                    {
+                        let Some(merges) = analyzer.get_if_merges(op.id) else {
+                            panic!("ICE: If block doesn't have merges");
+                        };
+                        for merge in merges {
+                            let data = self.load_value(
+                                merge.else_value,
+                                value_map,
+                                variable_map,
+                                merge_pair_map,
+                                analyzer,
+                            );
+                            self.store_value(merge.output_value, data, value_map, merge_pair_map);
+                        }
                     }
+                    self.builder.build_unconditional_branch(post_basic_block);
 
                     // Build our jumps
-                    self.builder.position_at_end(then_basic_block);
-                    self.builder.build_unconditional_branch(post_basic_block);
-                    self.builder.position_at_end(else_basic_block);
-                    self.builder.build_unconditional_branch(post_basic_block);
                     self.builder.position_at_end(post_basic_block);
-
-                    // Store our merged values.
-                    // Free variables
-                    for pair in op_merges.body_merges() {
-                        let &ptr = merge_pair_map
-                            .get(&pair.b)
-                            .expect("ICE: Tried to merge missing value ID");
-                        let data = self.builder.build_load(ptr, "merge");
-                        self.builder.build_free(ptr);
-
-                        self.store_value(pair.b, data, value_map, merge_pair_map);
-                    }
-
-                    todo!()
                 }
 
                 OpCode::Load { width, kind } => todo!(),
@@ -641,7 +617,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Prologue => {
                     let params = function.get_param_iter();
                     for (id, param) in op_io.outputs().iter().zip(params) {
-                        value_map.insert(*id, param);
+                        self.store_value(*id, param, value_map, merge_pair_map);
                     }
                 }
 
@@ -664,6 +640,77 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn build_merge_variables(
+        &mut self,
+        block: &[Op],
+        analyzer: &Analyzer,
+        merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
+    ) {
+        fn make_variable<'ctx>(
+            value_id: ValueId,
+            cg: &CodeGen<'ctx>,
+            analyzer: &Analyzer,
+            merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
+        ) {
+            if merge_pair_map.contains_key(&value_id) {
+                trace!("        Variable already exists for `{value_id:?}`");
+                return;
+            }
+
+            let typ = match analyzer.value_types([value_id]).unwrap()[0] {
+                PorthTypeKind::Int => cg.ctx.i64_type().as_basic_type_enum(),
+                PorthTypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
+                PorthTypeKind::Ptr => cg
+                    .ctx
+                    .i8_type()
+                    .ptr_type(AddressSpace::default())
+                    .as_basic_type_enum(),
+            };
+            let name = format!("{value_id:?}_var");
+            trace!("        Defining variable `{name}`");
+
+            let var = cg.builder.build_alloca(typ, &name);
+            merge_pair_map.insert(value_id, var);
+        }
+
+        for op in block {
+            match &op.code {
+                OpCode::If {
+                    condition,
+                    else_block,
+                    ..
+                } => {
+                    self.build_merge_variables(&condition.block, analyzer, merge_pair_map);
+                    self.build_merge_variables(else_block, analyzer, merge_pair_map);
+
+                    let Some(op_merges) = analyzer.get_if_merges(op.id) else {
+                        panic!("ICE: If block doesn't have merge info");
+                    };
+                    for merge in op_merges {
+                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                    }
+                }
+                OpCode::While { body } => {
+                    self.build_merge_variables(&body.condition, analyzer, merge_pair_map);
+                    self.build_merge_variables(&body.block, analyzer, merge_pair_map);
+
+                    let Some(op_merges) = analyzer.get_while_merges(op.id) else {
+                        panic!("ICE: While block doesn't have merge info");
+                    };
+                    for merge in &op_merges.condition {
+                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                    }
+
+                    for merge in &op_merges.body {
+                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                    }
+                }
+
+                _ => continue,
+            };
+        }
+    }
+
     fn compile_procedure(
         &mut self,
         program: &Program,
@@ -675,7 +722,7 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let mut value_map = HashMap::new();
         let mut variable_map = HashMap::new();
-        let merge_pair_map = HashMap::new();
+        let mut merge_pair_map = HashMap::new();
         let name = interner.get_symbol_name(program, id);
         debug!("Compiling {name}...");
 
@@ -691,6 +738,9 @@ impl<'ctx> CodeGen<'ctx> {
 
             variable_map.insert(proc_id, variable);
         }
+
+        trace!("      Defining merge variables");
+        self.build_merge_variables(procedure.body(), procedure.analyzer(), &mut merge_pair_map);
 
         self.compile_block(
             program,

@@ -120,6 +120,10 @@ pub(super) fn analyze_while(
     op: &Op,
     body: &ConditionalBlock,
 ) {
+    let Some(merge_info) = analyzer.get_while_merges(op.id).map(Clone::clone) else {
+        panic!("ICE: While block should have merge info");
+    };
+
     // Evaluate the condition.
     super::analyze_block(
         program,
@@ -130,16 +134,32 @@ pub(super) fn analyze_while(
         interner,
         source_store,
     );
-    // Evaluate the body.
-    super::analyze_block(
-        program,
-        proc,
-        &body.block,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-    );
+
+    // The body block will depend on knowing the types out the condition merge outputs.
+    for merge_pair in &merge_info.condition {
+        let [input_value, output_value] =
+            analyzer.values([merge_pair.input_value, merge_pair.output_value]);
+        let Some([input_type, output_type]) = analyzer.value_types([merge_pair.input_value, merge_pair.output_value,]) else { continue };
+
+        if input_type != output_type {
+            *had_error = true;
+            diagnostics::emit_error(
+                input_value.creator_token.location,
+                "conditional body cannot change types on the stack",
+                [
+                    Label::new(input_value.creator_token.location)
+                        .with_color(Color::Red)
+                        .with_message(input_type.name_str()),
+                    Label::new(output_value.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message(output_type.name_str())
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+        }
+    }
 
     // We expect a boolean to be the result of evaluating the condition.
     let op_data = analyzer.get_op_io(op.id);
@@ -167,31 +187,34 @@ pub(super) fn analyze_while(
         );
     }
 
-    // Now to confirm that all the new created values have the same type as what they merge with.
-    let Some(merge_info) = analyzer.get_op_merges(op.id) else {
-        panic!("ICE: While block should have merge info");
-    };
+    // Evaluate the body.
+    super::analyze_block(
+        program,
+        proc,
+        &body.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
 
-    for merge_pair in merge_info
-        .condition_merges
-        .iter()
-        .chain(&merge_info.body_merges)
-    {
-        let [new_value, old_value] = analyzer.values([merge_pair.a, merge_pair.b]);
-        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.a, merge_pair.b]) else { continue };
+    for merge_pair in &merge_info.body {
+        let [input_value, output_value] =
+            analyzer.values([merge_pair.input_value, merge_pair.output_value]);
+        let Some([input_type, output_type]) = analyzer.value_types([merge_pair.input_value, merge_pair.output_value,]) else { continue };
 
-        if new_type != old_type {
+        if input_type != output_type {
             *had_error = true;
             diagnostics::emit_error(
-                new_value.creator_token.location,
+                input_value.creator_token.location,
                 "conditional body cannot change types on the stack",
                 [
-                    Label::new(new_value.creator_token.location)
+                    Label::new(input_value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(new_type.name_str()),
-                    Label::new(old_value.creator_token.location)
+                        .with_message(input_type.name_str()),
+                    Label::new(output_value.creator_token.location)
                         .with_color(Color::Cyan)
-                        .with_message(old_type.name_str())
+                        .with_message(output_type.name_str())
                         .with_order(1),
                 ],
                 None,
@@ -268,32 +291,35 @@ pub(super) fn analyze_if(
         }
     }
 
-    // Now to type check all the merging values.
-    let Some(merges) = analyzer.get_op_merges(op.id) else {
+    // Now to type check all the merging values to make sure they have the correct types.
+    let Some(merges) = analyzer.get_if_merges(op.id).map(Clone::clone) else {
         panic!("ICE: Missing merges in If block");
     };
 
-    for merge_pair in &merges.body_merges {
-        let [new_value, old_value] = analyzer.values([merge_pair.a, merge_pair.b]);
-        let Some([new_type, old_type]) = analyzer.value_types([merge_pair.a, merge_pair.b]) else { continue };
+    for merge_pair in merges {
+        let [then_value, else_value] =
+            analyzer.values([merge_pair.then_value, merge_pair.else_value]);
+        let Some([then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
 
-        if new_type != old_type {
+        if then_type != else_type {
             *had_error = true;
             diagnostics::emit_error(
-                new_value.creator_token.location,
+                then_value.creator_token.location,
                 "conditional body cannot change types on the stack",
                 [
-                    Label::new(new_value.creator_token.location)
+                    Label::new(then_value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(new_type.name_str()),
-                    Label::new(old_value.creator_token.location)
+                        .with_message(then_type.name_str()),
+                    Label::new(else_value.creator_token.location)
                         .with_color(Color::Cyan)
-                        .with_message(old_type.name_str())
+                        .with_message(else_type.name_str())
                         .with_order(1),
                 ],
                 None,
                 source_store,
             );
         }
+
+        analyzer.set_value_type(merge_pair.output_value, then_type);
     }
 }

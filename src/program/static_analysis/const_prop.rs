@@ -84,7 +84,6 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
-                op,
                 condition,
                 else_block,
             ),

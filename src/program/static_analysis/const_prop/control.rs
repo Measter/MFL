@@ -41,18 +41,13 @@ pub(super) fn analyze_while(
     body: &ConditionalBlock,
 ) {
     // Because the loop will be executed an arbitrary number of times, we'll need to
-    // force all overwritten prior values to non-const.
-    let Some(merge_info) = analyzer.get_op_merges(op.id) else {
+    // force all overwritten pre-loop values to non-const.
+    let Some(merge_info) = analyzer.get_while_merges(op.id).map(Clone::clone) else {
         panic!("ICE: While block should have merge info");
     };
-    let pairs: Vec<_> = merge_info
-        .condition_merges
-        .iter()
-        .chain(&merge_info.body_merges)
-        .copied()
-        .collect();
+    let pairs = merge_info.condition.iter().chain(&merge_info.body);
     for merge_pair in pairs {
-        analyzer.clear_value_const(merge_pair.b);
+        analyzer.clear_value_const(merge_pair.output_value);
     }
 
     // Now we can evaluate the condition and body.
@@ -83,7 +78,6 @@ pub(super) fn analyze_if(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-    op: &Op,
     condition: &ConditionalBlock,
     else_block: &[Op],
 ) {
@@ -118,14 +112,5 @@ pub(super) fn analyze_if(
         source_store,
     );
 
-    // However, because we don't know which body was executed, we need to ensure that all merged
-    // values have their const value suppressed.
-    // TODO: Maybe look at being smarter about this.
-    let Some(merge_info) = analyzer.get_op_merges(op.id) else {
-        panic!("ICE: If block should have merge info");
-    };
-
-    for merge_pair in merge_info.body_merges.clone() {
-        analyzer.clear_value_const(merge_pair.b);
-    }
+    // Don't set the const value of merge outputs.
 }

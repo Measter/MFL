@@ -102,21 +102,22 @@ impl OpData {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MergePair {
-    pub a: ValueId,
-    pub b: ValueId,
+pub struct IfMerge {
+    pub then_value: ValueId,
+    pub else_value: ValueId,
+    pub output_value: ValueId,
 }
 
-#[derive(Debug)]
-pub struct MergeBlock {
-    condition_merges: Vec<MergePair>,
-    body_merges: Vec<MergePair>,
+#[derive(Debug, Clone, Copy)]
+pub struct WhileMerge {
+    pub input_value: ValueId,
+    pub output_value: ValueId,
 }
 
-impl MergeBlock {
-    pub fn body_merges(&self) -> &[MergePair] {
-        &self.body_merges
-    }
+#[derive(Debug, Clone)]
+pub struct WhileMerges {
+    pub condition: Vec<WhileMerge>,
+    pub body: Vec<WhileMerge>,
 }
 
 #[derive(Debug, Default)]
@@ -124,7 +125,9 @@ pub struct Analyzer {
     value_lifetime: HashMap<ValueId, Value>,
     value_types: HashMap<ValueId, PorthTypeKind>,
     value_consts: HashMap<ValueId, ConstVal>,
-    value_merges: HashMap<OpId, MergeBlock>,
+
+    value_if_merges: HashMap<OpId, Vec<IfMerge>>,
+    value_while_merges: HashMap<OpId, WhileMerges>,
 
     next_value_id: usize,
     ios: HashMap<OpId, OpData>,
@@ -186,14 +189,24 @@ impl Analyzer {
         self.value_consts.remove(&id);
     }
 
-    fn set_op_merges(&mut self, op: &Op, merges: MergeBlock) {
-        self.value_merges
+    fn set_if_merges(&mut self, op: &Op, merges: Vec<IfMerge>) {
+        self.value_if_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    pub fn get_op_merges(&self, op_id: OpId) -> Option<&MergeBlock> {
-        self.value_merges.get(&op_id)
+    fn set_while_merges(&mut self, op: &Op, merges: WhileMerges) {
+        self.value_while_merges
+            .insert(op.id, merges)
+            .expect_none("ICE: Tried to overwrite merges");
+    }
+
+    pub fn get_if_merges(&self, op_id: OpId) -> Option<&Vec<IfMerge>> {
+        self.value_if_merges.get(&op_id)
+    }
+
+    pub fn get_while_merges(&self, op_id: OpId) -> Option<&WhileMerges> {
+        self.value_while_merges.get(&op_id)
     }
 
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
