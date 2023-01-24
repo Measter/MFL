@@ -238,9 +238,9 @@ impl<'ctx> CodeGen<'ctx> {
 
         for op in block {
             match op.code {
-                OpCode::If { .. } => trace!("    Op: If"),
-                OpCode::While { .. } => trace!("    Op: While"),
-                _ => trace!("    Op: {:?}", op.code),
+                OpCode::If { .. } => trace!("    {:?}: If", op.id),
+                OpCode::While { .. } => trace!("    {:?}: While", op.id),
+                _ => trace!("    {:?}: {:?}", op.id, op.code),
             }
 
             // These do nothing in codegen
@@ -479,7 +479,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                     self.builder.position_at_end(current_block);
                     // Compile condition
-                    trace!("      Compiling condition");
+                    trace!("    Compiling condition for {:?}", op.id);
                     self.compile_block(
                         program,
                         id,
@@ -493,7 +493,7 @@ impl<'ctx> CodeGen<'ctx> {
                         interner,
                     );
 
-                    trace!("    Compiling jump");
+                    trace!("    Compiling jump for {:?}", op.id);
                     // Make conditional jump.
                     let op_io = analyzer.get_op_io(op.id);
                     self.builder.build_conditional_branch(
@@ -512,7 +512,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Then
                     self.builder.position_at_end(then_basic_block);
                     trace!("");
-                    trace!("      Compiling then-block");
+                    trace!("    Compiling then-block for {:?}", op.id);
                     self.compile_block(
                         program,
                         id,
@@ -527,7 +527,7 @@ impl<'ctx> CodeGen<'ctx> {
                     );
 
                     trace!("");
-                    trace!("      Transfering to merge vars");
+                    trace!("    Transfering to merge vars for {:?}", op.id);
                     {
                         let Some(merges) = analyzer.get_if_merges(op.id) else {
                             panic!("ICE: If block doesn't have merges");
@@ -549,7 +549,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Else
                     self.builder.position_at_end(else_basic_block);
                     trace!("");
-                    trace!("      Compiling else-block");
+                    trace!("    Compiling else-block for {:?}", op.id);
                     self.compile_block(
                         program,
                         id,
@@ -564,7 +564,7 @@ impl<'ctx> CodeGen<'ctx> {
                     );
 
                     trace!("");
-                    trace!("      Transfering to merge vars");
+                    trace!("    Transfering to merge vars for {:?}", op.id);
                     {
                         let Some(merges) = analyzer.get_if_merges(op.id) else {
                             panic!("ICE: If block doesn't have merges");
