@@ -19,7 +19,7 @@ use inkwell::{
     AddressSpace, IntPredicate, OptimizationLevel,
 };
 use lasso::Spur;
-use log::{debug, info, trace};
+use log::{debug, trace};
 
 use crate::{
     interners::Interners,
@@ -1113,7 +1113,7 @@ pub(crate) fn compile(
         .write_to_file(codegen.module(), FileType::Assembly, &output_asm)
         .map_err(|e| eyre!("Error writing object: {e}"))?;
 
-    info!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
+    debug!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
     let nasm = Command::new("nasm")
         .arg("-felf64")
         .arg("./std/bootstrap.s")
