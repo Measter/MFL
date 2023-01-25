@@ -460,6 +460,7 @@ impl<'ctx> CodeGen<'ctx> {
                         .collect();
                     self.builder.build_aggregate_return(&return_values);
                 }
+
                 OpCode::If {
                     condition:
                         ConditionalBlock {
@@ -473,9 +474,15 @@ impl<'ctx> CodeGen<'ctx> {
                     let current_block = self.builder.get_insert_block().unwrap();
 
                     // Generate new blocks for Then, Else, and Post.
-                    let then_basic_block = self.ctx.append_basic_block(function, "then");
-                    let else_basic_block = self.ctx.append_basic_block(function, "else");
-                    let post_basic_block = self.ctx.append_basic_block(function, "post");
+                    let then_basic_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_then", op.id));
+                    let else_basic_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_else", op.id));
+                    let post_basic_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_post", op.id));
 
                     self.builder.position_at_end(current_block);
                     // Compile condition
