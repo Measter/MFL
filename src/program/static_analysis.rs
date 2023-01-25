@@ -110,8 +110,8 @@ pub struct IfMerge {
 
 #[derive(Debug, Clone, Copy)]
 pub struct WhileMerge {
-    pub input_value: ValueId,
-    pub output_value: ValueId,
+    pub pre_value: ValueId,
+    pub condition_value: ValueId,
 }
 
 #[derive(Debug, Clone)]

@@ -221,11 +221,12 @@ pub(super) fn analyze_while(
 
     // Now we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
-    for (&output_value, &input_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        trace!("      Defining merge for {input_value:?} into {output_value:?}");
+    for (&pre_value, &condition_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
+    {
+        trace!("      Defining merge for {condition_value:?} into {pre_value:?}");
         condition_merges.push(WhileMerge {
-            input_value,
-            output_value,
+            pre_value,
+            condition_value,
         });
     }
 
@@ -265,14 +266,18 @@ pub(super) fn analyze_while(
 
     // Again, we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
-    for (&output_value, &input_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b) {
-        trace!("      Defining merge for {input_value:?} into {output_value:?}");
+    for (&pre_value, &condition_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
+    {
+        trace!("      Defining merge for {condition_value:?} into {pre_value:?}");
 
         body_merges.push(WhileMerge {
-            input_value,
-            output_value,
+            pre_value,
+            condition_value,
         });
     }
+
+    // Need to revert the stack to before the loop executed.
+    *stack = initial_stack;
 
     analyzer.set_while_merges(
         op,

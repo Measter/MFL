@@ -124,6 +124,7 @@ pub(super) fn analyze_while(
         panic!("ICE: While block should have merge info");
     };
 
+    // We don't need to worry about the order of evaluation here as they don't effect eachother.
     // Evaluate the condition.
     super::analyze_block(
         program,
@@ -134,32 +135,16 @@ pub(super) fn analyze_while(
         interner,
         source_store,
     );
-
-    // The body block will depend on knowing the types out the condition merge outputs.
-    for merge_pair in &merge_info.condition {
-        let [input_value, output_value] =
-            analyzer.values([merge_pair.input_value, merge_pair.output_value]);
-        let Some([input_type, output_type]) = analyzer.value_types([merge_pair.input_value, merge_pair.output_value,]) else { continue };
-
-        if input_type != output_type {
-            *had_error = true;
-            diagnostics::emit_error(
-                input_value.creator_token.location,
-                "conditional body cannot change types on the stack",
-                [
-                    Label::new(input_value.creator_token.location)
-                        .with_color(Color::Red)
-                        .with_message(input_type.name_str()),
-                    Label::new(output_value.creator_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message(output_type.name_str())
-                        .with_order(1),
-                ],
-                None,
-                source_store,
-            );
-        }
-    }
+    // Evaluate the body.
+    super::analyze_block(
+        program,
+        proc,
+        &body.block,
+        analyzer,
+        had_error,
+        interner,
+        source_store,
+    );
 
     // We expect a boolean to be the result of evaluating the condition.
     let op_data = analyzer.get_op_io(op.id);
@@ -187,34 +172,23 @@ pub(super) fn analyze_while(
         );
     }
 
-    // Evaluate the body.
-    super::analyze_block(
-        program,
-        proc,
-        &body.block,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-    );
+    for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
+        let [pre_value, condition_value] =
+            analyzer.values([merge_pair.pre_value, merge_pair.condition_value]);
+        let Some([pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
 
-    for merge_pair in &merge_info.body {
-        let [input_value, output_value] =
-            analyzer.values([merge_pair.input_value, merge_pair.output_value]);
-        let Some([input_type, output_type]) = analyzer.value_types([merge_pair.input_value, merge_pair.output_value,]) else { continue };
-
-        if input_type != output_type {
+        if pre_type != condition_type {
             *had_error = true;
             diagnostics::emit_error(
-                input_value.creator_token.location,
-                "conditional body cannot change types on the stack",
+                condition_value.creator_token.location,
+                "while loop condition or body may not change types on the stack",
                 [
-                    Label::new(input_value.creator_token.location)
+                    Label::new(condition_value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(input_type.name_str()),
-                    Label::new(output_value.creator_token.location)
+                        .with_message(condition_type.name_str()),
+                    Label::new(pre_value.creator_token.location)
                         .with_color(Color::Cyan)
-                        .with_message(output_type.name_str())
+                        .with_message(pre_type.name_str())
                         .with_order(1),
                 ],
                 None,

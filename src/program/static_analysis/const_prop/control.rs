@@ -47,7 +47,7 @@ pub(super) fn analyze_while(
     };
     let pairs = merge_info.condition.iter().chain(&merge_info.body);
     for merge_pair in pairs {
-        analyzer.clear_value_const(merge_pair.output_value);
+        analyzer.clear_value_const(merge_pair.pre_value);
     }
 
     // Now we can evaluate the condition and body.
