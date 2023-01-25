@@ -878,15 +878,15 @@ impl<'ctx> CodeGen<'ctx> {
                     else_block,
                     ..
                 } => {
-                    self.build_merge_variables(&condition.block, analyzer, merge_pair_map);
-                    self.build_merge_variables(else_block, analyzer, merge_pair_map);
-
                     let Some(op_merges) = analyzer.get_if_merges(op.id) else {
                         panic!("ICE: If block doesn't have merge info");
                     };
                     for merge in op_merges {
                         make_variable(merge.output_value, self, analyzer, merge_pair_map);
                     }
+
+                    self.build_merge_variables(&condition.block, analyzer, merge_pair_map);
+                    self.build_merge_variables(else_block, analyzer, merge_pair_map);
                 }
                 OpCode::While { body } => {
                     let Some(op_merges) = analyzer.get_while_merges(op.id) else {
