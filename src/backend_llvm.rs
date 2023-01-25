@@ -172,7 +172,7 @@ impl<'ctx> CodeGen<'ctx> {
             let function = self.module.add_function(
                 &format!("_syscall{i}"),
                 func_sig,
-                Some(Linkage::AvailableExternally),
+                Some(Linkage::External),
             );
             self.syscall_wrappers.push(function);
         }
