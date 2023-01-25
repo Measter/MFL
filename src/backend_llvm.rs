@@ -29,6 +29,7 @@ use crate::{
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
+    Width,
 };
 
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> T;
@@ -744,7 +745,13 @@ impl<'ctx> CodeGen<'ctx> {
 
                     let cast_ptr = match kind {
                         PorthTypeKind::Int => {
-                            let ptr_type = self.ctx.i64_type().ptr_type(AddressSpace::default());
+                            let int_type = match width {
+                                Width::Byte => self.ctx.i8_type(),
+                                Width::Word => self.ctx.i16_type(),
+                                Width::Dword => self.ctx.i32_type(),
+                                Width::Qword => self.ctx.i64_type(),
+                            };
+                            let ptr_type = int_type.ptr_type(AddressSpace::default());
                             ptr.const_cast(ptr_type)
                         }
                         PorthTypeKind::Ptr => {
@@ -762,7 +769,22 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                     };
 
-                    self.builder.build_store(cast_ptr, data);
+                    let cast_data = match kind {
+                        PorthTypeKind::Int => {
+                            let int_type = data.into_int_value();
+                            let target_type = match width {
+                                Width::Byte => self.ctx.i8_type(),
+                                Width::Word => self.ctx.i16_type(),
+                                Width::Dword => self.ctx.i32_type(),
+                                Width::Qword => self.ctx.i64_type(),
+                            };
+                            int_type.const_cast(target_type, false).into()
+                        }
+                        PorthTypeKind::Ptr => data,
+                        PorthTypeKind::Bool => data,
+                    };
+
+                    self.builder.build_store(cast_ptr, cast_data);
                 }
 
                 OpCode::Memory {
