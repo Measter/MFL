@@ -764,21 +764,22 @@ impl<'ctx> CodeGen<'ctx> {
                             ptr.const_cast(ptr_type)
                         }
                         PorthTypeKind::Bool => {
-                            let ptr_type = self.ctx.i8_type().ptr_type(AddressSpace::default());
+                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
                             ptr.const_cast(ptr_type)
                         }
                     };
 
                     let cast_data = match kind {
                         PorthTypeKind::Int => {
-                            let int_type = data.into_int_value();
                             let target_type = match width {
                                 Width::Byte => self.ctx.i8_type(),
                                 Width::Word => self.ctx.i16_type(),
                                 Width::Dword => self.ctx.i32_type(),
                                 Width::Qword => self.ctx.i64_type(),
                             };
-                            int_type.const_cast(target_type, false).into()
+                            self.builder
+                                .build_int_cast(data.into_int_value(), target_type, "cast_int")
+                                .into()
                         }
                         PorthTypeKind::Ptr => data,
                         PorthTypeKind::Bool => data,
@@ -829,14 +830,29 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::SysCall(s @ 0..=6) => {
                     let callee_value = self.syscall_wrappers[*s];
 
-                    let args: Vec<BasicMetadataValueEnum> = op_io
-                        .inputs()
-                        .iter()
-                        .map(|id| {
-                            self.load_value(*id, value_map, variable_map, merge_pair_map, analyzer)
-                        })
-                        .map(Into::into)
-                        .collect();
+                    let args: Vec<BasicMetadataValueEnum> =
+                        op_io
+                            .inputs()
+                            .iter()
+                            .map(|id| {
+                                match self.load_value(
+                                    *id,
+                                    value_map,
+                                    variable_map,
+                                    merge_pair_map,
+                                    analyzer,
+                                ) {
+                                    BasicValueEnum::PointerValue(v) => self
+                                        .builder
+                                        .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast"),
+                                    BasicValueEnum::IntValue(i) => {
+                                        i.const_cast(self.ctx.i64_type(), false)
+                                    }
+                                    t => panic!("ICE: Unexected type: {t:?}"),
+                                }
+                            })
+                            .map(Into::into)
+                            .collect();
 
                     let result = self.builder.build_call(
                         callee_value,
@@ -963,13 +979,15 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proc_data = procedure.kind().get_proc_data();
         for (&proc_id, alloc_data) in &proc_data.alloc_size_and_offsets {
-            let variable = self
-                .builder
-                .build_alloca(
-                    self.ctx.i8_type().array_type(alloc_data.size as _),
-                    interner.get_symbol_name(program, proc_id),
-                )
-                .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
+            let variable = self.builder.build_alloca(
+                self.ctx.i8_type().array_type(alloc_data.size as _),
+                interner.get_symbol_name(program, proc_id),
+            );
+            let variable = self.builder.build_pointer_cast(
+                variable,
+                self.ctx.i8_type().ptr_type(AddressSpace::default()),
+                "ptr_cast",
+            );
 
             variable_map.insert(proc_id, variable);
         }
