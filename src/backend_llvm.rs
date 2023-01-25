@@ -279,7 +279,14 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                         [PorthTypeKind::Int, PorthTypeKind::Ptr] => {
                             assert!(matches!(op.code, OpCode::Add));
-                            todo!()
+                            let offset = self
+                                .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
+                                .into_int_value();
+                            let ptr = self
+                                .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
+                                .into_pointer_value();
+
+                            unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
                         }
                         [PorthTypeKind::Ptr, PorthTypeKind::Int] => {
                             let offset = self
@@ -300,7 +307,14 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                         [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => {
                             assert!(matches!(op.code, OpCode::Subtract));
-                            todo!()
+
+                            let lhs = self
+                                .load_value(a, value_map, variable_map, merge_pair_map, analyzer)
+                                .into_pointer_value();
+                            let rhs = self
+                                .load_value(b, value_map, variable_map, merge_pair_map, analyzer)
+                                .into_pointer_value();
+                            self.builder.build_ptr_diff(lhs, rhs, "ptr_diff").into()
                         }
                         _ => panic!("ICE: Unexpected types"),
                     };
