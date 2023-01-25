@@ -200,6 +200,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn enqueue_function(&mut self, proc: ProcedureId) {
         if !self.processed_functions.contains(&proc) {
             self.function_queue.push(proc);
+            self.processed_functions.insert(proc);
         }
     }
 
