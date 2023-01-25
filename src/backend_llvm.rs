@@ -592,6 +592,110 @@ impl<'ctx> CodeGen<'ctx> {
                     // Build our jumps
                     self.builder.position_at_end(post_basic_block);
                 }
+                OpCode::While { body } => {
+                    let current_block = self.builder.get_insert_block().unwrap();
+                    let condition_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_condition", op.id));
+                    let body_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_body", op.id));
+                    let post_block = self
+                        .ctx
+                        .append_basic_block(function, &format!("{:?}_post", op.id));
+
+                    self.builder.position_at_end(current_block);
+                    self.builder.build_unconditional_branch(condition_block);
+
+                    trace!("");
+                    trace!("    Compiling condition for {:?}", op.id);
+                    self.builder.position_at_end(condition_block);
+                    self.compile_block(
+                        program,
+                        id,
+                        procedure,
+                        &body.condition,
+                        function,
+                        value_map,
+                        variable_map,
+                        merge_pair_map,
+                        source_storage,
+                        interner,
+                    );
+
+                    trace!("");
+                    trace!("    Transfering to merge vars for {:?}", op.id);
+                    {
+                        let Some(merges) = analyzer.get_while_merges(op.id) else {
+                            panic!("ICE: While block doesn't have merges");
+                        };
+                        for merge in &merges.condition {
+                            let data = self.load_value(
+                                merge.condition_value,
+                                value_map,
+                                variable_map,
+                                merge_pair_map,
+                                analyzer,
+                            );
+                            self.store_value(merge.pre_value, data, value_map, merge_pair_map);
+                        }
+                    }
+
+                    trace!("    Compiling jump for {:?}", op.id);
+                    // Make conditional jump.
+                    let op_io = analyzer.get_op_io(op.id);
+                    self.builder.build_conditional_branch(
+                        self.load_value(
+                            op_io.inputs()[0],
+                            value_map,
+                            variable_map,
+                            merge_pair_map,
+                            analyzer,
+                        )
+                        .into_int_value(),
+                        body_block,
+                        post_block,
+                    );
+
+                    // Compile body
+                    self.builder.position_at_end(body_block);
+                    trace!("");
+                    trace!("    Compiling body-block for {:?}", op.id);
+                    self.compile_block(
+                        program,
+                        id,
+                        procedure,
+                        &body.block,
+                        function,
+                        value_map,
+                        variable_map,
+                        merge_pair_map,
+                        source_storage,
+                        interner,
+                    );
+
+                    trace!("");
+                    trace!("    Transfering to merge vars for {:?}", op.id);
+                    {
+                        let Some(merges) = analyzer.get_while_merges(op.id) else {
+                            panic!("ICE: While block doesn't have merges");
+                        };
+                        for merge in &merges.body {
+                            let data = self.load_value(
+                                merge.condition_value,
+                                value_map,
+                                variable_map,
+                                merge_pair_map,
+                                analyzer,
+                            );
+                            self.store_value(merge.pre_value, data, value_map, merge_pair_map);
+                        }
+                    }
+
+                    self.builder.build_unconditional_branch(condition_block);
+
+                    self.builder.position_at_end(post_block);
+                }
 
                 OpCode::Load { width, kind } => todo!(),
                 OpCode::Store { width, kind } => {
