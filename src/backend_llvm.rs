@@ -1007,6 +1007,11 @@ impl<'ctx> CodeGen<'ctx> {
             source_storage,
             interner,
         );
+
+        if !function.verify(true) {
+            eprintln!();
+            function.print_to_stderr();
+        }
     }
 
     fn build(
