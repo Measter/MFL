@@ -713,7 +713,6 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Load { width, kind } => todo!(),
                 OpCode::Store { width, kind } => {
-                    log::error!("STORE not implemented correctly");
                     let [data, ptr] = *op_io.inputs().as_arr();
                     let data =
                         self.load_value(data, value_map, variable_map, merge_pair_map, analyzer);
@@ -721,7 +720,27 @@ impl<'ctx> CodeGen<'ctx> {
                         .load_value(ptr, value_map, variable_map, merge_pair_map, analyzer)
                         .into_pointer_value();
 
-                    self.builder.build_store(ptr, data);
+                    let cast_ptr = match kind {
+                        PorthTypeKind::Int => {
+                            let ptr_type = self.ctx.i64_type().ptr_type(AddressSpace::default());
+                            ptr.const_cast(ptr_type)
+                        }
+                        PorthTypeKind::Ptr => {
+                            let ptr_type = self
+                                .ctx
+                                .i8_type()
+                                .ptr_type(AddressSpace::default())
+                                .ptr_type(AddressSpace::default());
+
+                            ptr.const_cast(ptr_type)
+                        }
+                        PorthTypeKind::Bool => {
+                            let ptr_type = self.ctx.i8_type().ptr_type(AddressSpace::default());
+                            ptr.const_cast(ptr_type)
+                        }
+                    };
+
+                    self.builder.build_store(cast_ptr, data);
                 }
 
                 OpCode::Memory {
