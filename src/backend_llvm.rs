@@ -191,7 +191,12 @@ impl<'ctx> CodeGen<'ctx> {
             Some([const_val]) => {
                 trace!("      Fetching const {id:?}");
                 match const_val {
-                    ConstVal::Int(val) => self.ctx.i64_type().const_int(val, true).into(),
+                    ConstVal::Int(val) => self
+                        .ctx
+                        .i64_type()
+                        .const_int(val, false)
+                        .const_cast(self.ctx.i64_type(), false)
+                        .into(),
                     ConstVal::Bool(val) => self.ctx.bool_type().const_int(val as u64, false).into(),
                     ConstVal::Ptr { id, offset, .. } => {
                         let ptr = match id {
@@ -787,7 +792,12 @@ impl<'ctx> CodeGen<'ctx> {
                     self.store_value(op_io.outputs()[0], value, value_map, merge_pair_map);
                 }
                 OpCode::PushInt(val) => {
-                    let value = self.ctx.bool_type().const_int(*val, false).into();
+                    let value = self
+                        .ctx
+                        .i64_type()
+                        .const_int(*val, false)
+                        .const_cast(self.ctx.i64_type(), false)
+                        .into();
                     self.store_value(op_io.outputs()[0], value, value_map, merge_pair_map);
                 }
                 OpCode::PushStr { id, is_c_str } => {
