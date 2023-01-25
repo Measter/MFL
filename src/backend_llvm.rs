@@ -79,6 +79,7 @@ struct CodeGen<'ctx> {
     function_queue: Vec<ProcedureId>,
     processed_functions: HashSet<ProcedureId>,
     proc_function_map: HashMap<ProcedureId, FunctionValue<'ctx>>,
+    syscall_wrappers: Vec<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -99,6 +100,7 @@ impl<'ctx> CodeGen<'ctx> {
             function_queue: Vec::new(),
             processed_functions: HashSet::new(),
             proc_function_map: HashMap::new(),
+            syscall_wrappers: Vec::new(),
         }
     }
 
@@ -153,6 +155,19 @@ impl<'ctx> CodeGen<'ctx> {
                 .module
                 .add_function(name, function_type, Some(Linkage::Private));
             self.proc_function_map.insert(id, function);
+        }
+
+        debug!("Defining syscall functions..");
+        let args: Vec<BasicMetadataTypeEnum> =
+            (0..=6).map(|_| self.ctx.i64_type().into()).collect();
+        for i in 0..=6 {
+            let func_sig = self.ctx.i64_type().fn_type(&args[0..=i], false);
+            let function = self.module.add_function(
+                &format!("_syscall{i}"),
+                func_sig,
+                Some(Linkage::AvailableExternally),
+            );
+            self.syscall_wrappers.push(function);
         }
 
         debug!("    Finished");
@@ -777,11 +792,42 @@ impl<'ctx> CodeGen<'ctx> {
                     todo!()
                 }
 
-                OpCode::SysCall(_) => todo!(),
+                OpCode::SysCall(s @ 0..=6) => {
+                    let callee_value = self.syscall_wrappers[*s];
+
+                    let args: Vec<BasicMetadataValueEnum> = op_io
+                        .inputs()
+                        .iter()
+                        .map(|id| {
+                            self.load_value(*id, value_map, variable_map, merge_pair_map, analyzer)
+                        })
+                        .map(Into::into)
+                        .collect();
+
+                    let result = self.builder.build_call(
+                        callee_value,
+                        &args,
+                        &format!("calling syscall{s}"),
+                    );
+
+                    let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left()  else {
+                        panic!("ICE: All syscalls return a value");
+                    };
+
+                    self.store_value(
+                        op_io.outputs()[0],
+                        ret_val.into(),
+                        value_map,
+                        merge_pair_map,
+                    );
+                }
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop | OpCode::Rot | OpCode::Swap => continue,
 
+                OpCode::SysCall(_) => {
+                    panic!("ICE: Invalid syscall ID")
+                }
                 OpCode::ResolvedIdent { .. } => {
                     panic!("ICE: Encountered resolved ident during codegen")
                 }
