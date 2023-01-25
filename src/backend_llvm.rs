@@ -1,6 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-use color_eyre::{eyre::eyre, Result};
+use color_eyre::{
+    eyre::{eyre, Context as _},
+    Result,
+};
 use hashbrown::{HashMap, HashSet};
 use inkwell::{
     builder::Builder,
@@ -12,7 +18,7 @@ use inkwell::{
     values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, PointerValue},
     AddressSpace, IntPredicate, OptimizationLevel,
 };
-use log::{debug, trace};
+use log::{debug, info, trace};
 
 use crate::{
     interners::Interners,
@@ -968,6 +974,18 @@ impl<'ctx> CodeGen<'ctx> {
         self.pass_manager.run_on(&self.module);
     }
 
+    fn build_entry(&mut self, entry_id: ProcedureId) {
+        let function_type = self.ctx.void_type().fn_type(&[], false);
+        let entry_func = self
+            .module
+            .add_function("entry", function_type, Some(Linkage::External));
+        let block = self.ctx.append_basic_block(entry_func, "entry");
+        self.builder.position_at_end(block);
+        let user_entry = self.proc_function_map[&entry_id];
+        self.builder.build_call(user_entry, &[], "call_user_entry");
+        self.builder.build_return(None);
+    }
+
     fn module(&self) -> &Module<'ctx> {
         &self.module
     }
@@ -981,25 +999,15 @@ pub(crate) fn compile(
     file: &str,
     opt_level: u8,
 ) -> Result<Vec<PathBuf>> {
-    let mut entry_asm_filename = Path::new(&file)
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    entry_asm_filename.push_str("_entry.asm");
-
-    let mut entry_asm = Path::new(&file).to_path_buf();
-    entry_asm.set_file_name(&entry_asm_filename);
-
     let mut output_obj = Path::new(&file).to_path_buf();
     output_obj.set_extension("o");
+    let mut bootstrap_obj = Path::new(&file).to_path_buf();
+    bootstrap_obj.set_file_name("bootstrap.o");
 
-    debug!(
-        "Compiling with LLVM codegen to {} and {}",
-        entry_asm.display(),
-        output_obj.display()
-    );
+    let mut output_asm = Path::new(&file).to_path_buf();
+    output_asm.set_extension("s");
+
+    debug!("Compiling with LLVM codegen to {}", output_obj.display());
 
     trace!("Creating LLVM machinary");
     let opt_level = match opt_level {
@@ -1030,12 +1038,29 @@ pub(crate) fn compile(
 
     codegen.enqueue_function(entry_function);
     codegen.build_function_prototypes(program, interner);
-    codegen.proc_function_map[&entry_function].set_linkage(Linkage::External);
+    codegen.build_entry(entry_function);
     codegen.build(program, source_storage, interner);
 
     target_machine
-        .write_to_file(codegen.module(), FileType::Assembly, &output_obj)
+        .write_to_file(codegen.module(), FileType::Object, &output_obj)
         .map_err(|e| eyre!("Error writing object: {e}"))?;
 
-    Ok(vec![output_obj])
+    target_machine
+        .write_to_file(codegen.module(), FileType::Assembly, &output_asm)
+        .map_err(|e| eyre!("Error writing object: {e}"))?;
+
+    info!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
+    let nasm = Command::new("nasm")
+        .arg("-felf64")
+        .arg("./std/bootstrap.s")
+        .arg("-o")
+        .arg(&bootstrap_obj)
+        .status()
+        .with_context(|| eyre!("Failed to execute nasm"))?;
+
+    if !nasm.success() {
+        std::process::exit(-2);
+    }
+
+    Ok(vec![bootstrap_obj, output_obj])
 }
