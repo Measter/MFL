@@ -15,9 +15,7 @@ use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
     types::{BasicMetadataTypeEnum, BasicType},
-    values::{
-        self, BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, PointerValue,
-    },
+    values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, PointerValue},
     AddressSpace, IntPredicate, OptimizationLevel,
 };
 use lasso::Spur;
@@ -715,7 +713,49 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.position_at_end(post_block);
                 }
 
-                OpCode::Load { width, kind } => todo!(),
+                OpCode::Load { width, kind } => {
+                    let ptr_value_id = op_io.inputs()[0];
+                    let ptr = value_store
+                        .load_value(self, ptr_value_id, analyzer, interner)
+                        .into_pointer_value();
+
+                    let cast_ptr = match kind {
+                        PorthTypeKind::Int => {
+                            let int_type = match width {
+                                Width::Byte => self.ctx.i8_type(),
+                                Width::Word => self.ctx.i16_type(),
+                                Width::Dword => self.ctx.i32_type(),
+                                Width::Qword => self.ctx.i64_type(),
+                            };
+                            let ptr_type = int_type.ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        PorthTypeKind::Ptr => {
+                            let ptr_type = self
+                                .ctx
+                                .i8_type()
+                                .ptr_type(AddressSpace::default())
+                                .ptr_type(AddressSpace::default());
+
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        PorthTypeKind::Bool => {
+                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                    };
+
+                    let value = self.builder.build_load(cast_ptr, "load");
+                    let value = match kind {
+                        PorthTypeKind::Int => self
+                            .builder
+                            .build_int_cast(value.into_int_value(), self.ctx.i64_type(), "cast_int")
+                            .into(),
+                        PorthTypeKind::Ptr => value,
+                        PorthTypeKind::Bool => value,
+                    };
+                    value_store.store_value(self, op_io.outputs()[0], value);
+                }
                 OpCode::Store { width, kind } => {
                     let [data, ptr] = *op_io.inputs().as_arr();
                     let data = value_store.load_value(self, data, analyzer, interner);
@@ -732,7 +772,7 @@ impl<'ctx> CodeGen<'ctx> {
                                 Width::Qword => self.ctx.i64_type(),
                             };
                             let ptr_type = int_type.ptr_type(AddressSpace::default());
-                            ptr.const_cast(ptr_type)
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
                         }
                         PorthTypeKind::Ptr => {
                             let ptr_type = self
@@ -741,11 +781,11 @@ impl<'ctx> CodeGen<'ctx> {
                                 .ptr_type(AddressSpace::default())
                                 .ptr_type(AddressSpace::default());
 
-                            ptr.const_cast(ptr_type)
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
                         }
                         PorthTypeKind::Bool => {
                             let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
-                            ptr.const_cast(ptr_type)
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
                         }
                     };
 
