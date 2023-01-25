@@ -691,19 +691,19 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
                 OpCode::While { body } => {
-                    self.build_merge_variables(&body.condition, analyzer, merge_pair_map);
-                    self.build_merge_variables(&body.block, analyzer, merge_pair_map);
-
                     let Some(op_merges) = analyzer.get_while_merges(op.id) else {
                         panic!("ICE: While block doesn't have merge info");
                     };
                     for merge in &op_merges.condition {
-                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                        make_variable(merge.pre_value, self, analyzer, merge_pair_map);
                     }
 
                     for merge in &op_merges.body {
-                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                        make_variable(merge.pre_value, self, analyzer, merge_pair_map);
                     }
+
+                    self.build_merge_variables(&body.condition, analyzer, merge_pair_map);
+                    self.build_merge_variables(&body.block, analyzer, merge_pair_map);
                 }
 
                 _ => continue,
