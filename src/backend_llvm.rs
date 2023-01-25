@@ -471,10 +471,6 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
-                    for var in variable_map.values() {
-                        self.builder.build_free(*var);
-                    }
-
                     if op_io.inputs().is_empty() {
                         self.builder.build_return(None);
                         continue;
