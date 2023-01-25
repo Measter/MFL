@@ -621,11 +621,19 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
 
-                // This is always const, there's nothing to do.
-                OpCode::PushBool(_) | OpCode::PushInt(_) | OpCode::PushStr { .. } => continue,
+                OpCode::PushBool(val) => {
+                    let value = self.ctx.bool_type().const_int(*val as _, false).into();
+                    self.store_value(op_io.outputs()[0], value, value_map, merge_pair_map);
+                }
+                OpCode::PushInt(val) => {
+                    let value = self.ctx.bool_type().const_int(*val, false).into();
+                    self.store_value(op_io.outputs()[0], value, value_map, merge_pair_map);
+                }
+                OpCode::PushStr { id, is_c_str } => {
+                    todo!()
+                }
 
                 OpCode::SysCall(_) => todo!(),
-                OpCode::While { body } => todo!(),
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop | OpCode::Rot | OpCode::Swap => continue,
