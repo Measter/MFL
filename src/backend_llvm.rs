@@ -925,10 +925,13 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proc_data = procedure.kind().get_proc_data();
         for (&proc_id, alloc_data) in &proc_data.alloc_size_and_offsets {
-            let variable = self.builder.build_alloca(
-                self.ctx.i8_type().array_type(alloc_data.size as _),
-                interner.get_symbol_name(program, proc_id),
-            );
+            let variable = self
+                .builder
+                .build_alloca(
+                    self.ctx.i8_type().array_type(alloc_data.size as _),
+                    interner.get_symbol_name(program, proc_id),
+                )
+                .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
 
             variable_map.insert(proc_id, variable);
         }
