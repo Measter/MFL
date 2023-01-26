@@ -6,7 +6,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{ConditionalBlock, Op, OpCode, OpId},
+    opcode::{ConditionalBlock, Direction, Op, OpCode, OpId},
     source_file::{SourceLocation, SourceStorage},
     Width,
 };
@@ -61,6 +61,76 @@ fn expect_token<'a>(
     }
 }
 
+fn parse_int_param<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    prev: Token,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(u64, Token), ()> {
+    let (_, open_parens) = expect_token(
+        token_iter,
+        "(",
+        |t| t == TokenKind::ParenthesisOpen,
+        prev,
+        interner,
+        source_store,
+    )?;
+    let (_, count_token) = expect_token(
+        token_iter,
+        "Integer",
+        |t| matches!(t, TokenKind::Integer(_)),
+        open_parens,
+        interner,
+        source_store,
+    )?;
+    let _ = expect_token(
+        token_iter,
+        ")",
+        |t| t == TokenKind::ParenthesisClosed,
+        count_token,
+        interner,
+        source_store,
+    )?;
+
+    let TokenKind::Integer(count) = count_token.kind else { unreachable!() };
+    Ok((count, count_token))
+}
+
+fn parse_ident_param<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    prev: Token,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<Token, ()> {
+    let (_, open_parens) = expect_token(
+        token_iter,
+        "(",
+        |t| t == TokenKind::ParenthesisOpen,
+        prev,
+        interner,
+        source_store,
+    )?;
+
+    let (_, ident_token) = expect_token(
+        token_iter,
+        "Ident",
+        |t| matches!(t, TokenKind::Ident),
+        open_parens,
+        interner,
+        source_store,
+    )?;
+    let _ = expect_token(
+        token_iter,
+        ")",
+        |t| t == TokenKind::ParenthesisClosed,
+        ident_token,
+        interner,
+        source_store,
+    )?;
+
+    Ok(ident_token)
+}
+
 pub fn parse_procedure_body(
     program: &mut Program,
     module_id: ModuleId,
@@ -76,27 +146,138 @@ pub fn parse_procedure_body(
     let mut token_iter = tokens.iter().enumerate().peekable();
     while let Some((_, token)) = token_iter.next() {
         let kind = match token.kind {
-            TokenKind::Drop => OpCode::Drop,
-            TokenKind::Dup(depth) => OpCode::Dup { depth },
-            TokenKind::Rot => OpCode::Rot,
-            TokenKind::Swap => OpCode::Swap,
+            TokenKind::Drop
+            | TokenKind::Dup
+            | TokenKind::Over
+            | TokenKind::Swap
+            | TokenKind::SysCall => {
+                let (count, count_token) = token_iter
+                    .peek()
+                    .copied()
+                    .filter(|(_, t)| t.kind == TokenKind::ParenthesisOpen)
+                    .map(|_| parse_int_param(&mut token_iter, *token, interner, source_store))
+                    .unwrap_or(Ok((1, *token)))?;
 
-            TokenKind::Load(width) => OpCode::Load {
-                width,
-                kind: PorthTypeKind::Int,
-            },
-            TokenKind::LoadPtr => OpCode::Load {
-                width: Width::Qword,
-                kind: PorthTypeKind::Ptr,
-            },
-            TokenKind::Store(width) => OpCode::Store {
-                width,
-                kind: PorthTypeKind::Int,
-            },
-            TokenKind::StorePtr => OpCode::Store {
-                width: Width::Qword,
-                kind: PorthTypeKind::Ptr,
-            },
+                match token.kind {
+                    TokenKind::Drop => OpCode::Drop {
+                        count: count as usize,
+                        count_token,
+                    },
+                    TokenKind::Dup => OpCode::Dup {
+                        count: count as usize,
+                        count_token,
+                    },
+                    TokenKind::Over => OpCode::Over {
+                        depth: count as usize,
+                        depth_token: count_token,
+                    },
+                    TokenKind::Swap => OpCode::Swap {
+                        count: count as usize,
+                        count_token,
+                    },
+                    TokenKind::SysCall => OpCode::SysCall {
+                        arg_count: count as usize,
+                        arg_count_token: count_token,
+                    },
+
+                    _ => unreachable!(),
+                }
+            }
+            TokenKind::Rot => {
+                let (_, paren_open) = expect_token(
+                    &mut token_iter,
+                    "(",
+                    |t| t == TokenKind::ParenthesisOpen,
+                    *token,
+                    interner,
+                    source_store,
+                )?;
+
+                let (_, item_count_token) = expect_token(
+                    &mut token_iter,
+                    "Integer",
+                    |t| matches!(t, TokenKind::Integer(_)),
+                    paren_open,
+                    interner,
+                    source_store,
+                )?;
+
+                let (_, direction_token) = expect_token(
+                    &mut token_iter,
+                    "<, >",
+                    |t| matches!(t, TokenKind::Less | TokenKind::Greater),
+                    item_count_token,
+                    interner,
+                    source_store,
+                )?;
+
+                let (_, shift_count_token) = expect_token(
+                    &mut token_iter,
+                    "Integer",
+                    |t| matches!(t, TokenKind::Integer(_)),
+                    direction_token,
+                    interner,
+                    source_store,
+                )?;
+
+                let (_, _) = expect_token(
+                    &mut token_iter,
+                    "(",
+                    |t| t == TokenKind::ParenthesisClosed,
+                    shift_count_token,
+                    interner,
+                    source_store,
+                )?;
+
+                let TokenKind::Integer(item_count) = item_count_token.kind else { unreachable!() };
+                let TokenKind::Integer(shift_count) = shift_count_token.kind else { unreachable!() };
+                let direction = match direction_token.kind {
+                    TokenKind::Less => Direction::Left,
+                    TokenKind::Greater => Direction::Right,
+                    _ => unreachable!(),
+                };
+
+                OpCode::Rot {
+                    item_count: item_count as usize,
+                    direction,
+                    shift_count: shift_count as usize,
+                    item_count_token,
+                    shift_count_token,
+                }
+            }
+
+            TokenKind::Load | TokenKind::Store => {
+                let ident_token =
+                    parse_ident_param(&mut token_iter, *token, interner, source_store)?;
+
+                let (width, kind) = match interner.resolve_lexeme(ident_token.lexeme) {
+                    "u8" => (Width::Byte, PorthTypeKind::Int),
+                    "u16" => (Width::Word, PorthTypeKind::Int),
+                    "u32" => (Width::Dword, PorthTypeKind::Int),
+                    "u64" => (Width::Qword, PorthTypeKind::Int),
+                    "bool" => (Width::Byte, PorthTypeKind::Bool),
+                    "ptr" => (Width::Qword, PorthTypeKind::Ptr),
+
+                    _ => {
+                        diagnostics::emit_error(
+                            ident_token.location,
+                            "invalid ident",
+                            [Label::new(ident_token.location)
+                                .with_color(Color::Red)
+                                .with_message("unknown type")],
+                            None,
+                            source_store,
+                        );
+                        return Err(());
+                    }
+                };
+
+                match token.kind {
+                    TokenKind::Load => OpCode::Load { width, kind },
+                    TokenKind::Store => OpCode::Store { width, kind },
+                    _ => unreachable!(),
+                }
+            }
 
             TokenKind::Equal => OpCode::Equal,
             TokenKind::Greater => OpCode::Greater,
@@ -233,7 +414,6 @@ pub fn parse_procedure_body(
             TokenKind::CastPtr => OpCode::CastPtr,
 
             TokenKind::Return => OpCode::Return,
-            TokenKind::SysCall(id) => OpCode::SysCall(id),
 
             // These are only used as part of a sub-block. If they're found anywhere else,
             // it's an error.

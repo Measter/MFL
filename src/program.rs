@@ -253,10 +253,6 @@ impl Program {
         &self.modules[&id]
     }
 
-    pub fn get_global_alloc(&self, id: ProcedureId) -> Option<usize> {
-        self.global_allocs.get(&id).copied()
-    }
-
     pub fn load_program(
         &mut self,
         file: &str,

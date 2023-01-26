@@ -7,7 +7,6 @@ use crate::{
     diagnostics,
     interners::Interners,
     source_file::{FileId, SourceLocation, SourceStorage},
-    Width,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +26,7 @@ pub enum TokenKind {
     DivMod,
     Do,
     Drop,
-    Dup(usize),
+    Dup,
     Elif,
     Else,
     End,
@@ -43,12 +42,12 @@ pub enum TokenKind {
     Is,
     Less,
     LessEqual,
-    Load(Width),
-    LoadPtr,
+    Load,
     Macro,
     Memory,
     Minus,
     NotEqual,
+    Over,
     ParenthesisClosed,
     ParenthesisOpen,
     Plus,
@@ -61,10 +60,9 @@ pub enum TokenKind {
     SquareBracketOpen,
     Star,
     String { id: Spur, is_c_str: bool },
-    Store(Width),
-    StorePtr,
+    Store,
     Swap,
-    SysCall(usize),
+    SysCall,
     While,
 }
 
@@ -86,7 +84,7 @@ impl TokenKind {
             | TokenKind::DivMod
             | TokenKind::Do
             | TokenKind::Drop
-            | TokenKind::Dup(_)
+            | TokenKind::Dup
             | TokenKind::Elif
             | TokenKind::Else
             | TokenKind::End
@@ -100,12 +98,12 @@ impl TokenKind {
             | TokenKind::Integer(_)
             | TokenKind::Less
             | TokenKind::LessEqual
-            | TokenKind::Load(_)
-            | TokenKind::LoadPtr
+            | TokenKind::Load
             | TokenKind::Macro
             | TokenKind::Memory
             | TokenKind::Minus
             | TokenKind::NotEqual
+            | TokenKind::Over
             | TokenKind::ParenthesisClosed
             | TokenKind::ParenthesisOpen
             | TokenKind::Plus
@@ -118,10 +116,9 @@ impl TokenKind {
             | TokenKind::SquareBracketOpen
             | TokenKind::Star
             | TokenKind::String { .. }
-            | TokenKind::Store(_)
-            | TokenKind::StorePtr
+            | TokenKind::Store
             | TokenKind::Swap
-            | TokenKind::SysCall(_) => false,
+            | TokenKind::SysCall => false,
 
             TokenKind::If | TokenKind::Is | TokenKind::While => true,
         }
@@ -163,11 +160,16 @@ struct Scanner<'a> {
     column: usize,
 }
 
-fn end_token(c: char) -> bool {
-    matches!(
-        c,
-        '+' | '-' | '=' | '>' | '<' | '*' | '!' | '@' | '/' | '[' | ']' | ':'
-    ) || c.is_whitespace()
+fn is_ident_start(c: char) -> bool {
+    matches!(c, '_' | 'a'..='z' | 'A'..='Z')
+}
+
+fn is_ident_continue(c: char) -> bool {
+    is_ident_start(c) || matches!(c, '0'..='9')
+}
+
+fn is_valid_post_number(c: char) -> bool {
+    matches!(c, '+' | '-' | '*' | '=' | '<' | '>' | '/' | ')' | '!' | '@') || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
@@ -314,7 +316,7 @@ impl<'source> Scanner<'source> {
                 ))
             }
 
-            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']' | '(' | ')', _) => {
+            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']' | '(' | ')' | '@' | '!', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
@@ -326,6 +328,8 @@ impl<'source> Scanner<'source> {
                     ')' => TokenKind::ParenthesisClosed,
                     '[' => TokenKind::SquareBracketOpen,
                     ']' => TokenKind::SquareBracketClosed,
+                    '!' => TokenKind::Store,
+                    '@' => TokenKind::Load,
                     _ => unreachable!(),
                 };
 
@@ -412,30 +416,62 @@ impl<'source> Scanner<'source> {
                 ))
             }
 
-            _ => {
+            ('0'..='9', _) => {
                 self.string_buf.clear();
                 self.string_buf.push(ch);
-                let mut is_all_num = ch.is_ascii_digit();
-                while !matches!(self.peek(), Some(c) if end_token(c)) && !self.is_at_end() {
+                while matches!(self.peek(), Some('_' | '0'..='9')) && !self.is_at_end() {
                     let c = self.advance();
-                    is_all_num &= matches!(c, '0'..='9' | '_');
-                    if c.is_ascii_digit() {
+                    if c != '_' {
                         self.string_buf.push(c);
                     }
                 }
 
+                match self.peek() {
+                    Some(c) if !is_valid_post_number(c) => {
+                        self.advance();
+                        let loc = SourceLocation::new(
+                            self.file_id,
+                            self.lexeme_range(),
+                            self.line,
+                            self.cur_token_column,
+                        );
+                        diagnostics::emit_error(
+                            loc,
+                            format!("unexpected character in input: `{c}`"),
+                            Some(Label::new(loc).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+
+                        return Err(());
+                    }
+                    _ => {}
+                }
+
+                let value = self.string_buf.parse().unwrap();
+                let kind = TokenKind::Integer(value);
+
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(
+                    kind,
+                    lexeme,
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                ))
+            }
+
+            (c, _) if is_ident_start(c) => {
+                self.string_buf.clear();
+                self.string_buf.push(ch);
+                while matches!(self.peek(), Some(c) if is_ident_continue(c)) && !self.is_at_end() {
+                    let c = self.advance();
+                    self.string_buf.push(c);
+                }
+
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
-                    "@8" => TokenKind::Load(Width::Byte),
-                    "@16" => TokenKind::Load(Width::Word),
-                    "@32" => TokenKind::Load(Width::Dword),
-                    "@64" => TokenKind::Load(Width::Qword),
-                    "@ptr" => TokenKind::LoadPtr,
-                    "!8" => TokenKind::Store(Width::Byte),
-                    "!16" => TokenKind::Store(Width::Word),
-                    "!32" => TokenKind::Store(Width::Dword),
-                    "!64" => TokenKind::Store(Width::Qword),
-                    "!ptr" => TokenKind::StorePtr,
                     "and" => TokenKind::BitAnd,
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
@@ -447,7 +483,7 @@ impl<'source> Scanner<'source> {
                     "divmod" => TokenKind::DivMod,
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
-                    "dup" => TokenKind::Dup(0),
+                    "dup" => TokenKind::Dup,
                     "elif" => TokenKind::Elif,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
@@ -474,27 +510,17 @@ impl<'source> Scanner<'source> {
                     "memory" => TokenKind::Memory,
                     "not" => TokenKind::BitNot,
                     "or" => TokenKind::BitOr,
-                    "over" => TokenKind::Dup(1),
+                    "over" => TokenKind::Over,
                     "proc" => TokenKind::Proc,
                     "return" => TokenKind::Return,
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
                     "swap" => TokenKind::Swap,
-                    "syscall1" => TokenKind::SysCall(1),
-                    "syscall2" => TokenKind::SysCall(2),
-                    "syscall3" => TokenKind::SysCall(3),
-                    "syscall4" => TokenKind::SysCall(4),
-                    "syscall5" => TokenKind::SysCall(5),
-                    "syscall6" => TokenKind::SysCall(6),
+                    "syscall" => TokenKind::SysCall,
                     "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
                     "while" => TokenKind::While,
-                    _ if is_all_num => {
-                        // We only put numbers in here, so it can't fail.
-                        let value = self.string_buf.parse().unwrap();
-                        TokenKind::Integer(value)
-                    }
                     _ => TokenKind::Ident,
                 };
 
@@ -507,6 +533,23 @@ impl<'source> Scanner<'source> {
                     self.line,
                     self.cur_token_column,
                 ))
+            }
+
+            (c, _) => {
+                let loc = SourceLocation::new(
+                    self.file_id,
+                    self.lexeme_range(),
+                    self.line,
+                    self.cur_token_column,
+                );
+                diagnostics::emit_error(
+                    loc,
+                    format!("unexpected character in input: `{c}`"),
+                    Some(Label::new(loc).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+                return Err(());
             }
         };
 

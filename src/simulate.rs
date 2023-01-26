@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::VecNOps,
-    opcode::{Op, OpCode},
+    opcode::{Direction, Op, OpCode},
     program::{Procedure, ProcedureKind, Program},
     source_file::SourceStorage,
 };
@@ -94,9 +94,7 @@ fn simulate_execute_program_block(
                 // Nullptr is fine, because you can't read/write memory in a const-context anyway.
                 value_stack.push(0);
             }
-            OpCode::Drop => {
-                value_stack.pop().unwrap();
-            }
+            OpCode::Drop { count, .. } => value_stack.truncate(value_stack.len() - count),
 
             OpCode::While { body, .. } => loop {
                 simulate_execute_program_block(
@@ -157,18 +155,36 @@ fn simulate_execute_program_block(
                 value_stack.push((a != b) as u64);
             }
 
-            OpCode::Dup { depth } => {
-                let a = value_stack[value_stack.len() - 1 - depth];
-                value_stack.push(a);
-            }
-            OpCode::Rot => {
-                let start = value_stack.len() - 3;
-                value_stack[start..].rotate_left(1);
-            }
-            OpCode::Swap => {
-                if let [.., a, b] = value_stack.as_mut_slice() {
-                    std::mem::swap(a, b);
+            OpCode::Dup { count, .. } => {
+                let range = (value_stack.len() - count)..value_stack.len();
+                for i in range {
+                    let a = value_stack[i];
+                    value_stack.push(a);
                 }
+            }
+            OpCode::Over { depth, .. } => {
+                let value = value_stack[value_stack.len() - 1 - depth];
+                value_stack.push(value);
+            }
+            OpCode::Rot {
+                item_count,
+                direction,
+                shift_count,
+                ..
+            } => {
+                let shift_count = shift_count % item_count;
+                let start = value_stack.len() - item_count;
+                match direction {
+                    Direction::Left => value_stack[start..].rotate_left(shift_count),
+                    Direction::Right => value_stack[start..].rotate_right(shift_count),
+                }
+            }
+            OpCode::Swap { count, .. } => {
+                let slice_start = value_stack.len() - count;
+                let (rest, a_slice) = value_stack.split_at_mut(slice_start);
+                let (_, b_slice) = rest.split_at_mut(rest.len() - count);
+
+                a_slice.swap_with_slice(b_slice);
             }
 
             OpCode::CastBool | OpCode::CastInt | OpCode::CastPtr => {}
@@ -202,7 +218,7 @@ fn simulate_execute_program_block(
             | OpCode::Load { .. }
             | OpCode::Memory { .. }
             | OpCode::Store { .. }
-            | OpCode::SysCall(_) => {
+            | OpCode::SysCall { .. } => {
                 generate_error(
                     "operation not supported during const evaluation",
                     op,

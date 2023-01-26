@@ -173,35 +173,53 @@ pub(super) fn analyze_block(
                 end_token,
             ),
 
-            OpCode::Drop => stack_ops::drop(
+            OpCode::Drop{count, count_token} => stack_ops::drop(
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
+                count
+                , count_token,
             ),
-            OpCode::Dup { depth } => stack_ops::dup(
+            OpCode::Dup { count, count_token } => stack_ops::dup(
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
-                depth,
+                count,
+                count_token
+            ),
+            OpCode::Over{ depth, .. } => stack_ops::over(
+                analyzer,
+                stack,
+                source_store,
+                had_error,
+                op,
+                depth
             ),
 
-            OpCode::Swap => stack_ops::swap(
+            OpCode::Swap{count, count_token} => stack_ops::swap(
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
+                count,
+                count_token,
             ),
-            OpCode::Rot => stack_ops::rot(
+            OpCode::Rot{ item_count, direction, shift_count, item_count_token, shift_count_token } => stack_ops::rot(
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
+                item_count,
+                direction,
+                shift_count,
+                item_count_token,
+                shift_count_token
             ),
 
             OpCode::Store { .. } => memory::store(
@@ -221,13 +239,14 @@ pub(super) fn analyze_block(
                 op,
                 proc_id,
             ),
-            OpCode::SysCall(num_args @ 0..=6) => control::syscall(
+            OpCode::SysCall{ arg_count, arg_count_token } => control::syscall(
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
-                num_args,
+                arg_count,
+                arg_count_token
             ),
 
             OpCode::Prologue => control::prologue(analyzer,  stack,  op, proc),
@@ -244,8 +263,7 @@ pub(super) fn analyze_block(
             // TODO: Remove this opcode.
             OpCode::CastBool => panic!("Unsupported"),
 
-            OpCode::SysCall(_) // No syscalls with this many args.
-            | OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {

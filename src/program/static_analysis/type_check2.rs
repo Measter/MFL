@@ -147,6 +147,7 @@ pub(super) fn analyze_block(
 
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
+            OpCode::Over{ .. } => stack_ops::over(analyzer, op),
 
             OpCode::Load {  kind, .. } => memory::load(
                 analyzer,
@@ -173,7 +174,7 @@ pub(super) fn analyze_block(
                 op,
                 proc_id,
             ),
-            OpCode::SysCall(0..=6) => control::syscall(analyzer, op),
+            OpCode::SysCall{..} => control::syscall(analyzer, op, ),
 
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 analyzer,
@@ -186,15 +187,14 @@ pub(super) fn analyze_block(
             OpCode::Prologue => control::prologue(analyzer, op, proc),
             
             // These only manipulate the stack order, so there's nothing to do here.
-            OpCode::Drop |
-            OpCode::Swap |
-            OpCode::Rot => {},
+            OpCode::Drop{..} |
+            OpCode::Swap{..} |
+            OpCode::Rot{..} => {},
 
             // TODO: Remove this opcode.
             OpCode::CastBool => panic!("Unsupported"),
 
-            OpCode::SysCall(_) // No syscalls with this many args.
-            | OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {

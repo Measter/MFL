@@ -17,6 +17,12 @@ pub struct ConditionalBlock {
     pub close_token: Token,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, Variantly)]
 pub enum OpCode {
     Add,
@@ -34,9 +40,13 @@ pub enum OpCode {
     CastPtr,
     DivMod,
     Dup {
-        depth: usize,
+        count: usize,
+        count_token: Token,
     },
-    Drop,
+    Drop {
+        count: usize,
+        count_token: Token,
+    },
     Epilogue,
     Equal,
     If {
@@ -61,6 +71,10 @@ pub enum OpCode {
     },
     Multiply,
     NotEq,
+    Over {
+        depth: usize,
+        depth_token: Token,
+    },
     Prologue,
     PushBool(bool),
     PushInt(u64),
@@ -73,7 +87,13 @@ pub enum OpCode {
         proc_id: ProcedureId,
     },
     Return,
-    Rot,
+    Rot {
+        item_count: usize,
+        direction: Direction,
+        shift_count: usize,
+        item_count_token: Token,
+        shift_count_token: Token,
+    },
     ShiftLeft,
     ShiftRight,
     Store {
@@ -81,8 +101,14 @@ pub enum OpCode {
         kind: PorthTypeKind,
     },
     Subtract,
-    Swap,
-    SysCall(usize),
+    Swap {
+        count: usize,
+        count_token: Token,
+    },
+    SysCall {
+        arg_count: usize,
+        arg_count_token: Token,
+    },
     UnresolvedIdent {
         module: Option<Token>,
         proc: Token,
@@ -118,22 +144,23 @@ impl OpCode {
             | CastInt
             | CastPtr
             | DivMod
-            | Drop
+            | Drop { .. }
             | Dup { .. }
             | Epilogue
             | If { .. }
             | Load { .. }
             | Memory { .. }
+            | Over { .. }
             | Prologue
             | PushBool(_)
             | PushInt(_)
             | PushStr { .. }
             | ResolvedIdent { .. }
             | Return { .. }
-            | Rot
+            | Rot { .. }
             | Store { .. }
-            | Swap
-            | SysCall(_)
+            | Swap { .. }
+            | SysCall { .. }
             | UnresolvedIdent { .. }
             | While { .. } => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")

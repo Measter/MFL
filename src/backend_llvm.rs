@@ -253,11 +253,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         debug!("Defining syscall functions..");
         let args: Vec<BasicMetadataTypeEnum> =
-            (0..=6).map(|_| self.ctx.i64_type().into()).collect();
-        for i in 0..=6 {
-            let func_sig = self.ctx.i64_type().fn_type(&args[0..=i], false);
+            (1..=7).map(|_| self.ctx.i64_type().into()).collect();
+        for i in 0..7 {
+            let args = &args[..=i];
+            let func_sig = self.ctx.i64_type().fn_type(args, false);
             let function = self.module.add_function(
-                &format!("_syscall{i}"),
+                &(format!("_syscall{}", i + 1)),
                 func_sig,
                 Some(Linkage::External),
             );
@@ -289,7 +290,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             // These do nothing in codegen
             match &op.code {
-                OpCode::Swap | OpCode::Rot => continue,
+                OpCode::Swap { .. } | OpCode::Rot { .. } => continue,
                 _ => {}
             }
 
@@ -489,11 +490,11 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::CastInt => todo!(),
                 OpCode::CastPtr => todo!(),
 
-                OpCode::Dup { .. } => {
-                    let input = op_io.inputs()[0];
-                    let output = op_io.outputs()[0];
-                    let value = value_store.load_value(self, input, analyzer, interner);
-                    value_store.store_value(self, output, value);
+                OpCode::Dup { .. } | OpCode::Over { .. } => {
+                    for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
+                        let value = value_store.load_value(self, input_id, analyzer, interner);
+                        value_store.store_value(self, output_id, value);
+                    }
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
@@ -847,8 +848,8 @@ impl<'ctx> CodeGen<'ctx> {
                     todo!()
                 }
 
-                OpCode::SysCall(s @ 0..=6) => {
-                    let callee_value = self.syscall_wrappers[*s];
+                OpCode::SysCall { arg_count, .. } => {
+                    let callee_value = self.syscall_wrappers[*arg_count - 1];
 
                     let args: Vec<BasicMetadataValueEnum> =
                         op_io
@@ -871,7 +872,7 @@ impl<'ctx> CodeGen<'ctx> {
                     let result = self.builder.build_call(
                         callee_value,
                         &args,
-                        &format!("calling syscall{s}"),
+                        &format!("calling syscall{arg_count}"),
                     );
 
                     let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left()  else {
@@ -882,11 +883,8 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 // These are no-ops as far as codegen is concerned.
-                OpCode::Drop | OpCode::Rot | OpCode::Swap => continue,
+                OpCode::Drop { .. } | OpCode::Rot { .. } | OpCode::Swap { .. } => continue,
 
-                OpCode::SysCall(_) => {
-                    panic!("ICE: Invalid syscall ID")
-                }
                 OpCode::ResolvedIdent { .. } => {
                     panic!("ICE: Encountered resolved ident during codegen")
                 }

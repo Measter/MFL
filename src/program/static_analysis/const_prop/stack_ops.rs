@@ -35,9 +35,22 @@ pub(super) fn cast_ptr(analyzer: &mut Analyzer, op: &Op) {
 
 pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
-    let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([types]) = analyzer.value_consts(input_ids) else { return };
-    analyzer.set_value_const(op_data.outputs[0], types);
+    let inputs = op_data.inputs().to_owned();
+    let outputs = op_data.outputs().to_owned();
+
+    for (input, output) in inputs.into_iter().zip(outputs) {
+        let Some([const_val]) = analyzer.value_consts([input]) else { continue };
+        analyzer.set_value_const(output, const_val);
+    }
+}
+
+pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
+    let op_data = analyzer.get_op_io(op.id);
+    let input = op_data.inputs()[0];
+    let output = op_data.outputs()[0];
+
+    let Some([input_const])  = analyzer.value_consts([input]) else { return };
+    analyzer.set_value_const(output, input_const);
 }
 
 pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op, value: bool) {

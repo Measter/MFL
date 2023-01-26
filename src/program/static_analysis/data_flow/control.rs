@@ -153,11 +153,22 @@ pub(super) fn syscall(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    mut num_args: usize,
+    num_args: usize,
+    arg_count_token: Token,
 ) {
-    // Also need the syscall ID.
-    // TODO: This is dumb. Make this not be dumb.
-    num_args += 1;
+    if !matches!(num_args, 1..=7) {
+        diagnostics::emit_error(
+            op.token.location,
+            "invalid syscall size",
+            [Label::new(arg_count_token.location)
+                .with_color(Color::Red)
+                .with_message("valid syscall sizes are 1..=7")],
+            None,
+            source_store,
+        );
+        *had_error = true;
+        return;
+    }
 
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_args);
 

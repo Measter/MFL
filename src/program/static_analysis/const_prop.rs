@@ -66,6 +66,7 @@ pub(super) fn analyze_block(
             OpCode::CastPtr => stack_ops::cast_ptr(analyzer, op),
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
+            OpCode::Over { .. } => stack_ops::over(analyzer, op),
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
@@ -89,9 +90,9 @@ pub(super) fn analyze_block(
             ),
 
             // These only manipulate the order of the stack, so there's nothing to do here.
-            OpCode::Drop |
-            OpCode::Swap |
-            OpCode::Rot => {},
+            OpCode::Drop{..} |
+            OpCode::Swap{..} |
+            OpCode::Rot{..} => {},
 
             OpCode::Load { width, kind } => memory::load(
                 analyzer,
@@ -116,15 +117,14 @@ pub(super) fn analyze_block(
             // There's nothing to do with these, as they're always non-const.
             OpCode::ArgC |
             OpCode::ArgV |
-            OpCode::SysCall(0..=6) |
+            OpCode::SysCall{..} |
             OpCode::Epilogue | OpCode::Return |
             OpCode::Prologue => {},
 
             // TODO: Remove this opcode.
             OpCode::CastBool => panic!("Unsupported"),
 
-            OpCode::SysCall(_) // No syscalls with this many args.
-            | OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
