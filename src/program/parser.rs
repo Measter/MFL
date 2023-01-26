@@ -244,6 +244,8 @@ pub fn parse_procedure_body(
             | TokenKind::Elif
             | TokenKind::Else
             | TokenKind::End
+            | TokenKind::ParenthesisClosed
+            | TokenKind::ParenthesisOpen
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
                 diagnostics::emit_error(

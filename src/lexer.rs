@@ -49,6 +49,8 @@ pub enum TokenKind {
     Memory,
     Minus,
     NotEqual,
+    ParenthesisClosed,
+    ParenthesisOpen,
     Plus,
     Proc,
     Return,
@@ -104,6 +106,8 @@ impl TokenKind {
             | TokenKind::Memory
             | TokenKind::Minus
             | TokenKind::NotEqual
+            | TokenKind::ParenthesisClosed
+            | TokenKind::ParenthesisOpen
             | TokenKind::Plus
             | TokenKind::Proc
             | TokenKind::Return
@@ -310,7 +314,7 @@ impl<'source> Scanner<'source> {
                 ))
             }
 
-            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']', _) => {
+            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']' | '(' | ')', _) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
@@ -318,6 +322,8 @@ impl<'source> Scanner<'source> {
                     '=' => TokenKind::Equal,
                     '<' => TokenKind::Less,
                     '>' => TokenKind::Greater,
+                    '(' => TokenKind::ParenthesisOpen,
+                    ')' => TokenKind::ParenthesisClosed,
                     '[' => TokenKind::SquareBracketOpen,
                     ']' => TokenKind::SquareBracketClosed,
                     _ => unreachable!(),
