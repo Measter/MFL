@@ -3,7 +3,7 @@
 use std::{path::Path, process::Command};
 
 use ariadne::{Color, Label};
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
 use log::{info, Level, LevelFilter};
@@ -13,7 +13,6 @@ use source_file::SourceStorage;
 
 use crate::program::{ProcedureKind, Program};
 
-mod backend_custom;
 mod backend_llvm;
 mod diagnostics;
 mod interners;
@@ -44,12 +43,6 @@ impl Width {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum Backend {
-    Llvm,
-    Custom,
-}
-
 #[derive(Debug, Parser)]
 struct Args {
     /// Print more to the console
@@ -65,10 +58,6 @@ struct Args {
     /// Set optimization level
     #[arg(short, action = clap::ArgAction::Count)]
     opt_level: u8,
-
-    /// Select the codegen backend to use.
-    #[arg(short)]
-    codegen: Option<Backend>,
 }
 
 fn load_program(
@@ -125,36 +114,21 @@ fn load_program(
     Ok((program, source_storage, interner, entry_function_id))
 }
 
-fn run_compile(
-    file: String,
-    opt_level: u8,
-    include_paths: Vec<String>,
-    backend: Backend,
-) -> Result<()> {
+fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
     let mut output_binary = Path::new(&file).to_path_buf();
     output_binary.set_extension("");
 
     let (program, source_storage, mut interner, entry_function) =
         load_program(&file, include_paths)?;
 
-    let objects = match backend {
-        Backend::Llvm => backend_llvm::compile(
-            &program,
-            entry_function,
-            &source_storage,
-            &mut interner,
-            &file,
-            opt_level,
-        )?,
-        Backend::Custom => backend_custom::compile(
-            &program,
-            entry_function,
-            &source_storage,
-            &mut interner,
-            &file,
-            opt_level,
-        )?,
-    };
+    let objects = backend_llvm::compile(
+        &program,
+        entry_function,
+        &source_storage,
+        &mut interner,
+        &file,
+        opt_level,
+    )?;
 
     info!("Linking... into {}", output_binary.display());
     let ld = Command::new("ld")
@@ -197,12 +171,7 @@ fn main() -> Result<()> {
         simplelog::ColorChoice::Always,
     )?;
 
-    run_compile(
-        args.file,
-        args.opt_level,
-        args.library_paths,
-        args.codegen.unwrap_or(Backend::Llvm),
-    )?;
+    run_compile(args.file, args.opt_level, args.library_paths)?;
 
     Ok(())
 }
