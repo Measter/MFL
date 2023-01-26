@@ -386,7 +386,7 @@ pub fn data_flow_analysis(
     );
 
     // dbg!(&analyzer);
-    Ok(())
+    had_error.not().then_some(()).ok_or(())
 }
 
 pub fn type_check(
