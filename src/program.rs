@@ -580,8 +580,31 @@ impl Program {
                     );
                     //
                 }
-                OpCode::If { .. } => {
-                    todo!()
+                OpCode::If {
+                    ref condition,
+                    ref else_block,
+                    ..
+                } => {
+                    self.check_invalid_cyclic_refs_in_block(
+                        own_proc,
+                        &condition.block,
+                        cur_proc,
+                        kind,
+                        already_checked,
+                        check_queue,
+                        had_error,
+                        source_store,
+                    );
+                    self.check_invalid_cyclic_refs_in_block(
+                        own_proc,
+                        else_block,
+                        cur_proc,
+                        kind,
+                        already_checked,
+                        check_queue,
+                        had_error,
+                        source_store,
+                    );
                 }
                 OpCode::ResolvedIdent { proc_id, .. } => {
                     // False means that there was already a value in the set with this proc_id
