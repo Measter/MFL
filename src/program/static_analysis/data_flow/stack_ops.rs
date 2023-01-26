@@ -177,7 +177,7 @@ pub(super) fn rot(
 
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, item_count);
 
-    let start = stack.len() - 3;
+    let start = stack.len() - item_count;
     match direction {
         Direction::Left => stack[start..].rotate_left(shift_count),
         Direction::Right => stack[start..].rotate_right(shift_count),
