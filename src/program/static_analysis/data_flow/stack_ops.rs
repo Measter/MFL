@@ -106,8 +106,6 @@ pub(super) fn over(
     let new_id = analyzer.new_value(op);
     stack.push(new_id);
 
-    dbg!(src_id);
-
     analyzer.set_op_io(op, &[src_id], &[new_id]);
 }
 
