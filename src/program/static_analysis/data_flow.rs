@@ -114,8 +114,7 @@ pub(super) fn analyze_block(
             ),
 
             OpCode::BitNot
-            | OpCode::CastInt
-            | OpCode::CastPtr
+            | OpCode::Cast{..}
             | OpCode::Load{..} => eat_one_make_one(
                 analyzer,
                 stack,
@@ -259,9 +258,6 @@ pub(super) fn analyze_block(
                 op,
                 proc,
             ),
-
-            // TODO: Remove this opcode.
-            OpCode::CastBool => panic!("Unsupported"),
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.

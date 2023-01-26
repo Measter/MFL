@@ -35,9 +35,10 @@ pub enum OpCode {
         module: ModuleId,
         proc_id: ProcedureId,
     },
-    CastBool,
-    CastInt,
-    CastPtr,
+    Cast {
+        kind: PorthTypeKind,
+        kind_token: Token,
+    },
     DivMod,
     Dup {
         count: usize,
@@ -140,9 +141,7 @@ impl OpCode {
             | ArgV
             | BitNot
             | CallProc { .. }
-            | CastBool
-            | CastInt
-            | CastPtr
+            | Cast { .. }
             | DivMod
             | Drop { .. }
             | Dup { .. }

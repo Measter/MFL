@@ -5,7 +5,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::Analyzer;
+use super::{Analyzer, PorthTypeKind};
 
 mod arithmetic;
 mod comparative;
@@ -108,20 +108,21 @@ pub(super) fn analyze_block(
                 true,
             ),
 
-            OpCode::CastInt => stack_ops::cast_int(
+            OpCode::Cast{kind: PorthTypeKind::Int, ..} => stack_ops::cast_int(
                 analyzer,
                 source_store,
                 interner,
                 had_error,
                 op
             ),
-            OpCode::CastPtr => stack_ops::cast_ptr(
+            OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(
                 analyzer,
                 source_store,
                 interner,
                 had_error,
                 op
             ),
+            OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
@@ -190,9 +191,6 @@ pub(super) fn analyze_block(
             OpCode::Drop{..} |
             OpCode::Swap{..} |
             OpCode::Rot{..} => {},
-
-            // TODO: Remove this opcode.
-            OpCode::CastBool => panic!("Unsupported"),
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.

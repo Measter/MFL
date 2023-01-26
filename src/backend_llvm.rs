@@ -486,9 +486,7 @@ impl<'ctx> CodeGen<'ctx> {
                         value_store.store_value(self, id, value);
                     }
                 }
-                OpCode::CastBool => todo!(),
-                OpCode::CastInt => todo!(),
-                OpCode::CastPtr => todo!(),
+                OpCode::Cast { .. } => todo!(),
 
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
                     for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {

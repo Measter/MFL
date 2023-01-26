@@ -409,9 +409,42 @@ pub fn parse_procedure_body(
             TokenKind::ShiftLeft => OpCode::ShiftLeft,
             TokenKind::ShiftRight => OpCode::ShiftRight,
 
-            TokenKind::CastBool => OpCode::CastBool,
-            TokenKind::CastInt => OpCode::CastInt,
-            TokenKind::CastPtr => OpCode::CastPtr,
+            TokenKind::Cast => {
+                let ident_token =
+                    parse_ident_param(&mut token_iter, *token, interner, source_store)?;
+
+                let kind = match interner.resolve_lexeme(ident_token.lexeme) {
+                    "int" => PorthTypeKind::Int,
+                    "ptr" => PorthTypeKind::Ptr,
+
+                    "bool" => {
+                        diagnostics::emit_error(
+                            ident_token.location,
+                            "cannot cast to a Bool",
+                            [Label::new(ident_token.location).with_color(Color::Red)],
+                            Some("use a comparison operator instead".to_owned()),
+                            source_store,
+                        );
+                        return Err(());
+                    }
+                    _ => {
+                        diagnostics::emit_error(
+                            ident_token.location,
+                            "invalid ident",
+                            [Label::new(ident_token.location)
+                                .with_color(Color::Red)
+                                .with_message("unknown type")],
+                            None,
+                            source_store,
+                        );
+                        return Err(());
+                    }
+                };
+                OpCode::Cast {
+                    kind,
+                    kind_token: ident_token,
+                }
+            }
 
             TokenKind::Return => OpCode::Return,
 

@@ -18,9 +18,7 @@ pub enum TokenKind {
     BitNot,
     BitOr,
     Boolean(bool),
-    CastBool,
-    CastInt,
-    CastPtr,
+    Cast,
     ColonColon,
     Const,
     DivMod,
@@ -76,9 +74,7 @@ impl TokenKind {
             | TokenKind::BitNot
             | TokenKind::BitOr
             | TokenKind::Boolean(_)
-            | TokenKind::CastBool
-            | TokenKind::CastInt
-            | TokenKind::CastPtr
+            | TokenKind::Cast
             | TokenKind::ColonColon
             | TokenKind::Const
             | TokenKind::DivMod
@@ -476,9 +472,7 @@ impl<'source> Scanner<'source> {
                     "argc" => TokenKind::ArgC,
                     "argv" => TokenKind::ArgV,
                     "assert" => TokenKind::Assert,
-                    "cast(bool)" => TokenKind::CastBool,
-                    "cast(int)" => TokenKind::CastInt,
-                    "cast(ptr)" => TokenKind::CastPtr,
+                    "cast" => TokenKind::Cast,
                     "const" => TokenKind::Const,
                     "divmod" => TokenKind::DivMod,
                     "do" => TokenKind::Do,
