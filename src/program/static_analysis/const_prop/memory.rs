@@ -5,9 +5,8 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, PorthTypeKind, PtrId},
+    program::static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId},
     source_file::{SourceLocation, SourceStorage},
-    Width,
 };
 
 fn check_memory_bounds(
@@ -15,12 +14,12 @@ fn check_memory_bounds(
     had_error: &mut bool,
     op: &Op,
     src_op_loc: SourceLocation,
-    width: Width,
+    kind: PorthTypeKind,
     offset: u64,
     memory_size: u64,
 ) -> bool {
     // Let's make sure that the end of our access region doesn't overflow.
-    let end_idx = match offset.checked_add(width.byte_size()) {
+    let end_idx = match offset.checked_add(kind.byte_size()) {
         Some(idx) => idx,
         None => {
             diagnostics::emit_error(
@@ -28,7 +27,7 @@ fn check_memory_bounds(
                 "index + width overflows",
                 [Label::new(op.token.location)
                     .with_color(Color::Red)
-                    .with_message(format!("index: {offset}, width: {}", width.byte_size()))],
+                    .with_message(format!("index: {offset}, width: {}", kind.byte_size()))],
                 None,
                 source_store,
             );
@@ -66,7 +65,6 @@ pub(super) fn load(
     interner: &Interners,
     had_error: &mut bool,
     op: &Op,
-    width: Width,
     kind: PorthTypeKind,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -90,7 +88,7 @@ pub(super) fn load(
                 had_error,
                 op,
                 src_op_loc,
-                width,
+                kind,
                 offset,
                 memory_size,
             ) {
@@ -98,20 +96,24 @@ pub(super) fn load(
             }
 
             let range_start = offset as usize;
-            let range_end = (offset + width.byte_size()) as usize;
+            let range_end = (offset + kind.byte_size()) as usize;
             let bytes = &string.as_bytes()[range_start..range_end];
-            match width {
-                Width::Byte => bytes[0] as u64,
-                Width::Word => u16::from_le_bytes(*bytes.as_arr()) as u64,
-                Width::Dword => u32::from_le_bytes(*bytes.as_arr()) as u64,
-                Width::Qword => u64::from_le_bytes(*bytes.as_arr()),
+            match kind {
+                PorthTypeKind::Int(IntWidth::I8) | PorthTypeKind::Bool => bytes[0] as u64,
+                PorthTypeKind::Int(IntWidth::I16) => u16::from_le_bytes(*bytes.as_arr()) as u64,
+                PorthTypeKind::Int(IntWidth::I32) => u32::from_le_bytes(*bytes.as_arr()) as u64,
+                PorthTypeKind::Int(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()) as u64,
+                PorthTypeKind::Ptr => {
+                    // Can't const_load a pointer.
+                    return;
+                }
             }
         }
         _ => return,
     };
 
     let new_const_val = match kind {
-        PorthTypeKind::Int => ConstVal::Int(new_const_val),
+        PorthTypeKind::Int(_) => ConstVal::Int(new_const_val),
         PorthTypeKind::Bool => ConstVal::Bool(new_const_val != 0),
         PorthTypeKind::Ptr => return, // Can't do a const here.
     };

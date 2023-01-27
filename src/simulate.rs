@@ -1,11 +1,12 @@
 use ariadne::{Color, Label};
+use log::error;
 
 use crate::{
     diagnostics,
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, Op, OpCode},
-    program::{Procedure, ProcedureKind, Program},
+    program::{static_analysis::Analyzer, Procedure, ProcedureKind, Program},
     source_file::SourceStorage,
 };
 
@@ -32,6 +33,7 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
 fn simulate_execute_program_block(
     program: &Program,
     block: &[Op],
+    analyzer: &Analyzer,
     value_stack: &mut Vec<u64>,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -80,7 +82,7 @@ fn simulate_execute_program_block(
             }
 
             OpCode::PushBool(val) => value_stack.push(*val as _),
-            OpCode::PushInt(val) => value_stack.push(*val),
+            OpCode::PushInt { value, .. } => value_stack.push(*value),
             // It's a bit weird, given you can't do much with a string, but
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
@@ -100,6 +102,7 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     &body.condition,
+                    analyzer,
                     value_stack,
                     interner,
                     source_store,
@@ -111,6 +114,7 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     &body.block,
+                    analyzer,
                     value_stack,
                     interner,
                     source_store,
@@ -244,11 +248,13 @@ pub(crate) fn simulate_execute_program(
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<Vec<u64>, SimulationError> {
+    error!("Make simulator type representation better.");
     let mut value_stack: Vec<u64> = Vec::new();
 
     simulate_execute_program_block(
         program,
         procedure.body(),
+        procedure.analyzer(),
         &mut value_stack,
         interner,
         source_store,

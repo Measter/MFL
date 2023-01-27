@@ -4,9 +4,8 @@ use variantly::Variantly;
 use crate::{
     lexer::Token,
     program::static_analysis::PorthTypeKind,
-    program::{ModuleId, ProcedureId},
+    program::{static_analysis::IntWidth, ModuleId, ProcedureId},
     source_file::SourceLocation,
-    Width,
 };
 
 #[derive(Debug, Clone)]
@@ -59,7 +58,6 @@ pub enum OpCode {
     Less,
     LessEqual,
     Load {
-        width: Width,
         kind: PorthTypeKind,
     },
     Greater,
@@ -78,7 +76,10 @@ pub enum OpCode {
     },
     Prologue,
     PushBool(bool),
-    PushInt(u64),
+    PushInt {
+        width: IntWidth,
+        value: u64,
+    },
     PushStr {
         id: Spur,
         is_c_str: bool,
@@ -98,7 +99,6 @@ pub enum OpCode {
     ShiftLeft,
     ShiftRight,
     Store {
-        width: Width,
         kind: PorthTypeKind,
     },
     Subtract,
@@ -152,7 +152,7 @@ impl OpCode {
             | Over { .. }
             | Prologue
             | PushBool(_)
-            | PushInt(_)
+            | PushInt { .. }
             | PushStr { .. }
             | ResolvedIdent { .. }
             | Return { .. }

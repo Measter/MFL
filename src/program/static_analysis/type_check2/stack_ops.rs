@@ -5,7 +5,7 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{generate_type_mismatch_diag, Analyzer, PorthTypeKind},
+    program::static_analysis::{generate_type_mismatch_diag, Analyzer, IntWidth, PorthTypeKind},
     source_file::SourceStorage,
 };
 
@@ -15,30 +15,50 @@ pub(super) fn cast_int(
     interner: &Interners,
     had_error: &mut bool,
     op: &Op,
+    width: IntWidth,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([input]) = analyzer.value_types(input_ids) else { return };
+    let Some([input_type]) = analyzer.value_types(input_ids) else { return };
 
-    let new_type = match input {
-        PorthTypeKind::Bool | PorthTypeKind::Ptr => PorthTypeKind::Int,
+    match input_type {
+        PorthTypeKind::Bool => {}
+        PorthTypeKind::Ptr => {
+            if width != IntWidth::I64 {
+                *had_error = true;
+                let [input_value] = analyzer.values(input_ids);
 
-        PorthTypeKind::Int => {
-            let [value] = analyzer.values(input_ids);
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot cast to {}", width.name()),
+                    [
+                        Label::new(op.token.location).with_color(Color::Red),
+                        Label::new(input_value.creator_token.location)
+                            .with_message(format!("{} cannot hold a ptr", width.name()))
+                            .with_color(Color::Cyan),
+                    ],
+                    None,
+                    source_store,
+                );
+            }
+        }
+        PorthTypeKind::Int(from_width) => {
+            if from_width == width {
+                let [input_value] = analyzer.values(input_ids);
 
-            diagnostics::emit_warning(
-                op.token.location,
-                "unnecessary cast",
-                [
-                    Label::new(op.token.location).with_color(Color::Yellow),
-                    Label::new(value.creator_token.location)
-                        .with_message("already an Int")
-                        .with_color(Color::Cyan),
-                ],
-                None,
-                source_store,
-            );
-            PorthTypeKind::Int
+                diagnostics::emit_warning(
+                    op.token.location,
+                    "unnecessary cast",
+                    [
+                        Label::new(op.token.location).with_color(Color::Yellow),
+                        Label::new(input_value.creator_token.location)
+                            .with_message(format!("already an {}", width.name()))
+                            .with_color(Color::Cyan),
+                    ],
+                    None,
+                    source_store,
+                );
+            }
         }
 
         // No actual failure case at this time, but leaving this here later for if I get
@@ -52,7 +72,7 @@ pub(super) fn cast_int(
         }
     };
 
-    analyzer.set_value_type(op_data.outputs[0], new_type);
+    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(width));
 }
 
 pub(super) fn cast_ptr(
@@ -66,8 +86,8 @@ pub(super) fn cast_ptr(
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([input]) = analyzer.value_types(input_ids) else { return };
 
-    let new_type = match input {
-        PorthTypeKind::Int => PorthTypeKind::Ptr,
+    match input {
+        PorthTypeKind::Int(IntWidth::I64) => {}
         PorthTypeKind::Ptr => {
             let [value] = analyzer.values(input_ids);
 
@@ -83,7 +103,24 @@ pub(super) fn cast_ptr(
                 None,
                 source_store,
             );
-            PorthTypeKind::Ptr
+        }
+
+        PorthTypeKind::Int(width) => {
+            *had_error = true;
+            let [input_value] = analyzer.values(input_ids);
+
+            diagnostics::emit_error(
+                op.token.location,
+                "cannot cast to ptr",
+                [
+                    Label::new(op.token.location).with_color(Color::Red),
+                    Label::new(input_value.creator_token.location)
+                        .with_message(format!("cannot cast {} to ptr", width.name()))
+                        .with_color(Color::Cyan),
+                ],
+                None,
+                source_store,
+            );
         }
 
         _ => {
@@ -95,7 +132,7 @@ pub(super) fn cast_ptr(
         }
     };
 
-    analyzer.set_value_type(op_data.outputs[0], new_type);
+    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Ptr);
 }
 
 pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
@@ -123,9 +160,9 @@ pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Bool);
 }
 
-pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op, kind: IntWidth) {
     let op_data = analyzer.get_op_io(op.id);
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int);
+    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(kind));
 }
 
 pub(super) fn push_str(analyzer: &mut Analyzer, op: &Op, is_c_str: bool) {
@@ -135,7 +172,7 @@ pub(super) fn push_str(analyzer: &mut Analyzer, op: &Op, is_c_str: bool) {
         analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Ptr);
     } else {
         let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        analyzer.set_value_type(len, PorthTypeKind::Int);
+        analyzer.set_value_type(len, PorthTypeKind::Int(IntWidth::I64));
         analyzer.set_value_type(ptr, PorthTypeKind::Ptr);
     }
 }

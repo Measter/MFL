@@ -59,11 +59,12 @@ pub(super) fn analyze_block(
             ),
 
             OpCode::PushBool(v) => stack_ops::push_bool(analyzer, op, v),
-            OpCode::PushInt(v) => stack_ops::push_int(analyzer, op, v),
+            OpCode::PushInt {  value,.. }=> stack_ops::push_int(analyzer, op, value),
             OpCode::PushStr{ id, is_c_str } => stack_ops::push_str(analyzer, interner, op, id, is_c_str),
 
-            OpCode::Cast{kind: PorthTypeKind::Int, ..} => stack_ops::cast_int(analyzer, op),
-            OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(analyzer, op),
+            OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(analyzer, op, width),
+            // Nothing to do if we cast to a pointer.
+            OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
             OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
@@ -95,13 +96,12 @@ pub(super) fn analyze_block(
             OpCode::Swap{..} |
             OpCode::Rot{..} => {},
 
-            OpCode::Load { width, kind } => memory::load(
+            OpCode::Load {  kind } => memory::load(
                 analyzer,
                 source_store,
                 interner,
                 had_error,
                 op,
-                width,
                 kind,
             ),
 

@@ -8,11 +8,10 @@ use crate::{
     lexer::{Token, TokenKind},
     opcode::{ConditionalBlock, Direction, Op, OpCode, OpId},
     source_file::{SourceLocation, SourceStorage},
-    Width,
 };
 
 use super::{
-    static_analysis::{PorthType, PorthTypeKind},
+    static_analysis::{IntWidth, PorthType, PorthTypeKind},
     FunctionData, ModuleId, ProcedureId, ProcedureKind, Program,
 };
 
@@ -61,74 +60,41 @@ fn expect_token<'a>(
     }
 }
 
-fn parse_int_param<'a>(
+fn parse_delimited_token<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     prev: Token,
+    (open_delim_str, open_delim_fn): (&'static str, fn(TokenKind) -> bool),
+    (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
+    (close_delim_str, close_delim_fn): (&'static str, fn(TokenKind) -> bool),
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(u64, Token), ()> {
-    let (_, open_parens) = expect_token(
+) -> Result<Token, ()> {
+    let (_, open_token) = expect_token(
         token_iter,
-        "(",
-        |t| t == TokenKind::ParenthesisOpen,
+        open_delim_str,
+        open_delim_fn,
         prev,
         interner,
         source_store,
     )?;
     let (_, count_token) = expect_token(
         token_iter,
-        "Integer",
-        |t| matches!(t, TokenKind::Integer(_)),
-        open_parens,
+        token_str,
+        token_fn,
+        open_token,
         interner,
         source_store,
     )?;
     let _ = expect_token(
         token_iter,
-        ")",
-        |t| t == TokenKind::ParenthesisClosed,
+        close_delim_str,
+        close_delim_fn,
         count_token,
         interner,
         source_store,
     )?;
 
-    let TokenKind::Integer(count) = count_token.kind else { unreachable!() };
-    Ok((count, count_token))
-}
-
-fn parse_ident_param<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    prev: Token,
-    interner: &Interners,
-    source_store: &SourceStorage,
-) -> Result<Token, ()> {
-    let (_, open_parens) = expect_token(
-        token_iter,
-        "(",
-        |t| t == TokenKind::ParenthesisOpen,
-        prev,
-        interner,
-        source_store,
-    )?;
-
-    let (_, ident_token) = expect_token(
-        token_iter,
-        "Ident",
-        |t| matches!(t, TokenKind::Ident),
-        open_parens,
-        interner,
-        source_store,
-    )?;
-    let _ = expect_token(
-        token_iter,
-        ")",
-        |t| t == TokenKind::ParenthesisClosed,
-        ident_token,
-        interner,
-        source_store,
-    )?;
-
-    Ok(ident_token)
+    Ok(count_token)
 }
 
 pub fn parse_procedure_body(
@@ -151,12 +117,23 @@ pub fn parse_procedure_body(
             | TokenKind::Over
             | TokenKind::Swap
             | TokenKind::SysCall => {
-                let (count, count_token) = token_iter
-                    .peek()
-                    .copied()
-                    .filter(|(_, t)| t.kind == TokenKind::ParenthesisOpen)
-                    .map(|_| parse_int_param(&mut token_iter, *token, interner, source_store))
-                    .unwrap_or(Ok((1, *token)))?;
+                let (count, count_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                {
+                    let count_token = parse_delimited_token(
+                        &mut token_iter,
+                        *token,
+                        ("(", |t| t == TokenKind::ParenthesisOpen),
+                        ("Integer", |t| matches!(t, TokenKind::Integer(_))),
+                        (")", |t| t == TokenKind::ParenthesisClosed),
+                        interner,
+                        source_store,
+                    )?;
+
+                    let TokenKind::Integer(count) = count_token.kind else { unreachable!() };
+                    (count, count_token)
+                } else {
+                    (1, *token)
+                };
 
                 match token.kind {
                     TokenKind::Drop => OpCode::Drop {
@@ -247,16 +224,23 @@ pub fn parse_procedure_body(
             }
 
             TokenKind::Load | TokenKind::Store => {
-                let ident_token =
-                    parse_ident_param(&mut token_iter, *token, interner, source_store)?;
+                let ident_token = parse_delimited_token(
+                    &mut token_iter,
+                    *token,
+                    ("(", |t| t == TokenKind::ParenthesisOpen),
+                    ("Ident", |t| t == TokenKind::Ident),
+                    (")", |t| t == TokenKind::ParenthesisClosed),
+                    interner,
+                    source_store,
+                )?;
 
-                let (width, kind) = match interner.resolve_lexeme(ident_token.lexeme) {
-                    "u8" => (Width::Byte, PorthTypeKind::Int),
-                    "u16" => (Width::Word, PorthTypeKind::Int),
-                    "u32" => (Width::Dword, PorthTypeKind::Int),
-                    "u64" => (Width::Qword, PorthTypeKind::Int),
-                    "bool" => (Width::Byte, PorthTypeKind::Bool),
-                    "ptr" => (Width::Qword, PorthTypeKind::Ptr),
+                let kind = match interner.resolve_lexeme(ident_token.lexeme) {
+                    "u8" => PorthTypeKind::Int(IntWidth::I8),
+                    "u16" => PorthTypeKind::Int(IntWidth::I16),
+                    "u32" => PorthTypeKind::Int(IntWidth::I32),
+                    "u64" => PorthTypeKind::Int(IntWidth::I64),
+                    "bool" => PorthTypeKind::Bool,
+                    "ptr" => PorthTypeKind::Ptr,
 
                     _ => {
                         diagnostics::emit_error(
@@ -273,8 +257,8 @@ pub fn parse_procedure_body(
                 };
 
                 match token.kind {
-                    TokenKind::Load => OpCode::Load { width, kind },
-                    TokenKind::Store => OpCode::Store { width, kind },
+                    TokenKind::Load => OpCode::Load { kind },
+                    TokenKind::Store => OpCode::Store { kind },
                     _ => unreachable!(),
                 }
             }
@@ -316,7 +300,62 @@ pub fn parse_procedure_body(
 
                 OpCode::UnresolvedIdent { module, proc }
             }
-            TokenKind::Integer(value) => OpCode::PushInt(value),
+            TokenKind::Integer(value) => {
+                let (width, ident_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                {
+                    let ident_token = parse_delimited_token(
+                        &mut token_iter,
+                        *token,
+                        ("(", |t| t == TokenKind::ParenthesisOpen),
+                        ("Ident", |t| t == TokenKind::Ident),
+                        (")", |t| t == TokenKind::ParenthesisClosed),
+                        interner,
+                        source_store,
+                    )?;
+
+                    let width = match interner.resolve_lexeme(ident_token.lexeme) {
+                        "u8" => IntWidth::I8,
+                        "u16" => IntWidth::I16,
+                        "u32" => IntWidth::I32,
+                        "u64" => IntWidth::I64,
+
+                        _ => {
+                            diagnostics::emit_error(
+                                ident_token.location,
+                                "invalid integer type",
+                                [Label::new(ident_token.location)
+                                    .with_color(Color::Red)
+                                    .with_message("unknown type")],
+                                None,
+                                source_store,
+                            );
+                            return Err(());
+                        }
+                    };
+                    (width, ident_token)
+                } else {
+                    (IntWidth::I64, *token)
+                };
+
+                if !width.bounds().contains(&value) {
+                    diagnostics::emit_error(
+                        ident_token.location,
+                        "literal out of bounds",
+                        [Label::new(ident_token.location)
+                            .with_color(Color::Red)
+                            .with_message(format!(
+                                "valid range for {} is {:?}",
+                                width.name(),
+                                width.bounds(),
+                            ))],
+                        None,
+                        source_store,
+                    );
+                    return Err(());
+                }
+
+                OpCode::PushInt { width, value }
+            }
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
             TokenKind::Here(id) => OpCode::PushStr {
                 id,
@@ -410,11 +449,21 @@ pub fn parse_procedure_body(
             TokenKind::ShiftRight => OpCode::ShiftRight,
 
             TokenKind::Cast => {
-                let ident_token =
-                    parse_ident_param(&mut token_iter, *token, interner, source_store)?;
+                let ident_token = parse_delimited_token(
+                    &mut token_iter,
+                    *token,
+                    ("(", |t| t == TokenKind::ParenthesisOpen),
+                    ("Ident", |t| t == TokenKind::Ident),
+                    (")", |t| t == TokenKind::ParenthesisClosed),
+                    interner,
+                    source_store,
+                )?;
 
                 let kind = match interner.resolve_lexeme(ident_token.lexeme) {
-                    "int" => PorthTypeKind::Int,
+                    "u8" => PorthTypeKind::Int(IntWidth::I8),
+                    "u16" => PorthTypeKind::Int(IntWidth::I16),
+                    "u32" => PorthTypeKind::Int(IntWidth::I32),
+                    "u64" => PorthTypeKind::Int(IntWidth::I64),
                     "ptr" => PorthTypeKind::Ptr,
 
                     "bool" => {
@@ -794,7 +843,10 @@ fn parse_type_signature<'a>(
 
         let lexeme = interner.resolve_lexeme(token.lexeme);
         let typ = match lexeme {
-            "int" => PorthTypeKind::Int,
+            "u8" => PorthTypeKind::Int(IntWidth::I8),
+            "u16" => PorthTypeKind::Int(IntWidth::I16),
+            "u32" => PorthTypeKind::Int(IntWidth::I32),
+            "u64" => PorthTypeKind::Int(IntWidth::I64),
             "ptr" => PorthTypeKind::Ptr,
             "bool" => PorthTypeKind::Bool,
             _ => {
@@ -889,7 +941,7 @@ fn parse_memory_header<'a>(
         ProcedureKind::Memory,
         parent,
         vec![PorthType {
-            kind: PorthTypeKind::Int,
+            kind: PorthTypeKind::Int(IntWidth::I64),
             location: name.location,
         }],
         name.location,

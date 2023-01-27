@@ -14,7 +14,7 @@ use inkwell::{
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
-    types::{BasicMetadataTypeEnum, BasicType},
+    types::{BasicMetadataTypeEnum, BasicType, IntType},
     values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, PointerValue},
     AddressSpace, IntPredicate, OptimizationLevel,
 };
@@ -26,14 +26,24 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op, OpCode},
     program::{
-        static_analysis::{Analyzer, ConstVal, PorthTypeKind, PtrId, ValueId},
+        static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId, ValueId},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
-    Width,
 };
 
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> T;
+
+impl IntWidth {
+    fn get_int_type(self, ctx: &Context) -> IntType<'_> {
+        match self {
+            IntWidth::I8 => ctx.i8_type(),
+            IntWidth::I16 => ctx.i16_type(),
+            IntWidth::I32 => ctx.i32_type(),
+            IntWidth::I64 => ctx.i64_type(),
+        }
+    }
+}
 
 impl OpCode {
     fn get_arith_fn<'ctx, T: IntMathValue<'ctx>>(
@@ -98,12 +108,16 @@ impl<'ctx> ValueStore<'ctx> {
             Some([const_val]) => {
                 trace!("      Fetching const {id:?}");
                 match const_val {
-                    ConstVal::Int(val) => cg
-                        .ctx
-                        .i64_type()
-                        .const_int(val, false)
-                        .const_cast(cg.ctx.i64_type(), false)
-                        .into(),
+                    ConstVal::Int(val) => {
+                        let Some([PorthTypeKind::Int(target_width)]) = analyzer.value_types([id]) else {
+                            panic!("ICE: ConstInt for non-int type");
+                        };
+                        let target_type = target_width.get_int_type(cg.ctx);
+                        target_type
+                            .const_int(val, false)
+                            .const_cast(target_type, false)
+                            .into()
+                    }
                     ConstVal::Bool(val) => cg.ctx.bool_type().const_int(val as u64, false).into(),
                     ConstVal::Ptr { id, offset, .. } => {
                         let ptr = match id {
@@ -216,7 +230,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .entry_stack()
                 .iter()
                 .map(|t| match t.kind {
-                    PorthTypeKind::Int => self.ctx.i64_type().into(),
+                    PorthTypeKind::Int(width) => width.get_int_type(self.ctx).into(),
                     PorthTypeKind::Ptr => {
                         self.ctx.i8_type().ptr_type(AddressSpace::default()).into()
                     }
@@ -231,7 +245,9 @@ impl<'ctx> CodeGen<'ctx> {
                     .exit_stack()
                     .iter()
                     .map(|t| match t.kind {
-                        PorthTypeKind::Int => self.ctx.i64_type().as_basic_type_enum(),
+                        PorthTypeKind::Int(width) => {
+                            width.get_int_type(self.ctx).as_basic_type_enum()
+                        }
                         PorthTypeKind::Ptr => self
                             .ctx
                             .i8_type()
@@ -312,31 +328,57 @@ impl<'ctx> CodeGen<'ctx> {
                     let [a_type, b_type] = analyzer.value_types([a, b]).unwrap();
 
                     let res: BasicValueEnum = match [a_type, b_type] {
-                        [PorthTypeKind::Int, PorthTypeKind::Int] => {
+                        [PorthTypeKind::Int(_), PorthTypeKind::Int(_)] => {
+                            let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                                panic!("ICE: Non-int output of int-int arithmetic");
+                            };
+
                             let a_val = value_store
                                 .load_value(self, a, analyzer, interner)
                                 .into_int_value();
                             let b_val = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
+                            let a_val = self.builder.build_int_cast(
+                                a_val,
+                                width.get_int_type(self.ctx),
+                                "a_wide",
+                            );
+                            let b_val = self.builder.build_int_cast(
+                                b_val,
+                                width.get_int_type(self.ctx),
+                                "b_wide",
+                            );
+
                             let (func, name) = op.code.get_arith_fn();
                             func(&self.builder, a_val, b_val, name).into()
                         }
-                        [PorthTypeKind::Int, PorthTypeKind::Ptr] => {
+                        [PorthTypeKind::Int(_), PorthTypeKind::Ptr] => {
                             assert!(matches!(op.code, OpCode::Add));
                             let offset = value_store
                                 .load_value(self, a, analyzer, interner)
                                 .into_int_value();
+
+                            let offset = self.builder.build_int_cast(
+                                offset,
+                                self.ctx.i64_type(),
+                                "offset_wide",
+                            );
                             let ptr = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_pointer_value();
 
                             unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
                         }
-                        [PorthTypeKind::Ptr, PorthTypeKind::Int] => {
+                        [PorthTypeKind::Ptr, PorthTypeKind::Int(_)] => {
                             let offset = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
+                            let offset = self.builder.build_int_cast(
+                                offset,
+                                self.ctx.i64_type(),
+                                "offset_wide",
+                            );
                             let ptr = value_store
                                 .load_value(self, a, analyzer, interner)
                                 .into_pointer_value();
@@ -359,7 +401,10 @@ impl<'ctx> CodeGen<'ctx> {
                             let rhs = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_pointer_value();
-                            self.builder.build_ptr_diff(lhs, rhs, "ptr_diff").into()
+                            let diff = self.builder.build_ptr_diff(lhs, rhs, "ptr_diff");
+                            self.builder
+                                .build_int_cast(diff, self.ctx.i64_type(), "wide_diff")
+                                .into()
                         }
                         _ => panic!("ICE: Unexpected types"),
                     };
@@ -368,12 +413,22 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
                     let [a, b] = *op_io.inputs().as_arr();
+                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                        panic!("ICE: Non-int output of int-int arithmetic");
+                    };
+
                     let a_val = value_store
                         .load_value(self, a, analyzer, interner)
                         .into_int_value();
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
+                    let a_val =
+                        self.builder
+                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
+                    let b_val =
+                        self.builder
+                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
 
                     let (func, name) = op.code.get_arith_fn();
                     let sum = func(&self.builder, a_val, b_val, name);
@@ -381,12 +436,22 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::DivMod => {
                     let [a, b] = *op_io.inputs().as_arr();
+                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                        panic!("ICE: Non-int output of int-int arithmetic");
+                    };
+
                     let a_val = value_store
                         .load_value(self, a, analyzer, interner)
                         .into_int_value();
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
+                    let a_val =
+                        self.builder
+                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
+                    let b_val =
+                        self.builder
+                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
 
                     let rem_res = self.builder.build_int_unsigned_rem(a_val, b_val, "rem");
                     let quot_res = self.builder.build_int_unsigned_div(a_val, b_val, "div");
@@ -415,28 +480,32 @@ impl<'ctx> CodeGen<'ctx> {
                     value_store.store_value(self, op_io.outputs()[0], res.into());
                 }
 
-                OpCode::ShiftLeft => {
+                OpCode::ShiftLeft | OpCode::ShiftRight => {
                     let [a, b] = *op_io.inputs().as_arr();
+                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                        panic!("ICE: Non-int output of int-int arithmetic");
+                    };
+
                     let a_val = value_store
                         .load_value(self, a, analyzer, interner)
                         .into_int_value();
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
+                    let a_val =
+                        self.builder
+                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
+                    let b_val =
+                        self.builder
+                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
 
-                    let res = self.builder.build_left_shift(a_val, b_val, "shl");
-                    value_store.store_value(self, op_io.outputs()[0], res.into());
-                }
-                OpCode::ShiftRight => {
-                    let [a, b] = *op_io.inputs().as_arr();
-                    let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
-                        .into_int_value();
-                    let b_val = value_store
-                        .load_value(self, b, analyzer, interner)
-                        .into_int_value();
-
-                    let res = self.builder.build_right_shift(a_val, b_val, false, "shr");
+                    let res = match &op.code {
+                        OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, "shl"),
+                        OpCode::ShiftRight => {
+                            self.builder.build_right_shift(a_val, b_val, false, "shr")
+                        }
+                        _ => unreachable!(),
+                    };
                     value_store.store_value(self, op_io.outputs()[0], res.into());
                 }
                 OpCode::BitNot => {
@@ -713,21 +782,17 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.position_at_end(post_block);
                 }
 
-                OpCode::Load { width, kind } => {
+                OpCode::Load { kind } => {
                     let ptr_value_id = op_io.inputs()[0];
                     let ptr = value_store
                         .load_value(self, ptr_value_id, analyzer, interner)
                         .into_pointer_value();
 
                     let cast_ptr = match kind {
-                        PorthTypeKind::Int => {
-                            let int_type = match width {
-                                Width::Byte => self.ctx.i8_type(),
-                                Width::Word => self.ctx.i16_type(),
-                                Width::Dword => self.ctx.i32_type(),
-                                Width::Qword => self.ctx.i64_type(),
-                            };
-                            let ptr_type = int_type.ptr_type(AddressSpace::default());
+                        PorthTypeKind::Int(width) => {
+                            let ptr_type = width
+                                .get_int_type(self.ctx)
+                                .ptr_type(AddressSpace::default());
                             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
                         }
                         PorthTypeKind::Ptr => {
@@ -746,17 +811,9 @@ impl<'ctx> CodeGen<'ctx> {
                     };
 
                     let value = self.builder.build_load(cast_ptr, "load");
-                    let value = match kind {
-                        PorthTypeKind::Int => self
-                            .builder
-                            .build_int_cast(value.into_int_value(), self.ctx.i64_type(), "cast_int")
-                            .into(),
-                        PorthTypeKind::Ptr => value,
-                        PorthTypeKind::Bool => value,
-                    };
                     value_store.store_value(self, op_io.outputs()[0], value);
                 }
-                OpCode::Store { width, kind } => {
+                OpCode::Store { kind } => {
                     let [data, ptr] = *op_io.inputs().as_arr();
                     let data = value_store.load_value(self, data, analyzer, interner);
                     let ptr = value_store
@@ -764,14 +821,10 @@ impl<'ctx> CodeGen<'ctx> {
                         .into_pointer_value();
 
                     let cast_ptr = match kind {
-                        PorthTypeKind::Int => {
-                            let int_type = match width {
-                                Width::Byte => self.ctx.i8_type(),
-                                Width::Word => self.ctx.i16_type(),
-                                Width::Dword => self.ctx.i32_type(),
-                                Width::Qword => self.ctx.i64_type(),
-                            };
-                            let ptr_type = int_type.ptr_type(AddressSpace::default());
+                        PorthTypeKind::Int(width) => {
+                            let ptr_type = width
+                                .get_int_type(self.ctx)
+                                .ptr_type(AddressSpace::default());
                             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
                         }
                         PorthTypeKind::Ptr => {
@@ -789,23 +842,7 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                     };
 
-                    let cast_data = match kind {
-                        PorthTypeKind::Int => {
-                            let target_type = match width {
-                                Width::Byte => self.ctx.i8_type(),
-                                Width::Word => self.ctx.i16_type(),
-                                Width::Dword => self.ctx.i32_type(),
-                                Width::Qword => self.ctx.i64_type(),
-                            };
-                            self.builder
-                                .build_int_cast(data.into_int_value(), target_type, "cast_int")
-                                .into()
-                        }
-                        PorthTypeKind::Ptr => data,
-                        PorthTypeKind::Bool => data,
-                    };
-
-                    self.builder.build_store(cast_ptr, cast_data);
+                    self.builder.build_store(cast_ptr, data);
                 }
 
                 OpCode::Memory {
@@ -833,12 +870,11 @@ impl<'ctx> CodeGen<'ctx> {
                     let value = self.ctx.bool_type().const_int(*val as _, false).into();
                     value_store.store_value(self, op_io.outputs()[0], value);
                 }
-                OpCode::PushInt(val) => {
-                    let value = self
-                        .ctx
-                        .i64_type()
-                        .const_int(*val, false)
-                        .const_cast(self.ctx.i64_type(), false)
+                OpCode::PushInt { width, value } => {
+                    let int_type = width.get_int_type(self.ctx);
+                    let value = int_type
+                        .const_int(*value, false)
+                        .const_cast(int_type, false)
                         .into();
                     value_store.store_value(self, op_io.outputs()[0], value);
                 }
@@ -911,7 +947,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
 
             let typ = match analyzer.value_types([value_id]).unwrap()[0] {
-                PorthTypeKind::Int => cg.ctx.i64_type().as_basic_type_enum(),
+                PorthTypeKind::Int(width) => width.get_int_type(cg.ctx).as_basic_type_enum(),
                 PorthTypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
                 PorthTypeKind::Ptr => cg
                     .ctx

@@ -6,7 +6,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{ConditionalBlock, Op},
     program::{
-        static_analysis::{failed_compare_stack_types, Analyzer, PorthTypeKind},
+        static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
@@ -107,7 +107,7 @@ pub(super) fn syscall(analyzer: &mut Analyzer, op: &Op) {
     // All syscall inputs are untyped.
     // The output is always an int.
 
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int);
+    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(IntWidth::I64));
 }
 
 pub(super) fn analyze_while(

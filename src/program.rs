@@ -697,8 +697,9 @@ impl Program {
             let proc = self.all_procedures.get_mut(&id).unwrap();
             std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
 
+            let mut local_error = false;
             let proc = &self.all_procedures[&id];
-            had_error |= static_analysis::data_flow_analysis(
+            local_error |= static_analysis::data_flow_analysis(
                 self,
                 proc,
                 &mut local_analyzer,
@@ -707,26 +708,31 @@ impl Program {
             )
             .is_err();
 
-            had_error |= static_analysis::type_check(
-                self,
-                proc,
-                &mut local_analyzer,
-                interner,
-                source_store,
-            )
-            .is_err();
+            if !local_error {
+                local_error |= static_analysis::type_check(
+                    self,
+                    proc,
+                    &mut local_analyzer,
+                    interner,
+                    source_store,
+                )
+                .is_err();
+            }
 
-            had_error |= static_analysis::const_propagation(
-                self,
-                proc,
-                &mut local_analyzer,
-                interner,
-                source_store,
-            )
-            .is_err();
+            if !local_error {
+                local_error |= static_analysis::const_propagation(
+                    self,
+                    proc,
+                    &mut local_analyzer,
+                    interner,
+                    source_store,
+                )
+                .is_err();
+            }
 
             let proc = self.all_procedures.get_mut(&id).unwrap();
             std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
+            had_error |= local_error;
         }
 
         had_error
@@ -896,9 +902,13 @@ impl Program {
                         } => {
                             for (kind, val) in vals {
                                 let (code, const_val) = match kind {
-                                    PorthTypeKind::Int => {
-                                        (OpCode::PushInt(*val), ConstVal::Int(*val))
-                                    }
+                                    PorthTypeKind::Int(width) => (
+                                        OpCode::PushInt {
+                                            width: *width,
+                                            value: *val,
+                                        },
+                                        ConstVal::Int(*val),
+                                    ),
                                     PorthTypeKind::Bool => {
                                         (OpCode::PushBool(*val != 0), ConstVal::Bool(*val != 0))
                                     }

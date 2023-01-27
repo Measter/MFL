@@ -4,33 +4,21 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, PtrId},
+    program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
 };
 
-pub(super) fn cast_int(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn cast_int(analyzer: &mut Analyzer, op: &Op, width: IntWidth) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([types]) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match types {
-        ConstVal::Int(v) => ConstVal::Int(v),
+        ConstVal::Int(v) => ConstVal::Int(v & width.mask()),
         ConstVal::Bool(b) => ConstVal::Int(b as _),
         _ => return,
     };
 
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
-}
-
-pub(super) fn cast_ptr(analyzer: &mut Analyzer, op: &Op) {
-    let op_data = analyzer.get_op_io(op.id);
-    let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([types]) = analyzer.value_consts(input_ids) else { return };
-
-    if !matches!(types, ConstVal::Ptr { .. }) {
-        return;
-    }
-
-    analyzer.set_value_const(op_data.outputs[0], types);
 }
 
 pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {

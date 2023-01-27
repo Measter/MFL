@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Write},
-    ops::Not,
+    ops::{Not, RangeInclusive},
 };
 
 use ariadne::{Color, Label};
@@ -23,9 +23,55 @@ mod const_prop;
 mod data_flow;
 mod type_check2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IntWidth {
+    I8,
+    I16,
+    I32,
+    I64,
+}
+
+impl IntWidth {
+    pub fn name(self) -> &'static str {
+        match self {
+            IntWidth::I8 => "u8",
+            IntWidth::I16 => "u16",
+            IntWidth::I32 => "u32",
+            IntWidth::I64 => "u64",
+        }
+    }
+
+    pub fn mask(self) -> u64 {
+        match self {
+            IntWidth::I8 => u8::MAX as _,
+            IntWidth::I16 => u16::MAX as _,
+            IntWidth::I32 => u32::MAX as _,
+            IntWidth::I64 => u64::MAX,
+        }
+    }
+
+    pub fn byte_size(self) -> u64 {
+        match self {
+            IntWidth::I8 => 1,
+            IntWidth::I16 => 2,
+            IntWidth::I32 => 4,
+            IntWidth::I64 => 8,
+        }
+    }
+
+    pub fn bounds(self) -> RangeInclusive<u64> {
+        match self {
+            IntWidth::I8 => 0..=(u8::MAX as _),
+            IntWidth::I16 => 0..=(u16::MAX as _),
+            IntWidth::I32 => 0..=(u32::MAX as _),
+            IntWidth::I64 => 0..=(u64::MAX as _),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PorthTypeKind {
-    Int,
+    Int(IntWidth),
     Ptr,
     Bool,
 }
@@ -33,9 +79,17 @@ pub enum PorthTypeKind {
 impl PorthTypeKind {
     fn name_str(self) -> &'static str {
         match self {
-            PorthTypeKind::Int => "Int",
+            PorthTypeKind::Int(width) => width.name(),
             PorthTypeKind::Ptr => "Ptr",
             PorthTypeKind::Bool => "Bool",
+        }
+    }
+
+    pub fn byte_size(self) -> u64 {
+        match self {
+            PorthTypeKind::Int(w) => w.byte_size(),
+            PorthTypeKind::Ptr => 8,
+            PorthTypeKind::Bool => 1,
         }
     }
 }

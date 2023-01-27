@@ -2,7 +2,7 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{generate_type_mismatch_diag, Analyzer, PorthTypeKind},
+    program::static_analysis::{generate_type_mismatch_diag, Analyzer, IntWidth, PorthTypeKind},
     source_file::SourceStorage,
 };
 
@@ -19,10 +19,9 @@ pub(super) fn add(
 
     let new_type = match inputs {
         // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
-        [PorthTypeKind::Ptr, PorthTypeKind::Int] | [PorthTypeKind::Int, PorthTypeKind::Ptr] => {
-            PorthTypeKind::Ptr
-        }
+        [PorthTypeKind::Int(a), PorthTypeKind::Int(b)] => PorthTypeKind::Int(a.max(b)),
+        [PorthTypeKind::Ptr, PorthTypeKind::Int(_)]
+        | [PorthTypeKind::Int(_), PorthTypeKind::Ptr] => PorthTypeKind::Ptr,
 
         _ => {
             // Type mismatch
@@ -50,10 +49,9 @@ pub(super) fn subtract(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
-        [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => PorthTypeKind::Int,
-        [PorthTypeKind::Ptr, PorthTypeKind::Int] => PorthTypeKind::Ptr,
+        [PorthTypeKind::Int(a), PorthTypeKind::Int(b)] => PorthTypeKind::Int(a.max(b)),
+        [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => PorthTypeKind::Int(IntWidth::I64),
+        [PorthTypeKind::Ptr, PorthTypeKind::Int(_)] => PorthTypeKind::Ptr,
 
         _ => {
             // Type mismatch
@@ -78,10 +76,10 @@ pub(super) fn bitnot(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
-    let Some(input) = analyzer.value_types([input_id]) else { return };
+    let Some([input]) = analyzer.value_types([input_id]) else { return };
 
-    let new_type = match input[0] {
-        PorthTypeKind::Int | PorthTypeKind::Bool => input[0],
+    let new_type = match input {
+        PorthTypeKind::Int(_) | PorthTypeKind::Bool => input,
 
         _ => {
             // Type mismatch
@@ -109,7 +107,7 @@ pub(super) fn bitand_bitor(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
+        [PorthTypeKind::Int(a), PorthTypeKind::Int(b)] => PorthTypeKind::Int(a.max(b)),
         [PorthTypeKind::Bool, PorthTypeKind::Bool] => PorthTypeKind::Bool,
 
         _ => {
@@ -137,7 +135,7 @@ pub(super) fn multiply_and_shift(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
+        [PorthTypeKind::Int(a), PorthTypeKind::Int(b)] => PorthTypeKind::Int(a.max(b)),
 
         _ => {
             // Type mismatch
@@ -164,7 +162,7 @@ pub(super) fn divmod(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Int,
+        [PorthTypeKind::Int(a), PorthTypeKind::Int(b)] => PorthTypeKind::Int(a.max(b)),
 
         _ => {
             // Type mismatch

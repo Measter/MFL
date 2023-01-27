@@ -18,9 +18,8 @@ pub(super) fn compare(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
 
     let new_type = match inputs {
-        [PorthTypeKind::Int, PorthTypeKind::Int] | [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => {
-            PorthTypeKind::Bool
-        }
+        [PorthTypeKind::Int(_), PorthTypeKind::Int(_)]
+        | [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => PorthTypeKind::Bool,
 
         _ => {
             // Type mismatch
@@ -49,7 +48,7 @@ pub(super) fn equal(
     let new_type = match inputs {
         [PorthTypeKind::Bool, PorthTypeKind::Bool]
         | [PorthTypeKind::Ptr, PorthTypeKind::Ptr]
-        | [PorthTypeKind::Int, PorthTypeKind::Int] => PorthTypeKind::Bool,
+        | [PorthTypeKind::Int(_), PorthTypeKind::Int(_)] => PorthTypeKind::Bool,
 
         _ => {
             // Type mismatch.

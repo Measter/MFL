@@ -24,25 +24,6 @@ mod program;
 mod simulate;
 mod source_file;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Width {
-    Byte,
-    Word,
-    Dword,
-    Qword,
-}
-
-impl Width {
-    pub fn byte_size(self) -> u64 {
-        match self {
-            Width::Byte => 1,
-            Width::Word => 2,
-            Width::Dword => 4,
-            Width::Qword => 8,
-        }
-    }
-}
-
 #[derive(Debug, Parser)]
 struct Args {
     /// Print more to the console

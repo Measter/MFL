@@ -131,7 +131,7 @@ pub(super) fn analyze_block(
             ),
 
             OpCode::PushBool(_)
-            | OpCode::PushInt(_)
+            | OpCode::PushInt{ .. }
             | OpCode::ArgC
             | OpCode::ArgV => make_one(
                 analyzer,

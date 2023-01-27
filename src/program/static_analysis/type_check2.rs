@@ -5,7 +5,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{Analyzer, PorthTypeKind};
+use super::{Analyzer, PorthTypeKind, IntWidth};
 
 mod arithmetic;
 mod comparative;
@@ -88,9 +88,10 @@ pub(super) fn analyze_block(
                 analyzer,
                 op,
             ),
-            OpCode::PushInt(_) => stack_ops::push_int(
+            OpCode::PushInt{ width, .. } => stack_ops::push_int(
                 analyzer,
                 op,
+                width,
             ),
             OpCode::PushStr{  is_c_str, .. } => stack_ops::push_str(
                 analyzer,
@@ -101,6 +102,7 @@ pub(super) fn analyze_block(
             OpCode::ArgC => stack_ops::push_int(
                 analyzer,
                 op,
+                IntWidth::I64,
             ),
             OpCode::ArgV => stack_ops::push_str(
                 analyzer,
@@ -108,12 +110,13 @@ pub(super) fn analyze_block(
                 true,
             ),
 
-            OpCode::Cast{kind: PorthTypeKind::Int, ..} => stack_ops::cast_int(
+            OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(
                 analyzer,
                 source_store,
                 interner,
                 had_error,
-                op
+                op,
+                width,
             ),
             OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(
                 analyzer,
