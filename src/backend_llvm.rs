@@ -468,12 +468,32 @@ impl<'ctx> CodeGen<'ctx> {
                 | OpCode::Less
                 | OpCode::LessEqual => {
                     let [a, b] = *op_io.inputs().as_arr();
+                    let input_types = analyzer.value_types([a, b]).unwrap();
+
                     let a_val = value_store
                         .load_value(self, a, analyzer, interner)
                         .into_int_value();
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
+
+                    let (a_val, b_val) = match input_types {
+                        [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)]
+                            if a_width == b_width =>
+                        {
+                            (a_val, b_val)
+                        }
+                        [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)] => {
+                            let target_type = a_width.max(b_width).get_int_type(self.ctx);
+                            (
+                                self.builder.build_int_cast(a_val, target_type, "a_val"),
+                                self.builder.build_int_cast(b_val, target_type, "b_val"),
+                            )
+                        }
+                        [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => todo!(),
+                        [PorthTypeKind::Bool, PorthTypeKind::Bool] => (a_val, b_val),
+                        _ => unreachable!(),
+                    };
 
                     let (pred, name) = op.code.get_predicate();
                     let res = self.builder.build_int_compare(pred, a_val, b_val, name);
