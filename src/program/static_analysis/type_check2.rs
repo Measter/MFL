@@ -156,7 +156,6 @@ pub(super) fn analyze_block(
             OpCode::Load {  kind, .. } => memory::load(
                 analyzer,
                 source_store,
-                interner,
                 had_error,
                 op,
                 kind,
@@ -164,7 +163,6 @@ pub(super) fn analyze_block(
             OpCode::Store { kind, .. } => memory::store(
                 analyzer,
                 source_store,
-                interner,
                 had_error,
                 op,
                 kind,
