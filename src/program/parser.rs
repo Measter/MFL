@@ -271,6 +271,10 @@ pub fn parse_procedure_body(
             TokenKind::NotEqual => OpCode::NotEq,
 
             TokenKind::Boolean(b) => OpCode::PushBool(b),
+            TokenKind::Char(ch) => OpCode::PushInt {
+                width: IntWidth::I8,
+                value: ch as u8 as u64,
+            },
             TokenKind::Ident => {
                 let (module, proc) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
                 {

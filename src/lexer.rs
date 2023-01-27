@@ -19,6 +19,7 @@ pub enum TokenKind {
     BitOr,
     Boolean(bool),
     Cast,
+    Char(char),
     ColonColon,
     Const,
     DivMod,
@@ -75,6 +76,7 @@ impl TokenKind {
             | TokenKind::BitOr
             | TokenKind::Boolean(_)
             | TokenKind::Cast
+            | TokenKind::Char(_)
             | TokenKind::ColonColon
             | TokenKind::Const
             | TokenKind::DivMod
@@ -393,7 +395,7 @@ impl<'source> Scanner<'source> {
                 let ch = self.string_buf.chars().next().unwrap();
 
                 Some(Token::new(
-                    TokenKind::Integer(ch as _),
+                    TokenKind::Char(ch),
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
