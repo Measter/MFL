@@ -165,7 +165,10 @@ fn is_ident_continue(c: char) -> bool {
 }
 
 fn is_valid_post_number(c: char) -> bool {
-    matches!(c, '+' | '-' | '*' | '=' | '<' | '>' | '/' | ')' | '!' | '@') || c.is_whitespace()
+    matches!(
+        c,
+        '+' | '-' | '*' | '=' | '<' | '>' | '/' | '(' | ')' | '!' | '@'
+    ) || c.is_whitespace()
 }
 
 impl<'source> Scanner<'source> {
