@@ -12,10 +12,12 @@ pub(super) fn add(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
     let Some(val_consts) = analyzer.value_consts(val_ids) else { return };
-    let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
 
     let new_const_val = match val_consts {
-        [ConstVal::Int(a), ConstVal::Int(b)] => ConstVal::Int((a + b) & output_width.mask()),
+        [ConstVal::Int(a), ConstVal::Int(b)] => {
+            let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+            ConstVal::Int((a + b) & output_width.mask())
+        }
 
         // Const pointer with a constant offset.
         [ConstVal::Ptr {
