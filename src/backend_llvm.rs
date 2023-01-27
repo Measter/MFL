@@ -413,9 +413,7 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
                     let [a, b] = *op_io.inputs().as_arr();
-                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
-                        panic!("ICE: Non-int output of int-int arithmetic");
-                    };
+                    let [output_type] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
 
                     let a_val = value_store
                         .load_value(self, a, analyzer, interner)
@@ -423,12 +421,23 @@ impl<'ctx> CodeGen<'ctx> {
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
-                    let a_val =
-                        self.builder
-                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
-                    let b_val =
-                        self.builder
-                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
+
+                    let (a_val, b_val) = if let PorthTypeKind::Int(width) = output_type {
+                        (
+                            self.builder.build_int_cast(
+                                a_val,
+                                width.get_int_type(self.ctx),
+                                "a_wide",
+                            ),
+                            self.builder.build_int_cast(
+                                b_val,
+                                width.get_int_type(self.ctx),
+                                "b_wide",
+                            ),
+                        )
+                    } else {
+                        (a_val, b_val)
+                    };
 
                     let (func, name) = op.code.get_arith_fn();
                     let sum = func(&self.builder, a_val, b_val, name);
