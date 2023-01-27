@@ -555,7 +555,56 @@ impl<'ctx> CodeGen<'ctx> {
                         value_store.store_value(self, id, value);
                     }
                 }
-                OpCode::Cast { .. } => todo!(),
+                OpCode::Cast {
+                    kind: PorthTypeKind::Int(width),
+                    ..
+                } => {
+                    let input_id = op_io.inputs()[0];
+                    let input_type = analyzer.value_types([input_id]).unwrap()[0];
+                    let input_data = value_store.load_value(self, input_id, analyzer, interner);
+
+                    let output = match input_type {
+                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => self.builder.build_int_cast(
+                            input_data.into_int_value(),
+                            width.get_int_type(self.ctx),
+                            "cast_int",
+                        ),
+                        PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
+                            input_data.into_pointer_value(),
+                            self.ctx.i64_type(),
+                            "cast_ptr",
+                        ),
+                    };
+
+                    value_store.store_value(self, op_io.outputs()[0], output.into());
+                }
+                OpCode::Cast {
+                    kind: PorthTypeKind::Ptr,
+                    ..
+                } => {
+                    let input_id = op_io.inputs()[0];
+                    let input_type = analyzer.value_types([input_id]).unwrap()[0];
+                    let input_data = value_store.load_value(self, input_id, analyzer, interner);
+
+                    let output = match input_type {
+                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => {
+                            self.builder.build_int_to_ptr(
+                                input_data.into_int_value(),
+                                self.ctx.i8_type().ptr_type(AddressSpace::default()),
+                                "cast_int",
+                            )
+                        }
+                        PorthTypeKind::Ptr => input_data.into_pointer_value(),
+                    };
+
+                    value_store.store_value(self, op_io.outputs()[0], output.into());
+                }
+                OpCode::Cast {
+                    kind: PorthTypeKind::Bool,
+                    ..
+                } => {
+                    unreachable!()
+                }
 
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
                     for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
