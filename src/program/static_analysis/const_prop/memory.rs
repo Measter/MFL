@@ -102,7 +102,7 @@ pub(super) fn load(
                 PorthTypeKind::Int(IntWidth::I8) | PorthTypeKind::Bool => bytes[0] as u64,
                 PorthTypeKind::Int(IntWidth::I16) => u16::from_le_bytes(*bytes.as_arr()) as u64,
                 PorthTypeKind::Int(IntWidth::I32) => u32::from_le_bytes(*bytes.as_arr()) as u64,
-                PorthTypeKind::Int(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()) as u64,
+                PorthTypeKind::Int(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()),
                 PorthTypeKind::Ptr => {
                     // Can't const_load a pointer.
                     return;
