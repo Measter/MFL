@@ -121,8 +121,40 @@ fn simulate_execute_program_block(
                 )?;
             },
 
-            OpCode::If { .. } => {
-                todo!()
+            OpCode::If {
+                condition,
+                else_block,
+                ..
+            } => {
+                simulate_execute_program_block(
+                    program,
+                    &condition.condition,
+                    analyzer,
+                    value_stack,
+                    interner,
+                    source_store,
+                )?;
+
+                let a = value_stack.pop().unwrap();
+                if a == 0 {
+                    simulate_execute_program_block(
+                        program,
+                        &condition.block,
+                        analyzer,
+                        value_stack,
+                        interner,
+                        source_store,
+                    )?
+                } else {
+                    simulate_execute_program_block(
+                        program,
+                        else_block,
+                        analyzer,
+                        value_stack,
+                        interner,
+                        source_store,
+                    )?;
+                }
             }
             // OpCode::DoIf { end_ip, .. } => {
             //     let a = value_stack.pop().unwrap();
