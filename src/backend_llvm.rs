@@ -332,6 +332,7 @@ impl<'ctx> CodeGen<'ctx> {
                             let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
                                 panic!("ICE: Non-int output of int-int arithmetic");
                             };
+                            let target_type = width.get_int_type(self.ctx);
 
                             let a_val = value_store
                                 .load_value(self, a, analyzer, interner)
@@ -339,16 +340,14 @@ impl<'ctx> CodeGen<'ctx> {
                             let b_val = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
-                            let a_val = self.builder.build_int_cast(
-                                a_val,
-                                width.get_int_type(self.ctx),
-                                "a_wide",
-                            );
-                            let b_val = self.builder.build_int_cast(
-                                b_val,
-                                width.get_int_type(self.ctx),
-                                "b_wide",
-                            );
+                            let a_val = self
+                                .builder
+                                .build_int_cast(a_val, target_type, "a_wide")
+                                .const_cast(target_type, false);
+                            let b_val = self
+                                .builder
+                                .build_int_cast(b_val, target_type, "b_wide")
+                                .const_cast(target_type, false);
 
                             let (func, name) = op.code.get_arith_fn();
                             func(&self.builder, a_val, b_val, name).into()
@@ -359,11 +358,10 @@ impl<'ctx> CodeGen<'ctx> {
                                 .load_value(self, a, analyzer, interner)
                                 .into_int_value();
 
-                            let offset = self.builder.build_int_cast(
-                                offset,
-                                self.ctx.i64_type(),
-                                "offset_wide",
-                            );
+                            let offset = self
+                                .builder
+                                .build_int_cast(offset, self.ctx.i64_type(), "offset_wide")
+                                .const_cast(self.ctx.i64_type(), false);
                             let ptr = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_pointer_value();
@@ -374,11 +372,10 @@ impl<'ctx> CodeGen<'ctx> {
                             let offset = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
-                            let offset = self.builder.build_int_cast(
-                                offset,
-                                self.ctx.i64_type(),
-                                "offset_wide",
-                            );
+                            let offset = self
+                                .builder
+                                .build_int_cast(offset, self.ctx.i64_type(), "offset_wide")
+                                .const_cast(self.ctx.i64_type(), false);
                             let ptr = value_store
                                 .load_value(self, a, analyzer, interner)
                                 .into_pointer_value();
@@ -404,6 +401,7 @@ impl<'ctx> CodeGen<'ctx> {
                             let diff = self.builder.build_ptr_diff(lhs, rhs, "ptr_diff");
                             self.builder
                                 .build_int_cast(diff, self.ctx.i64_type(), "wide_diff")
+                                .const_cast(self.ctx.i64_type(), false)
                                 .into()
                         }
                         _ => panic!("ICE: Unexpected types"),
@@ -423,17 +421,14 @@ impl<'ctx> CodeGen<'ctx> {
                         .into_int_value();
 
                     let (a_val, b_val) = if let PorthTypeKind::Int(width) = output_type {
+                        let target_type = width.get_int_type(self.ctx);
                         (
-                            self.builder.build_int_cast(
-                                a_val,
-                                width.get_int_type(self.ctx),
-                                "a_wide",
-                            ),
-                            self.builder.build_int_cast(
-                                b_val,
-                                width.get_int_type(self.ctx),
-                                "b_wide",
-                            ),
+                            self.builder
+                                .build_int_cast(a_val, target_type, "a_wide")
+                                .const_cast(target_type, false),
+                            self.builder
+                                .build_int_cast(b_val, target_type, "b_wide")
+                                .const_cast(target_type, false),
                         )
                     } else {
                         (a_val, b_val)
@@ -455,12 +450,16 @@ impl<'ctx> CodeGen<'ctx> {
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
-                    let a_val =
-                        self.builder
-                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
-                    let b_val =
-                        self.builder
-                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
+
+                    let target_type = width.get_int_type(self.ctx);
+                    let a_val = self
+                        .builder
+                        .build_int_cast(a_val, target_type, "a_wide")
+                        .const_cast(target_type, false);
+                    let b_val = self
+                        .builder
+                        .build_int_cast(b_val, target_type, "b_wide")
+                        .const_cast(target_type, false);
 
                     let rem_res = self.builder.build_int_unsigned_rem(a_val, b_val, "rem");
                     let quot_res = self.builder.build_int_unsigned_div(a_val, b_val, "div");
@@ -495,8 +494,12 @@ impl<'ctx> CodeGen<'ctx> {
                         [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)] => {
                             let target_type = a_width.max(b_width).get_int_type(self.ctx);
                             (
-                                self.builder.build_int_cast(a_val, target_type, "a_val"),
-                                self.builder.build_int_cast(b_val, target_type, "b_val"),
+                                self.builder
+                                    .build_int_cast(a_val, target_type, "a_val")
+                                    .const_cast(target_type, false),
+                                self.builder
+                                    .build_int_cast(b_val, target_type, "b_val")
+                                    .const_cast(target_type, false),
                             )
                         }
                         [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => todo!(),
@@ -521,12 +524,16 @@ impl<'ctx> CodeGen<'ctx> {
                     let b_val = value_store
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
-                    let a_val =
-                        self.builder
-                            .build_int_cast(a_val, width.get_int_type(self.ctx), "a_wide");
-                    let b_val =
-                        self.builder
-                            .build_int_cast(b_val, width.get_int_type(self.ctx), "b_wide");
+
+                    let target_type = width.get_int_type(self.ctx);
+                    let a_val = self
+                        .builder
+                        .build_int_cast(a_val, target_type, "a_wide")
+                        .const_cast(target_type, false);
+                    let b_val = self
+                        .builder
+                        .build_int_cast(b_val, target_type, "b_wide")
+                        .const_cast(target_type, false);
 
                     let res = match &op.code {
                         OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, "shl"),
@@ -593,11 +600,14 @@ impl<'ctx> CodeGen<'ctx> {
                     let input_data = value_store.load_value(self, input_id, analyzer, interner);
 
                     let output = match input_type {
-                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => self.builder.build_int_cast(
-                            input_data.into_int_value(),
-                            width.get_int_type(self.ctx),
-                            "cast_int",
-                        ),
+                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => self
+                            .builder
+                            .build_int_cast(
+                                input_data.into_int_value(),
+                                width.get_int_type(self.ctx),
+                                "cast_int",
+                            )
+                            .const_cast(width.get_int_type(self.ctx), false),
                         PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
                             input_data.into_pointer_value(),
                             self.ctx.i64_type(),
@@ -889,6 +899,13 @@ impl<'ctx> CodeGen<'ctx> {
                     };
 
                     let value = self.builder.build_load(cast_ptr, "load");
+                    let value = match kind {
+                        PorthTypeKind::Int(width) => {
+                            let value = value.into_int_value();
+                            value.const_cast(width.get_int_type(self.ctx), false).into()
+                        }
+                        PorthTypeKind::Ptr | PorthTypeKind::Bool => value,
+                    };
                     value_store.store_value(self, op_io.outputs()[0], value);
                 }
                 OpCode::Store { kind } => {
