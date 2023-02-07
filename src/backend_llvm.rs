@@ -305,9 +305,8 @@ impl<'ctx> CodeGen<'ctx> {
             }
 
             // These do nothing in codegen
-            match &op.code {
-                OpCode::Swap { .. } | OpCode::Rot { .. } => continue,
-                _ => {}
+            if let OpCode::Swap { .. } | OpCode::Rot { .. } = &op.code {
+                continue;
             }
 
             let op_io = analyzer.get_op_io(op.id);
