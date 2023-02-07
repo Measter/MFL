@@ -332,6 +332,12 @@ impl<'ctx> CodeGen<'ctx> {
             match op.code {
                 OpCode::If { .. } => trace!("    {:?}: If", op.id),
                 OpCode::While { .. } => trace!("    {:?}: While", op.id),
+                OpCode::Swap { count, .. } => trace!("    {:?}: Swap({count})", op.id),
+                OpCode::Dup { count, .. } => trace!("    {:?}: Dup({count})", op.id),
+                OpCode::Drop { count, .. } => trace!("    {:?}: Drop({count})", op.id),
+                OpCode::Over { depth, .. } => trace!("    {:?}: Over({depth})", op.id),
+                OpCode::Memory { proc_id, .. } => trace!("    {:?}: Memory({proc_id:?})", op.id),
+                OpCode::Cast { kind, .. } => trace!("    {:?}: Cast({kind:?})", op.id),
                 _ => trace!("    {:?}: {:?}", op.id, op.code),
             }
 
@@ -348,6 +354,10 @@ impl<'ctx> CodeGen<'ctx> {
                     .iter()
                     .all(|id| is_fully_const(*id, analyzer))
             {
+                op_io
+                    .outputs()
+                    .iter()
+                    .for_each(|id| trace!("      .. {id:?}"));
                 trace!("      .. is fully const");
                 continue;
             }
