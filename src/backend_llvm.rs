@@ -15,7 +15,9 @@ use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
     types::{BasicMetadataTypeEnum, BasicType, IntType},
-    values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, PointerValue},
+    values::{
+        BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntMathValue, IntValue, PointerValue,
+    },
     AddressSpace, IntPredicate, OptimizationLevel,
 };
 use lasso::Spur;
@@ -292,6 +294,27 @@ impl<'ctx> CodeGen<'ctx> {
         debug!("    Finished");
     }
 
+    fn resize_int(&mut self, v: IntValue<'ctx>, target_type: IntType<'ctx>) -> IntValue<'ctx> {
+        use std::cmp::Ordering;
+        match v
+            .get_type()
+            .get_bit_width()
+            .cmp(&target_type.get_bit_width())
+        {
+            Ordering::Less => {
+                let name = v.get_name().to_str().unwrap(); // Our name came from us, so should be valid.
+                self.builder
+                    .build_int_z_extend_or_bit_cast(v, target_type, name)
+            }
+            Ordering::Equal => v,
+            Ordering::Greater => {
+                let name = v.get_name().to_str().unwrap(); // Our name came from us, so should be valid.
+                self.builder
+                    .build_int_truncate_or_bit_cast(v, target_type, name)
+            }
+        }
+    }
+
     fn compile_block(
         &mut self,
         program: &Program,
@@ -339,7 +362,6 @@ impl<'ctx> CodeGen<'ctx> {
                             let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
                                 panic!("ICE: Non-int output of int-int arithmetic");
                             };
-                            let target_type = width.get_int_type(self.ctx);
 
                             let a_val = value_store
                                 .load_value(self, a, analyzer, interner)
@@ -347,14 +369,10 @@ impl<'ctx> CodeGen<'ctx> {
                             let b_val = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
-                            let a_val = self
-                                .builder
-                                .build_int_cast(a_val, target_type, "a_wide")
-                                .const_cast(target_type, false);
-                            let b_val = self
-                                .builder
-                                .build_int_cast(b_val, target_type, "b_wide")
-                                .const_cast(target_type, false);
+
+                            let target_type = width.get_int_type(self.ctx);
+                            let a_val = self.resize_int(a_val, target_type);
+                            let b_val = self.resize_int(b_val, target_type);
 
                             let (func, name) = op.code.get_arith_fn();
                             func(&self.builder, a_val, b_val, name).into()
@@ -365,10 +383,7 @@ impl<'ctx> CodeGen<'ctx> {
                                 .load_value(self, a, analyzer, interner)
                                 .into_int_value();
 
-                            let offset = self
-                                .builder
-                                .build_int_cast(offset, self.ctx.i64_type(), "offset_wide")
-                                .const_cast(self.ctx.i64_type(), false);
+                            let offset = self.resize_int(offset, self.ctx.i64_type());
                             let ptr = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_pointer_value();
@@ -379,10 +394,8 @@ impl<'ctx> CodeGen<'ctx> {
                             let offset = value_store
                                 .load_value(self, b, analyzer, interner)
                                 .into_int_value();
-                            let offset = self
-                                .builder
-                                .build_int_cast(offset, self.ctx.i64_type(), "offset_wide")
-                                .const_cast(self.ctx.i64_type(), false);
+
+                            let offset = self.resize_int(offset, self.ctx.i64_type());
                             let ptr = value_store
                                 .load_value(self, a, analyzer, interner)
                                 .into_pointer_value();
@@ -408,7 +421,6 @@ impl<'ctx> CodeGen<'ctx> {
                             let diff = self.builder.build_ptr_diff(lhs, rhs, "ptr_diff");
                             self.builder
                                 .build_int_cast(diff, self.ctx.i64_type(), "wide_diff")
-                                .const_cast(self.ctx.i64_type(), false)
                                 .into()
                         }
                         _ => panic!("ICE: Unexpected types"),
@@ -429,14 +441,10 @@ impl<'ctx> CodeGen<'ctx> {
 
                     let (a_val, b_val) = if let PorthTypeKind::Int(width) = output_type {
                         let target_type = width.get_int_type(self.ctx);
-                        (
-                            self.builder
-                                .build_int_cast(a_val, target_type, "a_wide")
-                                .const_cast(target_type, false),
-                            self.builder
-                                .build_int_cast(b_val, target_type, "b_wide")
-                                .const_cast(target_type, false),
-                        )
+                        let a_val = self.resize_int(a_val, target_type);
+                        let b_val = self.resize_int(b_val, target_type);
+
+                        (a_val, b_val)
                     } else {
                         (a_val, b_val)
                     };
@@ -447,7 +455,8 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::DivMod => {
                     let [a, b] = *op_io.inputs().as_arr();
-                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+
+                    let [PorthTypeKind::Int(output_width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
                         panic!("ICE: Non-int output of int-int arithmetic");
                     };
 
@@ -458,15 +467,9 @@ impl<'ctx> CodeGen<'ctx> {
                         .load_value(self, b, analyzer, interner)
                         .into_int_value();
 
-                    let target_type = width.get_int_type(self.ctx);
-                    let a_val = self
-                        .builder
-                        .build_int_cast(a_val, target_type, "a_wide")
-                        .const_cast(target_type, false);
-                    let b_val = self
-                        .builder
-                        .build_int_cast(b_val, target_type, "b_wide")
-                        .const_cast(target_type, false);
+                    let target_type = output_width.get_int_type(self.ctx);
+                    let a_val = self.resize_int(a_val, target_type);
+                    let b_val = self.resize_int(b_val, target_type);
 
                     let rem_res = self.builder.build_int_unsigned_rem(a_val, b_val, "rem");
                     let quot_res = self.builder.build_int_unsigned_div(a_val, b_val, "div");
@@ -493,21 +496,11 @@ impl<'ctx> CodeGen<'ctx> {
                         .into_int_value();
 
                     let (a_val, b_val) = match input_types {
-                        [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)]
-                            if a_width == b_width =>
-                        {
-                            (a_val, b_val)
-                        }
                         [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)] => {
                             let target_type = a_width.max(b_width).get_int_type(self.ctx);
-                            (
-                                self.builder
-                                    .build_int_cast(a_val, target_type, "a_val")
-                                    .const_cast(target_type, false),
-                                self.builder
-                                    .build_int_cast(b_val, target_type, "b_val")
-                                    .const_cast(target_type, false),
-                            )
+                            let a_val = self.resize_int(a_val, target_type);
+                            let b_val = self.resize_int(b_val, target_type);
+                            (a_val, b_val)
                         }
                         [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => todo!(),
                         [PorthTypeKind::Bool, PorthTypeKind::Bool] => (a_val, b_val),
@@ -521,6 +514,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::ShiftLeft | OpCode::ShiftRight => {
                     let [a, b] = *op_io.inputs().as_arr();
+
                     let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
                         panic!("ICE: Non-int output of int-int arithmetic");
                     };
@@ -533,14 +527,8 @@ impl<'ctx> CodeGen<'ctx> {
                         .into_int_value();
 
                     let target_type = width.get_int_type(self.ctx);
-                    let a_val = self
-                        .builder
-                        .build_int_cast(a_val, target_type, "a_wide")
-                        .const_cast(target_type, false);
-                    let b_val = self
-                        .builder
-                        .build_int_cast(b_val, target_type, "b_wide")
-                        .const_cast(target_type, false);
+                    let a_val = self.resize_int(a_val, target_type);
+                    let b_val = self.resize_int(b_val, target_type);
 
                     let res = match &op.code {
                         OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, "shl"),
@@ -599,7 +587,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
                 OpCode::Cast {
-                    kind: PorthTypeKind::Int(width),
+                    kind: PorthTypeKind::Int(output_width),
                     ..
                 } => {
                     let input_id = op_io.inputs()[0];
@@ -607,14 +595,17 @@ impl<'ctx> CodeGen<'ctx> {
                     let input_data = value_store.load_value(self, input_id, analyzer, interner);
 
                     let output = match input_type {
-                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => self
-                            .builder
-                            .build_int_cast(
-                                input_data.into_int_value(),
-                                width.get_int_type(self.ctx),
-                                "cast_int",
-                            )
-                            .const_cast(width.get_int_type(self.ctx), false),
+                        PorthTypeKind::Int(_) => {
+                            let val = input_data.into_int_value();
+                            let target_type = output_width.get_int_type(self.ctx);
+                            self.resize_int(val, target_type)
+                        }
+                        PorthTypeKind::Bool => {
+                            let val = input_data.into_int_value();
+                            let target_type = output_width.get_int_type(self.ctx);
+
+                            self.resize_int(val, target_type)
+                        }
                         PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
                             input_data.into_pointer_value(),
                             self.ctx.i64_type(),
@@ -906,13 +897,6 @@ impl<'ctx> CodeGen<'ctx> {
                     };
 
                     let value = self.builder.build_load(cast_ptr, "load");
-                    let value = match kind {
-                        PorthTypeKind::Int(width) => {
-                            let value = value.into_int_value();
-                            value.const_cast(width.get_int_type(self.ctx), false).into()
-                        }
-                        PorthTypeKind::Ptr | PorthTypeKind::Bool => value,
-                    };
                     value_store.store_value(self, op_io.outputs()[0], value);
                 }
                 OpCode::Store { kind } => {
@@ -997,7 +981,7 @@ impl<'ctx> CodeGen<'ctx> {
                                         .builder
                                         .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast"),
                                     BasicValueEnum::IntValue(i) => {
-                                        i.const_cast(self.ctx.i64_type(), false)
+                                        self.resize_int(i, self.ctx.i64_type())
                                     }
                                     t => panic!("ICE: Unexected type: {t:?}"),
                                 },
@@ -1011,7 +995,7 @@ impl<'ctx> CodeGen<'ctx> {
                         &format!("calling syscall{arg_count}"),
                     );
 
-                    let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left()  else {
+                    let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left() else {
                         panic!("ICE: All syscalls return a value");
                     };
 
