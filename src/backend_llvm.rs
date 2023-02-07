@@ -97,6 +97,27 @@ struct ValueStore<'ctx> {
 }
 
 impl<'ctx> ValueStore<'ctx> {
+    fn get_string_literal(
+        &mut self,
+        cg: &CodeGen<'ctx>,
+        interner: &mut Interners,
+        id: Spur,
+    ) -> PointerValue<'ctx> {
+        match self.string_map.get(&id) {
+            Some(&ptr) => ptr,
+            None => {
+                let string = interner.resolve_literal(id);
+                let global = cg.builder.build_global_string_ptr(string, "global_string");
+
+                let ptr = global
+                    .as_pointer_value()
+                    .const_cast(cg.ctx.i8_type().ptr_type(AddressSpace::default()));
+                self.string_map.insert(id, ptr);
+                ptr
+            }
+        }
+    }
+
     fn load_value(
         &mut self,
         cg: &CodeGen<'ctx>,
@@ -122,20 +143,7 @@ impl<'ctx> ValueStore<'ctx> {
                     ConstVal::Ptr { id, offset, .. } => {
                         let ptr = match id {
                             PtrId::Mem(id) => self.variable_map[&id],
-                            PtrId::Str(id) => match self.string_map.get(&id) {
-                                Some(&ptr) => ptr,
-                                None => {
-                                    let string = interner.resolve_literal(id);
-                                    let global =
-                                        cg.builder.build_global_string_ptr(string, "global_string");
-
-                                    let ptr = global.as_pointer_value().const_cast(
-                                        cg.ctx.i8_type().ptr_type(AddressSpace::default()),
-                                    );
-                                    self.string_map.insert(id, ptr);
-                                    ptr
-                                }
-                            },
+                            PtrId::Str(id) => self.get_string_literal(cg, interner, id),
                         };
 
                         if let Some(offset) = offset {
