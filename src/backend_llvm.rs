@@ -120,6 +120,43 @@ impl<'ctx> ValueStore<'ctx> {
         }
     }
 
+    fn load_const_value(
+        &mut self,
+        cg: &CodeGen<'ctx>,
+        id: ValueId,
+        const_val: ConstVal,
+        analyzer: &Analyzer,
+        interner: &mut Interners,
+    ) -> BasicValueEnum<'ctx> {
+        trace!("      Fetching const {id:?}");
+        match const_val {
+            ConstVal::Int(val) => {
+                let Some([PorthTypeKind::Int(target_width)]) = analyzer.value_types([id]) else {
+                            panic!("ICE: ConstInt for non-int type");
+                        };
+                let target_type = target_width.get_int_type(cg.ctx);
+                target_type
+                    .const_int(val, false)
+                    .const_cast(target_type, false)
+                    .into()
+            }
+            ConstVal::Bool(val) => cg.ctx.bool_type().const_int(val as u64, false).into(),
+            ConstVal::Ptr { id, offset, .. } => {
+                let ptr = match id {
+                    PtrId::Mem(id) => self.variable_map[&id],
+                    PtrId::Str(id) => self.get_string_literal(cg, interner, id),
+                };
+
+                if let Some(offset) = offset {
+                    let offset = cg.ctx.i64_type().const_int(offset, false);
+                    unsafe { cg.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
+                } else {
+                    ptr.into()
+                }
+            }
+        }
+    }
+
     fn load_value(
         &mut self,
         cg: &CodeGen<'ctx>,
@@ -128,35 +165,7 @@ impl<'ctx> ValueStore<'ctx> {
         interner: &mut Interners,
     ) -> BasicValueEnum<'ctx> {
         match analyzer.value_consts([id]) {
-            Some([const_val]) => {
-                trace!("      Fetching const {id:?}");
-                match const_val {
-                    ConstVal::Int(val) => {
-                        let Some([PorthTypeKind::Int(target_width)]) = analyzer.value_types([id]) else {
-                            panic!("ICE: ConstInt for non-int type");
-                        };
-                        let target_type = target_width.get_int_type(cg.ctx);
-                        target_type
-                            .const_int(val, false)
-                            .const_cast(target_type, false)
-                            .into()
-                    }
-                    ConstVal::Bool(val) => cg.ctx.bool_type().const_int(val as u64, false).into(),
-                    ConstVal::Ptr { id, offset, .. } => {
-                        let ptr = match id {
-                            PtrId::Mem(id) => self.variable_map[&id],
-                            PtrId::Str(id) => self.get_string_literal(cg, interner, id),
-                        };
-
-                        if let Some(offset) = offset {
-                            let offset = cg.ctx.i64_type().const_int(offset, false);
-                            unsafe { cg.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
-                        } else {
-                            ptr.into()
-                        }
-                    }
-                }
-            }
+            Some([const_val]) => self.load_const_value(cg, id, const_val, analyzer, interner),
             _ => {
                 if let Some(&ptr) = self.merge_pair_map.get(&id) {
                     trace!(
