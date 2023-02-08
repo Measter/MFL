@@ -163,7 +163,7 @@ fn is_ident_start(c: char) -> bool {
 }
 
 fn is_ident_continue(c: char) -> bool {
-    is_ident_start(c) || matches!(c, '0'..='9')
+    is_ident_start(c) || c.is_ascii_digit()
 }
 
 fn is_valid_post_number(c: char) -> bool {
