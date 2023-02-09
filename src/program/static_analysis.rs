@@ -131,7 +131,7 @@ pub enum ConstVal {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ValueId(usize);
+pub struct ValueId(u16);
 
 #[derive(Debug)]
 struct Value {
@@ -183,14 +183,14 @@ pub struct Analyzer {
     value_if_merges: HashMap<OpId, Vec<IfMerge>>,
     value_while_merges: HashMap<OpId, WhileMerges>,
 
-    next_value_id: usize,
     ios: HashMap<OpId, OpData>,
 }
 
 impl Analyzer {
     fn new_value(&mut self, creator: &Op) -> ValueId {
-        let id = ValueId(self.next_value_id);
-        self.next_value_id += 1;
+        let id = self.value_lifetime.len();
+        assert!(id <= u16::MAX as usize);
+        let id = ValueId(id as u16);
 
         let value_exists = self
             .value_lifetime
