@@ -32,7 +32,7 @@ pub struct AllocData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ProcedureId(usize);
+pub struct ProcedureId(u16);
 
 #[derive(Debug, Default)]
 pub struct FunctionData {
@@ -207,14 +207,12 @@ impl Procedure {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ModuleId(usize);
+pub struct ModuleId(u16);
 
 pub struct Program {
-    module_counter: usize,
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
-    proc_counter: usize,
     all_procedures: HashMap<ProcedureId, Procedure>,
     global_allocs: HashMap<ProcedureId, usize>,
 }
@@ -222,18 +220,17 @@ pub struct Program {
 impl Program {
     pub fn new() -> Self {
         Program {
-            module_counter: 0,
             modules: Default::default(),
             module_ident_map: Default::default(),
-            proc_counter: 0,
             all_procedures: HashMap::new(),
             global_allocs: HashMap::new(),
         }
     }
 
     fn new_module(&mut self, name: Spur) -> ModuleId {
-        self.module_counter += 1;
-        let new_id = ModuleId(self.module_counter);
+        let new_id = self.modules.len();
+        assert!(new_id <= u16::MAX as usize);
+        let new_id = ModuleId(new_id as _);
 
         let module = Module {
             name,
@@ -1169,8 +1166,9 @@ impl Program {
         entry_stack: Vec<PorthType>,
         entry_stack_location: SourceLocation,
     ) -> ProcedureId {
-        let id = ProcedureId(self.proc_counter);
-        self.proc_counter += 1;
+        let id = self.all_procedures.len();
+        assert!(id <= u16::MAX as usize);
+        let id = ProcedureId(id as u16);
 
         let proc = Procedure {
             name,
