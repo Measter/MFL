@@ -36,7 +36,7 @@ pub fn emit<Labels>(
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
-    let mut diag = Report::build(kind, loc.file_id, loc.source_start).with_message(msg);
+    let mut diag = Report::build(kind, loc.file_id, loc.source_start as usize).with_message(msg);
 
     if let Some(note) = note.into() {
         diag = diag.with_note(note);

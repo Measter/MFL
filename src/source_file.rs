@@ -6,7 +6,7 @@ use std::ops::Range;
 use ariadne::{Cache, Source, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FileId(usize);
+pub struct FileId(u16);
 
 impl FileId {
     #[inline(always)]
@@ -18,10 +18,10 @@ impl FileId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {
     pub file_id: FileId,
-    pub source_start: usize,
-    pub source_end: usize,
-    pub line: usize,
-    pub column: usize,
+    pub source_start: u32,
+    pub source_end: u32,
+    pub line: u16,
+    pub column: u16,
 }
 
 impl Default for SourceLocation {
@@ -44,16 +44,16 @@ impl Span for SourceLocation {
     }
 
     fn start(&self) -> usize {
-        self.source_start
+        self.source_start as _
     }
 
     fn end(&self) -> usize {
-        self.source_end
+        self.source_end as _
     }
 }
 
 impl SourceLocation {
-    pub fn new(file_id: FileId, range: Range<usize>, line: usize, column: usize) -> Self {
+    pub fn new(file_id: FileId, range: Range<u32>, line: u16, column: u16) -> Self {
         Self {
             file_id,
             source_start: range.start,
@@ -95,31 +95,32 @@ impl SourceStorage {
 
     pub fn add(&mut self, name: &str, source: &str) -> FileId {
         let id = self.files.len();
+        assert!(id <= u16::MAX as usize);
         self.files.push(LoadedSource {
             name: name.to_owned(),
             contents: source.to_owned(),
             source: source.into(),
         });
 
-        FileId(id)
+        FileId(id as _)
     }
 
     pub fn name(&self, id: FileId) -> &str {
-        &self.files[id.0].name
+        &self.files[id.0 as usize].name
     }
 
     pub fn source(&self, id: FileId) -> &str {
-        &self.files[id.0].contents
+        &self.files[id.0 as usize].contents
     }
 }
 
 impl Cache<FileId> for &SourceStorage {
     fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
-        Ok(&self.files[id.0].source)
+        Ok(&self.files[id.0 as usize].source)
     }
 
     fn display<'a>(&self, id: &'a FileId) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let name = &self.files[id.0].name;
+        let name = &self.files[id.0 as usize].name;
 
         Some(Box::new(name.clone()))
     }

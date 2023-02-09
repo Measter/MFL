@@ -135,9 +135,9 @@ impl Token {
         kind: TokenKind,
         lexeme: Spur,
         file_id: FileId,
-        source_range: Range<usize>,
-        line: usize,
-        column: usize,
+        source_range: Range<u32>,
+        line: u16,
+        column: u16,
     ) -> Self {
         Self {
             kind,
@@ -149,13 +149,13 @@ impl Token {
 
 struct Scanner<'a> {
     chars: Peekable<CharIndices<'a>>,
-    cur_token_start: usize,
-    cur_token_column: usize,
-    next_token_start: usize,
+    cur_token_start: u32,
+    cur_token_column: u16,
+    next_token_start: u32,
     file_id: FileId,
     string_buf: String,
-    line: usize,
-    column: usize,
+    line: u16,
+    column: u16,
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -176,10 +176,13 @@ fn is_valid_post_number(c: char) -> bool {
 impl<'source> Scanner<'source> {
     fn advance(&mut self) -> char {
         let (idx, ch) = self.chars.next().expect("unexpected end of input");
-        self.next_token_start = idx + ch.len_utf8();
-        self.column += 1;
+        let next_token_start = idx + ch.len_utf8();
+        assert!(next_token_start <= u32::MAX as usize);
+        self.next_token_start = next_token_start as _;
+
+        self.column = self.column.checked_add(1).unwrap();
         if ch == '\n' {
-            self.line += 1;
+            self.line = self.line.checked_add(1).unwrap();
             self.column = 1;
         }
         ch
@@ -196,10 +199,10 @@ impl<'source> Scanner<'source> {
     }
 
     fn lexeme<'a>(&self, input: &'a str) -> &'a str {
-        &input[self.cur_token_start..self.next_token_start]
+        &input[self.cur_token_start as usize..self.next_token_start as usize]
     }
 
-    fn lexeme_range(&self) -> Range<usize> {
+    fn lexeme_range(&self) -> Range<u32> {
         self.cur_token_start..self.next_token_start
     }
 
