@@ -180,10 +180,10 @@ pub struct Analyzer {
     value_types: HashMap<ValueId, PorthTypeKind>,
     value_consts: HashMap<ValueId, ConstVal>,
 
-    value_if_merges: HashMap<OpId, Vec<IfMerge>>,
-    value_while_merges: HashMap<OpId, WhileMerges>,
+    op_if_merges: HashMap<OpId, Vec<IfMerge>>,
+    op_while_merges: HashMap<OpId, WhileMerges>,
 
-    ios: HashMap<OpId, OpData>,
+    op_io_data: HashMap<OpId, OpData>,
 }
 
 impl Analyzer {
@@ -244,27 +244,27 @@ impl Analyzer {
     }
 
     fn set_if_merges(&mut self, op: &Op, merges: Vec<IfMerge>) {
-        self.value_if_merges
+        self.op_if_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
     fn set_while_merges(&mut self, op: &Op, merges: WhileMerges) {
-        self.value_while_merges
+        self.op_while_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
     pub fn get_if_merges(&self, op_id: OpId) -> Option<&Vec<IfMerge>> {
-        self.value_if_merges.get(&op_id)
+        self.op_if_merges.get(&op_id)
     }
 
     pub fn get_while_merges(&self, op_id: OpId) -> Option<&WhileMerges> {
-        self.value_while_merges.get(&op_id)
+        self.op_while_merges.get(&op_id)
     }
 
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
-        let prev = self.ios.insert(
+        let prev = self.op_io_data.insert(
             op.id,
             OpData {
                 inputs: inputs.to_owned(),
@@ -279,7 +279,7 @@ impl Analyzer {
     }
 
     pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
-        &self.ios[&op_idx]
+        &self.op_io_data[&op_idx]
     }
 }
 
