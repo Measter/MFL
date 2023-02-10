@@ -2,6 +2,7 @@ use std::{iter::Peekable, ops::Not};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use lasso::Spur;
 use tracing::debug_span;
 
 use crate::{
@@ -99,6 +100,72 @@ fn parse_delimited_token<'a>(
     Ok(count_token)
 }
 
+fn parse_integer<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token: Token,
+    stripped_spur: Spur,
+    _is_negative: bool,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<OpCode, ()> {
+    let (width, ident_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+    {
+        let ident_token = parse_delimited_token(
+            token_iter,
+            token,
+            ("(", |t| t == TokenKind::ParenthesisOpen),
+            ("Ident", |t| t == TokenKind::Ident),
+            (")", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        )?;
+
+        let width = match interner.resolve_lexeme(ident_token.lexeme) {
+            "u8" => IntWidth::I8,
+            "u16" => IntWidth::I16,
+            "u32" => IntWidth::I32,
+            "u64" => IntWidth::I64,
+
+            _ => {
+                diagnostics::emit_error(
+                    ident_token.location,
+                    "invalid integer type",
+                    [Label::new(ident_token.location)
+                        .with_color(Color::Red)
+                        .with_message("unknown type")],
+                    None,
+                    source_store,
+                );
+                return Err(());
+            }
+        };
+        (width, ident_token)
+    } else {
+        (IntWidth::I64, token)
+    };
+
+    let value = interner.resolve_literal(stripped_spur).parse().unwrap();
+
+    if !width.bounds().contains(&value) {
+        diagnostics::emit_error(
+            ident_token.location,
+            "literal out of bounds",
+            [Label::new(ident_token.location)
+                .with_color(Color::Red)
+                .with_message(format!(
+                    "valid range for {} is {:?}",
+                    width.name(),
+                    width.bounds(),
+                ))],
+            None,
+            source_store,
+        );
+        return Err(());
+    }
+
+    Ok(OpCode::PushInt { width, value })
+}
+
 pub fn parse_procedure_body(
     program: &mut Program,
     module_id: ModuleId,
@@ -132,30 +199,22 @@ pub fn parse_procedure_body(
                     )?;
 
                     let TokenKind::Integer(count) = count_token.kind else { unreachable!() };
+                    let count: usize = interner.resolve_literal(count).parse().unwrap();
                     (count, count_token)
                 } else {
                     (1, *token)
                 };
 
                 match token.kind {
-                    TokenKind::Drop => OpCode::Drop {
-                        count: count.to_usize(),
-                        count_token,
-                    },
-                    TokenKind::Dup => OpCode::Dup {
-                        count: count.to_usize(),
-                        count_token,
-                    },
+                    TokenKind::Drop => OpCode::Drop { count, count_token },
+                    TokenKind::Dup => OpCode::Dup { count, count_token },
                     TokenKind::Over => OpCode::Over {
-                        depth: count.to_usize(),
+                        depth: count,
                         depth_token: count_token,
                     },
-                    TokenKind::Swap => OpCode::Swap {
-                        count: count.to_usize(),
-                        count_token,
-                    },
+                    TokenKind::Swap => OpCode::Swap { count, count_token },
                     TokenKind::SysCall => OpCode::SysCall {
-                        arg_count: count.to_usize(),
+                        arg_count: count,
                         arg_count_token: count_token,
                     },
 
@@ -209,7 +268,10 @@ pub fn parse_procedure_body(
                 )?;
 
                 let TokenKind::Integer(item_count) = item_count_token.kind else { unreachable!() };
+                let item_count: usize = interner.resolve_literal(item_count).parse().unwrap();
                 let TokenKind::Integer(shift_count) = shift_count_token.kind else { unreachable!() };
+                let shift_count: usize = interner.resolve_literal(shift_count).parse().unwrap();
+
                 let direction = match direction_token.kind {
                     TokenKind::Less => Direction::Left,
                     TokenKind::Greater => Direction::Right,
@@ -217,9 +279,9 @@ pub fn parse_procedure_body(
                 };
 
                 OpCode::Rot {
-                    item_count: item_count.to_usize(),
+                    item_count,
                     direction,
-                    shift_count: shift_count.to_usize(),
+                    shift_count,
                     item_count_token,
                     shift_count_token,
                 }
@@ -306,61 +368,8 @@ pub fn parse_procedure_body(
 
                 OpCode::UnresolvedIdent { module, proc }
             }
-            TokenKind::Integer(value) => {
-                let (width, ident_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
-                {
-                    let ident_token = parse_delimited_token(
-                        &mut token_iter,
-                        *token,
-                        ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("Ident", |t| t == TokenKind::Ident),
-                        (")", |t| t == TokenKind::ParenthesisClosed),
-                        interner,
-                        source_store,
-                    )?;
-
-                    let width = match interner.resolve_lexeme(ident_token.lexeme) {
-                        "u8" => IntWidth::I8,
-                        "u16" => IntWidth::I16,
-                        "u32" => IntWidth::I32,
-                        "u64" => IntWidth::I64,
-
-                        _ => {
-                            diagnostics::emit_error(
-                                ident_token.location,
-                                "invalid integer type",
-                                [Label::new(ident_token.location)
-                                    .with_color(Color::Red)
-                                    .with_message("unknown type")],
-                                None,
-                                source_store,
-                            );
-                            return Err(());
-                        }
-                    };
-                    (width, ident_token)
-                } else {
-                    (IntWidth::I64, *token)
-                };
-
-                if !width.bounds().contains(&value) {
-                    diagnostics::emit_error(
-                        ident_token.location,
-                        "literal out of bounds",
-                        [Label::new(ident_token.location)
-                            .with_color(Color::Red)
-                            .with_message(format!(
-                                "valid range for {} is {:?}",
-                                width.name(),
-                                width.bounds(),
-                            ))],
-                        None,
-                        source_store,
-                    );
-                    return Err(());
-                }
-
-                OpCode::PushInt { width, value }
+            TokenKind::Integer(id) => {
+                parse_integer(&mut token_iter, *token, id, false, interner, source_store)?
             }
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
             TokenKind::Here(id) => OpCode::PushStr {

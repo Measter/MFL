@@ -39,7 +39,7 @@ pub enum TokenKind {
     Ident,
     If,
     Include,
-    Integer(u64),
+    Integer(Spur),
     Is,
     Less,
     LessEqual,
@@ -453,8 +453,8 @@ impl<'source> Scanner<'source> {
                     _ => {}
                 }
 
-                let value = self.string_buf.parse().unwrap();
-                let kind = TokenKind::Integer(value);
+                let stripped_id = interner.intern_literal(&self.string_buf);
+                let kind = TokenKind::Integer(stripped_id);
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
                 Some(Token::new(
