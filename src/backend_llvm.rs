@@ -22,7 +22,7 @@ use inkwell::{
 };
 use intcast::IntCast;
 use lasso::Spur;
-use log::{debug, trace};
+use tracing::{debug, debug_span, trace};
 
 use crate::{
     interners::Interners,
@@ -1203,6 +1203,8 @@ pub(crate) fn compile(
     file: &str,
     opt_level: u8,
 ) -> Result<Vec<PathBuf>> {
+    let _span = debug_span!(stringify!(backend_llvm::compile)).entered();
+
     let mut output_obj = Path::new(&file).to_path_buf();
     output_obj.set_extension("o");
     let mut bootstrap_obj = Path::new(&file).to_path_buf();

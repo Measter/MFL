@@ -1,5 +1,5 @@
 use ariadne::{Color, Label};
-use log::error;
+use tracing::error;
 
 use crate::{
     diagnostics,

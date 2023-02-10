@@ -9,7 +9,7 @@ use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use intcast::IntCast;
 use lasso::Spur;
-use log::{debug, trace};
+use tracing::{debug, debug_span, trace, trace_span};
 use variantly::Variantly;
 
 use crate::{
@@ -257,6 +257,7 @@ impl Program {
         source_store: &mut SourceStorage,
         library_paths: &[String],
     ) -> Result<ModuleId> {
+        let _span = debug_span!(stringify!(Program::load_program)).entered();
         let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
         let module_name = interner.intern_lexeme(module_name);
 
@@ -500,12 +501,17 @@ impl Program {
         body
     }
 
-    fn resolve_idents(&mut self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
-        debug!("    Resolving idents...");
+    fn resolve_idents(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
         let proc_ids: Vec<_> = self.all_procedures.keys().copied().collect();
 
         for proc_id in proc_ids {
+            trace!(name = interner.get_symbol_name(self, proc_id));
             let mut proc = self.all_procedures.remove(&proc_id).unwrap();
             let body = std::mem::take(&mut proc.body);
 
@@ -520,8 +526,9 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
-    fn expand_macros(&mut self) {
-        debug!("    Expanding macros...");
+    fn expand_macros(&mut self, interner: &mut Interners) {
+        let _span = debug_span!(stringify!(Program::expand_macros)).entered();
+        debug!("");
         let non_macro_proc_ids: Vec<_> = self
             .all_procedures
             .iter()
@@ -530,6 +537,7 @@ impl Program {
             .collect();
 
         for proc_id in non_macro_proc_ids {
+            trace!(name = interner.get_symbol_name(self, proc_id));
             let mut proc = self.all_procedures.remove(&proc_id).unwrap();
 
             proc.expand_macros(self);
@@ -635,13 +643,19 @@ impl Program {
         }
     }
 
-    fn check_invalid_cyclic_refs(&self, source_store: &SourceStorage) -> Result<()> {
-        debug!("    Checking for cyclic consts and macros...");
+    fn check_invalid_cyclic_refs(
+        &self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        let _span = debug_span!(stringify!(Program::check_invalid_cyclic_refs)).entered();
         let mut had_error = false;
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
         for own_proc in self.all_procedures.values() {
+            trace!(name = interner.get_symbol_name(self, own_proc.id()));
+
             let kind = match own_proc.kind() {
                 ProcedureKind::Const { .. } => "const",
                 ProcedureKind::Macro => "macro",
@@ -678,7 +692,7 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        debug!("    Performing stack verification, type checking, const propagation...");
+        let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
         let proc_ids: Vec<_> = self
             .all_procedures
@@ -690,7 +704,11 @@ impl Program {
         let mut local_analyzer = Analyzer::default();
 
         for id in proc_ids {
-            trace!("      Analyzing {}", interner.get_symbol_name(self, id));
+            let _span = trace_span!(
+                "Analyzing procedure",
+                name = interner.get_symbol_name(self, id)
+            )
+            .entered();
             let proc = self.all_procedures.get_mut(&id).unwrap();
             std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
 
@@ -743,7 +761,7 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        debug!("    Evaluating const procs...");
+        let _span = debug_span!(stringify!(Program::evaluate_const_procs)).entered();
         let mut had_error = false;
 
         let mut const_queue: Vec<_> = self
@@ -979,7 +997,7 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        debug!("    Processing idents...");
+        let _span = debug_span!(stringify!(Program::process_idents)).entered();
         let mut had_error = false;
 
         // Macros should already have been expanded.
@@ -1025,7 +1043,7 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        debug!("    Evaluating allocation sizes...");
+        let _span = debug_span!(stringify!(Program::evaluate_allocation_sizes)).entered();
         let mut had_error = false;
 
         let all_mem_proc_ids: Vec<_> = self
@@ -1083,7 +1101,7 @@ impl Program {
     }
 
     fn check_asserts(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
-        debug!("    Checking asserts...");
+        let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
         for proc in self.all_procedures.values() {
@@ -1127,11 +1145,12 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        debug!("Processing procs...");
+        let _span = debug_span!(stringify!(Program::post_process_procs)).entered();
+        debug!("");
         self.resolve_idents(interner, source_store)?;
 
-        self.check_invalid_cyclic_refs(source_store)?;
-        self.expand_macros();
+        self.check_invalid_cyclic_refs(interner, source_store)?;
+        self.expand_macros(interner);
 
         self.analyze_data_flow(interner, source_store)?;
         self.evaluate_const_procs(interner, source_store)?;
@@ -1139,10 +1158,6 @@ impl Program {
         self.process_idents(interner, source_store)?;
         self.evaluate_allocation_sizes(interner, source_store)?;
         self.check_asserts(interner, source_store)?;
-
-        // self.optimize_functions(interner, source_store);
-
-        debug!("    Finished processing procs.");
 
         Ok(())
     }
@@ -1242,6 +1257,8 @@ impl Module {
         file: &str,
         include_queue: &mut Vec<Token>,
     ) -> Result<()> {
+        let _span = debug_span!(stringify!(Module::load), file).entered();
+
         let contents =
             std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
 

@@ -3,6 +3,7 @@ use std::{fmt::Write, iter::Peekable, ops::Range, str::CharIndices};
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
+use tracing::debug_span;
 
 use crate::{
     diagnostics,
@@ -565,6 +566,8 @@ pub(crate) fn lex_file(
     interner: &mut Interners,
     source_store: &SourceStorage,
 ) -> Result<Vec<Token>, ()> {
+    let _span = debug_span!(stringify!(lexer::lex_file)).entered();
+
     let mut scanner = Scanner {
         chars: contents.char_indices().peekable(),
         cur_token_start: 0,

@@ -6,10 +6,10 @@ use ariadne::{Color, Label};
 use clap::Parser;
 use color_eyre::eyre::{eyre, Context, Result};
 use interners::Interners;
-use log::{info, Level, LevelFilter};
 use program::ProcedureId;
-use simplelog::{ConfigBuilder, TermLogger};
 use source_file::SourceStorage;
+use tracing::{debug, debug_span};
+use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
 use crate::program::{ProcedureKind, Program};
 
@@ -45,6 +45,7 @@ fn load_program(
     file: &str,
     include_paths: Vec<String>,
 ) -> Result<(Program, SourceStorage, Interners, ProcedureId)> {
+    let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
 
@@ -59,6 +60,7 @@ fn load_program(
         .get_proc_id(entry_symbol)
         .ok_or_else(|| eyre!("`entry` function not found"))?;
 
+    debug!("checking entry signature");
     let entry_proc = program.get_proc(entry_function_id);
     if !matches!(entry_proc.kind(), ProcedureKind::Function(_)) {
         let name = entry_proc.name();
@@ -111,7 +113,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
         opt_level,
     )?;
 
-    info!("Linking... into {}", output_binary.display());
+    println!("Linking... into {}", output_binary.display());
     let ld = Command::new("ld")
         .arg("-o")
         .arg(&output_binary)
@@ -129,30 +131,28 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
 fn main() -> Result<()> {
     color_eyre::install()?;
     let args = Args::parse();
-    let log_level = match args.verbose {
-        0 => LevelFilter::Warn,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Trace,
-    };
 
-    let config = ConfigBuilder::new()
-        .set_time_level(LevelFilter::Off)
-        .set_level_padding(simplelog::LevelPadding::Right)
-        .set_target_level(LevelFilter::Off)
-        .set_thread_level(LevelFilter::Off)
-        .set_location_level(LevelFilter::Error)
-        .set_level_color(Level::Trace, Some(simplelog::Color::Green))
-        .build();
+    // let max_log_level = match args.verbose {
+    //     0 => Level::WARN,
+    //     1 => Level::INFO,
+    //     2 => Level::DEBUG,
+    //     _ => Level::TRACE,
+    // };
 
-    TermLogger::init(
-        log_level,
-        config,
-        simplelog::TerminalMode::Stderr,
-        simplelog::ColorChoice::Always,
-    )?;
+    let tracer = opentelemetry_jaeger::new_agent_pipeline()
+        .with_service_name("porth")
+        .install_simple()?;
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    let subscriber = tracing_subscriber::Registry::default().with(telemetry);
 
-    run_compile(args.file, args.opt_level, args.library_paths)?;
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    {
+        let _span = debug_span!("porth main").entered();
+        run_compile(args.file, args.opt_level, args.library_paths)?;
+    }
+
+    opentelemetry::global::shutdown_tracer_provider();
 
     Ok(())
 }

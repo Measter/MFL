@@ -2,6 +2,7 @@ use std::{iter::Peekable, ops::Not};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use tracing::debug_span;
 
 use crate::{
     diagnostics,
@@ -1208,6 +1209,8 @@ pub(super) fn parse_module(
     include_queue: &mut Vec<Token>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
+    let _span = debug_span!(stringify!(parser::parse_module)).entered();
+
     let mut had_error = false;
     let mut token_iter = tokens.iter().enumerate().peekable();
 

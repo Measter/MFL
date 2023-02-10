@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use ariadne::{Color, Label};
-use log::trace;
+use tracing::trace;
 
 use crate::{
     diagnostics,
@@ -234,7 +234,11 @@ pub(super) fn analyze_while(
     // where to merge the new data.
     for (&pre_value, &condition_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
     {
-        trace!("      Defining merge for {condition_value:?} into {pre_value:?}");
+        trace!(
+            ?condition_value,
+            ?pre_value,
+            "defining merge for WHILE-condition"
+        );
         condition_merges.push(WhileMerge {
             pre_value,
             condition_value,
@@ -279,7 +283,11 @@ pub(super) fn analyze_while(
     // where to merge the new data.
     for (&pre_value, &condition_value) in initial_stack.iter().zip(&*stack).filter(|(a, b)| a != b)
     {
-        trace!("      Defining merge for {condition_value:?} into {pre_value:?}");
+        trace!(
+            ?condition_value,
+            ?pre_value,
+            "defining merge for WHILE-body"
+        );
 
         body_merges.push(WhileMerge {
             pre_value,
@@ -392,7 +400,13 @@ pub(super) fn analyze_if(
     let mut body_merges = Vec::new();
     for (&then_value, else_value) in then_block_stack.iter().zip(stack).filter(|(a, b)| a != b) {
         let output_value = analyzer.new_value(op);
-        trace!("      Defining merge for {then_value:?} and {else_value:?} into {output_value:?}");
+        trace!(
+            ?then_value,
+            ?else_value,
+            ?output_value,
+            "defining merge for IF"
+        );
+
         body_merges.push(IfMerge {
             then_value,
             else_value: *else_value,
