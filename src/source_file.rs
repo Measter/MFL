@@ -4,6 +4,7 @@
 use std::ops::Range;
 
 use ariadne::{Cache, Source, Span};
+use intcast::IntCast;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u16);
@@ -44,11 +45,11 @@ impl Span for SourceLocation {
     }
 
     fn start(&self) -> usize {
-        self.source_start as _
+        self.source_start.to_usize()
     }
 
     fn end(&self) -> usize {
-        self.source_end as _
+        self.source_end.to_usize()
     }
 }
 
@@ -95,32 +96,31 @@ impl SourceStorage {
 
     pub fn add(&mut self, name: &str, source: &str) -> FileId {
         let id = self.files.len();
-        assert!(id <= u16::MAX as usize);
         self.files.push(LoadedSource {
             name: name.to_owned(),
             contents: source.to_owned(),
             source: source.into(),
         });
 
-        FileId(id as _)
+        FileId(id.to_u16().unwrap())
     }
 
     pub fn name(&self, id: FileId) -> &str {
-        &self.files[id.0 as usize].name
+        &self.files[id.0.to_usize()].name
     }
 
     pub fn source(&self, id: FileId) -> &str {
-        &self.files[id.0 as usize].contents
+        &self.files[id.0.to_usize()].contents
     }
 }
 
 impl Cache<FileId> for &SourceStorage {
     fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
-        Ok(&self.files[id.0 as usize].source)
+        Ok(&self.files[id.0.to_usize()].source)
     }
 
     fn display<'a>(&self, id: &'a FileId) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let name = &self.files[id.0 as usize].name;
+        let name = &self.files[id.0.to_usize()].name;
 
         Some(Box::new(name.clone()))
     }

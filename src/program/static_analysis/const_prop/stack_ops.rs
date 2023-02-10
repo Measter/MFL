@@ -1,3 +1,4 @@
+use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
@@ -72,7 +73,7 @@ pub(super) fn push_str(
     } else {
         let str_len = interner.resolve_literal(id).len() - 1; // All strings are null-terminated.
         let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        analyzer.set_value_const(len, ConstVal::Int(str_len as u64));
+        analyzer.set_value_const(len, ConstVal::Int(str_len.to_u64()));
         analyzer.set_value_const(
             ptr,
             ConstVal::Ptr {

@@ -1,6 +1,7 @@
 use std::{iter::Peekable, ops::Not};
 
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -137,23 +138,23 @@ pub fn parse_procedure_body(
 
                 match token.kind {
                     TokenKind::Drop => OpCode::Drop {
-                        count: count as usize,
+                        count: count.to_usize(),
                         count_token,
                     },
                     TokenKind::Dup => OpCode::Dup {
-                        count: count as usize,
+                        count: count.to_usize(),
                         count_token,
                     },
                     TokenKind::Over => OpCode::Over {
-                        depth: count as usize,
+                        depth: count.to_usize(),
                         depth_token: count_token,
                     },
                     TokenKind::Swap => OpCode::Swap {
-                        count: count as usize,
+                        count: count.to_usize(),
                         count_token,
                     },
                     TokenKind::SysCall => OpCode::SysCall {
-                        arg_count: count as usize,
+                        arg_count: count.to_usize(),
                         arg_count_token: count_token,
                     },
 
@@ -215,9 +216,9 @@ pub fn parse_procedure_body(
                 };
 
                 OpCode::Rot {
-                    item_count: item_count as usize,
+                    item_count: item_count.to_usize(),
                     direction,
-                    shift_count: shift_count as usize,
+                    shift_count: shift_count.to_usize(),
                     item_count_token,
                     shift_count_token,
                 }
@@ -273,7 +274,7 @@ pub fn parse_procedure_body(
             TokenKind::Boolean(b) => OpCode::PushBool(b),
             TokenKind::Char(ch) => OpCode::PushInt {
                 width: IntWidth::I8,
-                value: ch as u8 as u64,
+                value: (ch as u8).to_u64(),
             },
             TokenKind::Ident => {
                 let (module, proc) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)

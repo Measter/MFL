@@ -1,6 +1,7 @@
 use std::{fmt::Write, iter::Peekable, ops::Range, str::CharIndices};
 
 use ariadne::{Color, Label};
+use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
@@ -177,8 +178,7 @@ impl<'source> Scanner<'source> {
     fn advance(&mut self) -> char {
         let (idx, ch) = self.chars.next().expect("unexpected end of input");
         let next_token_start = idx + ch.len_utf8();
-        assert!(next_token_start <= u32::MAX as usize);
-        self.next_token_start = next_token_start as _;
+        self.next_token_start = next_token_start.to_u32().unwrap();
 
         self.column = self.column.checked_add(1).unwrap();
         if ch == '\n' {
@@ -199,7 +199,7 @@ impl<'source> Scanner<'source> {
     }
 
     fn lexeme<'a>(&self, input: &'a str) -> &'a str {
-        &input[self.cur_token_start as usize..self.next_token_start as usize]
+        &input[self.cur_token_start.to_usize()..self.next_token_start.to_usize()]
     }
 
     fn lexeme_range(&self) -> Range<u32> {

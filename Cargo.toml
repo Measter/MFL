@@ -16,6 +16,7 @@ lasso = "0.6.0"
 hashbrown = "0.13.2"
 log = "0.4.17"
 simplelog = "0.12.0"
+intcast = { path = "../intcast" }
 variantly = "0.2.0"
 
 [dependencies.inkwell]

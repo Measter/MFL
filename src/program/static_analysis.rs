@@ -5,6 +5,7 @@ use std::{
 
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
+use intcast::IntCast;
 use lasso::Spur;
 use variantly::Variantly;
 
@@ -43,10 +44,10 @@ impl IntWidth {
 
     pub fn mask(self) -> u64 {
         match self {
-            IntWidth::I8 => u8::MAX as _,
-            IntWidth::I16 => u16::MAX as _,
-            IntWidth::I32 => u32::MAX as _,
-            IntWidth::I64 => u64::MAX,
+            IntWidth::I8 => u8::MAX.to_u64(),
+            IntWidth::I16 => u16::MAX.to_u64(),
+            IntWidth::I32 => u32::MAX.to_u64(),
+            IntWidth::I64 => u64::MAX.to_u64(),
         }
     }
 
@@ -61,10 +62,10 @@ impl IntWidth {
 
     pub fn bounds(self) -> RangeInclusive<u64> {
         match self {
-            IntWidth::I8 => 0..=(u8::MAX as _),
-            IntWidth::I16 => 0..=(u16::MAX as _),
-            IntWidth::I32 => 0..=(u32::MAX as _),
-            IntWidth::I64 => 0..=(u64::MAX as _),
+            IntWidth::I8 => 0..=(u8::MAX.to_u64()),
+            IntWidth::I16 => 0..=(u16::MAX.to_u64()),
+            IntWidth::I32 => 0..=(u32::MAX.to_u64()),
+            IntWidth::I64 => 0..=(u64::MAX.to_u64()),
         }
     }
 }
@@ -189,8 +190,7 @@ pub struct Analyzer {
 impl Analyzer {
     fn new_value(&mut self, creator: &Op) -> ValueId {
         let id = self.value_lifetime.len();
-        assert!(id <= u16::MAX as usize);
-        let id = ValueId(id as u16);
+        let id = ValueId(id.to_u16().unwrap());
 
         let value_exists = self
             .value_lifetime

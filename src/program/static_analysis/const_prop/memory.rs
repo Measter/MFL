@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -81,7 +82,7 @@ pub(super) fn load(
         } => {
             let string = interner.resolve_literal(spur);
             // Remember that string literals are always null-terminated.
-            let memory_size = string.len() as u64 - 1;
+            let memory_size = string.len().to_u64() - 1;
 
             if !check_memory_bounds(
                 source_store,
@@ -95,14 +96,14 @@ pub(super) fn load(
                 return;
             }
 
-            let range_start = offset as usize;
-            let range_end = (offset + kind.byte_size()) as usize;
+            let range_start = offset.to_usize();
+            let range_end = (offset + kind.byte_size()).to_usize();
             let bytes = &string.as_bytes()[range_start..range_end];
             match kind {
-                PorthTypeKind::Int(IntWidth::I8) | PorthTypeKind::Bool => bytes[0] as u64,
-                PorthTypeKind::Int(IntWidth::I16) => u16::from_le_bytes(*bytes.as_arr()) as u64,
-                PorthTypeKind::Int(IntWidth::I32) => u32::from_le_bytes(*bytes.as_arr()) as u64,
-                PorthTypeKind::Int(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()),
+                PorthTypeKind::Int(IntWidth::I8) | PorthTypeKind::Bool => bytes[0].to_u64(),
+                PorthTypeKind::Int(IntWidth::I16) => u16::from_le_bytes(*bytes.as_arr()).to_u64(),
+                PorthTypeKind::Int(IntWidth::I32) => u32::from_le_bytes(*bytes.as_arr()).to_u64(),
+                PorthTypeKind::Int(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()).to_u64(),
                 PorthTypeKind::Ptr => {
                     // Can't const_load a pointer.
                     return;

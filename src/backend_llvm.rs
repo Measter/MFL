@@ -20,6 +20,7 @@ use inkwell::{
     },
     AddressSpace, IntPredicate, OptimizationLevel,
 };
+use intcast::IntCast;
 use lasso::Spur;
 use log::{debug, trace};
 
@@ -1124,7 +1125,9 @@ impl<'ctx> CodeGen<'ctx> {
         let proc_data = procedure.kind().get_proc_data();
         for (&proc_id, alloc_data) in &proc_data.alloc_size_and_offsets {
             let variable = self.builder.build_alloca(
-                self.ctx.i8_type().array_type(alloc_data.size as _),
+                self.ctx
+                    .i8_type()
+                    .array_type(alloc_data.size.to_u32().unwrap()),
                 interner.get_symbol_name(program, proc_id),
             );
             let variable = self.builder.build_pointer_cast(

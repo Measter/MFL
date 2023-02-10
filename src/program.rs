@@ -7,6 +7,7 @@ use std::{
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
+use intcast::IntCast;
 use lasso::Spur;
 use log::{debug, trace};
 use variantly::Variantly;
@@ -229,8 +230,7 @@ impl Program {
 
     fn new_module(&mut self, name: Spur) -> ModuleId {
         let new_id = self.modules.len();
-        assert!(new_id <= u16::MAX as usize);
-        let new_id = ModuleId(new_id as _);
+        let new_id = ModuleId(new_id.to_u16().unwrap());
 
         let module = Module {
             name,
@@ -1047,7 +1047,7 @@ impl Program {
             };
 
             // The type checker ensures a single stack item.
-            let alloc_size = stack.pop().unwrap() as usize;
+            let alloc_size = stack.pop().unwrap().to_usize();
 
             match proc.parent {
                 // If we have a parent, it means it's a local allocation.
@@ -1167,8 +1167,7 @@ impl Program {
         entry_stack_location: SourceLocation,
     ) -> ProcedureId {
         let id = self.all_procedures.len();
-        assert!(id <= u16::MAX as usize);
-        let id = ProcedureId(id as u16);
+        let id = ProcedureId(id.to_u16().unwrap());
 
         let proc = Procedure {
             name,
