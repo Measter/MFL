@@ -129,7 +129,7 @@ impl<'ctx> ValueStore<'ctx> {
         analyzer: &Analyzer,
         interner: &mut Interners,
     ) -> BasicValueEnum<'ctx> {
-        trace!("      Fetching const {id:?}");
+        trace!("Fetching const {id:?}");
         match const_val {
             ConstVal::Int(val) => {
                 let Some([PorthTypeKind::Int(target_width)]) = analyzer.value_types([id]) else {
@@ -170,12 +170,12 @@ impl<'ctx> ValueStore<'ctx> {
             _ => {
                 if let Some(&ptr) = self.merge_pair_map.get(&id) {
                     trace!(
-                        "      Fetching {id:?} from variable at {}",
-                        ptr.get_name().to_str().unwrap()
+                        name = ptr.get_name().to_str().unwrap(),
+                        "Fetching variable {id:?}"
                     );
                     cg.builder.build_load(ptr, "load_var")
                 } else {
-                    trace!("      Fetching from value map at {id:?}");
+                    trace!("Fetching live value {id:?}");
                     self.value_map[&id]
                 }
             }
@@ -185,12 +185,12 @@ impl<'ctx> ValueStore<'ctx> {
     fn store_value(&mut self, cg: &CodeGen<'ctx>, id: ValueId, value: BasicValueEnum<'ctx>) {
         if let Some(&ptr) = self.merge_pair_map.get(&id) {
             trace!(
-                "      Stored {id:?} in variable at {}",
-                ptr.get_name().to_str().unwrap()
+                name = ptr.get_name().to_str().unwrap(),
+                "Storing variable {id:?}",
             );
             cg.builder.build_store(ptr, value);
         } else {
-            trace!("      Stored in value map at {id:?}");
+            trace!("Stored live value {id:?}");
             self.value_map.insert(id, value);
         }
     }
@@ -342,15 +342,23 @@ impl<'ctx> CodeGen<'ctx> {
 
         for op in block {
             match op.code {
-                OpCode::If { .. } => trace!("    {:?}: If", op.id),
-                OpCode::While { .. } => trace!("    {:?}: While", op.id),
-                OpCode::Swap { count, .. } => trace!("    {:?}: Swap({count})", op.id),
-                OpCode::Dup { count, .. } => trace!("    {:?}: Dup({count})", op.id),
-                OpCode::Drop { count, .. } => trace!("    {:?}: Drop({count})", op.id),
-                OpCode::Over { depth, .. } => trace!("    {:?}: Over({depth})", op.id),
-                OpCode::Memory { proc_id, .. } => trace!("    {:?}: Memory({proc_id:?})", op.id),
-                OpCode::Cast { kind, .. } => trace!("    {:?}: Cast({kind:?})", op.id),
-                _ => trace!("    {:?}: {:?}", op.id, op.code),
+                OpCode::If { .. } => trace!(?op.id, "If"),
+                OpCode::While { .. } => trace!(?op.id, "While"),
+                OpCode::Swap { count, .. } => trace!(?op.id, count, "Swap"),
+                OpCode::Dup { count, .. } => trace!(?op.id, count, "Dup" ),
+                OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
+                OpCode::Over { depth, .. } => trace!(?op.id, depth, "Over"),
+                OpCode::Cast { kind, .. } => trace!(?op.id, ?kind, "Cast"),
+                OpCode::Memory {
+                    proc_id, global, ..
+                } => trace!(?op.id, ?proc_id, global, "Memory"),
+                OpCode::Rot {
+                    item_count,
+                    direction,
+                    shift_count,
+                    ..
+                } => trace!(item_count, ?direction, shift_count, "Rot"),
+                _ => trace!(?op.id, "{:?}", op.code),
             }
 
             // These do nothing in codegen
@@ -366,11 +374,8 @@ impl<'ctx> CodeGen<'ctx> {
                     .iter()
                     .all(|id| is_fully_const(*id, analyzer))
             {
-                op_io
-                    .outputs()
-                    .iter()
-                    .for_each(|id| trace!("      .. {id:?}"));
-                trace!("      .. is fully const");
+                op_io.outputs().iter().for_each(|id| trace!("{id:?}"));
+                trace!("Op is fully const");
                 continue;
             }
 
