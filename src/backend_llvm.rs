@@ -22,7 +22,7 @@ use inkwell::{
 };
 use intcast::IntCast;
 use lasso::Spur;
-use tracing::{debug, debug_span, trace};
+use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
     interners::Interners,
@@ -233,18 +233,21 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn enqueue_function(&mut self, proc: ProcedureId) {
         if !self.processed_functions.contains(&proc) {
+            trace!(name = ?proc, "Enqueing function");
             self.function_queue.push(proc);
             self.processed_functions.insert(proc);
         }
     }
 
     fn build_function_prototypes(&mut self, program: &Program, interner: &mut Interners) {
-        debug!("Building function prototypes..");
+        let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
+
+        let proto_span = debug_span!("building prototypes").entered();
         for (id, proc) in program.get_all_procedures() {
             let ProcedureKind::Function(_) = proc.kind() else { continue };
 
             let name = interner.get_symbol_name(program, id);
-            trace!("    Building prototype for {name}");
+            trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = proc
                 .entry_stack()
@@ -286,8 +289,9 @@ impl<'ctx> CodeGen<'ctx> {
                 .add_function(name, function_type, Some(Linkage::Private));
             self.proc_function_map.insert(id, function);
         }
+        proto_span.exit();
 
-        debug!("Defining syscall functions..");
+        let _syscall_span = debug_span!("defining syscalls").entered();
         let args: Vec<BasicMetadataTypeEnum> =
             (1..=7).map(|_| self.ctx.i64_type().into()).collect();
         for i in 0..7 {
@@ -300,8 +304,6 @@ impl<'ctx> CodeGen<'ctx> {
             );
             self.syscall_wrappers.push(function);
         }
-
-        debug!("    Finished");
     }
 
     fn resize_int(&mut self, v: IntValue<'ctx>, target_type: IntType<'ctx>) -> IntValue<'ctx> {
@@ -1117,11 +1119,12 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let mut value_store = ValueStore::default();
         let name = interner.get_symbol_name(program, id);
-        debug!("Compiling {name}...");
+        let _span = debug_span!(stringify!(CodeGen::compile_procedure), name).entered();
 
         let entry_block = self.ctx.append_basic_block(function, "entry");
         self.builder.position_at_end(entry_block);
 
+        trace!("Defining local allocations");
         let proc_data = procedure.kind().get_proc_data();
         for (&proc_id, alloc_data) in &proc_data.alloc_size_and_offsets {
             let variable = self.builder.build_alloca(
@@ -1139,27 +1142,33 @@ impl<'ctx> CodeGen<'ctx> {
             value_store.variable_map.insert(proc_id, variable);
         }
 
-        trace!("      Defining merge variables");
+        trace!("Defining merge variables");
         self.build_merge_variables(
             procedure.body(),
             procedure.analyzer(),
             &mut value_store.merge_pair_map,
         );
 
-        self.compile_block(
-            program,
-            &mut value_store,
-            id,
-            procedure,
-            procedure.body(),
-            function,
-            source_storage,
-            interner,
-        );
+        {
+            let _span = trace_span!("compile_block").entered();
+            self.compile_block(
+                program,
+                &mut value_store,
+                id,
+                procedure,
+                procedure.body(),
+                function,
+                source_storage,
+                interner,
+            );
+        }
 
-        if !function.verify(true) {
-            eprintln!();
-            function.print_to_stderr();
+        {
+            let _span = trace_span!("verifying").entered();
+            if !function.verify(true) {
+                eprintln!();
+                function.print_to_stderr();
+            }
         }
     }
 
@@ -1169,6 +1178,7 @@ impl<'ctx> CodeGen<'ctx> {
         source_storage: &SourceStorage,
         interner: &mut Interners,
     ) {
+        let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(proc_id) = self.function_queue.pop() {
             let proc = program.get_proc(proc_id);
             let function = self.proc_function_map[&proc_id];
@@ -1247,22 +1257,31 @@ pub(crate) fn compile(
     codegen.build_entry(entry_function);
     codegen.build(program, source_storage, interner);
 
-    target_machine
-        .write_to_file(codegen.module(), FileType::Object, &output_obj)
-        .map_err(|e| eyre!("Error writing object: {e}"))?;
+    {
+        let _span = trace_span!("Writing object file").entered();
+        target_machine
+            .write_to_file(codegen.module(), FileType::Object, &output_obj)
+            .map_err(|e| eyre!("Error writing object: {e}"))?;
+    }
 
-    target_machine
-        .write_to_file(codegen.module(), FileType::Assembly, &output_asm)
-        .map_err(|e| eyre!("Error writing object: {e}"))?;
+    {
+        let _span = trace_span!("Writing assembly file").entered();
+        target_machine
+            .write_to_file(codegen.module(), FileType::Assembly, &output_asm)
+            .map_err(|e| eyre!("Error writing object: {e}"))?;
+    }
 
-    debug!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
-    let nasm = Command::new("nasm")
-        .arg("-felf64")
-        .arg("./std/bootstrap.s")
-        .arg("-o")
-        .arg(&bootstrap_obj)
-        .status()
-        .with_context(|| eyre!("Failed to execute nasm"))?;
+    let nasm = {
+        let _span = trace_span!("Assembling bootstrap").entered();
+        trace!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
+        Command::new("nasm")
+            .arg("-felf64")
+            .arg("./std/bootstrap.s")
+            .arg("-o")
+            .arg(&bootstrap_obj)
+            .status()
+            .with_context(|| eyre!("Failed to execute nasm"))?
+    };
 
     if !nasm.success() {
         std::process::exit(-2);
