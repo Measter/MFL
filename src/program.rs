@@ -208,6 +208,28 @@ pub struct Program {
 }
 
 impl Program {
+    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &Procedure)> {
+        self.all_procedures.iter().map(|(id, proc)| (*id, proc))
+    }
+
+    pub fn get_module(&self, id: ModuleId) -> &Module {
+        &self.modules[&id]
+    }
+
+    pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
+        &self.all_procedures[&id]
+    }
+
+    pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
+        self.all_procedures.get_mut(&id).unwrap()
+    }
+
+    pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
+        &self.analyzers[&id]
+    }
+}
+
+impl Program {
     pub fn new() -> Self {
         Program {
             modules: Default::default(),
@@ -230,14 +252,6 @@ impl Program {
         self.modules.insert(new_id, module);
 
         new_id
-    }
-
-    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &Procedure)> {
-        self.all_procedures.iter().map(|(id, proc)| (*id, proc))
-    }
-
-    pub fn get_module(&self, id: ModuleId) -> &Module {
-        &self.modules[&id]
     }
 
     pub fn load_program(
@@ -1122,18 +1136,6 @@ impl Program {
         self.check_asserts(interner, source_store)?;
 
         Ok(())
-    }
-
-    pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
-        &self.all_procedures[&id]
-    }
-
-    pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
-        self.all_procedures.get_mut(&id).unwrap()
-    }
-
-    pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
-        &self.analyzers[&id]
     }
 
     pub fn new_procedure(
