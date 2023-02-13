@@ -431,7 +431,7 @@ pub fn data_flow_analysis(
     data_flow::analyze_block(
         program,
         proc,
-        proc.body(),
+        program.get_proc_body(proc.id()),
         analyzer,
         &mut stack,
         &mut had_error,
@@ -455,7 +455,7 @@ pub fn type_check(
     type_check2::analyze_block(
         program,
         proc,
-        proc.body(),
+        program.get_proc_body(proc.id()),
         analyzer,
         &mut had_error,
         interner,
@@ -477,7 +477,7 @@ pub fn const_propagation(
     const_prop::analyze_block(
         program,
         proc,
-        proc.body(),
+        program.get_proc_body(proc.id()),
         analyzer,
         &mut had_error,
         interner,

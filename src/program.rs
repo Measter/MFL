@@ -54,7 +54,6 @@ pub struct Procedure {
     kind: ProcedureKind,
     new_op_id: usize,
 
-    body: Vec<Op>,
     exit_stack: Vec<PorthType>,
     exit_stack_location: SourceLocation,
     entry_stack: Vec<PorthType>,
@@ -78,14 +77,6 @@ impl Procedure {
         self.parent
     }
 
-    pub fn body(&self) -> &[Op] {
-        &self.body
-    }
-
-    pub fn body_mut(&mut self) -> &mut Vec<Op> {
-        &mut self.body
-    }
-
     pub fn kind(&self) -> ProcedureKind {
         self.kind
     }
@@ -105,71 +96,6 @@ impl Procedure {
     pub fn entry_stack_location(&self) -> SourceLocation {
         self.entry_stack_location
     }
-
-    fn expand_macros_in_block(
-        block: &mut Vec<Op>,
-        id: ProcedureId,
-        new_op_id: &mut impl FnMut() -> OpId,
-        program: &Program,
-    ) {
-        let mut i = 0;
-        while i < block.len() {
-            match block[i].code {
-                OpCode::While {
-                    body: ref mut while_block,
-                } => {
-                    Self::expand_macros_in_block(
-                        &mut while_block.condition,
-                        id,
-                        new_op_id,
-                        program,
-                    );
-                    Self::expand_macros_in_block(&mut while_block.block, id, new_op_id, program);
-                }
-                OpCode::If {
-                    ref mut condition,
-                    ref mut else_block,
-                    ..
-                } => {
-                    Self::expand_macros_in_block(&mut condition.condition, id, new_op_id, program);
-                    Self::expand_macros_in_block(&mut condition.block, id, new_op_id, program);
-                    Self::expand_macros_in_block(else_block, id, new_op_id, program);
-                }
-                OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
-                    let found_proc = program.get_proc(proc_id);
-                    if found_proc.kind() == ProcedureKind::Macro {
-                        let token = block[i].token;
-                        let expansions = block[i].expansions.clone();
-                        let new_ops = found_proc.body().iter().map(|new_op| {
-                            let mut new_op = new_op.clone();
-                            new_op.id = new_op_id();
-                            new_op.expansions.push(token.location);
-                            new_op.expansions.extend_from_slice(&expansions);
-                            new_op
-                        });
-
-                        block.splice(i..i + 1, new_ops);
-
-                        // Want to continue with the current op index
-                        continue;
-                    }
-                }
-                _ => {}
-            }
-
-            i += 1;
-        }
-        //
-    }
-
-    fn expand_macros(&mut self, program: &Program) {
-        let mut op_id_gen = || {
-            let id = self.new_op_id;
-            self.new_op_id += 1;
-            OpId(id)
-        };
-        Self::expand_macros_in_block(&mut self.body, self.id, &mut op_id_gen, program);
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -180,6 +106,7 @@ pub struct Program {
     module_ident_map: HashMap<Spur, ModuleId>,
 
     procedure_headers: HashMap<ProcedureId, Procedure>,
+    procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
     function_data: HashMap<ProcedureId, FunctionData>,
     const_vals: HashMap<ProcedureId, Vec<(PorthTypeKind, u64)>>,
     analyzers: HashMap<ProcedureId, Analyzer>,
@@ -201,6 +128,14 @@ impl Program {
 
     pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
         self.procedure_headers.get_mut(&id).unwrap()
+    }
+
+    pub fn get_proc_body(&self, id: ProcedureId) -> &[Op] {
+        &self.procedure_bodies[&id]
+    }
+
+    pub fn set_proc_body(&mut self, id: ProcedureId, body: Vec<Op>) {
+        self.procedure_bodies.insert(id, body);
     }
 
     pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
@@ -232,6 +167,7 @@ impl Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
             procedure_headers: HashMap::new(),
+            procedure_bodies: HashMap::new(),
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
@@ -515,12 +451,13 @@ impl Program {
 
         for proc_id in proc_ids {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let mut proc = self.procedure_headers.remove(&proc_id).unwrap();
-            let body = std::mem::take(&mut proc.body);
+            let proc = &self.procedure_headers[&proc_id];
+            let body = self.procedure_bodies.remove(&proc_id).unwrap();
 
-            proc.body =
-                self.resolve_idents_in_block(&proc, body, &mut had_error, interner, source_store);
-            self.procedure_headers.insert(proc_id, proc);
+            self.procedure_bodies.insert(
+                proc_id,
+                self.resolve_idents_in_block(proc, body, &mut had_error, interner, source_store),
+            );
         }
 
         had_error
@@ -529,9 +466,59 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
+    fn expand_macros_in_block(
+        &self,
+        block: &mut Vec<Op>,
+        id: ProcedureId,
+        new_op_id: &mut impl FnMut() -> OpId,
+    ) {
+        let mut i = 0;
+        while i < block.len() {
+            match block[i].code {
+                OpCode::While {
+                    body: ref mut while_block,
+                } => {
+                    self.expand_macros_in_block(&mut while_block.condition, id, new_op_id);
+                    self.expand_macros_in_block(&mut while_block.block, id, new_op_id);
+                }
+                OpCode::If {
+                    ref mut condition,
+                    ref mut else_block,
+                    ..
+                } => {
+                    self.expand_macros_in_block(&mut condition.condition, id, new_op_id);
+                    self.expand_macros_in_block(&mut condition.block, id, new_op_id);
+                    self.expand_macros_in_block(else_block, id, new_op_id);
+                }
+                OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
+                    let found_proc = &self.procedure_headers[&proc_id];
+                    if found_proc.kind() == ProcedureKind::Macro {
+                        let token = block[i].token;
+                        let expansions = block[i].expansions.clone();
+                        let new_ops = self.get_proc_body(proc_id).iter().map(|new_op| {
+                            let mut new_op = new_op.clone();
+                            new_op.id = new_op_id();
+                            new_op.expansions.push(token.location);
+                            new_op.expansions.extend_from_slice(&expansions);
+                            new_op
+                        });
+
+                        block.splice(i..i + 1, new_ops);
+
+                        // Want to continue with the current op index
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+
+            i += 1;
+        }
+        //
+    }
+
     fn expand_macros(&mut self, interner: &mut Interners) {
         let _span = debug_span!(stringify!(Program::expand_macros)).entered();
-        debug!("");
         let non_macro_proc_ids: Vec<_> = self
             .procedure_headers
             .iter()
@@ -541,11 +528,19 @@ impl Program {
 
         for proc_id in non_macro_proc_ids {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let mut proc = self.procedure_headers.remove(&proc_id).unwrap();
+            let proc = &self.procedure_headers[&proc_id];
+            let proc_id = proc.id;
+            let mut new_op_id = proc.new_op_id;
 
-            proc.expand_macros(self);
+            let mut op_id_gen = || {
+                let id = new_op_id;
+                new_op_id += 1;
+                OpId(id)
+            };
 
-            self.procedure_headers.insert(proc_id, proc);
+            let mut body = self.procedure_bodies.remove(&proc_id).unwrap();
+            self.expand_macros_in_block(&mut body, proc_id, &mut op_id_gen);
+            self.procedure_bodies.insert(proc_id, body);
         }
     }
 
@@ -673,7 +668,7 @@ impl Program {
             while let Some(proc) = check_queue.pop() {
                 self.check_invalid_cyclic_refs_in_block(
                     own_proc,
-                    proc.body(),
+                    &self.procedure_bodies[&proc.id],
                     proc,
                     kind,
                     &mut already_checked,
@@ -806,7 +801,7 @@ impl Program {
 
     fn process_idents_in_block(
         &mut self,
-        own_proc: &Procedure,
+        own_proc_id: ProcedureId,
         block: Vec<Op>,
         had_error: &mut bool,
         interner: &Interners,
@@ -820,14 +815,14 @@ impl Program {
                         code: OpCode::While {
                             body: ConditionalBlock {
                                 condition: self.process_idents_in_block(
-                                    own_proc,
+                                    own_proc_id,
                                     while_body.condition,
                                     had_error,
                                     interner,
                                     source_store,
                                 ),
                                 block: self.process_idents_in_block(
-                                    own_proc,
+                                    own_proc_id,
                                     while_body.block,
                                     had_error,
                                     interner,
@@ -849,14 +844,14 @@ impl Program {
                 } => {
                     let new_main = ConditionalBlock {
                         condition: self.process_idents_in_block(
-                            own_proc,
+                            own_proc_id,
                             condition.condition,
                             had_error,
                             interner,
                             source_store,
                         ),
                         block: self.process_idents_in_block(
-                            own_proc,
+                            own_proc_id,
                             condition.block,
                             had_error,
                             interner,
@@ -866,7 +861,7 @@ impl Program {
                     };
 
                     let new_else = self.process_idents_in_block(
-                        own_proc,
+                        own_proc_id,
                         else_block,
                         had_error,
                         interner,
@@ -887,15 +882,12 @@ impl Program {
                 }
 
                 OpCode::ResolvedIdent { module, proc_id } => {
-                    let found_proc = if proc_id == own_proc.id() {
-                        own_proc
-                    } else {
-                        &self.procedure_headers[&proc_id]
-                    };
+                    let found_proc = &self.procedure_headers[&proc_id];
 
                     match found_proc.kind() {
                         ProcedureKind::Const => {
                             let Some(vals) = self.const_vals.get( &found_proc.id ) else {
+                                let own_proc = &self.procedure_headers[&own_proc_id];
                                 let name = interner.resolve_lexeme(own_proc.name.lexeme);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
@@ -922,7 +914,7 @@ impl Program {
                                     expansions: op.expansions.clone(),
                                 });
 
-                                let analyzer = self.analyzers.get_mut(&own_proc.id).unwrap();
+                                let analyzer = self.analyzers.get_mut(&own_proc_id).unwrap();
                                 let op_io = analyzer.get_op_io(op.id);
                                 let out_id = op_io.outputs()[0];
                                 analyzer.set_value_const(out_id, const_val);
@@ -950,6 +942,7 @@ impl Program {
                             });
                         }
                         ProcedureKind::Macro => {
+                            let own_proc = &self.procedure_headers[&own_proc_id];
                             let name = interner.resolve_lexeme(own_proc.name.lexeme);
                             panic!(
                                 "ICE: Encountered assert, or macro during ident processing {name}"
@@ -996,22 +989,17 @@ impl Program {
             .collect();
 
         for own_proc_id in all_proc_ids {
-            trace!(
-                "      Processing {}",
-                interner.get_symbol_name(self, own_proc_id)
-            );
-            let mut proc = self.procedure_headers.remove(&own_proc_id).unwrap();
+            trace!("Processing {}", interner.get_symbol_name(self, own_proc_id));
 
-            let old_body = std::mem::take(&mut proc.body);
-            proc.body = self.process_idents_in_block(
-                &proc,
+            let old_body = self.procedure_bodies.remove(&own_proc_id).unwrap();
+            let new_body = self.process_idents_in_block(
+                own_proc_id,
                 old_body,
                 &mut had_error,
                 interner,
                 source_store,
             );
-
-            self.procedure_headers.insert(own_proc_id, proc);
+            self.procedure_bodies.insert(own_proc_id, new_body);
         }
 
         had_error
@@ -1153,7 +1141,6 @@ impl Program {
             module,
             id,
             kind,
-            body: Vec::new(),
             parent,
             new_op_id: 0,
             exit_stack,

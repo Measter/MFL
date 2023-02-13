@@ -30,7 +30,7 @@ use crate::{
     opcode::{ConditionalBlock, Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId, ValueId},
-        Procedure, ProcedureId, ProcedureKind, Program,
+        ProcedureId, ProcedureKind, Program,
     },
 };
 
@@ -1075,7 +1075,6 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         id: ProcedureId,
-        procedure: &Procedure,
         function: FunctionValue<'ctx>,
         interner: &mut Interners,
     ) {
@@ -1104,7 +1103,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Defining merge variables");
         self.build_merge_variables(
-            procedure.body(),
+            program.get_proc_body(id),
             program.get_analyzer(id),
             &mut value_store.merge_pair_map,
         );
@@ -1115,7 +1114,7 @@ impl<'ctx> CodeGen<'ctx> {
                 program,
                 &mut value_store,
                 id,
-                procedure.body(),
+                program.get_proc_body(id),
                 function,
                 interner,
             );
@@ -1133,9 +1132,8 @@ impl<'ctx> CodeGen<'ctx> {
     fn build(&mut self, program: &Program, interner: &mut Interners) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(proc_id) = self.function_queue.pop() {
-            let proc = program.get_proc(proc_id);
             let function = self.proc_function_map[&proc_id];
-            self.compile_procedure(program, proc_id, proc, function, interner);
+            self.compile_procedure(program, proc_id, function, interner);
         }
 
         self.pass_manager.run_on(&self.module);

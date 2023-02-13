@@ -277,7 +277,7 @@ pub(crate) fn simulate_execute_program(
 
     simulate_execute_program_block(
         program,
-        procedure.body(),
+        program.get_proc_body(procedure.id()),
         &mut value_stack,
         interner,
         source_store,

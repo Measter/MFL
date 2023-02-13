@@ -1162,13 +1162,12 @@ fn parse_procedure<'a>(
         });
     }
 
-    *proc_header.body_mut() = body;
     proc_header.new_op_id = op_id;
+    program.set_proc_body(procedure_id, body);
 
     // stupid borrow checker...
-    let id = proc_header.id();
     let _ = proc_header; // Need to discard the borrow;
-    let proc_header = program.get_proc(id);
+    let proc_header = program.get_proc(procedure_id);
 
     if let Some(prev_def) = program
         .get_visible_symbol(proc_header, name_token.lexeme)
