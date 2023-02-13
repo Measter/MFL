@@ -10,7 +10,6 @@ use color_eyre::eyre::{eyre, Context, Result};
 use intcast::IntCast;
 use lasso::Spur;
 use tracing::{debug, debug_span, trace, trace_span};
-use variantly::Variantly;
 
 use crate::{
     diagnostics,
@@ -37,31 +36,13 @@ pub struct FunctionData {
 }
 
 // TODO: Add compile-time asserts
-#[derive(Debug, Variantly)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProcedureKind {
     Assert,
-    Const {
-        const_val: Option<Vec<(PorthTypeKind, u64)>>,
-    },
+    Const,
     Macro,
     Memory,
-    Function(FunctionData),
-}
-
-impl ProcedureKind {
-    pub fn get_proc_data(&self) -> &FunctionData {
-        match self {
-            ProcedureKind::Function(data) => data,
-            _ => panic!("ICE: called get_proc_data on a non-proc"),
-        }
-    }
-
-    pub fn get_proc_data_mut(&mut self) -> &mut FunctionData {
-        match self {
-            ProcedureKind::Function(data) => data,
-            _ => panic!("ICE: called get_proc_data on a non-proc"),
-        }
-    }
+    Function,
 }
 
 #[derive(Debug)]
@@ -105,12 +86,8 @@ impl Procedure {
         &mut self.body
     }
 
-    pub fn kind(&self) -> &ProcedureKind {
-        &self.kind
-    }
-
-    pub fn kind_mut(&mut self) -> &mut ProcedureKind {
-        &mut self.kind
+    pub fn kind(&self) -> ProcedureKind {
+        self.kind
     }
 
     pub fn exit_stack(&self) -> &[PorthType] {
@@ -160,7 +137,7 @@ impl Procedure {
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
                     let found_proc = program.get_proc(proc_id);
-                    if found_proc.kind().is_macro() {
+                    if found_proc.kind() == ProcedureKind::Macro {
                         let token = block[i].token;
                         let expansions = block[i].expansions.clone();
                         let new_ops = found_proc.body().iter().map(|new_op| {
@@ -203,6 +180,8 @@ pub struct Program {
     module_ident_map: HashMap<Spur, ModuleId>,
 
     procedure_headers: HashMap<ProcedureId, Procedure>,
+    function_data: HashMap<ProcedureId, FunctionData>,
+    const_vals: HashMap<ProcedureId, Vec<(PorthTypeKind, u64)>>,
     analyzers: HashMap<ProcedureId, Analyzer>,
     global_allocs: HashMap<ProcedureId, usize>,
 }
@@ -227,6 +206,24 @@ impl Program {
     pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
         &self.analyzers[&id]
     }
+
+    #[track_caller]
+    pub fn get_function_data(&self, id: ProcedureId) -> &FunctionData {
+        self.function_data
+            .get(&id)
+            .expect("ICE: tried to get function data for non-function proc")
+    }
+
+    #[track_caller]
+    pub fn get_function_data_mut(&mut self, id: ProcedureId) -> &mut FunctionData {
+        self.function_data
+            .get_mut(&id)
+            .expect("ICE: tried to get function data for non-function proc")
+    }
+
+    pub fn get_consts(&self, id: ProcedureId) -> Option<&[(PorthTypeKind, u64)]> {
+        self.const_vals.get(&id).map(|v| &**v)
+    }
 }
 
 impl Program {
@@ -235,6 +232,8 @@ impl Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
             procedure_headers: HashMap::new(),
+            function_data: HashMap::new(),
+            const_vals: HashMap::new(),
             analyzers: HashMap::new(),
             global_allocs: HashMap::new(),
         }
@@ -536,7 +535,7 @@ impl Program {
         let non_macro_proc_ids: Vec<_> = self
             .procedure_headers
             .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
+            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
@@ -664,7 +663,7 @@ impl Program {
                 ProcedureKind::Const { .. } => "const",
                 ProcedureKind::Macro => "macro",
                 ProcedureKind::Assert => "assert",
-                ProcedureKind::Memory | ProcedureKind::Function(_) => continue,
+                ProcedureKind::Memory | ProcedureKind::Function => continue,
             };
 
             check_queue.clear();
@@ -701,7 +700,7 @@ impl Program {
         let proc_ids: Vec<_> = self
             .procedure_headers
             .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
+            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
@@ -761,7 +760,7 @@ impl Program {
         let mut const_queue: Vec<_> = self
             .procedure_headers
             .iter()
-            .filter(|(_, proc)| proc.kind().is_const())
+            .filter(|(_, proc)| proc.kind() == ProcedureKind::Const)
             .map(|(id, _)| *id)
             .collect();
         let mut next_run_queue = Vec::with_capacity(const_queue.len());
@@ -781,12 +780,7 @@ impl Program {
                             .map(|(val, ty)| (ty.kind, val))
                             .collect();
 
-                        match &mut self.get_proc_mut(const_id).kind {
-                            ProcedureKind::Const { const_val } => {
-                                *const_val = Some(const_vals);
-                            }
-                            _ => unreachable!(),
-                        }
+                        self.const_vals.insert(const_id, const_vals);
                     }
                     Err(SimulationError::UnsupportedOp) => {
                         had_error = true;
@@ -900,9 +894,11 @@ impl Program {
                     };
 
                     match found_proc.kind() {
-                        ProcedureKind::Const {
-                            const_val: Some(vals),
-                        } => {
+                        ProcedureKind::Const => {
+                            let Some(vals) = self.const_vals.get( &found_proc.id ) else {
+                                let name = interner.resolve_lexeme(own_proc.name.lexeme);
+                                panic!("ICE: Encountered un-evaluated const during ident processing {name}");
+                            };
                             for (kind, val) in vals {
                                 let (code, const_val) = match kind {
                                     PorthTypeKind::Int(width) => (
@@ -945,7 +941,7 @@ impl Program {
                                 expansions: op.expansions,
                             });
                         }
-                        ProcedureKind::Function(_) => {
+                        ProcedureKind::Function => {
                             new_ops.push(Op {
                                 code: OpCode::CallProc { module, proc_id },
                                 id: op.id,
@@ -953,9 +949,11 @@ impl Program {
                                 expansions: op.expansions,
                             });
                         }
-                        ProcedureKind::Const { const_val: None } | ProcedureKind::Macro => {
+                        ProcedureKind::Macro => {
                             let name = interner.resolve_lexeme(own_proc.name.lexeme);
-                            panic!("ICE: Encountered assert, macro or un-evaluated const during ident processing {name}");
+                            panic!(
+                                "ICE: Encountered assert, or macro during ident processing {name}"
+                            );
                         }
 
                         ProcedureKind::Assert => {
@@ -993,7 +991,7 @@ impl Program {
         let all_proc_ids: Vec<_> = self
             .procedure_headers
             .iter()
-            .filter(|(_, p)| !p.kind().is_macro())
+            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
@@ -1033,7 +1031,7 @@ impl Program {
         let all_mem_proc_ids: Vec<_> = self
             .procedure_headers
             .iter()
-            .filter(|(_, p)| p.kind().is_memory())
+            .filter(|(_, p)| p.kind() == ProcedureKind::Memory)
             .map(|(id, _)| *id)
             .collect();
 
@@ -1054,9 +1052,7 @@ impl Program {
             match proc.parent {
                 // If we have a parent, it means it's a local allocation.
                 Some(parent_id) => {
-                    let parent_proc = self.get_proc_mut(parent_id);
-                    let function_data = parent_proc.kind.get_proc_data_mut();
-
+                    let function_data = self.function_data.get_mut(&parent_id).unwrap();
                     function_data.alloc_sizes.insert(proc_id, alloc_size);
                 }
 
@@ -1081,7 +1077,7 @@ impl Program {
         let mut had_error = false;
 
         for proc in self.procedure_headers.values() {
-            if !proc.kind().is_assert() {
+            if proc.kind() != ProcedureKind::Memory {
                 continue;
             }
 
@@ -1168,6 +1164,10 @@ impl Program {
 
         self.procedure_headers.insert(id, proc);
 
+        if kind == ProcedureKind::Function {
+            self.function_data.insert(id, FunctionData::default());
+        }
+
         if parent.is_none() {
             let module = self.modules.get_mut(&module).unwrap();
             module.top_level_symbols.insert(name.lexeme, id);
@@ -1182,8 +1182,9 @@ impl Program {
         }
 
         // Check our own children.
-        if let ProcedureKind::Function(FunctionData { allocs, consts, .. }) = &from.kind {
-            if let Some(found_id) = allocs.get(&symbol).or_else(|| consts.get(&symbol)) {
+        if from.kind == ProcedureKind::Function {
+            let fd = self.get_function_data(from.id);
+            if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                 return Some(*found_id);
             }
         }
@@ -1197,8 +1198,9 @@ impl Program {
                 return Some(proc.id);
             }
 
-            if let ProcedureKind::Function(FunctionData { allocs, consts, .. }) = &proc.kind {
-                if let Some(found_id) = allocs.get(&symbol).or_else(|| consts.get(&symbol)) {
+            if proc.kind == ProcedureKind::Function {
+                let fd = self.get_function_data(proc.id);
+                if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                     return Some(*found_id);
                 }
             }

@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     static_analysis::{IntWidth, PorthType, PorthTypeKind},
-    FunctionData, ModuleId, ProcedureId, ProcedureKind, Program,
+    ModuleId, ProcedureId, ProcedureKind, Program,
 };
 
 fn expect_token<'a>(
@@ -922,7 +922,7 @@ fn parse_function_header<'a>(
     let new_proc = program.new_procedure(
         name,
         module_id,
-        ProcedureKind::Function(FunctionData::default()),
+        ProcedureKind::Function,
         parent,
         exit_stack,
         exit_stack_location,
@@ -1021,7 +1021,7 @@ fn parse_const_header<'a>(
     let new_proc = program.new_procedure(
         name,
         module_id,
-        ProcedureKind::Const { const_val: None },
+        ProcedureKind::Const,
         parent,
         exit_stack,
         exit_sig_location,
@@ -1142,7 +1142,7 @@ fn parse_procedure<'a>(
 
     let proc_header = program.get_proc_mut(procedure_id);
 
-    if !proc_header.kind().is_macro() {
+    if proc_header.kind() != ProcedureKind::Macro {
         // Makes later logic a bit easier if we always have a prologue and epilogue.
         body.insert(
             0,
@@ -1194,12 +1194,14 @@ fn parse_procedure<'a>(
     }
 
     if let Some(parent_id) = parent {
-        let parent_proc = program.get_proc_mut(parent_id);
-        match (parent_proc.kind_mut(), keyword.kind) {
-            (ProcedureKind::Function(pd), TokenKind::Const) => {
+        let parent_proc = program.get_proc(parent_id);
+        match (parent_proc.kind(), keyword.kind) {
+            (ProcedureKind::Function, TokenKind::Const) => {
+                let pd = program.get_function_data_mut(parent_id);
                 pd.consts.insert(name_token.lexeme, procedure_id);
             }
-            (ProcedureKind::Function(pd), TokenKind::Memory) => {
+            (ProcedureKind::Function, TokenKind::Memory) => {
+                let pd = program.get_function_data_mut(parent_id);
                 pd.allocs.insert(name_token.lexeme, procedure_id);
             }
             // The other types aren't stored in the proc

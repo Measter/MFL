@@ -62,7 +62,7 @@ fn load_program(
 
     debug!("checking entry signature");
     let entry_proc = program.get_proc(entry_function_id);
-    if !matches!(entry_proc.kind(), ProcedureKind::Function(_)) {
+    if !matches!(entry_proc.kind(), ProcedureKind::Function) {
         let name = entry_proc.name();
         diagnostics::emit_error(
             name.location,

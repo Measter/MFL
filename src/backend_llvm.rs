@@ -243,7 +243,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proto_span = debug_span!("building prototypes").entered();
         for (id, proc) in program.get_all_procedures() {
-            let ProcedureKind::Function(_) = proc.kind() else { continue };
+            let ProcedureKind::Function = proc.kind() else { continue };
 
             let name = interner.get_symbol_name(program, id);
             trace!(name, "Building prototype");
@@ -1087,7 +1087,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let proc_data = procedure.kind().get_proc_data();
+        let proc_data = program.get_function_data(id);
         for (&proc_id, alloc_size) in &proc_data.alloc_sizes {
             let variable = self.builder.build_alloca(
                 self.ctx.i8_type().array_type(alloc_size.to_u32().unwrap()),

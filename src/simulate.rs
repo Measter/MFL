@@ -227,13 +227,11 @@ fn simulate_execute_program_block(
                 let referenced_proc = program.get_proc(*proc_id);
 
                 match referenced_proc.kind() {
-                    ProcedureKind::Const {
-                        const_val: Some(vals),
-                    } => {
+                    ProcedureKind::Const => {
+                        let Some(vals) = program.get_consts(*proc_id) else {
+                            return Err(SimulationError::UnreadyConst);
+                        };
                         value_stack.extend(vals.iter().map(|(_, v)| *v));
-                    }
-                    ProcedureKind::Const { .. } => {
-                        return Err(SimulationError::UnreadyConst);
                     }
                     _ => {
                         generate_error("non-const cannot be refenced in a const", op, source_store);
