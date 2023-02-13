@@ -33,7 +33,6 @@ pub struct ProcedureId(u16);
 pub struct FunctionData {
     pub allocs: HashMap<Spur, ProcedureId>,
     pub alloc_sizes: HashMap<ProcedureId, usize>,
-    pub total_alloc_size: usize,
     pub consts: HashMap<Spur, ProcedureId>,
 }
 
@@ -1045,7 +1044,6 @@ impl Program {
                     let function_data = parent_proc.kind.get_proc_data_mut();
 
                     function_data.alloc_sizes.insert(proc_id, alloc_size);
-                    function_data.total_alloc_size += alloc_size;
                 }
 
                 // If not, this is global, and needs to be placed in the program.
