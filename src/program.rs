@@ -202,14 +202,14 @@ pub struct Program {
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
-    all_procedures: HashMap<ProcedureId, Procedure>,
+    procedure_headers: HashMap<ProcedureId, Procedure>,
     analyzers: HashMap<ProcedureId, Analyzer>,
     global_allocs: HashMap<ProcedureId, usize>,
 }
 
 impl Program {
     pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &Procedure)> {
-        self.all_procedures.iter().map(|(id, proc)| (*id, proc))
+        self.procedure_headers.iter().map(|(id, proc)| (*id, proc))
     }
 
     pub fn get_module(&self, id: ModuleId) -> &Module {
@@ -217,11 +217,11 @@ impl Program {
     }
 
     pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
-        &self.all_procedures[&id]
+        &self.procedure_headers[&id]
     }
 
     pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
-        self.all_procedures.get_mut(&id).unwrap()
+        self.procedure_headers.get_mut(&id).unwrap()
     }
 
     pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
@@ -234,7 +234,7 @@ impl Program {
         Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
-            all_procedures: HashMap::new(),
+            procedure_headers: HashMap::new(),
             analyzers: HashMap::new(),
             global_allocs: HashMap::new(),
         }
@@ -512,16 +512,16 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
-        let proc_ids: Vec<_> = self.all_procedures.keys().copied().collect();
+        let proc_ids: Vec<_> = self.procedure_headers.keys().copied().collect();
 
         for proc_id in proc_ids {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let mut proc = self.all_procedures.remove(&proc_id).unwrap();
+            let mut proc = self.procedure_headers.remove(&proc_id).unwrap();
             let body = std::mem::take(&mut proc.body);
 
             proc.body =
                 self.resolve_idents_in_block(&proc, body, &mut had_error, interner, source_store);
-            self.all_procedures.insert(proc_id, proc);
+            self.procedure_headers.insert(proc_id, proc);
         }
 
         had_error
@@ -534,7 +534,7 @@ impl Program {
         let _span = debug_span!(stringify!(Program::expand_macros)).entered();
         debug!("");
         let non_macro_proc_ids: Vec<_> = self
-            .all_procedures
+            .procedure_headers
             .iter()
             .filter(|(_, p)| !p.kind().is_macro())
             .map(|(id, _)| *id)
@@ -542,11 +542,11 @@ impl Program {
 
         for proc_id in non_macro_proc_ids {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let mut proc = self.all_procedures.remove(&proc_id).unwrap();
+            let mut proc = self.procedure_headers.remove(&proc_id).unwrap();
 
             proc.expand_macros(self);
 
-            self.all_procedures.insert(proc_id, proc);
+            self.procedure_headers.insert(proc_id, proc);
         }
     }
 
@@ -657,7 +657,7 @@ impl Program {
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for own_proc in self.all_procedures.values() {
+        for own_proc in self.procedure_headers.values() {
             trace!(name = interner.get_symbol_name(self, own_proc.id()));
 
             let kind = match own_proc.kind() {
@@ -699,7 +699,7 @@ impl Program {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
         let proc_ids: Vec<_> = self
-            .all_procedures
+            .procedure_headers
             .iter()
             .filter(|(_, p)| !p.kind().is_macro())
             .map(|(id, _)| *id)
@@ -713,7 +713,7 @@ impl Program {
             .entered();
             let mut analyzer = Analyzer::default();
             let mut local_error = false;
-            let proc = &self.all_procedures[&id];
+            let proc = &self.procedure_headers[&id];
             local_error |= static_analysis::data_flow_analysis(
                 self,
                 proc,
@@ -759,7 +759,7 @@ impl Program {
         let mut had_error = false;
 
         let mut const_queue: Vec<_> = self
-            .all_procedures
+            .procedure_headers
             .iter()
             .filter(|(_, proc)| proc.kind().is_const())
             .map(|(id, _)| *id)
@@ -896,7 +896,7 @@ impl Program {
                     let found_proc = if proc_id == own_proc.id() {
                         own_proc
                     } else {
-                        &self.all_procedures[&proc_id]
+                        &self.procedure_headers[&proc_id]
                     };
 
                     match found_proc.kind() {
@@ -991,7 +991,7 @@ impl Program {
 
         // Macros should already have been expanded.
         let all_proc_ids: Vec<_> = self
-            .all_procedures
+            .procedure_headers
             .iter()
             .filter(|(_, p)| !p.kind().is_macro())
             .map(|(id, _)| *id)
@@ -1002,7 +1002,7 @@ impl Program {
                 "      Processing {}",
                 interner.get_symbol_name(self, own_proc_id)
             );
-            let mut proc = self.all_procedures.remove(&own_proc_id).unwrap();
+            let mut proc = self.procedure_headers.remove(&own_proc_id).unwrap();
 
             let old_body = std::mem::take(&mut proc.body);
             proc.body = self.process_idents_in_block(
@@ -1013,7 +1013,7 @@ impl Program {
                 source_store,
             );
 
-            self.all_procedures.insert(own_proc_id, proc);
+            self.procedure_headers.insert(own_proc_id, proc);
         }
 
         had_error
@@ -1031,14 +1031,14 @@ impl Program {
         let mut had_error = false;
 
         let all_mem_proc_ids: Vec<_> = self
-            .all_procedures
+            .procedure_headers
             .iter()
             .filter(|(_, p)| p.kind().is_memory())
             .map(|(id, _)| *id)
             .collect();
 
         for proc_id in all_mem_proc_ids {
-            let proc = self.all_procedures.remove(&proc_id).unwrap();
+            let proc = self.procedure_headers.remove(&proc_id).unwrap();
 
             let mut stack = match simulate_execute_program(self, &proc, interner, source_store) {
                 Ok(stack) => stack,
@@ -1067,7 +1067,7 @@ impl Program {
                 }
             }
 
-            self.all_procedures.insert(proc_id, proc);
+            self.procedure_headers.insert(proc_id, proc);
         }
 
         had_error
@@ -1080,7 +1080,7 @@ impl Program {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
-        for proc in self.all_procedures.values() {
+        for proc in self.procedure_headers.values() {
             if !proc.kind().is_assert() {
                 continue;
             }
@@ -1149,7 +1149,7 @@ impl Program {
         entry_stack: Vec<PorthType>,
         entry_stack_location: SourceLocation,
     ) -> ProcedureId {
-        let id = self.all_procedures.len();
+        let id = self.procedure_headers.len();
         let id = ProcedureId(id.to_u16().unwrap());
 
         let proc = Procedure {
@@ -1166,7 +1166,7 @@ impl Program {
             entry_stack_location,
         };
 
-        self.all_procedures.insert(id, proc);
+        self.procedure_headers.insert(id, proc);
 
         if parent.is_none() {
             let module = self.modules.get_mut(&module).unwrap();
