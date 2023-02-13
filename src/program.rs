@@ -26,19 +26,13 @@ mod parser;
 pub mod static_analysis;
 use static_analysis::{Analyzer, PorthType, PorthTypeKind};
 
-#[derive(Debug, Clone, Copy)]
-pub struct AllocData {
-    pub size: usize,
-    pub offset: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcedureId(u16);
 
 #[derive(Debug, Default)]
 pub struct FunctionData {
     pub allocs: HashMap<Spur, ProcedureId>,
-    pub alloc_size_and_offsets: HashMap<ProcedureId, AllocData>,
+    pub alloc_sizes: HashMap<ProcedureId, usize>,
     pub total_alloc_size: usize,
     pub consts: HashMap<Spur, ProcedureId>,
 }
@@ -1073,14 +1067,7 @@ impl Program {
                     let parent_proc = self.get_proc_mut(parent_id);
                     let function_data = parent_proc.kind.get_proc_data_mut();
 
-                    let alloc_data = AllocData {
-                        size: alloc_size,
-                        offset: function_data.total_alloc_size,
-                    };
-
-                    function_data
-                        .alloc_size_and_offsets
-                        .insert(proc_id, alloc_data);
+                    function_data.alloc_sizes.insert(proc_id, alloc_size);
                     function_data.total_alloc_size += alloc_size;
                 }
 
