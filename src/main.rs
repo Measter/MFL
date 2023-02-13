@@ -101,17 +101,10 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
     let mut output_binary = Path::new(&file).to_path_buf();
     output_binary.set_extension("");
 
-    let (program, source_storage, mut interner, entry_function) =
+    let (program, _source_storage, mut interner, entry_function) =
         load_program(&file, include_paths)?;
 
-    let objects = backend_llvm::compile(
-        &program,
-        entry_function,
-        &source_storage,
-        &mut interner,
-        &file,
-        opt_level,
-    )?;
+    let objects = backend_llvm::compile(&program, entry_function, &mut interner, &file, opt_level)?;
 
     println!("Linking... into {}", output_binary.display());
     let ld = Command::new("ld")

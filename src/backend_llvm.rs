@@ -32,7 +32,6 @@ use crate::{
         static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId, ValueId},
         Procedure, ProcedureId, ProcedureKind, Program,
     },
-    source_file::SourceStorage,
 };
 
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> T;
@@ -719,10 +718,8 @@ impl<'ctx> CodeGen<'ctx> {
                         program,
                         value_store,
                         id,
-                        procedure,
                         condition_block,
                         function,
-                        source_storage,
                         interner,
                     );
 
@@ -740,16 +737,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Then
                     self.builder.position_at_end(then_basic_block);
                     trace!("Compiling then-block for {:?}", op.id);
-                    self.compile_block(
-                        program,
-                        value_store,
-                        id,
-                        procedure,
-                        then_block,
-                        function,
-                        source_storage,
-                        interner,
-                    );
+                    self.compile_block(program, value_store, id, then_block, function, interner);
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -768,16 +756,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Else
                     self.builder.position_at_end(else_basic_block);
                     trace!("Compiling else-block for {:?}", op.id);
-                    self.compile_block(
-                        program,
-                        value_store,
-                        id,
-                        procedure,
-                        else_block,
-                        function,
-                        source_storage,
-                        interner,
-                    );
+                    self.compile_block(program, value_store, id, else_block, function, interner);
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -816,10 +795,8 @@ impl<'ctx> CodeGen<'ctx> {
                         program,
                         value_store,
                         id,
-                        procedure,
                         &body.condition,
                         function,
-                        source_storage,
                         interner,
                     );
 
@@ -853,16 +830,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile body
                     self.builder.position_at_end(body_block);
                     trace!("Compiling body-block for {:?}", op.id);
-                    self.compile_block(
-                        program,
-                        value_store,
-                        id,
-                        procedure,
-                        &body.block,
-                        function,
-                        source_storage,
-                        interner,
-                    );
+                    self.compile_block(program, value_store, id, &body.block, function, interner);
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -1109,7 +1077,6 @@ impl<'ctx> CodeGen<'ctx> {
         id: ProcedureId,
         procedure: &Procedure,
         function: FunctionValue<'ctx>,
-        source_storage: &SourceStorage,
         interner: &mut Interners,
     ) {
         let mut value_store = ValueStore::default();
@@ -1148,10 +1115,8 @@ impl<'ctx> CodeGen<'ctx> {
                 program,
                 &mut value_store,
                 id,
-                procedure,
                 procedure.body(),
                 function,
-                source_storage,
                 interner,
             );
         }
@@ -1165,17 +1130,12 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build(
-        &mut self,
-        program: &Program,
-        source_storage: &SourceStorage,
-        interner: &mut Interners,
-    ) {
+    fn build(&mut self, program: &Program, interner: &mut Interners) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(proc_id) = self.function_queue.pop() {
             let proc = program.get_proc(proc_id);
             let function = self.proc_function_map[&proc_id];
-            self.compile_procedure(program, proc_id, proc, function, source_storage, interner);
+            self.compile_procedure(program, proc_id, proc, function, interner);
         }
 
         self.pass_manager.run_on(&self.module);
@@ -1201,7 +1161,6 @@ impl<'ctx> CodeGen<'ctx> {
 pub(crate) fn compile(
     program: &Program,
     entry_function: ProcedureId,
-    source_storage: &SourceStorage,
     interner: &mut Interners,
     file: &str,
     opt_level: u8,
@@ -1248,7 +1207,7 @@ pub(crate) fn compile(
     codegen.enqueue_function(entry_function);
     codegen.build_function_prototypes(program, interner);
     codegen.build_entry(entry_function);
-    codegen.build(program, source_storage, interner);
+    codegen.build(program, interner);
 
     {
         let _span = trace_span!("Writing object file").entered();
