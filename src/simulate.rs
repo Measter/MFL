@@ -6,7 +6,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, Op, OpCode},
-    program::{static_analysis::Analyzer, Procedure, ProcedureKind, Program},
+    program::{Procedure, ProcedureKind, Program},
     source_file::SourceStorage,
 };
 
@@ -33,7 +33,6 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
 fn simulate_execute_program_block(
     program: &Program,
     block: &[Op],
-    analyzer: &Analyzer,
     value_stack: &mut Vec<u64>,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -102,7 +101,6 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     &body.condition,
-                    analyzer,
                     value_stack,
                     interner,
                     source_store,
@@ -114,7 +112,6 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     &body.block,
-                    analyzer,
                     value_stack,
                     interner,
                     source_store,
@@ -129,7 +126,6 @@ fn simulate_execute_program_block(
                 simulate_execute_program_block(
                     program,
                     &condition.condition,
-                    analyzer,
                     value_stack,
                     interner,
                     source_store,
@@ -140,7 +136,6 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         program,
                         &condition.block,
-                        analyzer,
                         value_stack,
                         interner,
                         source_store,
@@ -149,7 +144,6 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         program,
                         else_block,
-                        analyzer,
                         value_stack,
                         interner,
                         source_store,
@@ -286,7 +280,6 @@ pub(crate) fn simulate_execute_program(
     simulate_execute_program_block(
         program,
         procedure.body(),
-        procedure.analyzer(),
         &mut value_stack,
         interner,
         source_store,

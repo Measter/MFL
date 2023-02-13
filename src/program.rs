@@ -72,7 +72,6 @@ pub struct Procedure {
     id: ProcedureId,
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
-    analyzer: Analyzer,
     new_op_id: usize,
 
     body: Vec<Op>,
@@ -129,10 +128,6 @@ impl Procedure {
 
     pub fn entry_stack_location(&self) -> SourceLocation {
         self.entry_stack_location
-    }
-
-    pub fn analyzer(&self) -> &Analyzer {
-        &self.analyzer
     }
 
     fn expand_macros_in_block(
@@ -209,6 +204,7 @@ pub struct Program {
     module_ident_map: HashMap<Spur, ModuleId>,
 
     all_procedures: HashMap<ProcedureId, Procedure>,
+    analyzers: HashMap<ProcedureId, Analyzer>,
     global_allocs: HashMap<ProcedureId, usize>,
 }
 
@@ -218,6 +214,7 @@ impl Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
             all_procedures: HashMap::new(),
+            analyzers: HashMap::new(),
             global_allocs: HashMap::new(),
         }
     }
@@ -695,52 +692,42 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
-        let mut local_analyzer = Analyzer::default();
-
         for id in proc_ids {
             let _span = trace_span!(
                 "Analyzing procedure",
                 name = interner.get_symbol_name(self, id)
             )
             .entered();
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
-
+            let mut analyzer = Analyzer::default();
             let mut local_error = false;
             let proc = &self.all_procedures[&id];
             local_error |= static_analysis::data_flow_analysis(
                 self,
                 proc,
-                &mut local_analyzer,
+                &mut analyzer,
                 interner,
                 source_store,
             )
             .is_err();
 
             if !local_error {
-                local_error |= static_analysis::type_check(
-                    self,
-                    proc,
-                    &mut local_analyzer,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                local_error |=
+                    static_analysis::type_check(self, proc, &mut analyzer, interner, source_store)
+                        .is_err();
             }
 
             if !local_error {
                 local_error |= static_analysis::const_propagation(
                     self,
                     proc,
-                    &mut local_analyzer,
+                    &mut analyzer,
                     interner,
                     source_store,
                 )
                 .is_err();
             }
 
-            let proc = self.all_procedures.get_mut(&id).unwrap();
-            std::mem::swap(&mut proc.analyzer, &mut local_analyzer);
+            self.analyzers.insert(id, analyzer);
             had_error |= local_error;
         }
 
@@ -814,7 +801,6 @@ impl Program {
         &mut self,
         own_proc: &Procedure,
         block: Vec<Op>,
-        analyzer: &mut Analyzer,
         had_error: &mut bool,
         interner: &Interners,
         source_store: &SourceStorage,
@@ -829,7 +815,6 @@ impl Program {
                                 condition: self.process_idents_in_block(
                                     own_proc,
                                     while_body.condition,
-                                    analyzer,
                                     had_error,
                                     interner,
                                     source_store,
@@ -837,7 +822,6 @@ impl Program {
                                 block: self.process_idents_in_block(
                                     own_proc,
                                     while_body.block,
-                                    analyzer,
                                     had_error,
                                     interner,
                                     source_store,
@@ -860,7 +844,6 @@ impl Program {
                         condition: self.process_idents_in_block(
                             own_proc,
                             condition.condition,
-                            analyzer,
                             had_error,
                             interner,
                             source_store,
@@ -868,7 +851,6 @@ impl Program {
                         block: self.process_idents_in_block(
                             own_proc,
                             condition.block,
-                            analyzer,
                             had_error,
                             interner,
                             source_store,
@@ -879,7 +861,6 @@ impl Program {
                     let new_else = self.process_idents_in_block(
                         own_proc,
                         else_block,
-                        analyzer,
                         had_error,
                         interner,
                         source_store,
@@ -902,7 +883,7 @@ impl Program {
                     let found_proc = if proc_id == own_proc.id() {
                         own_proc
                     } else {
-                        self.get_proc(proc_id)
+                        &self.all_procedures[&proc_id]
                     };
 
                     match found_proc.kind() {
@@ -932,6 +913,7 @@ impl Program {
                                     expansions: op.expansions.clone(),
                                 });
 
+                                let analyzer = self.analyzers.get_mut(&own_proc.id).unwrap();
                                 let op_io = analyzer.get_op_io(op.id);
                                 let out_id = op_io.outputs()[0];
                                 analyzer.set_value_const(out_id, const_val);
@@ -1002,7 +984,6 @@ impl Program {
             .map(|(id, _)| *id)
             .collect();
 
-        let mut local_analyzer = Analyzer::default();
         for own_proc_id in all_proc_ids {
             trace!(
                 "      Processing {}",
@@ -1010,18 +991,14 @@ impl Program {
             );
             let mut proc = self.all_procedures.remove(&own_proc_id).unwrap();
 
-            std::mem::swap(&mut local_analyzer, &mut proc.analyzer);
             let old_body = std::mem::take(&mut proc.body);
             proc.body = self.process_idents_in_block(
                 &proc,
                 old_body,
-                &mut local_analyzer,
                 &mut had_error,
                 interner,
                 source_store,
             );
-
-            std::mem::swap(&mut local_analyzer, &mut proc.analyzer);
 
             self.all_procedures.insert(own_proc_id, proc);
         }
@@ -1157,6 +1134,10 @@ impl Program {
         self.all_procedures.get_mut(&id).unwrap()
     }
 
+    pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
+        &self.analyzers[&id]
+    }
+
     pub fn new_procedure(
         &mut self,
         name: Token,
@@ -1178,7 +1159,6 @@ impl Program {
             kind,
             body: Vec::new(),
             parent,
-            analyzer: Analyzer::default(),
             new_op_id: 0,
             exit_stack,
             exit_stack_location,

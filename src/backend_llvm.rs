@@ -332,13 +332,11 @@ impl<'ctx> CodeGen<'ctx> {
         program: &Program,
         value_store: &mut ValueStore<'ctx>,
         id: ProcedureId,
-        procedure: &Procedure,
         block: &[Op],
         function: FunctionValue<'ctx>,
-        source_storage: &SourceStorage,
         interner: &mut Interners,
     ) {
-        let analyzer = procedure.analyzer();
+        let analyzer = program.get_analyzer(id);
 
         for op in block {
             match op.code {
@@ -1140,7 +1138,7 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining merge variables");
         self.build_merge_variables(
             procedure.body(),
-            procedure.analyzer(),
+            program.get_analyzer(id),
             &mut value_store.merge_pair_map,
         );
 
