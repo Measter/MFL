@@ -7,7 +7,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
-        Procedure, ProcedureId, ProcedureKind, ProcedureSignature, Program,
+        ProcedureHeader, ProcedureId, ProcedureKind, ProcedureSignature, Program,
     },
     source_file::SourceStorage,
 };
@@ -118,7 +118,7 @@ pub(super) fn syscall(analyzer: &mut Analyzer, op: &Op) {
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -206,7 +206,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,

@@ -3,7 +3,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId},
-        Procedure, ProcedureId, ProcedureKind, Program,
+        ProcedureHeader, ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
 };
@@ -32,7 +32,7 @@ pub(super) fn resolved_ident(
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -73,7 +73,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,

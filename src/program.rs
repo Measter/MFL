@@ -46,7 +46,7 @@ pub enum ProcedureKind {
 }
 
 #[derive(Debug)]
-pub struct Procedure {
+pub struct ProcedureHeader {
     name: Token,
     module: ModuleId,
     id: ProcedureId,
@@ -55,7 +55,7 @@ pub struct Procedure {
     new_op_id: usize,
 }
 
-impl Procedure {
+impl ProcedureHeader {
     pub fn name(&self) -> Token {
         self.name
     }
@@ -110,7 +110,7 @@ pub struct Program {
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
-    procedure_headers: HashMap<ProcedureId, Procedure>,
+    procedure_headers: HashMap<ProcedureId, ProcedureHeader>,
     procedure_signatures: HashMap<ProcedureId, ProcedureSignature>,
     procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
     function_data: HashMap<ProcedureId, FunctionData>,
@@ -120,7 +120,7 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &Procedure)> {
+    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &ProcedureHeader)> {
         self.procedure_headers.iter().map(|(id, proc)| (*id, proc))
     }
 
@@ -128,11 +128,11 @@ impl Program {
         &self.modules[&id]
     }
 
-    pub fn get_proc_header(&self, id: ProcedureId) -> &Procedure {
+    pub fn get_proc_header(&self, id: ProcedureId) -> &ProcedureHeader {
         &self.procedure_headers[&id]
     }
 
-    pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut Procedure {
+    pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut ProcedureHeader {
         self.procedure_headers.get_mut(&id).unwrap()
     }
 
@@ -299,7 +299,7 @@ impl Program {
 
     fn resolve_idents_in_block(
         &self,
-        proc: &Procedure,
+        proc: &ProcedureHeader,
         mut body: Vec<Op>,
         had_error: &mut bool,
         interner: &Interners,
@@ -557,12 +557,12 @@ impl Program {
 
     fn check_invalid_cyclic_refs_in_block<'a>(
         &'a self,
-        own_proc: &Procedure,
+        own_proc: &ProcedureHeader,
         block: &[Op],
-        cur_proc: &Procedure,
+        cur_proc: &ProcedureHeader,
         kind: &str,
         already_checked: &mut HashSet<ProcedureId>,
-        check_queue: &mut Vec<&'a Procedure>,
+        check_queue: &mut Vec<&'a ProcedureHeader>,
         had_error: &mut bool,
         source_store: &SourceStorage,
     ) {
@@ -1144,7 +1144,7 @@ impl Program {
         let id = self.procedure_headers.len();
         let id = ProcedureId(id.to_u16().unwrap());
 
-        let proc = Procedure {
+        let proc = ProcedureHeader {
             name,
             module,
             id,
@@ -1175,7 +1175,7 @@ impl Program {
         id
     }
 
-    pub fn get_visible_symbol(&self, from: &Procedure, symbol: Spur) -> Option<ProcedureId> {
+    pub fn get_visible_symbol(&self, from: &ProcedureHeader, symbol: Spur) -> Option<ProcedureId> {
         if from.name.lexeme == symbol {
             return Some(from.id);
         }

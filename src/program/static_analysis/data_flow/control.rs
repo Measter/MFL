@@ -11,7 +11,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
-        Procedure, ProcedureId, ProcedureKind, ProcedureSignature, Program,
+        ProcedureHeader, ProcedureId, ProcedureKind, ProcedureSignature, Program,
     },
     source_file::SourceStorage,
 };
@@ -28,7 +28,7 @@ pub(super) fn epilogue_return(
     interner: &Interners,
     had_error: &mut bool,
     op: &Op,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     proc_sig: &ProcedureSignature,
 ) {
     if stack.len() != proc_sig.exit_stack().len() {
@@ -186,7 +186,7 @@ pub(super) fn syscall(
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,
@@ -313,7 +313,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,

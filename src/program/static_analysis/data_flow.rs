@@ -2,7 +2,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Op, OpCode},
-    program::{Procedure, Program},
+    program::{ProcedureHeader, Program},
     source_file::SourceStorage,
 };
 
@@ -83,7 +83,7 @@ pub(super) fn make_one(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &O
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     block: &[Op],
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,

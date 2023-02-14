@@ -16,7 +16,7 @@ use crate::{
     n_ops::HashMapNOps,
     opcode::{Op, OpId},
     option::OptionExt,
-    program::{Procedure, ProcedureId, Program},
+    program::{ProcedureHeader, ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -420,7 +420,7 @@ fn generate_stack_length_mismatch_diag(
 
 pub fn data_flow_analysis(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -446,7 +446,7 @@ pub fn data_flow_analysis(
 
 pub fn type_check(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -468,7 +468,7 @@ pub fn type_check(
 
 pub fn const_propagation(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,

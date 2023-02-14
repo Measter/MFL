@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Procedure, Program},
+    program::{ProcedureHeader, Program},
     source_file::SourceStorage,
 };
 
@@ -15,7 +15,7 @@ mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc: &Procedure,
+    proc: &ProcedureHeader,
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
