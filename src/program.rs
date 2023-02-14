@@ -53,11 +53,6 @@ pub struct Procedure {
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
     new_op_id: usize,
-
-    exit_stack: Vec<PorthType>,
-    exit_stack_location: SourceLocation,
-    entry_stack: Vec<PorthType>,
-    entry_stack_location: SourceLocation,
 }
 
 impl Procedure {
@@ -80,7 +75,17 @@ impl Procedure {
     pub fn kind(&self) -> ProcedureKind {
         self.kind
     }
+}
 
+#[derive(Debug)]
+pub struct ProcedureSignature {
+    exit_stack: Vec<PorthType>,
+    exit_stack_location: SourceLocation,
+    entry_stack: Vec<PorthType>,
+    entry_stack_location: SourceLocation,
+}
+
+impl ProcedureSignature {
     pub fn exit_stack(&self) -> &[PorthType] {
         &self.exit_stack
     }
@@ -106,6 +111,7 @@ pub struct Program {
     module_ident_map: HashMap<Spur, ModuleId>,
 
     procedure_headers: HashMap<ProcedureId, Procedure>,
+    procedure_signatures: HashMap<ProcedureId, ProcedureSignature>,
     procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
     function_data: HashMap<ProcedureId, FunctionData>,
     const_vals: HashMap<ProcedureId, Vec<(PorthTypeKind, u64)>>,
@@ -128,6 +134,10 @@ impl Program {
 
     pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut Procedure {
         self.procedure_headers.get_mut(&id).unwrap()
+    }
+
+    pub fn get_proc_signature(&self, id: ProcedureId) -> &ProcedureSignature {
+        &self.procedure_signatures[&id]
     }
 
     pub fn get_proc_body(&self, id: ProcedureId) -> &[Op] {
@@ -167,6 +177,7 @@ impl Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
             procedure_headers: HashMap::new(),
+            procedure_signatures: HashMap::new(),
             procedure_bodies: HashMap::new(),
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
@@ -763,11 +774,12 @@ impl Program {
         loop {
             for const_id in const_queue.drain(..) {
                 let proc = self.get_proc_header(const_id);
+                let proc_sig = self.get_proc_signature(const_id);
                 match simulate_execute_program(self, proc, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
-                            .zip(&proc.exit_stack)
+                            .zip(&proc_sig.exit_stack)
                             .map(|(val, ty)| (ty.kind, val))
                             .collect();
 
@@ -1139,6 +1151,9 @@ impl Program {
             kind,
             parent,
             new_op_id: 0,
+        };
+
+        let sig = ProcedureSignature {
             exit_stack,
             exit_stack_location,
             entry_stack,
@@ -1146,6 +1161,7 @@ impl Program {
         };
 
         self.procedure_headers.insert(id, proc);
+        self.procedure_signatures.insert(id, sig);
 
         if kind == ProcedureKind::Function {
             self.function_data.insert(id, FunctionData::default());

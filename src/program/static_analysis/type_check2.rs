@@ -183,10 +183,10 @@ pub(super) fn analyze_block(
                 source_store,
                 had_error,
                 op,
-                proc,
+                program.get_proc_signature(proc.id()),
             ),
 
-            OpCode::Prologue => control::prologue(analyzer, op, proc),
+            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature(proc.id())),
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop{..} |

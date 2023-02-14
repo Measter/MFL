@@ -244,11 +244,12 @@ impl<'ctx> CodeGen<'ctx> {
         let proto_span = debug_span!("building prototypes").entered();
         for (id, proc) in program.get_all_procedures() {
             let ProcedureKind::Function = proc.kind() else { continue };
+            let proc_sig = program.get_proc_signature(id);
 
             let name = interner.get_symbol_name(program, id);
             trace!(name, "Building prototype");
 
-            let entry_stack: Vec<BasicMetadataTypeEnum> = proc
+            let entry_stack: Vec<BasicMetadataTypeEnum> = proc_sig
                 .entry_stack()
                 .iter()
                 .map(|t| match t.kind {
@@ -260,10 +261,10 @@ impl<'ctx> CodeGen<'ctx> {
                 })
                 .collect();
 
-            let function_type = if proc.exit_stack().is_empty() {
+            let function_type = if proc_sig.exit_stack().is_empty() {
                 self.ctx.void_type().fn_type(&entry_stack, false)
             } else {
-                let exit_stack: Vec<_> = proc
+                let exit_stack: Vec<_> = proc_sig
                     .exit_stack()
                     .iter()
                     .map(|t| match t.kind {

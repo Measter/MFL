@@ -11,7 +11,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
-        Procedure, ProcedureId, ProcedureKind, Program,
+        Procedure, ProcedureId, ProcedureKind, ProcedureSignature, Program,
     },
     source_file::SourceStorage,
 };
@@ -29,29 +29,30 @@ pub(super) fn epilogue_return(
     had_error: &mut bool,
     op: &Op,
     proc: &Procedure,
+    proc_sig: &ProcedureSignature,
 ) {
-    if stack.len() != proc.exit_stack().len() {
+    if stack.len() != proc_sig.exit_stack().len() {
         *had_error = true;
 
         let mut labels = vec![
             Label::new(op.token.location)
                 .with_color(Color::Red)
                 .with_message("returning here"),
-            Label::new(proc.exit_stack_location())
+            Label::new(proc_sig.exit_stack_location())
                 .with_color(Color::Cyan)
                 .with_message("return type defined here"),
         ];
 
-        match stack.len().cmp(&proc.exit_stack().len()) {
+        match stack.len().cmp(&proc_sig.exit_stack().len()) {
             Ordering::Less => {
-                let num_missing = usize::saturating_sub(proc.exit_stack().len(), stack.len());
+                let num_missing = usize::saturating_sub(proc_sig.exit_stack().len(), stack.len());
                 for _ in 0..num_missing {
                     let pad_value = analyzer.new_value(op);
                     stack.push(pad_value);
                 }
             }
             Ordering::Greater => {
-                for &value_id in &stack[..stack.len() - proc.exit_stack().len()] {
+                for &value_id in &stack[..stack.len() - proc_sig.exit_stack().len()] {
                     let [value] = analyzer.values([value_id]);
                     labels.push(
                         Label::new(value.creator_token.location)
@@ -68,7 +69,7 @@ pub(super) fn epilogue_return(
             format!(
                 "function `{}` returns {} values, found {}",
                 interner.resolve_lexeme(proc.name().lexeme),
-                proc.exit_stack().len(),
+                proc_sig.exit_stack().len(),
                 stack.len()
             ),
             labels,
@@ -77,7 +78,7 @@ pub(super) fn epilogue_return(
         );
     }
 
-    let inputs = stack.lastn(proc.exit_stack().len()).unwrap();
+    let inputs = stack.lastn(proc_sig.exit_stack().len()).unwrap();
 
     for &value_id in inputs {
         analyzer.consume_value(value_id, op.id);
@@ -90,10 +91,10 @@ pub(super) fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op: &Op,
-    proc: &Procedure,
+    proc_sig: &ProcedureSignature,
 ) {
     let mut outputs = Vec::new();
-    for _ in proc.entry_stack() {
+    for _ in proc_sig.entry_stack() {
         let new_id = analyzer.new_value(op);
         outputs.push(new_id);
         stack.push(new_id);
@@ -112,6 +113,7 @@ pub(super) fn resolved_ident(
     proc_id: ProcedureId,
 ) {
     let referenced_proc = program.get_proc_header(proc_id);
+    let referenced_proc_sig = program.get_proc_signature(proc_id);
 
     match referenced_proc.kind() {
         ProcedureKind::Memory => {
@@ -127,16 +129,16 @@ pub(super) fn resolved_ident(
                 source_store,
                 had_error,
                 op,
-                referenced_proc.entry_stack().len(),
+                referenced_proc_sig.entry_stack().len(),
             );
 
-            let inputs = stack.split_off(stack.len() - referenced_proc.entry_stack().len());
+            let inputs = stack.split_off(stack.len() - referenced_proc_sig.entry_stack().len());
             for &value_id in &inputs {
                 analyzer.consume_value(value_id, op.id);
             }
             let mut outputs = Vec::new();
 
-            for _ in referenced_proc.exit_stack() {
+            for _ in referenced_proc_sig.exit_stack() {
                 let new_id = analyzer.new_value(op);
                 outputs.push(new_id);
                 stack.push(new_id);

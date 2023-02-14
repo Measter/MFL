@@ -428,6 +428,7 @@ pub fn data_flow_analysis(
     let mut stack = Vec::new();
     let mut had_error = false;
 
+    // TODO: Only pass in the proc id.
     data_flow::analyze_block(
         program,
         proc,

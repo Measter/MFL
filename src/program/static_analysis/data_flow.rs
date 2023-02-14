@@ -248,7 +248,7 @@ pub(super) fn analyze_block(
                 arg_count_token
             ),
 
-            OpCode::Prologue => control::prologue(analyzer,  stack,  op, proc),
+            OpCode::Prologue => control::prologue(analyzer,  stack,  op, program.get_proc_signature(proc.id())),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 analyzer,
                 stack,
@@ -257,6 +257,7 @@ pub(super) fn analyze_block(
                 had_error,
                 op,
                 proc,
+                program.get_proc_signature(proc.id())
             ),
 
             OpCode::CallProc { .. } // These haven't been generated yet.

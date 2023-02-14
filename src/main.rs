@@ -78,7 +78,8 @@ fn load_program(
         return Err(eyre!("invalid `entry` procedure type"));
     }
 
-    if !entry_proc.entry_stack().is_empty() || !entry_proc.exit_stack().is_empty() {
+    let entry_sig = program.get_proc_signature(entry_function_id);
+    if !entry_sig.entry_stack().is_empty() || !entry_sig.exit_stack().is_empty() {
         let name = entry_proc.name();
         diagnostics::emit_error(
             name.location,
