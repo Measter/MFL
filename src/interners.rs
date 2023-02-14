@@ -39,7 +39,7 @@ impl Interners {
             return self.lexemes.resolve(name);
         }
 
-        let proc = program.get_proc(id);
+        let proc = program.get_proc_header(id);
         let module = program.get_module(proc.module());
         let proc_name = self.lexemes.resolve(&proc.name().lexeme);
         let module_name = self.lexemes.resolve(&module.name());

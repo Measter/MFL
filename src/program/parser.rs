@@ -1140,7 +1140,7 @@ fn parse_procedure<'a>(
         source_store,
     )?;
 
-    let proc_header = program.get_proc_mut(procedure_id);
+    let proc_header = program.get_proc_header_mut(procedure_id);
 
     if proc_header.kind() != ProcedureKind::Macro {
         // Makes later logic a bit easier if we always have a prologue and epilogue.
@@ -1167,13 +1167,13 @@ fn parse_procedure<'a>(
 
     // stupid borrow checker...
     let _ = proc_header; // Need to discard the borrow;
-    let proc_header = program.get_proc(procedure_id);
+    let proc_header = program.get_proc_header(procedure_id);
 
     if let Some(prev_def) = program
         .get_visible_symbol(proc_header, name_token.lexeme)
         .filter(|&f| f != procedure_id)
     {
-        let prev_proc = program.get_proc(prev_def).name();
+        let prev_proc = program.get_proc_header(prev_def).name();
 
         diagnostics::emit_error(
             name_token.location,
@@ -1193,7 +1193,7 @@ fn parse_procedure<'a>(
     }
 
     if let Some(parent_id) = parent {
-        let parent_proc = program.get_proc(parent_id);
+        let parent_proc = program.get_proc_header(parent_id);
         match (parent_proc.kind(), keyword.kind) {
             (ProcedureKind::Function, TokenKind::Const) => {
                 let pd = program.get_function_data_mut(parent_id);

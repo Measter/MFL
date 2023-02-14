@@ -111,7 +111,7 @@ pub(super) fn resolved_ident(
     op: &Op,
     proc_id: ProcedureId,
 ) {
-    let referenced_proc = program.get_proc(proc_id);
+    let referenced_proc = program.get_proc_header(proc_id);
 
     match referenced_proc.kind() {
         ProcedureKind::Memory => {

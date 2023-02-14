@@ -14,7 +14,7 @@ pub(super) fn resolved_ident(
     op: &Op,
     proc_id: ProcedureId,
 ) {
-    let referenced_proc = program.get_proc(proc_id);
+    let referenced_proc = program.get_proc_header(proc_id);
     let op_data = analyzer.get_op_io(op.id);
 
     if let ProcedureKind::Memory = referenced_proc.kind() {

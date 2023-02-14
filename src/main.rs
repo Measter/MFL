@@ -61,7 +61,7 @@ fn load_program(
         .ok_or_else(|| eyre!("`entry` function not found"))?;
 
     debug!("checking entry signature");
-    let entry_proc = program.get_proc(entry_function_id);
+    let entry_proc = program.get_proc_header(entry_function_id);
     if !matches!(entry_proc.kind(), ProcedureKind::Function) {
         let name = entry_proc.name();
         diagnostics::emit_error(

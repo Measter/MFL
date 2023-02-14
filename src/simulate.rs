@@ -224,7 +224,7 @@ fn simulate_execute_program_block(
             OpCode::Return { .. } => break,
 
             OpCode::ResolvedIdent { proc_id, .. } => {
-                let referenced_proc = program.get_proc(*proc_id);
+                let referenced_proc = program.get_proc_header(*proc_id);
 
                 match referenced_proc.kind() {
                     ProcedureKind::Const => {

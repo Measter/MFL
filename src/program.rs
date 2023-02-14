@@ -122,11 +122,11 @@ impl Program {
         &self.modules[&id]
     }
 
-    pub fn get_proc(&self, id: ProcedureId) -> &Procedure {
+    pub fn get_proc_header(&self, id: ProcedureId) -> &Procedure {
         &self.procedure_headers[&id]
     }
 
-    pub fn get_proc_mut(&mut self, id: ProcedureId) -> &mut Procedure {
+    pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut Procedure {
         self.procedure_headers.get_mut(&id).unwrap()
     }
 
@@ -633,7 +633,7 @@ impl Program {
                             source_store,
                         );
                     } else {
-                        check_queue.push(self.get_proc(proc_id));
+                        check_queue.push(self.get_proc_header(proc_id));
                     }
                 }
                 _ => (),
@@ -762,7 +762,7 @@ impl Program {
 
         loop {
             for const_id in const_queue.drain(..) {
-                let proc = self.get_proc(const_id);
+                let proc = self.get_proc_header(const_id);
                 match simulate_execute_program(self, proc, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
@@ -1175,7 +1175,7 @@ impl Program {
         // Check our parent's children.
         let mut cur_id = from.parent;
         while let Some(id) = cur_id {
-            let proc = self.get_proc(id);
+            let proc = self.get_proc_header(id);
 
             if proc.name.lexeme == symbol {
                 return Some(proc.id);
