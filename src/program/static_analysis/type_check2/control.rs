@@ -7,18 +7,20 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
-        ProcedureHeader, ProcedureId, ProcedureKind, ProcedureSignature, Program,
+        ProcedureId, ProcedureKind, ProcedureSignature, Program,
     },
     source_file::SourceStorage,
 };
 
 pub(super) fn epilogue_return(
+    program: &Program,
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    proc_sig: &ProcedureSignature,
+    proc_id: ProcedureId,
 ) {
+    let proc_sig = program.get_proc_signature(proc_id);
     let op_data = analyzer.get_op_io(op.id);
 
     for (expected, actual_id) in proc_sig.exit_stack().iter().zip(&op_data.inputs) {
@@ -118,7 +120,7 @@ pub(super) fn syscall(analyzer: &mut Analyzer, op: &Op) {
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -134,7 +136,7 @@ pub(super) fn analyze_while(
     // Evaluate the condition.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &body.condition,
         analyzer,
         had_error,
@@ -144,7 +146,7 @@ pub(super) fn analyze_while(
     // Evaluate the body.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &body.block,
         analyzer,
         had_error,
@@ -206,7 +208,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -219,7 +221,7 @@ pub(super) fn analyze_if(
     // Thankfully the order is unimportant here.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &conditional.condition,
         analyzer,
         had_error,
@@ -228,7 +230,7 @@ pub(super) fn analyze_if(
     );
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &conditional.block,
         analyzer,
         had_error,
@@ -237,7 +239,7 @@ pub(super) fn analyze_if(
     );
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         else_block,
         analyzer,
         had_error,

@@ -45,7 +45,7 @@ pub enum ProcedureKind {
     Function,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ProcedureHeader {
     name: Token,
     module: ModuleId,
@@ -120,16 +120,16 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, &ProcedureHeader)> {
-        self.procedure_headers.iter().map(|(id, proc)| (*id, proc))
+    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, ProcedureHeader)> + '_ {
+        self.procedure_headers.iter().map(|(id, proc)| (*id, *proc))
     }
 
     pub fn get_module(&self, id: ModuleId) -> &Module {
         &self.modules[&id]
     }
 
-    pub fn get_proc_header(&self, id: ProcedureId) -> &ProcedureHeader {
-        &self.procedure_headers[&id]
+    pub fn get_proc_header(&self, id: ProcedureId) -> ProcedureHeader {
+        self.procedure_headers[&id]
     }
 
     pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut ProcedureHeader {
@@ -299,7 +299,7 @@ impl Program {
 
     fn resolve_idents_in_block(
         &self,
-        proc: &ProcedureHeader,
+        proc: ProcedureHeader,
         mut body: Vec<Op>,
         had_error: &mut bool,
         interner: &Interners,
@@ -458,11 +458,14 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
-        let proc_ids: Vec<_> = self.procedure_headers.keys().copied().collect();
+        let procs: Vec<_> = self
+            .procedure_headers
+            .iter()
+            .map(|(id, proc)| (*id, *proc))
+            .collect();
 
-        for proc_id in proc_ids {
+        for (proc_id, proc) in procs {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let proc = &self.procedure_headers[&proc_id];
             let body = self.procedure_bodies.remove(&proc_id).unwrap();
 
             self.procedure_bodies.insert(
@@ -502,7 +505,7 @@ impl Program {
                     self.expand_macros_in_block(else_block, id, new_op_id);
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
-                    let found_proc = &self.procedure_headers[&proc_id];
+                    let found_proc = self.procedure_headers[&proc_id];
                     if found_proc.kind() == ProcedureKind::Macro {
                         let token = block[i].token;
                         let expansions = block[i].expansions.clone();
@@ -530,17 +533,15 @@ impl Program {
 
     fn expand_macros(&mut self, interner: &mut Interners) {
         let _span = debug_span!(stringify!(Program::expand_macros)).entered();
-        let non_macro_proc_ids: Vec<_> = self
+        let non_macro_procs: Vec<_> = self
             .procedure_headers
             .iter()
             .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
-            .map(|(id, _)| *id)
+            .map(|(id, proc)| (*id, *proc))
             .collect();
 
-        for proc_id in non_macro_proc_ids {
+        for (proc_id, proc) in non_macro_procs {
             trace!(name = interner.get_symbol_name(self, proc_id));
-            let proc = &self.procedure_headers[&proc_id];
-            let proc_id = proc.id;
             let mut new_op_id = proc.new_op_id;
 
             let mut op_id_gen = || {
@@ -555,14 +556,14 @@ impl Program {
         }
     }
 
-    fn check_invalid_cyclic_refs_in_block<'a>(
-        &'a self,
-        own_proc: &ProcedureHeader,
+    fn check_invalid_cyclic_refs_in_block(
+        &self,
+        own_proc: ProcedureHeader,
         block: &[Op],
-        cur_proc: &ProcedureHeader,
+        cur_proc: ProcedureHeader,
         kind: &str,
         already_checked: &mut HashSet<ProcedureId>,
-        check_queue: &mut Vec<&'a ProcedureHeader>,
+        check_queue: &mut Vec<ProcedureHeader>,
         had_error: &mut bool,
         source_store: &SourceStorage,
     ) {
@@ -662,11 +663,11 @@ impl Program {
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for own_proc in self.procedure_headers.values() {
+        for own_proc in self.procedure_headers.values().copied() {
             trace!(name = interner.get_symbol_name(self, own_proc.id()));
 
             let kind = match own_proc.kind() {
-                ProcedureKind::Const { .. } => "const",
+                ProcedureKind::Const => "const",
                 ProcedureKind::Macro => "macro",
                 ProcedureKind::Assert => "assert",
                 ProcedureKind::Memory | ProcedureKind::Function => continue,
@@ -703,14 +704,14 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
-        let proc_ids: Vec<_> = self
+        let procs: Vec<_> = self
             .procedure_headers
             .iter()
             .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
-        for id in proc_ids {
+        for id in procs {
             let _span = trace_span!(
                 "Analyzing procedure",
                 name = interner.get_symbol_name(self, id)
@@ -718,10 +719,9 @@ impl Program {
             .entered();
             let mut analyzer = Analyzer::default();
             let mut local_error = false;
-            let proc = &self.procedure_headers[&id];
             local_error |= static_analysis::data_flow_analysis(
                 self,
-                proc,
+                id,
                 &mut analyzer,
                 interner,
                 source_store,
@@ -730,14 +730,14 @@ impl Program {
 
             if !local_error {
                 local_error |=
-                    static_analysis::type_check(self, proc, &mut analyzer, interner, source_store)
+                    static_analysis::type_check(self, id, &mut analyzer, interner, source_store)
                         .is_err();
             }
 
             if !local_error {
                 local_error |= static_analysis::const_propagation(
                     self,
-                    proc,
+                    id,
                     &mut analyzer,
                     interner,
                     source_store,
@@ -773,9 +773,8 @@ impl Program {
 
         loop {
             for const_id in const_queue.drain(..) {
-                let proc = self.get_proc_header(const_id);
                 let proc_sig = self.get_proc_signature(const_id);
-                match simulate_execute_program(self, proc, interner, source_store) {
+                match simulate_execute_program(self, const_id, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
@@ -890,12 +889,12 @@ impl Program {
                 }
 
                 OpCode::ResolvedIdent { module, proc_id } => {
-                    let found_proc = &self.procedure_headers[&proc_id];
+                    let found_proc = self.procedure_headers[&proc_id];
 
                     match found_proc.kind() {
                         ProcedureKind::Const => {
                             let Some(vals) = self.const_vals.get( &found_proc.id ) else {
-                                let own_proc = &self.procedure_headers[&own_proc_id];
+                                let own_proc = self.procedure_headers[&own_proc_id];
                                 let name = interner.resolve_lexeme(own_proc.name.lexeme);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
@@ -950,7 +949,7 @@ impl Program {
                             });
                         }
                         ProcedureKind::Macro => {
-                            let own_proc = &self.procedure_headers[&own_proc_id];
+                            let own_proc = self.procedure_headers[&own_proc_id];
                             let name = interner.resolve_lexeme(own_proc.name.lexeme);
                             panic!(
                                 "ICE: Encountered assert, or macro during ident processing {name}"
@@ -1024,17 +1023,15 @@ impl Program {
         let _span = debug_span!(stringify!(Program::evaluate_allocation_sizes)).entered();
         let mut had_error = false;
 
-        let all_mem_proc_ids: Vec<_> = self
+        let all_mem_procs: Vec<_> = self
             .procedure_headers
             .iter()
             .filter(|(_, p)| p.kind() == ProcedureKind::Memory)
-            .map(|(id, _)| *id)
+            .map(|(id, proc)| (*id, *proc))
             .collect();
 
-        for proc_id in all_mem_proc_ids {
-            let proc = self.procedure_headers.remove(&proc_id).unwrap();
-
-            let mut stack = match simulate_execute_program(self, &proc, interner, source_store) {
+        for (proc_id, proc) in all_mem_procs {
+            let mut stack = match simulate_execute_program(self, proc_id, interner, source_store) {
                 Ok(stack) => stack,
                 Err(_) => {
                     had_error = true;
@@ -1058,8 +1055,6 @@ impl Program {
                     self.global_allocs.insert(proc_id, alloc_size);
                 }
             }
-
-            self.procedure_headers.insert(proc_id, proc);
         }
 
         had_error
@@ -1072,12 +1067,12 @@ impl Program {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
-        for proc in self.procedure_headers.values() {
+        for (&id, &proc) in self.procedure_headers.iter() {
             if proc.kind() != ProcedureKind::Memory {
                 continue;
             }
 
-            let assert_result = match simulate_execute_program(self, proc, interner, source_store) {
+            let assert_result = match simulate_execute_program(self, id, interner, source_store) {
                 // Type check says we'll have a value at this point.
                 Ok(mut stack) => stack.pop().unwrap() != 0,
                 Err(_) => {
@@ -1175,7 +1170,7 @@ impl Program {
         id
     }
 
-    pub fn get_visible_symbol(&self, from: &ProcedureHeader, symbol: Spur) -> Option<ProcedureId> {
+    pub fn get_visible_symbol(&self, from: ProcedureHeader, symbol: Spur) -> Option<ProcedureId> {
         if from.name.lexeme == symbol {
             return Some(from.id);
         }

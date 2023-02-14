@@ -2,7 +2,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Op, OpCode},
-    program::{ProcedureHeader, Program},
+    program::{ProcedureId, Program},
     source_file::SourceStorage,
 };
 
@@ -83,7 +83,7 @@ pub(super) fn make_one(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &O
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     block: &[Op],
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -148,7 +148,7 @@ pub(super) fn analyze_block(
             OpCode::While { ref body  } => {
                 control::analyze_while(
                     program,
-                    proc,
+                    proc_id,
                     analyzer,
                     stack,
                     had_error,
@@ -160,7 +160,7 @@ pub(super) fn analyze_block(
             },
             OpCode::If { end_token, ref condition,  ref else_block, .. } => control::analyze_if(
                 program,
-                proc,
+                proc_id,
                 analyzer,
                 stack,
                 had_error,
@@ -248,16 +248,16 @@ pub(super) fn analyze_block(
                 arg_count_token
             ),
 
-            OpCode::Prologue => control::prologue(analyzer,  stack,  op, program.get_proc_signature(proc.id())),
+            OpCode::Prologue => control::prologue(analyzer,  stack, op, program.get_proc_signature(proc_id)),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
+                program,
                 analyzer,
                 stack,
                 source_store,
                 interner,
                 had_error,
                 op,
-                proc,
-                program.get_proc_signature(proc.id())
+                proc_id,
             ),
 
             OpCode::CallProc { .. } // These haven't been generated yet.

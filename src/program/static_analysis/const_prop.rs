@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{ProcedureHeader, Program},
+    program::{ProcedureId, Program},
     source_file::SourceStorage,
 };
 
@@ -15,7 +15,7 @@ mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
@@ -72,7 +72,7 @@ pub(super) fn analyze_block(
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
-                proc,
+                proc_id,
                 analyzer,
                 had_error,
                 interner,
@@ -82,7 +82,7 @@ pub(super) fn analyze_block(
             ),
             OpCode::If { ref condition,  ref else_block, .. } => control::analyze_if(
                 program,
-                proc,
+                proc_id,
                 analyzer,
                 had_error,
                 interner,

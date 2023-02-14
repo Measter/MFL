@@ -6,7 +6,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, Op, OpCode},
-    program::{ProcedureHeader, ProcedureKind, Program},
+    program::{ProcedureId, ProcedureKind, Program},
     source_file::SourceStorage,
 };
 
@@ -268,7 +268,7 @@ fn simulate_execute_program_block(
 
 pub(crate) fn simulate_execute_program(
     program: &Program,
-    procedure: &ProcedureHeader,
+    proc_id: ProcedureId,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<Vec<u64>, SimulationError> {
@@ -277,7 +277,7 @@ pub(crate) fn simulate_execute_program(
 
     simulate_execute_program_block(
         program,
-        program.get_proc_body(procedure.id()),
+        program.get_proc_body(proc_id),
         &mut value_stack,
         interner,
         source_store,

@@ -16,7 +16,7 @@ use crate::{
     n_ops::HashMapNOps,
     opcode::{Op, OpId},
     option::OptionExt,
-    program::{ProcedureHeader, ProcedureId, Program},
+    program::{ProcedureId, Program},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -420,7 +420,7 @@ fn generate_stack_length_mismatch_diag(
 
 pub fn data_flow_analysis(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -431,8 +431,8 @@ pub fn data_flow_analysis(
     // TODO: Only pass in the proc id.
     data_flow::analyze_block(
         program,
-        proc,
-        program.get_proc_body(proc.id()),
+        proc_id,
+        program.get_proc_body(proc_id),
         analyzer,
         &mut stack,
         &mut had_error,
@@ -446,7 +446,7 @@ pub fn data_flow_analysis(
 
 pub fn type_check(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -455,8 +455,8 @@ pub fn type_check(
 
     type_check2::analyze_block(
         program,
-        proc,
-        program.get_proc_body(proc.id()),
+        proc_id,
+        program.get_proc_body(proc_id),
         analyzer,
         &mut had_error,
         interner,
@@ -468,7 +468,7 @@ pub fn type_check(
 
 pub fn const_propagation(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -477,8 +477,8 @@ pub fn const_propagation(
 
     const_prop::analyze_block(
         program,
-        proc,
-        program.get_proc_body(proc.id()),
+        proc_id,
+        program.get_proc_body(proc_id),
         analyzer,
         &mut had_error,
         interner,

@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{ProcedureHeader, Program},
+    program::{Program, ProcedureId},
     source_file::SourceStorage,
 };
 
@@ -15,7 +15,7 @@ mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
@@ -129,7 +129,7 @@ pub(super) fn analyze_block(
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
-                proc,
+                proc_id,
                 analyzer,
                 had_error,
                 interner,
@@ -139,7 +139,7 @@ pub(super) fn analyze_block(
             ),
             OpCode::If {ref condition,  ref else_block, ..} => control::analyze_if(
                 program,
-                proc,
+                proc_id,
                 analyzer,
                 had_error,
                 interner,
@@ -179,14 +179,15 @@ pub(super) fn analyze_block(
             OpCode::SysCall{..} => control::syscall(analyzer, op, ),
 
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
+                program,
                 analyzer,
                 source_store,
                 had_error,
                 op,
-                program.get_proc_signature(proc.id()),
+                proc_id,
             ),
 
-            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature(proc.id())),
+            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature(proc_id)),
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop{..} |

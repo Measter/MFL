@@ -3,7 +3,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId},
-        ProcedureHeader, ProcedureId, ProcedureKind, Program,
+        ProcedureId, ProcedureKind, Program,
     },
     source_file::SourceStorage,
 };
@@ -32,7 +32,7 @@ pub(super) fn resolved_ident(
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -53,7 +53,7 @@ pub(super) fn analyze_while(
     // Now we can evaluate the condition and body.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &body.condition,
         analyzer,
         had_error,
@@ -62,7 +62,7 @@ pub(super) fn analyze_while(
     );
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &body.block,
         analyzer,
         had_error,
@@ -73,7 +73,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc: &ProcedureHeader,
+    proc_id: ProcedureId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -84,7 +84,7 @@ pub(super) fn analyze_if(
     // The condition is always executed, so we can const prop that.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &condition.condition,
         analyzer,
         had_error,
@@ -95,7 +95,7 @@ pub(super) fn analyze_if(
     // Both blocks should be analyzed with const prop allowed.
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         &condition.block,
         analyzer,
         had_error,
@@ -104,7 +104,7 @@ pub(super) fn analyze_if(
     );
     super::analyze_block(
         program,
-        proc,
+        proc_id,
         else_block,
         analyzer,
         had_error,
