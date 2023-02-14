@@ -5,7 +5,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{Analyzer, PorthTypeKind};
+use super::Analyzer;
 
 mod arithmetic;
 mod comparative;
@@ -62,10 +62,10 @@ pub(super) fn analyze_block(
             OpCode::PushInt {  value,.. }=> stack_ops::push_int(analyzer, op, value),
             OpCode::PushStr{ id, is_c_str } => stack_ops::push_str(analyzer, interner, op, id, is_c_str),
 
-            OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(analyzer, op, width),
-            // Nothing to do if we cast to a pointer.
-            OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
-            OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
+            // OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(analyzer, op, width),
+            // // Nothing to do if we cast to a pointer.
+            // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
+            // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over { .. } => stack_ops::over(analyzer, op),
@@ -124,6 +124,7 @@ pub(super) fn analyze_block(
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
+            | OpCode::UnresolvedCast { .. } // All casts should be resolved.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

@@ -217,8 +217,6 @@ fn simulate_execute_program_block(
                 a_slice.swap_with_slice(b_slice);
             }
 
-            OpCode::Cast { .. } => {}
-
             // These are no-ops for the simulator, only there to help the compiler.
             OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::Return { .. } => break,
@@ -255,7 +253,7 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::UnresolvedIdent { .. } => {
+            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent { .. } => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

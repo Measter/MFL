@@ -95,19 +95,6 @@ impl PorthTypeKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq)]
-pub struct PorthType {
-    pub kind: PorthTypeKind,
-    // TODO: Replace this with source token.
-    pub location: SourceLocation,
-}
-
-impl PartialEq for PorthType {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
 impl fmt::Display for PorthTypeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name_str())

@@ -11,7 +11,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
-        ProcedureId, ProcedureKind, ProcedureSignature, Program,
+        ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
     },
     source_file::SourceStorage,
 };
@@ -32,7 +32,8 @@ pub(super) fn epilogue_return(
     proc_id: ProcedureId,
 ) {
     let proc = program.get_proc_header(proc_id);
-    let proc_sig = program.get_proc_signature(proc_id);
+    let proc_sig = program.get_proc_signature_resolved(proc_id);
+    let proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
 
     if stack.len() != proc_sig.exit_stack().len() {
         *had_error = true;
@@ -41,7 +42,7 @@ pub(super) fn epilogue_return(
             Label::new(op.token.location)
                 .with_color(Color::Red)
                 .with_message("returning here"),
-            Label::new(proc_sig.exit_stack_location())
+            Label::new(proc_sig_tokens.exit_stack_location())
                 .with_color(Color::Cyan)
                 .with_message("return type defined here"),
         ];
@@ -94,7 +95,7 @@ pub(super) fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op: &Op,
-    proc_sig: &ProcedureSignature,
+    proc_sig: &ProcedureSignatureResolved,
 ) {
     let mut outputs = Vec::new();
     for _ in proc_sig.entry_stack() {
@@ -116,7 +117,7 @@ pub(super) fn resolved_ident(
     proc_id: ProcedureId,
 ) {
     let referenced_proc = program.get_proc_header(proc_id);
-    let referenced_proc_sig = program.get_proc_signature(proc_id);
+    let referenced_proc_sig = program.get_proc_signature_resolved(proc_id);
 
     match referenced_proc.kind() {
         ProcedureKind::Memory => {

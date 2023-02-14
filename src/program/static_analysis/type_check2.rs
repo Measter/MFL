@@ -5,7 +5,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{Analyzer, PorthTypeKind, IntWidth};
+use super::{Analyzer, IntWidth};
 
 mod arithmetic;
 mod comparative;
@@ -110,22 +110,22 @@ pub(super) fn analyze_block(
                 true,
             ),
 
-            OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(
-                analyzer,
-                source_store,
-                interner,
-                had_error,
-                op,
-                width,
-            ),
-            OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(
-                analyzer,
-                source_store,
-                interner,
-                had_error,
-                op
-            ),
-            OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
+            // OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(
+            //     analyzer,
+            //     source_store,
+            //     interner,
+            //     had_error,
+            //     op,
+            //     width,
+            // ),
+            // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(
+            //     analyzer,
+            //     source_store,
+            //     interner,
+            //     had_error,
+            //     op
+            // ),
+            // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
 
             OpCode::While { ref body  } => control::analyze_while(
                 program,
@@ -187,7 +187,7 @@ pub(super) fn analyze_block(
                 proc_id,
             ),
 
-            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature(proc_id)),
+            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature_resolved(proc_id)),
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop{..} |
@@ -196,6 +196,7 @@ pub(super) fn analyze_block(
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
+            | OpCode::UnresolvedCast { .. } // All casts should be resolved.
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

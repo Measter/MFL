@@ -34,10 +34,6 @@ pub enum OpCode {
         module: ModuleId,
         proc_id: ProcedureId,
     },
-    Cast {
-        kind: PorthTypeKind,
-        kind_token: Token,
-    },
     DivMod,
     Dup {
         count: usize,
@@ -110,6 +106,9 @@ pub enum OpCode {
         arg_count: usize,
         arg_count_token: Token,
     },
+    UnresolvedCast {
+        kind_token: Token,
+    },
     UnresolvedIdent {
         module: Option<Token>,
         proc: Token,
@@ -141,7 +140,6 @@ impl OpCode {
             | ArgV
             | BitNot
             | CallProc { .. }
-            | Cast { .. }
             | DivMod
             | Drop { .. }
             | Dup { .. }
@@ -160,6 +158,7 @@ impl OpCode {
             | Store { .. }
             | Swap { .. }
             | SysCall { .. }
+            | UnresolvedCast { .. }
             | UnresolvedIdent { .. }
             | While { .. } => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")

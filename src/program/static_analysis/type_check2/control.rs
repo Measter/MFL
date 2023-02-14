@@ -7,7 +7,7 @@ use crate::{
     opcode::{ConditionalBlock, Op},
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
-        ProcedureId, ProcedureKind, ProcedureSignature, Program,
+        ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
     },
     source_file::SourceStorage,
 };
@@ -20,21 +20,20 @@ pub(super) fn epilogue_return(
     op: &Op,
     proc_id: ProcedureId,
 ) {
-    let proc_sig = program.get_proc_signature(proc_id);
+    let proc_sig = program.get_proc_signature_resolved(proc_id);
+    let proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
     let op_data = analyzer.get_op_io(op.id);
 
-    for (expected, actual_id) in proc_sig.exit_stack().iter().zip(&op_data.inputs) {
+    for (&expected, actual_id) in proc_sig.exit_stack().iter().zip(&op_data.inputs) {
         let actual_type = analyzer.value_types([*actual_id]);
 
-        if actual_type != Some([expected.kind]) {
-            let expected_kinds: Vec<_> = proc_sig.exit_stack().iter().map(|t| t.kind).collect();
-
+        if actual_type != Some([expected]) {
             failed_compare_stack_types(
                 analyzer,
                 source_store,
                 &op_data.inputs,
-                &expected_kinds,
-                proc_sig.exit_stack_location(),
+                proc_sig.exit_stack(),
+                proc_sig_tokens.exit_stack_location(),
                 op.token.location,
                 "procedure return stack mismatch",
             );
@@ -44,12 +43,12 @@ pub(super) fn epilogue_return(
     }
 }
 
-pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, proc_sig: &ProcedureSignature) {
+pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, proc_sig: &ProcedureSignatureResolved) {
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs.clone();
 
     for (output_id, &output_type) in outputs.into_iter().zip(proc_sig.entry_stack()) {
-        analyzer.set_value_type(output_id, output_type.kind);
+        analyzer.set_value_type(output_id, output_type);
     }
 }
 
@@ -62,7 +61,8 @@ pub(super) fn resolved_ident(
     proc_id: ProcedureId,
 ) {
     let referenced_proc = program.get_proc_header(proc_id);
-    let referenced_proc_sig = program.get_proc_signature(proc_id);
+    let referenced_proc_sig = program.get_proc_signature_resolved(proc_id);
+    let referenced_proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
     let op_data = analyzer.get_op_io(op.id);
 
     match referenced_proc.kind() {
@@ -71,26 +71,20 @@ pub(super) fn resolved_ident(
             analyzer.set_value_type(output_id, PorthTypeKind::Ptr);
         }
         _ => {
-            for (expected, actual_id) in referenced_proc_sig
+            for (&expected, actual_id) in referenced_proc_sig
                 .entry_stack()
                 .iter()
                 .zip(&op_data.inputs)
             {
                 let actual_type = analyzer.value_types([*actual_id]);
 
-                if actual_type != Some([expected.kind]) {
-                    let expected_kinds: Vec<_> = referenced_proc_sig
-                        .entry_stack()
-                        .iter()
-                        .map(|t| t.kind)
-                        .collect();
-
+                if actual_type != Some([expected]) {
                     failed_compare_stack_types(
                         analyzer,
                         source_store,
                         &op_data.inputs,
-                        &expected_kinds,
-                        referenced_proc_sig.entry_stack_location(),
+                        referenced_proc_sig.entry_stack(),
+                        referenced_proc_sig_tokens.entry_stack_location(),
                         op.token.location,
                         "procedure call signature mismatch",
                     );
@@ -103,7 +97,7 @@ pub(super) fn resolved_ident(
 
             for (&output_type, output_id) in referenced_proc_sig.exit_stack().iter().zip(output_ids)
             {
-                analyzer.set_value_type(output_id, output_type.kind);
+                analyzer.set_value_type(output_id, output_type);
             }
         }
     }

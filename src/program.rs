@@ -9,7 +9,7 @@ use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use intcast::IntCast;
 use lasso::Spur;
-use tracing::{debug, debug_span, trace, trace_span};
+use tracing::{debug_span, trace, trace_span};
 
 use crate::{
     diagnostics,
@@ -23,7 +23,7 @@ use crate::{
 
 mod parser;
 pub mod static_analysis;
-use static_analysis::{Analyzer, PorthType, PorthTypeKind};
+use static_analysis::{Analyzer, PorthTypeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcedureId(u16);
@@ -78,15 +78,15 @@ impl ProcedureHeader {
 }
 
 #[derive(Debug)]
-pub struct ProcedureSignature {
-    exit_stack: Vec<PorthType>,
+pub struct ProcedureSignatureUnresolved {
+    exit_stack: Vec<Token>,
     exit_stack_location: SourceLocation,
-    entry_stack: Vec<PorthType>,
+    entry_stack: Vec<Token>,
     entry_stack_location: SourceLocation,
 }
 
-impl ProcedureSignature {
-    pub fn exit_stack(&self) -> &[PorthType] {
+impl ProcedureSignatureUnresolved {
+    pub fn exit_stack(&self) -> &[Token] {
         &self.exit_stack
     }
 
@@ -94,12 +94,26 @@ impl ProcedureSignature {
         self.exit_stack_location
     }
 
-    pub fn entry_stack(&self) -> &[PorthType] {
+    pub fn entry_stack(&self) -> &[Token] {
         &self.entry_stack
     }
 
     pub fn entry_stack_location(&self) -> SourceLocation {
         self.entry_stack_location
+    }
+}
+pub struct ProcedureSignatureResolved {
+    exit_stack: Vec<PorthTypeKind>,
+    entry_stack: Vec<PorthTypeKind>,
+}
+
+impl ProcedureSignatureResolved {
+    pub fn exit_stack(&self) -> &[PorthTypeKind] {
+        &self.exit_stack
+    }
+
+    pub fn entry_stack(&self) -> &[PorthTypeKind] {
+        &self.entry_stack
     }
 }
 
@@ -111,7 +125,8 @@ pub struct Program {
     module_ident_map: HashMap<Spur, ModuleId>,
 
     procedure_headers: HashMap<ProcedureId, ProcedureHeader>,
-    procedure_signatures: HashMap<ProcedureId, ProcedureSignature>,
+    procedure_signatures_unresolved: HashMap<ProcedureId, ProcedureSignatureUnresolved>,
+    procedure_signatures_resolved: HashMap<ProcedureId, ProcedureSignatureResolved>,
     procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
     function_data: HashMap<ProcedureId, FunctionData>,
     const_vals: HashMap<ProcedureId, Vec<(PorthTypeKind, u64)>>,
@@ -136,8 +151,13 @@ impl Program {
         self.procedure_headers.get_mut(&id).unwrap()
     }
 
-    pub fn get_proc_signature(&self, id: ProcedureId) -> &ProcedureSignature {
-        &self.procedure_signatures[&id]
+    pub fn get_proc_signature_unresolved(&self, id: ProcedureId) -> &ProcedureSignatureUnresolved {
+        &self.procedure_signatures_unresolved[&id]
+    }
+
+    #[track_caller]
+    pub fn get_proc_signature_resolved(&self, id: ProcedureId) -> &ProcedureSignatureResolved {
+        &self.procedure_signatures_resolved[&id]
     }
 
     pub fn get_proc_body(&self, id: ProcedureId) -> &[Op] {
@@ -177,7 +197,8 @@ impl Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
             procedure_headers: HashMap::new(),
-            procedure_signatures: HashMap::new(),
+            procedure_signatures_unresolved: HashMap::new(),
+            procedure_signatures_resolved: HashMap::new(),
             procedure_bodies: HashMap::new(),
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
@@ -480,6 +501,14 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
+    fn resolve_types(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+    ) -> Result<()> {
+        todo!()
+    }
+
     fn expand_macros_in_block(
         &self,
         block: &mut Vec<Op>,
@@ -773,13 +802,13 @@ impl Program {
 
         loop {
             for const_id in const_queue.drain(..) {
-                let proc_sig = self.get_proc_signature(const_id);
+                let proc_sig = self.get_proc_signature_resolved(const_id);
                 match simulate_execute_program(self, const_id, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
                             .zip(&proc_sig.exit_stack)
-                            .map(|(val, ty)| (ty.kind, val))
+                            .map(|(val, ty)| (*ty, val))
                             .collect();
 
                         self.const_vals.insert(const_id, const_vals);
@@ -1109,8 +1138,8 @@ impl Program {
         source_store: &SourceStorage,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_procs)).entered();
-        debug!("");
         self.resolve_idents(interner, source_store)?;
+        self.resolve_types(interner, source_store)?;
 
         self.check_invalid_cyclic_refs(interner, source_store)?;
         self.expand_macros(interner);
@@ -1131,9 +1160,9 @@ impl Program {
         module: ModuleId,
         kind: ProcedureKind,
         parent: Option<ProcedureId>,
-        exit_stack: Vec<PorthType>,
+        exit_stack: Vec<Token>,
         exit_stack_location: SourceLocation,
-        entry_stack: Vec<PorthType>,
+        entry_stack: Vec<Token>,
         entry_stack_location: SourceLocation,
     ) -> ProcedureId {
         let id = self.procedure_headers.len();
@@ -1148,7 +1177,7 @@ impl Program {
             new_op_id: 0,
         };
 
-        let sig = ProcedureSignature {
+        let sig = ProcedureSignatureUnresolved {
             exit_stack,
             exit_stack_location,
             entry_stack,
@@ -1156,7 +1185,7 @@ impl Program {
         };
 
         self.procedure_headers.insert(id, proc);
-        self.procedure_signatures.insert(id, sig);
+        self.procedure_signatures_unresolved.insert(id, sig);
 
         if kind == ProcedureKind::Function {
             self.function_data.insert(id, FunctionData::default());

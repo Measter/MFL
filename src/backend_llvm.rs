@@ -244,7 +244,7 @@ impl<'ctx> CodeGen<'ctx> {
         let proto_span = debug_span!("building prototypes").entered();
         for (id, proc) in program.get_all_procedures() {
             let ProcedureKind::Function = proc.kind() else { continue };
-            let proc_sig = program.get_proc_signature(id);
+            let proc_sig = program.get_proc_signature_resolved(id);
 
             let name = interner.get_symbol_name(program, id);
             trace!(name, "Building prototype");
@@ -252,7 +252,7 @@ impl<'ctx> CodeGen<'ctx> {
             let entry_stack: Vec<BasicMetadataTypeEnum> = proc_sig
                 .entry_stack()
                 .iter()
-                .map(|t| match t.kind {
+                .map(|t| match t {
                     PorthTypeKind::Int(width) => width.get_int_type(self.ctx).into(),
                     PorthTypeKind::Ptr => {
                         self.ctx.i8_type().ptr_type(AddressSpace::default()).into()
@@ -267,7 +267,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let exit_stack: Vec<_> = proc_sig
                     .exit_stack()
                     .iter()
-                    .map(|t| match t.kind {
+                    .map(|t| match t {
                         PorthTypeKind::Int(width) => {
                             width.get_int_type(self.ctx).as_basic_type_enum()
                         }
@@ -346,7 +346,6 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Dup { count, .. } => trace!(?op.id, count, "Dup" ),
                 OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
                 OpCode::Over { depth, .. } => trace!(?op.id, depth, "Over"),
-                OpCode::Cast { kind, .. } => trace!(?op.id, ?kind, "Cast"),
                 OpCode::Memory {
                     proc_id, global, ..
                 } => trace!(?op.id, ?proc_id, global, "Memory"),
@@ -611,63 +610,62 @@ impl<'ctx> CodeGen<'ctx> {
                         value_store.store_value(self, id, value);
                     }
                 }
-                OpCode::Cast {
-                    kind: PorthTypeKind::Int(output_width),
-                    ..
-                } => {
-                    let input_id = op_io.inputs()[0];
-                    let input_type = analyzer.value_types([input_id]).unwrap()[0];
-                    let input_data = value_store.load_value(self, input_id, analyzer, interner);
+                // OpCode::Cast {
+                //     kind: PorthTypeKind::Int(output_width),
+                //     ..
+                // } => {
+                //     let input_id = op_io.inputs()[0];
+                //     let input_type = analyzer.value_types([input_id]).unwrap()[0];
+                //     let input_data = value_store.load_value(self, input_id, analyzer, interner);
 
-                    let output = match input_type {
-                        PorthTypeKind::Int(_) => {
-                            let val = input_data.into_int_value();
-                            let target_type = output_width.get_int_type(self.ctx);
-                            self.resize_int(val, target_type)
-                        }
-                        PorthTypeKind::Bool => {
-                            let val = input_data.into_int_value();
-                            let target_type = output_width.get_int_type(self.ctx);
+                //     let output = match input_type {
+                //         PorthTypeKind::Int(_) => {
+                //             let val = input_data.into_int_value();
+                //             let target_type = output_width.get_int_type(self.ctx);
+                //             self.resize_int(val, target_type)
+                //         }
+                //         PorthTypeKind::Bool => {
+                //             let val = input_data.into_int_value();
+                //             let target_type = output_width.get_int_type(self.ctx);
 
-                            self.resize_int(val, target_type)
-                        }
-                        PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
-                            input_data.into_pointer_value(),
-                            self.ctx.i64_type(),
-                            "cast_ptr",
-                        ),
-                    };
+                //             self.resize_int(val, target_type)
+                //         }
+                //         PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
+                //             input_data.into_pointer_value(),
+                //             self.ctx.i64_type(),
+                //             "cast_ptr",
+                //         ),
+                //     };
 
-                    value_store.store_value(self, op_io.outputs()[0], output.into());
-                }
-                OpCode::Cast {
-                    kind: PorthTypeKind::Ptr,
-                    ..
-                } => {
-                    let input_id = op_io.inputs()[0];
-                    let input_type = analyzer.value_types([input_id]).unwrap()[0];
-                    let input_data = value_store.load_value(self, input_id, analyzer, interner);
+                //     value_store.store_value(self, op_io.outputs()[0], output.into());
+                // }
+                // OpCode::Cast {
+                //     kind: PorthTypeKind::Ptr,
+                //     ..
+                // } => {
+                //     let input_id = op_io.inputs()[0];
+                //     let input_type = analyzer.value_types([input_id]).unwrap()[0];
+                //     let input_data = value_store.load_value(self, input_id, analyzer, interner);
 
-                    let output = match input_type {
-                        PorthTypeKind::Int(_) | PorthTypeKind::Bool => {
-                            self.builder.build_int_to_ptr(
-                                input_data.into_int_value(),
-                                self.ctx.i8_type().ptr_type(AddressSpace::default()),
-                                "cast_int",
-                            )
-                        }
-                        PorthTypeKind::Ptr => input_data.into_pointer_value(),
-                    };
+                //     let output = match input_type {
+                //         PorthTypeKind::Int(_) | PorthTypeKind::Bool => {
+                //             self.builder.build_int_to_ptr(
+                //                 input_data.into_int_value(),
+                //                 self.ctx.i8_type().ptr_type(AddressSpace::default()),
+                //                 "cast_int",
+                //             )
+                //         }
+                //         PorthTypeKind::Ptr => input_data.into_pointer_value(),
+                //     };
 
-                    value_store.store_value(self, op_io.outputs()[0], output.into());
-                }
-                OpCode::Cast {
-                    kind: PorthTypeKind::Bool,
-                    ..
-                } => {
-                    unreachable!()
-                }
-
+                //     value_store.store_value(self, op_io.outputs()[0], output.into());
+                // }
+                // OpCode::Cast {
+                //     kind: PorthTypeKind::Bool,
+                //     ..
+                // } => {
+                //     unreachable!()
+                // }
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
                     for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
                         let value = value_store.load_value(self, input_id, analyzer, interner);
@@ -993,6 +991,9 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::ResolvedIdent { .. } => {
                     panic!("ICE: Encountered resolved ident during codegen")
+                }
+                OpCode::UnresolvedCast { .. } => {
+                    panic!("ICE: Encountered unresolved cast during codegen")
                 }
                 OpCode::UnresolvedIdent { .. } => {
                     panic!("ICE: Encountered unresolved ident during codegen")
