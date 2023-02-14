@@ -760,10 +760,6 @@ impl Program {
             .collect();
         let mut next_run_queue = Vec::with_capacity(const_queue.len());
 
-        if had_error {
-            return Err(eyre!("const jump label create failed"));
-        }
-
         loop {
             for const_id in const_queue.drain(..) {
                 let proc = self.get_proc(const_id);
