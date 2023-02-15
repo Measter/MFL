@@ -152,21 +152,6 @@ pub(super) fn analyze_block(
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over{ .. } => stack_ops::over(analyzer, op),
 
-            OpCode::Load {  kind, .. } => memory::load(
-                analyzer,
-                source_store,
-                had_error,
-                op,
-                kind,
-            ),
-            OpCode::Store { kind, .. } => memory::store(
-                analyzer,
-                source_store,
-                had_error,
-                op,
-                kind,
-            ),
-
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
@@ -195,7 +180,9 @@ pub(super) fn analyze_block(
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
-            | OpCode::UnresolvedCast { .. } // All casts should be resolved.
+            | OpCode::UnresolvedCast { .. } // All types should be resolved.
+            | OpCode::UnresolvedLoad { .. }
+            | OpCode::UnresolvedStore { .. }
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

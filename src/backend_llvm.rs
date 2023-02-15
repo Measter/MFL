@@ -864,69 +864,68 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.position_at_end(post_block);
                 }
 
-                OpCode::Load { kind } => {
-                    let ptr_value_id = op_io.inputs()[0];
-                    let ptr = value_store
-                        .load_value(self, ptr_value_id, analyzer, interner)
-                        .into_pointer_value();
+                // OpCode::UnresolvedLoad { kind_token: kind } => {
+                //     let ptr_value_id = op_io.inputs()[0];
+                //     let ptr = value_store
+                //         .load_value(self, ptr_value_id, analyzer, interner)
+                //         .into_pointer_value();
 
-                    let cast_ptr = match kind {
-                        PorthTypeKind::Int(width) => {
-                            let ptr_type = width
-                                .get_int_type(self.ctx)
-                                .ptr_type(AddressSpace::default());
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                        PorthTypeKind::Ptr => {
-                            let ptr_type = self
-                                .ctx
-                                .i8_type()
-                                .ptr_type(AddressSpace::default())
-                                .ptr_type(AddressSpace::default());
+                //     let cast_ptr = match kind {
+                //         PorthTypeKind::Int(width) => {
+                //             let ptr_type = width
+                //                 .get_int_type(self.ctx)
+                //                 .ptr_type(AddressSpace::default());
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //         PorthTypeKind::Ptr => {
+                //             let ptr_type = self
+                //                 .ctx
+                //                 .i8_type()
+                //                 .ptr_type(AddressSpace::default())
+                //                 .ptr_type(AddressSpace::default());
 
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                        PorthTypeKind::Bool => {
-                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                    };
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //         PorthTypeKind::Bool => {
+                //             let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //     };
 
-                    let value = self.builder.build_load(cast_ptr, "load");
-                    value_store.store_value(self, op_io.outputs()[0], value);
-                }
-                OpCode::Store { kind } => {
-                    let [data, ptr] = *op_io.inputs().as_arr();
-                    let data = value_store.load_value(self, data, analyzer, interner);
-                    let ptr = value_store
-                        .load_value(self, ptr, analyzer, interner)
-                        .into_pointer_value();
+                //     let value = self.builder.build_load(cast_ptr, "load");
+                //     value_store.store_value(self, op_io.outputs()[0], value);
+                // }
+                // OpCode::UnresolvedStore { kind_token: kind } => {
+                //     let [data, ptr] = *op_io.inputs().as_arr();
+                //     let data = value_store.load_value(self, data, analyzer, interner);
+                //     let ptr = value_store
+                //         .load_value(self, ptr, analyzer, interner)
+                //         .into_pointer_value();
 
-                    let cast_ptr = match kind {
-                        PorthTypeKind::Int(width) => {
-                            let ptr_type = width
-                                .get_int_type(self.ctx)
-                                .ptr_type(AddressSpace::default());
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                        PorthTypeKind::Ptr => {
-                            let ptr_type = self
-                                .ctx
-                                .i8_type()
-                                .ptr_type(AddressSpace::default())
-                                .ptr_type(AddressSpace::default());
+                //     let cast_ptr = match kind {
+                //         PorthTypeKind::Int(width) => {
+                //             let ptr_type = width
+                //                 .get_int_type(self.ctx)
+                //                 .ptr_type(AddressSpace::default());
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //         PorthTypeKind::Ptr => {
+                //             let ptr_type = self
+                //                 .ctx
+                //                 .i8_type()
+                //                 .ptr_type(AddressSpace::default())
+                //                 .ptr_type(AddressSpace::default());
 
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                        PorthTypeKind::Bool => {
-                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
-                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                        }
-                    };
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //         PorthTypeKind::Bool => {
+                //             let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
+                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                //         }
+                //     };
 
-                    self.builder.build_store(cast_ptr, data);
-                }
-
+                //     self.builder.build_store(cast_ptr, data);
+                // }
                 OpCode::Memory {
                     proc_id,
                     global: false,
@@ -1006,6 +1005,12 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::UnresolvedCast { .. } => {
                     panic!("ICE: Encountered unresolved cast during codegen")
+                }
+                OpCode::UnresolvedLoad { .. } => {
+                    panic!("ICE: Encountered unresolved load during codegen")
+                }
+                OpCode::UnresolvedStore { .. } => {
+                    panic!("ICE: Encountered unresolved store during codegen")
                 }
                 OpCode::UnresolvedIdent { .. } => {
                     panic!("ICE: Encountered unresolved ident during codegen")

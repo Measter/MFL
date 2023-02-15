@@ -14,10 +14,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{
-    static_analysis::{IntWidth, PorthTypeKind},
-    ModuleId, ProcedureId, ProcedureKind, Program,
-};
+use super::{static_analysis::IntWidth, ModuleId, ProcedureId, ProcedureKind, Program};
 
 fn expect_token<'a>(
     tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
@@ -367,7 +364,7 @@ pub fn parse_procedure_body(
                 }
             }
 
-            TokenKind::Load | TokenKind::Store => {
+            TokenKind::Cast | TokenKind::Load | TokenKind::Store => {
                 let (_, ident_token, _) = parse_delimited_token_list(
                     &mut token_iter,
                     *token,
@@ -378,33 +375,12 @@ pub fn parse_procedure_body(
                     interner,
                     source_store,
                 )?;
-                let ident_token = ident_token[0];
-
-                let kind = match interner.resolve_lexeme(ident_token.lexeme) {
-                    "u8" => PorthTypeKind::Int(IntWidth::I8),
-                    "u16" => PorthTypeKind::Int(IntWidth::I16),
-                    "u32" => PorthTypeKind::Int(IntWidth::I32),
-                    "u64" => PorthTypeKind::Int(IntWidth::I64),
-                    "bool" => PorthTypeKind::Bool,
-                    "ptr" => PorthTypeKind::Ptr,
-
-                    _ => {
-                        diagnostics::emit_error(
-                            ident_token.location,
-                            "invalid ident",
-                            [Label::new(ident_token.location)
-                                .with_color(Color::Red)
-                                .with_message("unknown type")],
-                            None,
-                            source_store,
-                        );
-                        return Err(());
-                    }
-                };
+                let kind_token = ident_token[0];
 
                 match token.kind {
-                    TokenKind::Load => OpCode::Load { kind },
-                    TokenKind::Store => OpCode::Store { kind },
+                    TokenKind::Cast => OpCode::UnresolvedCast { kind_token },
+                    TokenKind::Load => OpCode::UnresolvedLoad { kind_token },
+                    TokenKind::Store => OpCode::UnresolvedStore { kind_token },
                     _ => unreachable!(),
                 }
             }
@@ -544,25 +520,6 @@ pub fn parse_procedure_body(
             TokenKind::BitOr => OpCode::BitOr,
             TokenKind::ShiftLeft => OpCode::ShiftLeft,
             TokenKind::ShiftRight => OpCode::ShiftRight,
-
-            TokenKind::Cast => {
-                let (_, ident_token, _) = parse_delimited_token_list(
-                    &mut token_iter,
-                    *token,
-                    Some(1),
-                    ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("Ident", |t| t == TokenKind::Ident),
-                    (")", |t| t == TokenKind::ParenthesisClosed),
-                    interner,
-                    source_store,
-                )?;
-
-                let ident_token = ident_token[0];
-
-                OpCode::UnresolvedCast {
-                    kind_token: ident_token,
-                }
-            }
 
             TokenKind::Return => OpCode::Return,
 

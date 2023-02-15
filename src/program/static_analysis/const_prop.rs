@@ -95,18 +95,6 @@ pub(super) fn analyze_block(
             OpCode::Swap{..} |
             OpCode::Rot{..} => {},
 
-            OpCode::Load {  kind } => memory::load(
-                analyzer,
-                source_store,
-                interner,
-                had_error,
-                op,
-                kind,
-            ),
-
-            // Store doesn't produce a value, so there's nothing for const-propagation to do.
-            OpCode::Store { .. } => {},
-
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
@@ -123,7 +111,9 @@ pub(super) fn analyze_block(
 
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
-            | OpCode::UnresolvedCast { .. } // All casts should be resolved.
+            | OpCode::UnresolvedCast { .. } // All types should be resolved.
+            | OpCode::UnresolvedLoad { .. }
+            | OpCode::UnresolvedStore { .. }
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

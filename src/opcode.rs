@@ -2,7 +2,6 @@ use lasso::Spur;
 
 use crate::{
     lexer::Token,
-    program::static_analysis::PorthTypeKind,
     program::{static_analysis::IntWidth, ModuleId, ProcedureId},
     source_file::SourceLocation,
 };
@@ -58,9 +57,6 @@ pub enum OpCode {
     If(Box<If>),
     Less,
     LessEqual,
-    Load {
-        kind: PorthTypeKind,
-    },
     Greater,
     GreaterEqual,
     Memory {
@@ -99,9 +95,6 @@ pub enum OpCode {
     },
     ShiftLeft,
     ShiftRight,
-    Store {
-        kind: PorthTypeKind,
-    },
     Subtract,
     Swap {
         count: u8,
@@ -117,6 +110,12 @@ pub enum OpCode {
     UnresolvedIdent {
         module: Option<Token>,
         proc: Token,
+    },
+    UnresolvedLoad {
+        kind_token: Token,
+    },
+    UnresolvedStore {
+        kind_token: Token,
     },
     While(Box<While>),
 }
@@ -148,7 +147,7 @@ impl OpCode {
             | Dup { .. }
             | Epilogue
             | If(_)
-            | Load { .. }
+            | UnresolvedLoad { .. }
             | Memory { .. }
             | Over { .. }
             | Prologue
@@ -158,7 +157,7 @@ impl OpCode {
             | ResolvedIdent { .. }
             | Return { .. }
             | Rot { .. }
-            | Store { .. }
+            | UnresolvedStore { .. }
             | Swap { .. }
             | SysCall { .. }
             | UnresolvedCast { .. }

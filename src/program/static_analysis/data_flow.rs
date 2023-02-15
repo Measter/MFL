@@ -113,8 +113,7 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::BitNot
-            | OpCode::Load{..} => eat_one_make_one(
+            OpCode::BitNot => eat_one_make_one(
                 analyzer,
                 stack,
                 source_store,
@@ -218,14 +217,6 @@ pub(super) fn analyze_block(
                 shift_count_token
             ),
 
-            OpCode::Store { .. } => memory::store(
-                analyzer,
-                stack,
-                source_store,
-                had_error,
-                op,
-            ),
-
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
@@ -260,6 +251,8 @@ pub(super) fn analyze_block(
             OpCode::CallProc { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types are resolved.
+            | OpCode::UnresolvedLoad { .. }
+            | OpCode::UnresolvedStore { .. }
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)
