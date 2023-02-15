@@ -1,8 +1,9 @@
-use std::{iter::Peekable, ops::Not};
+use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
+use num_traits::{PrimInt, Unsigned};
 use tracing::debug_span;
 
 use crate::{
@@ -147,7 +148,39 @@ fn parse_delimited_token_list<'a>(
     Ok((open_token, tokens, close_token))
 }
 
-fn parse_integer<'a>(
+fn parse_integer_lexeme<T>(
+    int_token: Token,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<T, ()>
+where
+    T: PrimInt + Unsigned + FromStr + Display,
+{
+    let TokenKind::Integer(count) = int_token.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
+    let int = match interner.resolve_literal(count).parse() {
+        Ok(c) => c,
+        Err(_) => {
+            diagnostics::emit_error(
+                int_token.location,
+                "integer out bounds",
+                [Label::new(int_token.location)
+                    .with_color(Color::Red)
+                    .with_message(format!(
+                        "integer must be in range {}..={}",
+                        T::min_value(),
+                        T::max_value()
+                    ))],
+                None,
+                source_store,
+            );
+            return Err(());
+        }
+    };
+
+    Ok(int)
+}
+
+fn parse_integer_op<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     token: Token,
     stripped_spur: Spur,
@@ -248,9 +281,7 @@ pub fn parse_procedure_body(
                         source_store,
                     )?;
                     let count_token = count_token[0];
-
-                    let TokenKind::Integer(count) = count_token.kind else { unreachable!() };
-                    let count: usize = interner.resolve_literal(count).parse().unwrap();
+                    let count = parse_integer_lexeme(count_token, interner, source_store)?;
                     (count, count_token)
                 } else {
                     (1, *token)
@@ -318,10 +349,8 @@ pub fn parse_procedure_body(
                     source_store,
                 )?;
 
-                let TokenKind::Integer(item_count) = item_count_token.kind else { unreachable!() };
-                let item_count: usize = interner.resolve_literal(item_count).parse().unwrap();
-                let TokenKind::Integer(shift_count) = shift_count_token.kind else { unreachable!() };
-                let shift_count: usize = interner.resolve_literal(shift_count).parse().unwrap();
+                let item_count = parse_integer_lexeme(item_count_token, interner, source_store)?;
+                let shift_count = parse_integer_lexeme(shift_count_token, interner, source_store)?;
 
                 let direction = match direction_token.kind {
                     TokenKind::Less => Direction::Left,
@@ -422,7 +451,7 @@ pub fn parse_procedure_body(
                 OpCode::UnresolvedIdent { module, proc }
             }
             TokenKind::Integer(id) => {
-                parse_integer(&mut token_iter, *token, id, false, interner, source_store)?
+                parse_integer_op(&mut token_iter, *token, id, false, interner, source_store)?
             }
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
             TokenKind::Here(id) => OpCode::PushStr {

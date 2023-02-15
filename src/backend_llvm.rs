@@ -953,7 +953,7 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 OpCode::SysCall { arg_count, .. } => {
-                    let callee_value = self.syscall_wrappers[*arg_count - 1];
+                    let callee_value = self.syscall_wrappers[arg_count.to_usize() - 1];
 
                     let args: Vec<BasicMetadataValueEnum> =
                         op_io

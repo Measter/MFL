@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use ariadne::{Color, Label};
+use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
@@ -159,9 +160,11 @@ pub(super) fn syscall(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    num_args: usize,
+    num_args: u8,
     arg_count_token: Token,
 ) {
+    let num_args = num_args.to_usize();
+
     if !matches!(num_args, 1..=7) {
         diagnostics::emit_error(
             op.token.location,

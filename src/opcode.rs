@@ -36,11 +36,11 @@ pub enum OpCode {
     },
     DivMod,
     Dup {
-        count: usize,
+        count: u8,
         count_token: Token,
     },
     Drop {
-        count: usize,
+        count: u8,
         count_token: Token,
     },
     Epilogue,
@@ -67,7 +67,7 @@ pub enum OpCode {
     Multiply,
     NotEq,
     Over {
-        depth: usize,
+        depth: u8,
         depth_token: Token,
     },
     Prologue,
@@ -86,9 +86,9 @@ pub enum OpCode {
     },
     Return,
     Rot {
-        item_count: usize,
+        item_count: u8,
         direction: Direction,
-        shift_count: usize,
+        shift_count: u8,
         item_count_token: Token,
         shift_count_token: Token,
     },
@@ -99,11 +99,11 @@ pub enum OpCode {
     },
     Subtract,
     Swap {
-        count: usize,
+        count: u8,
         count_token: Token,
     },
     SysCall {
-        arg_count: usize,
+        arg_count: u8,
         arg_count_token: Token,
     },
     UnresolvedCast {

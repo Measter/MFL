@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -18,9 +19,11 @@ pub(super) fn drop(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: usize,
+    count: u8,
     count_token: Token,
 ) {
+    let count = count.to_usize();
+
     if count == 0 {
         diagnostics::emit_error(
             op.token.location,
@@ -52,9 +55,11 @@ pub(super) fn dup(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: usize,
+    count: u8,
     count_token: Token,
 ) {
+    let count = count.to_usize();
+
     if count == 0 {
         diagnostics::emit_error(
             op.token.location,
@@ -86,8 +91,10 @@ pub(super) fn over(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    depth: usize,
+    depth: u8,
 ) {
+    let depth = depth.to_usize();
+
     if depth == 0 {
         diagnostics::emit_warning(
             op.token.location,
@@ -129,12 +136,15 @@ pub(super) fn rot(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    item_count: usize,
+    item_count: u8,
     direction: Direction,
-    mut shift_count: usize,
+    shift_count: u8,
     item_count_token: Token,
     shift_count_token: Token,
 ) {
+    let item_count = item_count.to_usize();
+    let mut shift_count = shift_count.to_usize();
+
     if item_count == 0 {
         diagnostics::emit_error(
             op.token.location,
@@ -190,9 +200,11 @@ pub(super) fn swap(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: usize,
+    count: u8,
     count_token: Token,
 ) {
+    let count = count.to_usize();
+
     if count == 0 {
         diagnostics::emit_warning(
             op.token.location,
