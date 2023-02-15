@@ -70,7 +70,7 @@ pub(super) fn analyze_block(
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over { .. } => stack_ops::over(analyzer, op),
 
-            OpCode::While { ref body  } => control::analyze_while(
+            OpCode::While(ref while_op) => control::analyze_while(
                 program,
                 proc_id,
                 analyzer,
@@ -78,17 +78,16 @@ pub(super) fn analyze_block(
                 interner,
                 source_store,
                 op,
-                body,
+                while_op,
             ),
-            OpCode::If { ref condition,  ref else_block, .. } => control::analyze_if(
+            OpCode::If(ref if_op) => control::analyze_if(
                 program,
                 proc_id,
                 analyzer,
                 had_error,
                 interner,
                 source_store,
-                condition,
-                else_block,
+                if_op,
             ),
 
             // These only manipulate the order of the stack, so there's nothing to do here.

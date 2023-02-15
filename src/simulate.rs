@@ -100,10 +100,10 @@ fn simulate_execute_program_block(
                 value_stack.truncate(value_stack.len() - count.to_usize())
             }
 
-            OpCode::While { body, .. } => loop {
+            OpCode::While(while_op) => loop {
                 simulate_execute_program_block(
                     program,
-                    &body.condition,
+                    &while_op.condition,
                     value_stack,
                     interner,
                     source_store,
@@ -114,21 +114,17 @@ fn simulate_execute_program_block(
                 }
                 simulate_execute_program_block(
                     program,
-                    &body.block,
+                    &while_op.body_block,
                     value_stack,
                     interner,
                     source_store,
                 )?;
             },
 
-            OpCode::If {
-                condition,
-                else_block,
-                ..
-            } => {
+            OpCode::If(if_op) => {
                 simulate_execute_program_block(
                     program,
-                    &condition.condition,
+                    &if_op.condition,
                     value_stack,
                     interner,
                     source_store,
@@ -138,7 +134,7 @@ fn simulate_execute_program_block(
                 if a == 0 {
                     simulate_execute_program_block(
                         program,
-                        &condition.block,
+                        &if_op.then_block,
                         value_stack,
                         interner,
                         source_store,
@@ -146,7 +142,7 @@ fn simulate_execute_program_block(
                 } else {
                     simulate_execute_program_block(
                         program,
-                        else_block,
+                        &if_op.else_block,
                         value_stack,
                         interner,
                         source_store,

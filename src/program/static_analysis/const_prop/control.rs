@@ -1,6 +1,6 @@
 use crate::{
     interners::Interners,
-    opcode::{ConditionalBlock, Op},
+    opcode::{If, Op, While},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId},
         ProcedureId, ProcedureKind, Program,
@@ -38,7 +38,7 @@ pub(super) fn analyze_while(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    body: &ConditionalBlock,
+    while_op: &While,
 ) {
     // Because the loop will be executed an arbitrary number of times, we'll need to
     // force all overwritten pre-loop values to non-const.
@@ -54,7 +54,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.condition,
+        &while_op.condition,
         analyzer,
         had_error,
         interner,
@@ -63,7 +63,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.block,
+        &while_op.body_block,
         analyzer,
         had_error,
         interner,
@@ -78,14 +78,13 @@ pub(super) fn analyze_if(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-    condition: &ConditionalBlock,
-    else_block: &[Op],
+    if_op: &If,
 ) {
     // The condition is always executed, so we can const prop that.
     super::analyze_block(
         program,
         proc_id,
-        &condition.condition,
+        &if_op.condition,
         analyzer,
         had_error,
         interner,
@@ -96,7 +95,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        &condition.block,
+        &if_op.then_block,
         analyzer,
         had_error,
         interner,
@@ -105,7 +104,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        else_block,
+        &if_op.else_block,
         analyzer,
         had_error,
         interner,

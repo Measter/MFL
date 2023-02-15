@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::SliceNOps,
-    opcode::{ConditionalBlock, Op},
+    opcode::{If, Op, While},
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
         ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
@@ -120,7 +120,7 @@ pub(super) fn analyze_while(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    body: &ConditionalBlock,
+    while_op: &While,
 ) {
     let Some(merge_info) = analyzer.get_while_merges(op.id).map(Clone::clone) else {
         panic!("ICE: While block should have merge info");
@@ -131,7 +131,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.condition,
+        &while_op.condition,
         analyzer,
         had_error,
         interner,
@@ -141,7 +141,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.block,
+        &while_op.body_block,
         analyzer,
         had_error,
         interner,
@@ -158,10 +158,10 @@ pub(super) fn analyze_while(
         let [value] = analyzer.values(condition_inputs);
 
         diagnostics::emit_error(
-            body.do_token.location,
+            while_op.do_token.location,
             "condition must evaluate to a boolean",
             [
-                Label::new(body.do_token.location)
+                Label::new(while_op.do_token.location)
                     .with_color(Color::Cyan)
                     .with_message("expected here"),
                 Label::new(value.creator_token.location)
@@ -208,15 +208,14 @@ pub(super) fn analyze_if(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    conditional: &ConditionalBlock,
-    else_block: &[Op],
+    if_op: &If,
 ) {
     // Evaluate all the blocks.
     // Thankfully the order is unimportant here.
     super::analyze_block(
         program,
         proc_id,
-        &conditional.condition,
+        &if_op.condition,
         analyzer,
         had_error,
         interner,
@@ -225,7 +224,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        &conditional.block,
+        &if_op.then_block,
         analyzer,
         had_error,
         interner,
@@ -234,7 +233,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        else_block,
+        &if_op.else_block,
         analyzer,
         had_error,
         interner,
@@ -250,10 +249,10 @@ pub(super) fn analyze_if(
             let [value] = analyzer.values([condition_value_id]);
 
             diagnostics::emit_error(
-                conditional.do_token.location,
+                if_op.do_token.location,
                 "condition must evaluate to a boolean",
                 [
-                    Label::new(conditional.do_token.location)
+                    Label::new(if_op.do_token.location)
                         .with_color(Color::Cyan)
                         .with_message("expected here"),
                     Label::new(value.creator_token.location)

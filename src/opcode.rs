@@ -1,5 +1,4 @@
 use lasso::Spur;
-use variantly::Variantly;
 
 use crate::{
     lexer::Token,
@@ -8,21 +7,32 @@ use crate::{
     source_file::SourceLocation,
 };
 
-#[derive(Debug, Clone)]
-pub struct ConditionalBlock {
-    pub condition: Vec<Op>,
-    pub do_token: Token,
-    pub block: Vec<Op>,
-    pub close_token: Token,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Direction {
     Left,
     Right,
 }
 
-#[derive(Debug, Clone, Variantly)]
+#[derive(Debug, Clone)]
+pub struct While {
+    pub condition: Vec<Op>,
+    pub do_token: Token,
+    pub body_block: Vec<Op>,
+    pub end_token: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct If {
+    pub open_token: Token,
+    pub condition: Vec<Op>,
+    pub do_token: Token,
+    pub then_block: Vec<Op>,
+    pub else_token: Token,
+    pub else_block: Vec<Op>,
+    pub end_token: Token,
+}
+
+#[derive(Debug, Clone)]
 pub enum OpCode {
     Add,
     ArgC,
@@ -45,12 +55,7 @@ pub enum OpCode {
     },
     Epilogue,
     Equal,
-    If {
-        open_token: Token,
-        condition: ConditionalBlock,
-        else_block: Vec<Op>,
-        end_token: Token,
-    },
+    If(Box<If>),
     Less,
     LessEqual,
     Load {
@@ -113,9 +118,7 @@ pub enum OpCode {
         module: Option<Token>,
         proc: Token,
     },
-    While {
-        body: ConditionalBlock,
-    },
+    While(Box<While>),
 }
 
 impl OpCode {
@@ -144,7 +147,7 @@ impl OpCode {
             | Drop { .. }
             | Dup { .. }
             | Epilogue
-            | If { .. }
+            | If(_)
             | Load { .. }
             | Memory { .. }
             | Over { .. }
@@ -160,7 +163,7 @@ impl OpCode {
             | SysCall { .. }
             | UnresolvedCast { .. }
             | UnresolvedIdent { .. }
-            | While { .. } => {
+            | While(_) => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")
             }
         }

@@ -15,7 +15,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{ConditionalBlock, Op, OpCode, OpId},
+    opcode::{If, Op, OpCode, OpId, While},
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError},
     source_file::{SourceLocation, SourceStorage},
@@ -328,17 +328,17 @@ impl Program {
     ) -> Vec<Op> {
         for op in &mut body {
             match &mut op.code {
-                OpCode::While { body: while_body } => {
-                    let temp_body = std::mem::take(&mut while_body.condition);
-                    while_body.condition = self.resolve_idents_in_block(
+                OpCode::While(while_op) => {
+                    let temp_body = std::mem::take(&mut while_op.condition);
+                    while_op.condition = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-                    let temp_body = std::mem::take(&mut while_body.block);
-                    while_body.block = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut while_op.body_block);
+                    while_op.body_block = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
@@ -346,30 +346,26 @@ impl Program {
                         source_store,
                     );
                 }
-                OpCode::If {
-                    condition,
-                    else_block,
-                    ..
-                } => {
+                OpCode::If(if_op) => {
                     // Mmmm.. repetition...
-                    let temp_body = std::mem::take(&mut condition.condition);
-                    condition.condition = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut if_op.condition);
+                    if_op.condition = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-                    let temp_body = std::mem::take(&mut condition.block);
-                    condition.block = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut if_op.then_block);
+                    if_op.then_block = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
                         interner,
                         source_store,
                     );
-                    let temp_body = std::mem::take(else_block);
-                    *else_block = self.resolve_idents_in_block(
+                    let temp_body = std::mem::take(&mut if_op.else_block);
+                    if_op.else_block = self.resolve_idents_in_block(
                         proc,
                         temp_body,
                         had_error,
@@ -518,20 +514,14 @@ impl Program {
         let mut i = 0;
         while i < block.len() {
             match block[i].code {
-                OpCode::While {
-                    body: ref mut while_block,
-                } => {
-                    self.expand_macros_in_block(&mut while_block.condition, id, new_op_id);
-                    self.expand_macros_in_block(&mut while_block.block, id, new_op_id);
+                OpCode::While(ref mut while_op) => {
+                    self.expand_macros_in_block(&mut while_op.condition, id, new_op_id);
+                    self.expand_macros_in_block(&mut while_op.body_block, id, new_op_id);
                 }
-                OpCode::If {
-                    ref mut condition,
-                    ref mut else_block,
-                    ..
-                } => {
-                    self.expand_macros_in_block(&mut condition.condition, id, new_op_id);
-                    self.expand_macros_in_block(&mut condition.block, id, new_op_id);
-                    self.expand_macros_in_block(else_block, id, new_op_id);
+                OpCode::If(ref mut if_op) => {
+                    self.expand_macros_in_block(&mut if_op.condition, id, new_op_id);
+                    self.expand_macros_in_block(&mut if_op.then_block, id, new_op_id);
+                    self.expand_macros_in_block(&mut if_op.else_block, id, new_op_id);
                 }
                 OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
                     let found_proc = self.procedure_headers[&proc_id];
@@ -598,13 +588,10 @@ impl Program {
     ) {
         for op in block {
             match op.code {
-                OpCode::While {
-                    body: ref while_body,
-                    ..
-                } => {
+                OpCode::While(ref while_op) => {
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        &while_body.condition,
+                        &while_op.condition,
                         cur_proc,
                         kind,
                         already_checked,
@@ -614,7 +601,7 @@ impl Program {
                     );
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        &while_body.block,
+                        &while_op.body_block,
                         cur_proc,
                         kind,
                         already_checked,
@@ -624,14 +611,10 @@ impl Program {
                     );
                     //
                 }
-                OpCode::If {
-                    ref condition,
-                    ref else_block,
-                    ..
-                } => {
+                OpCode::If(ref if_op) => {
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        &condition.block,
+                        &if_op.condition,
                         cur_proc,
                         kind,
                         already_checked,
@@ -641,7 +624,17 @@ impl Program {
                     );
                     self.check_invalid_cyclic_refs_in_block(
                         own_proc,
-                        else_block,
+                        &if_op.then_block,
+                        cur_proc,
+                        kind,
+                        already_checked,
+                        check_queue,
+                        had_error,
+                        source_store,
+                    );
+                    self.check_invalid_cyclic_refs_in_block(
+                        own_proc,
+                        &if_op.else_block,
                         cur_proc,
                         kind,
                         already_checked,
@@ -846,71 +839,60 @@ impl Program {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
         for op in block {
             match op.code {
-                OpCode::While { body: while_body } => {
+                OpCode::While(while_op) => {
                     new_ops.push(Op {
-                        code: OpCode::While {
-                            body: ConditionalBlock {
-                                condition: self.process_idents_in_block(
-                                    own_proc_id,
-                                    while_body.condition,
-                                    had_error,
-                                    interner,
-                                    source_store,
-                                ),
-                                block: self.process_idents_in_block(
-                                    own_proc_id,
-                                    while_body.block,
-                                    had_error,
-                                    interner,
-                                    source_store,
-                                ),
-                                ..while_body
-                            },
-                        },
+                        code: OpCode::While(Box::new(While {
+                            condition: self.process_idents_in_block(
+                                own_proc_id,
+                                while_op.condition,
+                                had_error,
+                                interner,
+                                source_store,
+                            ),
+                            body_block: self.process_idents_in_block(
+                                own_proc_id,
+                                while_op.body_block,
+                                had_error,
+                                interner,
+                                source_store,
+                            ),
+                            ..*while_op
+                        })),
                         id: op.id,
                         token: op.token,
                         expansions: op.expansions,
                     });
                 }
-                OpCode::If {
-                    open_token,
-                    condition,
-                    else_block,
-                    end_token,
-                } => {
-                    let new_main = ConditionalBlock {
-                        condition: self.process_idents_in_block(
-                            own_proc_id,
-                            condition.condition,
-                            had_error,
-                            interner,
-                            source_store,
-                        ),
-                        block: self.process_idents_in_block(
-                            own_proc_id,
-                            condition.block,
-                            had_error,
-                            interner,
-                            source_store,
-                        ),
-                        ..condition
-                    };
-
-                    let new_else = self.process_idents_in_block(
+                OpCode::If(if_op) => {
+                    let new_condition = self.process_idents_in_block(
                         own_proc_id,
-                        else_block,
+                        if_op.condition,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                    let new_then_block = self.process_idents_in_block(
+                        own_proc_id,
+                        if_op.then_block,
+                        had_error,
+                        interner,
+                        source_store,
+                    );
+                    let new_else_block = self.process_idents_in_block(
+                        own_proc_id,
+                        if_op.else_block,
                         had_error,
                         interner,
                         source_store,
                     );
 
                     new_ops.push(Op {
-                        code: OpCode::If {
-                            condition: new_main,
-                            else_block: new_else,
-                            open_token,
-                            end_token,
-                        },
+                        code: OpCode::If(Box::new(If {
+                            condition: new_condition,
+                            then_block: new_then_block,
+                            else_block: new_else_block,
+                            ..*if_op
+                        })),
                         id: op.id,
                         token: op.token,
                         expansions: op.expansions,

@@ -9,7 +9,7 @@ use crate::{
     interners::Interners,
     lexer::Token,
     n_ops::SliceNOps,
-    opcode::{ConditionalBlock, Op},
+    opcode::{If, Op, While},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
         ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
@@ -200,7 +200,7 @@ pub(super) fn analyze_while(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    body: &ConditionalBlock,
+    while_op: &While,
 ) {
     let initial_stack = stack.clone();
 
@@ -208,7 +208,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.condition,
+        &while_op.condition,
         analyzer,
         stack,
         had_error,
@@ -223,7 +223,7 @@ pub(super) fn analyze_while(
         generate_stack_length_mismatch_diag(
             source_store,
             op.token.location,
-            body.do_token.location,
+            while_op.do_token.location,
             stack.len(),
             initial_stack.len(),
         );
@@ -262,7 +262,7 @@ pub(super) fn analyze_while(
     super::analyze_block(
         program,
         proc_id,
-        &body.block,
+        &while_op.body_block,
         analyzer,
         stack,
         had_error,
@@ -275,7 +275,7 @@ pub(super) fn analyze_while(
         generate_stack_length_mismatch_diag(
             source_store,
             op.token.location,
-            body.close_token.location,
+            while_op.end_token.location,
             stack.len(),
             initial_stack.len(),
         );
@@ -327,9 +327,7 @@ pub(super) fn analyze_if(
     interner: &Interners,
     source_store: &SourceStorage,
     op: &Op,
-    main: &ConditionalBlock,
-    else_block: &[Op],
-    close_token: Token,
+    if_op: &If,
 ) {
     let mut condition_values = Vec::new();
 
@@ -337,7 +335,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        &main.condition,
+        &if_op.condition,
         analyzer,
         stack,
         had_error,
@@ -349,8 +347,8 @@ pub(super) fn analyze_if(
     if stack.is_empty() {
         generate_stack_length_mismatch_diag(
             source_store,
-            main.do_token.location,
-            main.do_token.location,
+            if_op.do_token.location,
+            if_op.do_token.location,
             stack.len(),
             1,
         );
@@ -367,7 +365,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        &main.block,
+        &if_op.then_block,
         analyzer,
         stack,
         had_error,
@@ -377,7 +375,7 @@ pub(super) fn analyze_if(
 
     // We always have an else block, so save our current stack state for comparison.
     let then_block_stack = stack.clone();
-    let then_block_sample_location = main.close_token.location;
+    let then_block_sample_location = if_op.else_token.location;
 
     // And restore our stack back to the initial stack.
     stack.clear();
@@ -387,7 +385,7 @@ pub(super) fn analyze_if(
     super::analyze_block(
         program,
         proc_id,
-        else_block,
+        &if_op.else_block,
         analyzer,
         stack,
         had_error,
@@ -399,7 +397,7 @@ pub(super) fn analyze_if(
         generate_stack_length_mismatch_diag(
             source_store,
             then_block_sample_location,
-            close_token.location,
+            if_op.end_token.location,
             stack.len(),
             then_block_stack.len(),
         );

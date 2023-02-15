@@ -127,7 +127,7 @@ pub(super) fn analyze_block(
             // ),
             // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
 
-            OpCode::While { ref body  } => control::analyze_while(
+            OpCode::While(ref while_op) => control::analyze_while(
                 program,
                 proc_id,
                 analyzer,
@@ -135,9 +135,9 @@ pub(super) fn analyze_block(
                 interner,
                 source_store,
                 op,
-                body,
+                while_op,
             ),
-            OpCode::If {ref condition,  ref else_block, ..} => control::analyze_if(
+            OpCode::If(ref if_op) => control::analyze_if(
                 program,
                 proc_id,
                 analyzer,
@@ -145,8 +145,7 @@ pub(super) fn analyze_block(
                 interner,
                 source_store,
                 op,
-                condition,
-                else_block,
+                if_op,
             ),
 
 

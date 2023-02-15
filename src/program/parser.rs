@@ -10,7 +10,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{ConditionalBlock, Direction, Op, OpCode, OpId},
+    opcode::{Direction, If, Op, OpCode, OpId, While},
     source_file::SourceStorage,
 };
 
@@ -683,7 +683,7 @@ fn parse_if<'a>(
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (main_condition, do_token) = get_procedure_body(
+    let (condition, do_token) = get_procedure_body(
         token_iter,
         tokens,
         keyword,
@@ -692,10 +692,10 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let main_condition = parse_procedure_body(
+    let condition = parse_procedure_body(
         program,
         module_id,
-        main_condition,
+        condition,
         op_id_gen,
         interner,
         parent,
@@ -711,7 +711,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let main_block = parse_procedure_body(
+    let then_block = parse_procedure_body(
         program,
         module_id,
         main_block,
@@ -721,13 +721,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let main_conditional = ConditionalBlock {
-        condition: main_condition,
-        do_token,
-        block: main_block,
-        close_token,
-    };
-
+    let else_token = close_token;
     let mut elif_blocks = Vec::new();
 
     while close_token.kind == TokenKind::Elif {
@@ -769,14 +763,13 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let elif_conditional = ConditionalBlock {
-            condition: elif_condition,
+        elif_blocks.push((
+            close_token,
+            elif_condition,
             do_token,
-            block: elif_block,
-            close_token: cur_close_token,
-        };
-
-        elif_blocks.push((close_token, elif_conditional));
+            elif_block,
+            cur_close_token,
+        ));
         close_token = cur_close_token;
     }
 
@@ -808,27 +801,33 @@ fn parse_if<'a>(
     };
 
     // Normalize into an `if <cond> do <body> else <body> end` structure.
-    while let Some((open_token, elif)) = elif_blocks.pop() {
+    while let Some((open_token, condition, do_token, then_block, else_token)) = elif_blocks.pop() {
         let if_op = Op::new(
             op_id_gen(),
-            OpCode::If {
+            OpCode::If(Box::new(If {
                 open_token,
-                end_token: elif.close_token,
-                condition: elif,
+                condition,
+                do_token,
+                then_block,
+                else_token,
                 else_block,
-            },
+                end_token: close_token,
+            })),
             open_token,
         );
 
         else_block = vec![if_op];
     }
 
-    Ok(OpCode::If {
+    Ok(OpCode::If(Box::new(If {
         open_token: keyword,
-        condition: main_conditional,
+        condition,
+        do_token,
+        then_block,
+        else_token,
         else_block,
         end_token: close_token,
-    })
+    })))
 }
 
 fn parse_while<'a>(
@@ -870,7 +869,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let block = parse_procedure_body(
+    let body_block = parse_procedure_body(
         program,
         module_id,
         body,
@@ -880,14 +879,12 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    Ok(OpCode::While {
-        body: ConditionalBlock {
-            do_token,
-            condition,
-            block,
-            close_token: end_token,
-        },
-    })
+    Ok(OpCode::While(Box::new(While {
+        do_token,
+        condition,
+        body_block,
+        end_token,
+    })))
 }
 
 fn parse_function_header<'a>(

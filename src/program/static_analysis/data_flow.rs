@@ -144,7 +144,7 @@ pub(super) fn analyze_block(
                 is_c_str,
             ),
 
-            OpCode::While { ref body  } => {
+            OpCode::While(ref while_op) => {
                 control::analyze_while(
                     program,
                     proc_id,
@@ -154,10 +154,10 @@ pub(super) fn analyze_block(
                     interner,
                     source_store,
                     op,
-                    body,
+                    while_op
                 )
             },
-            OpCode::If { end_token, ref condition,  ref else_block, .. } => control::analyze_if(
+            OpCode::If(ref if_op) => control::analyze_if(
                 program,
                 proc_id,
                 analyzer,
@@ -166,9 +166,7 @@ pub(super) fn analyze_block(
                 interner,
                 source_store,
                 op,
-                condition,
-                else_block,
-                end_token,
+                if_op
             ),
 
             OpCode::Drop{count, count_token} => stack_ops::drop(

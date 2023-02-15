@@ -27,7 +27,7 @@ use tracing::{debug, debug_span, trace, trace_span};
 use crate::{
     interners::Interners,
     n_ops::SliceNOps,
-    opcode::{ConditionalBlock, Op, OpCode},
+    opcode::{Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId, ValueId},
         ProcedureId, ProcedureKind, Program,
@@ -340,8 +340,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         for op in block {
             match op.code {
-                OpCode::If { .. } => trace!(?op.id, "If"),
-                OpCode::While { .. } => trace!(?op.id, "While"),
+                OpCode::If(_) => trace!(?op.id, "If"),
+                OpCode::While(_) => trace!(?op.id, "While"),
                 OpCode::Swap { count, .. } => trace!(?op.id, count, "Swap"),
                 OpCode::Dup { count, .. } => trace!(?op.id, count, "Dup" ),
                 OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
@@ -687,16 +687,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_aggregate_return(&return_values);
                 }
 
-                OpCode::If {
-                    condition:
-                        ConditionalBlock {
-                            condition: condition_block,
-                            block: then_block,
-                            ..
-                        },
-                    else_block,
-                    ..
-                } => {
+                OpCode::If(if_op) => {
                     let current_block = self.builder.get_insert_block().unwrap();
 
                     // Generate new blocks for Then, Else, and Post.
@@ -717,7 +708,7 @@ impl<'ctx> CodeGen<'ctx> {
                         program,
                         value_store,
                         id,
-                        condition_block,
+                        &if_op.condition,
                         function,
                         interner,
                     );
@@ -736,7 +727,14 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Then
                     self.builder.position_at_end(then_basic_block);
                     trace!("Compiling then-block for {:?}", op.id);
-                    self.compile_block(program, value_store, id, then_block, function, interner);
+                    self.compile_block(
+                        program,
+                        value_store,
+                        id,
+                        &if_op.then_block,
+                        function,
+                        interner,
+                    );
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -755,7 +753,14 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile Else
                     self.builder.position_at_end(else_basic_block);
                     trace!("Compiling else-block for {:?}", op.id);
-                    self.compile_block(program, value_store, id, else_block, function, interner);
+                    self.compile_block(
+                        program,
+                        value_store,
+                        id,
+                        &if_op.else_block,
+                        function,
+                        interner,
+                    );
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -773,7 +778,7 @@ impl<'ctx> CodeGen<'ctx> {
                     // Build our jumps
                     self.builder.position_at_end(post_basic_block);
                 }
-                OpCode::While { body } => {
+                OpCode::While(while_op) => {
                     let current_block = self.builder.get_insert_block().unwrap();
                     let condition_block = self
                         .ctx
@@ -794,7 +799,7 @@ impl<'ctx> CodeGen<'ctx> {
                         program,
                         value_store,
                         id,
-                        &body.condition,
+                        &while_op.condition,
                         function,
                         interner,
                     );
@@ -829,7 +834,14 @@ impl<'ctx> CodeGen<'ctx> {
                     // Compile body
                     self.builder.position_at_end(body_block);
                     trace!("Compiling body-block for {:?}", op.id);
-                    self.compile_block(program, value_store, id, &body.block, function, interner);
+                    self.compile_block(
+                        program,
+                        value_store,
+                        id,
+                        &while_op.body_block,
+                        function,
+                        interner,
+                    );
 
                     trace!("Transfering to merge vars for {:?}", op.id);
                     {
@@ -1037,11 +1049,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         for op in block {
             match &op.code {
-                OpCode::If {
-                    condition,
-                    else_block,
-                    ..
-                } => {
+                OpCode::If(if_op) => {
                     let Some(op_merges) = analyzer.get_if_merges(op.id) else {
                         panic!("ICE: If block doesn't have merge info");
                     };
@@ -1049,10 +1057,10 @@ impl<'ctx> CodeGen<'ctx> {
                         make_variable(merge.output_value, self, analyzer, merge_pair_map);
                     }
 
-                    self.build_merge_variables(&condition.block, analyzer, merge_pair_map);
-                    self.build_merge_variables(else_block, analyzer, merge_pair_map);
+                    self.build_merge_variables(&if_op.then_block, analyzer, merge_pair_map);
+                    self.build_merge_variables(&if_op.else_block, analyzer, merge_pair_map);
                 }
-                OpCode::While { body } => {
+                OpCode::While(while_op) => {
                     let Some(op_merges) = analyzer.get_while_merges(op.id) else {
                         panic!("ICE: While block doesn't have merge info");
                     };
@@ -1064,8 +1072,8 @@ impl<'ctx> CodeGen<'ctx> {
                         make_variable(merge.pre_value, self, analyzer, merge_pair_map);
                     }
 
-                    self.build_merge_variables(&body.condition, analyzer, merge_pair_map);
-                    self.build_merge_variables(&body.block, analyzer, merge_pair_map);
+                    self.build_merge_variables(&while_op.condition, analyzer, merge_pair_map);
+                    self.build_merge_variables(&while_op.body_block, analyzer, merge_pair_map);
                 }
 
                 _ => continue,
