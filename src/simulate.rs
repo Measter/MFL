@@ -150,16 +150,7 @@ fn simulate_execute_program_block(
                     )?;
                 }
             }
-            // OpCode::DoIf { end_ip, .. } => {
-            //     let a = value_stack.pop().unwrap();
 
-            //     if a == 0 {
-            //         ip = end_ip + 1;
-            //         continue;
-            //     }
-            // }
-            // OpCode::Elif { end_ip, .. } | OpCode::Else { end_ip, .. } => ip = *end_ip,
-            // OpCode::EndIf { .. } => {}
             OpCode::Greater => {
                 let [a, b] = value_stack.popn().unwrap();
                 value_stack.push((a > b) as u64);
