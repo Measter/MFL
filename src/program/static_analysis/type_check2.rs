@@ -1,9 +1,13 @@
+use ariadne::{Label, Color};
+
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Program, ProcedureId},
-    source_file::SourceStorage,
+    program::{Program, ProcedureId, type_store::{TypeKind}},
+    source_file::SourceStorage, diagnostics,
 };
+
+use self::stack_ops::{cast_int, cast_ptr};
 
 use super::{Analyzer, IntWidth};
 
@@ -28,6 +32,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -35,6 +40,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -43,6 +49,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -50,6 +57,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -57,6 +65,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -65,6 +74,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -73,6 +83,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
@@ -80,52 +91,76 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
+                &program.type_store,
                 had_error,
                 op,
             ),
             
             OpCode::PushBool(_) => stack_ops::push_bool(
                 analyzer,
+                &program.type_store,
                 op,
             ),
             OpCode::PushInt{ width, .. } => stack_ops::push_int(
                 analyzer,
+                &program.type_store,
                 op,
                 width,
             ),
             OpCode::PushStr{  is_c_str, .. } => stack_ops::push_str(
                 analyzer,
+                &program.type_store,
                 op,
                 is_c_str,
             ),
 
             OpCode::ArgC => stack_ops::push_int(
                 analyzer,
+                &program.type_store,
                 op,
                 IntWidth::I64,
             ),
             OpCode::ArgV => stack_ops::push_str(
                 analyzer,
+                &program.type_store,
                 op,
                 true,
             ),
 
-            // OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(
-            //     analyzer,
-            //     source_store,
-            //     interner,
-            //     had_error,
-            //     op,
-            //     width,
-            // ),
-            // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => stack_ops::cast_ptr(
-            //     analyzer,
-            //     source_store,
-            //     interner,
-            //     had_error,
-            //     op
-            // ),
-            // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
+            OpCode::ResolvedCast { id } => {
+                let info = &program.type_store.get_type_info(id);
+                match info.kind {
+                    TypeKind::Integer(width) => cast_int(analyzer, source_store, interner, &program.type_store, had_error, op, width),
+                    TypeKind::Pointer => cast_ptr(analyzer, source_store, interner, &program.type_store, had_error, op),
+                    TypeKind::Bool => {
+                        diagnostics::emit_error(
+                            op.token.location,
+                            "cannot cast to bool",
+                            [Label::new(op.token.location).with_color(Color::Red)],
+                            None,
+                            source_store,
+                        );
+                    }
+                }
+            }
+            OpCode::ResolvedLoad { id } => memory::load(
+                analyzer,
+                interner,
+                source_store, 
+                &program.type_store,
+                had_error, 
+                op,
+                id
+            ),
+            OpCode::ResolvedStore { id } => memory::store(
+                analyzer,
+                interner,
+                source_store,
+                &program.type_store,
+                had_error,
+                op,
+                id
+            ),
 
             OpCode::While(ref while_op) => control::analyze_while(
                 program,
@@ -134,6 +169,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
+                &program.type_store,
                 op,
                 while_op,
             ),
@@ -144,6 +180,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
+                &program.type_store,
                 op,
                 if_op,
             ),
@@ -155,17 +192,21 @@ pub(super) fn analyze_block(
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
+                interner,
                 source_store,
+                &program.type_store,
                 had_error,
                 op,
                 proc_id,
             ),
-            OpCode::SysCall{..} => control::syscall(analyzer, op, ),
+            OpCode::SysCall{..} => control::syscall(analyzer, &program.type_store, op),
 
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 program,
                 analyzer,
+                interner,
                 source_store,
+                &program.type_store,
                 had_error,
                 op,
                 proc_id,

@@ -2,7 +2,10 @@ use lasso::Spur;
 
 use crate::{
     lexer::Token,
-    program::{static_analysis::IntWidth, ModuleId, ProcedureId},
+    program::{
+        type_store::{IntWidth, TypeId},
+        ModuleId, ProcedureId,
+    },
     source_file::SourceLocation,
 };
 
@@ -81,9 +84,18 @@ pub enum OpCode {
         id: Spur,
         is_c_str: bool,
     },
+    ResolvedCast {
+        id: TypeId,
+    },
     ResolvedIdent {
         module: ModuleId,
         proc_id: ProcedureId,
+    },
+    ResolvedLoad {
+        id: TypeId,
+    },
+    ResolvedStore {
+        id: TypeId,
     },
     Return,
     Rot {
@@ -147,21 +159,24 @@ impl OpCode {
             | Dup { .. }
             | Epilogue
             | If(_)
-            | UnresolvedLoad { .. }
             | Memory { .. }
             | Over { .. }
             | Prologue
             | PushBool(_)
             | PushInt { .. }
             | PushStr { .. }
+            | ResolvedCast { .. }
             | ResolvedIdent { .. }
+            | ResolvedLoad { .. }
+            | ResolvedStore { .. }
             | Return { .. }
             | Rot { .. }
-            | UnresolvedStore { .. }
             | Swap { .. }
             | SysCall { .. }
             | UnresolvedCast { .. }
             | UnresolvedIdent { .. }
+            | UnresolvedLoad { .. }
+            | UnresolvedStore { .. }
             | While(_) => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")
             }

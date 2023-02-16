@@ -23,7 +23,10 @@ use crate::{
 
 mod parser;
 pub mod static_analysis;
-use static_analysis::{Analyzer, PorthTypeKind};
+use static_analysis::Analyzer;
+
+use self::type_store::{TypeId, TypeKind, TypeStore};
+pub mod type_store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcedureId(u16);
@@ -103,16 +106,16 @@ impl ProcedureSignatureUnresolved {
     }
 }
 pub struct ProcedureSignatureResolved {
-    exit_stack: Vec<PorthTypeKind>,
-    entry_stack: Vec<PorthTypeKind>,
+    exit_stack: Vec<TypeId>,
+    entry_stack: Vec<TypeId>,
 }
 
 impl ProcedureSignatureResolved {
-    pub fn exit_stack(&self) -> &[PorthTypeKind] {
+    pub fn exit_stack(&self) -> &[TypeId] {
         &self.exit_stack
     }
 
-    pub fn entry_stack(&self) -> &[PorthTypeKind] {
+    pub fn entry_stack(&self) -> &[TypeId] {
         &self.entry_stack
     }
 }
@@ -121,6 +124,8 @@ impl ProcedureSignatureResolved {
 pub struct ModuleId(u16);
 
 pub struct Program {
+    type_store: TypeStore,
+
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
@@ -129,7 +134,7 @@ pub struct Program {
     procedure_signatures_resolved: HashMap<ProcedureId, ProcedureSignatureResolved>,
     procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
     function_data: HashMap<ProcedureId, FunctionData>,
-    const_vals: HashMap<ProcedureId, Vec<(PorthTypeKind, u64)>>,
+    const_vals: HashMap<ProcedureId, Vec<(TypeId, u64)>>,
     analyzers: HashMap<ProcedureId, Analyzer>,
     global_allocs: HashMap<ProcedureId, usize>,
 }
@@ -172,6 +177,10 @@ impl Program {
         &self.analyzers[&id]
     }
 
+    pub fn get_type_store(&self) -> &TypeStore {
+        &self.type_store
+    }
+
     #[track_caller]
     pub fn get_function_data(&self, id: ProcedureId) -> &FunctionData {
         self.function_data
@@ -186,7 +195,7 @@ impl Program {
             .expect("ICE: tried to get function data for non-function proc")
     }
 
-    pub fn get_consts(&self, id: ProcedureId) -> Option<&[(PorthTypeKind, u64)]> {
+    pub fn get_consts(&self, id: ProcedureId) -> Option<&[(TypeId, u64)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
 }
@@ -194,6 +203,7 @@ impl Program {
 impl Program {
     pub fn new() -> Self {
         Program {
+            type_store: TypeStore::new(),
             modules: Default::default(),
             module_ident_map: Default::default(),
             procedure_headers: HashMap::new(),
@@ -229,6 +239,9 @@ impl Program {
         library_paths: &[String],
     ) -> Result<ModuleId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
+
+        self.type_store.init_builtins(interner);
+
         let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
         let module_name = interner.intern_lexeme(module_name);
 
@@ -497,12 +510,132 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
+    fn resolve_types_in_block(
+        &self,
+        mut body: Vec<Op>,
+        had_error: &mut bool,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> Vec<Op> {
+        for op in &mut body {
+            match &mut op.code {
+                OpCode::While(while_op) => {
+                    let temp_body = std::mem::take(&mut while_op.condition);
+                    while_op.condition =
+                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    let temp_body = std::mem::take(&mut while_op.body_block);
+                    while_op.body_block =
+                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                }
+                OpCode::If(if_op) => {
+                    // Mmmm.. repetition...
+                    let temp_body = std::mem::take(&mut if_op.condition);
+                    if_op.condition =
+                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    let temp_body = std::mem::take(&mut if_op.then_block);
+                    if_op.then_block =
+                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    let temp_body = std::mem::take(&mut if_op.else_block);
+                    if_op.else_block =
+                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                }
+
+                OpCode::UnresolvedCast { kind_token } => {
+                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
+                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
+                        *had_error = true;
+                        continue;
+                    };
+
+                    op.code = OpCode::ResolvedCast { id: type_info.id };
+                }
+                OpCode::UnresolvedLoad { kind_token } => {
+                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
+                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
+                        *had_error = true;
+                        continue;
+                    };
+
+                    op.code = OpCode::ResolvedLoad { id: type_info.id };
+                }
+                OpCode::UnresolvedStore { kind_token } => {
+                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
+                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
+                        *had_error = true;
+                        continue;
+                    };
+
+                    op.code = OpCode::ResolvedStore { id: type_info.id };
+                }
+
+                _ => {}
+            }
+        }
+
+        body
+    }
+
     fn resolve_types(
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        todo!()
+        let _span = debug_span!(stringify!(Program::resolve_types)).entered();
+        let mut had_error = false;
+
+        for (proc_id, proc) in self.procedure_headers.iter().map(|(id, proc)| (*id, *proc)) {
+            trace!(name = interner.get_symbol_name(self, proc_id));
+
+            let unresolved_sig = &self.procedure_signatures_unresolved[&proc_id];
+
+            let mut resolved_entry = Vec::with_capacity(unresolved_sig.entry_stack.len());
+            let mut resolved_exit = Vec::with_capacity(unresolved_sig.exit_stack.len());
+
+            if proc.kind == ProcedureKind::Memory {
+                resolved_exit.push(
+                    self.type_store
+                        .get_builtin(type_store::BuiltinTypes::U64)
+                        .id,
+                );
+            } else {
+                for input_sig in unresolved_sig.entry_stack() {
+                    let Some(info) = self.type_store.resolve_type(input_sig.lexeme) else {
+                    type_store::emit_type_error_diag(*input_sig, interner, source_store);
+                    had_error = true;
+                    continue;
+                };
+                    resolved_entry.push(info.id);
+                }
+
+                for input_sig in unresolved_sig.exit_stack() {
+                    let Some(info) = self.type_store.resolve_type(input_sig.lexeme) else {
+                    type_store::emit_type_error_diag(*input_sig, interner, source_store);
+                    had_error = true;
+                    continue;
+                };
+                    resolved_exit.push(info.id);
+                }
+            }
+
+            self.procedure_signatures_resolved.insert(
+                proc_id,
+                ProcedureSignatureResolved {
+                    entry_stack: resolved_entry,
+                    exit_stack: resolved_exit,
+                },
+            );
+
+            let body = self.procedure_bodies.remove(&proc_id).unwrap();
+            self.procedure_bodies.insert(
+                proc_id,
+                self.resolve_types_in_block(body, &mut had_error, interner, source_store),
+            );
+        }
+
+        had_error
+            .not()
+            .then_some(())
+            .ok_or_else(|| eyre!("error during type resolution"))
     }
 
     fn expand_macros_in_block(
@@ -910,18 +1043,16 @@ impl Program {
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (kind, val) in vals {
-                                let (code, const_val) = match kind {
-                                    PorthTypeKind::Int(width) => (
-                                        OpCode::PushInt {
-                                            width: *width,
-                                            value: *val,
-                                        },
+                                let type_info = self.type_store.get_type_info(*kind);
+                                let (code, const_val) = match type_info.kind {
+                                    TypeKind::Integer(width) => (
+                                        OpCode::PushInt { width, value: *val },
                                         ConstVal::Int(*val),
                                     ),
-                                    PorthTypeKind::Bool => {
+                                    TypeKind::Bool => {
                                         (OpCode::PushBool(*val != 0), ConstVal::Bool(*val != 0))
                                     }
-                                    PorthTypeKind::Ptr => {
+                                    TypeKind::Pointer => {
                                         panic!("ICE: Const pointers not supported")
                                     }
                                 };

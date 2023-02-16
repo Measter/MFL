@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{ProcedureId, Program},
+    program::{type_store::TypeKind, ProcedureId, Program},
     source_file::SourceStorage,
 };
 
@@ -24,19 +24,21 @@ pub(super) fn analyze_block(
 ) {
     for op in block {
         match op.code {
-            OpCode::Add => arithmetic::add(analyzer, op),
+            OpCode::Add => arithmetic::add(analyzer, &program.type_store, op),
             OpCode::Subtract => arithmetic::subtract(
                 analyzer,
                 source_store,
+                &program.type_store,
                 had_error,
                 op,
             ),
 
-            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(analyzer, op),
-            OpCode::BitNot => arithmetic::bitnot(analyzer, op),
+            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(analyzer, &program.type_store, op),
+            OpCode::BitNot => arithmetic::bitnot(analyzer, &program.type_store, op),
             OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
                 analyzer,
                 source_store,
+                &program.type_store,
                 op,
             ),
             OpCode::DivMod => arithmetic::divmod(
@@ -66,6 +68,23 @@ pub(super) fn analyze_block(
             // // Nothing to do if we cast to a pointer.
             // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
             // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
+            OpCode::ResolvedCast { id } => {
+                let type_info = program.type_store.get_type_info(id);
+                match type_info.kind {
+                    TypeKind::Integer(width) => stack_ops::cast_int(analyzer, op, width),
+                    TypeKind::Pointer => {},
+                    TypeKind::Bool => {},
+                }
+            }
+            OpCode::ResolvedLoad { id } => memory::load(analyzer,
+                source_store,
+                interner,
+                &program.type_store,
+                had_error,
+                op,
+                id
+            ),
+            OpCode::ResolvedStore { .. } => {} // Nothing to do for store.
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over { .. } => stack_ops::over(analyzer, op),

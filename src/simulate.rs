@@ -232,6 +232,9 @@ fn simulate_execute_program_block(
             | OpCode::ArgV
             | OpCode::CallProc { .. }
             | OpCode::Memory { .. }
+            | OpCode::ResolvedCast { .. }
+            | OpCode::ResolvedLoad { .. }
+            | OpCode::ResolvedStore { .. }
             | OpCode::SysCall { .. } => {
                 generate_error(
                     "operation not supported during const evaluation",

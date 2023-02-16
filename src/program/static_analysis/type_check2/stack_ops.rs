@@ -5,7 +5,10 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{generate_type_mismatch_diag, Analyzer, IntWidth, PorthTypeKind},
+    program::{
+        static_analysis::{generate_type_mismatch_diag, Analyzer},
+        type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
+    },
     source_file::SourceStorage,
 };
 
@@ -13,17 +16,19 @@ pub(super) fn cast_int(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
     width: IntWidth,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([input_type]) = analyzer.value_types(input_ids) else { return };
+    let Some([input_type_id]) = analyzer.value_types(input_ids) else { return };
+    let input_type_info = type_store.get_type_info(input_type_id);
 
-    match input_type {
-        PorthTypeKind::Bool => {}
-        PorthTypeKind::Ptr => {
+    match input_type_info.kind {
+        TypeKind::Bool => {}
+        TypeKind::Pointer => {
             if width != IntWidth::I64 {
                 *had_error = true;
                 let [input_value] = analyzer.values(input_ids);
@@ -42,7 +47,7 @@ pub(super) fn cast_int(
                 );
             }
         }
-        PorthTypeKind::Int(from_width) => {
+        TypeKind::Integer(from_width) => {
             if from_width == width {
                 let [input_value] = analyzer.values(input_ids);
 
@@ -67,28 +72,41 @@ pub(super) fn cast_int(
         _ => {
             *had_error = true;
             let lexeme = interner.resolve_lexeme(op.token.lexeme);
-            generate_type_mismatch_diag(analyzer, source_store, lexeme, op, &input_ids);
+            generate_type_mismatch_diag(
+                analyzer,
+                interner,
+                source_store,
+                type_store,
+                lexeme,
+                op,
+                &input_ids,
+            );
             return;
         }
     };
 
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(width));
+    let output_kind = (Signedness::Unsigned, width).into();
+    let output_type_id = type_store.get_builtin(output_kind).id;
+
+    analyzer.set_value_type(op_data.outputs[0], output_type_id);
 }
 
 pub(super) fn cast_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([input]) = analyzer.value_types(input_ids) else { return };
+    let input_type_info = type_store.get_type_info(input);
 
-    match input {
-        PorthTypeKind::Int(IntWidth::I64) => {}
-        PorthTypeKind::Ptr => {
+    match input_type_info.kind {
+        TypeKind::Integer(IntWidth::I64) => {}
+        TypeKind::Pointer => {
             let [value] = analyzer.values(input_ids);
 
             diagnostics::emit_warning(
@@ -97,7 +115,7 @@ pub(super) fn cast_ptr(
                 [
                     Label::new(op.token.location).with_color(Color::Yellow),
                     Label::new(value.creator_token.location)
-                        .with_message("already a Ptr")
+                        .with_message("already a Pointer")
                         .with_color(Color::Cyan),
                 ],
                 None,
@@ -105,7 +123,7 @@ pub(super) fn cast_ptr(
             );
         }
 
-        PorthTypeKind::Int(width) => {
+        TypeKind::Integer(width) => {
             *had_error = true;
             let [input_value] = analyzer.values(input_ids);
 
@@ -127,12 +145,23 @@ pub(super) fn cast_ptr(
             // Type mismatch.
             *had_error = true;
             let lexeme = interner.resolve_lexeme(op.token.lexeme);
-            generate_type_mismatch_diag(analyzer, source_store, lexeme, op, &input_ids);
+            generate_type_mismatch_diag(
+                analyzer,
+                interner,
+                source_store,
+                type_store,
+                lexeme,
+                op,
+                &input_ids,
+            );
             return;
         }
     };
 
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Ptr);
+    analyzer.set_value_type(
+        op_data.outputs[0],
+        type_store.get_builtin(BuiltinTypes::Pointer).id,
+    );
 }
 
 pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
@@ -155,24 +184,32 @@ pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_type(output, input_type);
 }
 
-pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn push_bool(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Bool);
+    analyzer.set_value_type(
+        op_data.outputs[0],
+        type_store.get_builtin(BuiltinTypes::Bool).id,
+    );
 }
 
-pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op, kind: IntWidth) {
+pub(super) fn push_int(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, kind: IntWidth) {
     let op_data = analyzer.get_op_io(op.id);
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(kind));
+    let builtin = (Signedness::Unsigned, kind).into();
+    analyzer.set_value_type(op_data.outputs[0], type_store.get_builtin(builtin).id);
 }
 
-pub(super) fn push_str(analyzer: &mut Analyzer, op: &Op, is_c_str: bool) {
+pub(super) fn push_str(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, is_c_str: bool) {
     let op_data = analyzer.get_op_io(op.id);
 
     if is_c_str {
-        analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Ptr);
+        analyzer.set_value_type(
+            op_data.outputs[0],
+            type_store.get_builtin(BuiltinTypes::Pointer).id,
+        );
     } else {
         let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        analyzer.set_value_type(len, PorthTypeKind::Int(IntWidth::I64));
-        analyzer.set_value_type(ptr, PorthTypeKind::Ptr);
+        let builtin = (Signedness::Unsigned, IntWidth::I64).into();
+        analyzer.set_value_type(len, type_store.get_builtin(builtin).id);
+        analyzer.set_value_type(ptr, type_store.get_builtin(BuiltinTypes::Pointer).id);
     }
 }

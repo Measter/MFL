@@ -113,7 +113,9 @@ pub(super) fn analyze_block(
                 op,
             ),
 
-            OpCode::BitNot => eat_one_make_one(
+            OpCode::BitNot
+            | OpCode::ResolvedCast { .. }
+            | OpCode::ResolvedLoad { .. } => eat_one_make_one(
                 analyzer,
                 stack,
                 source_store,
@@ -217,6 +219,13 @@ pub(super) fn analyze_block(
                 shift_count_token
             ),
 
+            OpCode::ResolvedStore { .. } => memory::store(
+                analyzer,
+                stack,
+                source_store,
+                had_error,
+                op
+            ),
             OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
                 program,
                 analyzer,

@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Write},
-    ops::{Not, RangeInclusive},
-};
+use std::{fmt::Write, ops::Not};
 
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
@@ -20,86 +17,11 @@ use crate::{
     source_file::{SourceLocation, SourceStorage},
 };
 
+use super::type_store::{IntWidth, TypeId, TypeStore};
+
 mod const_prop;
 mod data_flow;
 mod type_check2;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum IntWidth {
-    I8,
-    I16,
-    I32,
-    I64,
-}
-
-impl IntWidth {
-    pub fn name(self) -> &'static str {
-        match self {
-            IntWidth::I8 => "u8",
-            IntWidth::I16 => "u16",
-            IntWidth::I32 => "u32",
-            IntWidth::I64 => "u64",
-        }
-    }
-
-    pub fn mask(self) -> u64 {
-        match self {
-            IntWidth::I8 => u8::MAX.to_u64(),
-            IntWidth::I16 => u16::MAX.to_u64(),
-            IntWidth::I32 => u32::MAX.to_u64(),
-            IntWidth::I64 => u64::MAX.to_u64(),
-        }
-    }
-
-    pub fn byte_size(self) -> u64 {
-        match self {
-            IntWidth::I8 => 1,
-            IntWidth::I16 => 2,
-            IntWidth::I32 => 4,
-            IntWidth::I64 => 8,
-        }
-    }
-
-    pub fn bounds(self) -> RangeInclusive<u64> {
-        match self {
-            IntWidth::I8 => 0..=(u8::MAX.to_u64()),
-            IntWidth::I16 => 0..=(u16::MAX.to_u64()),
-            IntWidth::I32 => 0..=(u32::MAX.to_u64()),
-            IntWidth::I64 => 0..=(u64::MAX.to_u64()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PorthTypeKind {
-    Int(IntWidth),
-    Ptr,
-    Bool,
-}
-
-impl PorthTypeKind {
-    fn name_str(self) -> &'static str {
-        match self {
-            PorthTypeKind::Int(width) => width.name(),
-            PorthTypeKind::Ptr => "Ptr",
-            PorthTypeKind::Bool => "Bool",
-        }
-    }
-
-    pub fn byte_size(self) -> u64 {
-        match self {
-            PorthTypeKind::Int(w) => w.byte_size(),
-            PorthTypeKind::Ptr => 8,
-            PorthTypeKind::Bool => 1,
-        }
-    }
-}
-
-impl fmt::Display for PorthTypeKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name_str())
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
 pub enum PtrId {
@@ -165,7 +87,7 @@ pub struct WhileMerges {
 #[derive(Debug, Default)]
 pub struct Analyzer {
     value_lifetime: HashMap<ValueId, Value>,
-    value_types: HashMap<ValueId, PorthTypeKind>,
+    value_types: HashMap<ValueId, TypeId>,
     value_consts: HashMap<ValueId, ConstVal>,
 
     op_if_merges: HashMap<OpId, Vec<IfMerge>>,
@@ -206,11 +128,11 @@ impl Analyzer {
         val.consumer.push(consumer_id);
     }
 
-    pub fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[PorthTypeKind; N]> {
+    pub fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[TypeId; N]> {
         self.value_types.get_n(ids)
     }
 
-    fn set_value_type(&mut self, id: ValueId, kind: PorthTypeKind) {
+    fn set_value_type(&mut self, id: ValueId, kind: TypeId) {
         self.value_types
             .insert(id, kind)
             .expect_none("ICE: Tried to set a value type twice");
@@ -272,9 +194,11 @@ impl Analyzer {
 
 fn failed_compare_stack_types(
     analyzer: &Analyzer,
+    interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     actual_stack: &[ValueId],
-    expected_stack: &[PorthTypeKind],
+    expected_stack: &[TypeId],
     sample_location: SourceLocation,
     error_location: SourceLocation,
     msg: &str,
@@ -285,15 +209,18 @@ fn failed_compare_stack_types(
 
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
     for (idx, (expected, actual_id)) in pairs {
-        let value_type = analyzer
-            .value_types([*actual_id])
-            .map_or("Unknown", |[v]| v.name_str());
+        let value_type = analyzer.value_types([*actual_id]).map_or("Unknown", |[v]| {
+            let type_info = type_store.get_type_info(v);
+            interner.resolve_lexeme(type_info.name)
+        });
 
+        let expected_type_info = type_store.get_type_info(*expected);
+        let expected_name = interner.resolve_lexeme(expected_type_info.name);
         write!(
             &mut note,
             "\n\t\t{:<5} | {:<8} | {:>8}",
             actual_stack.len() - idx - 1,
-            expected.name_str(),
+            expected_name,
             value_type,
         )
         .unwrap();
@@ -317,7 +244,9 @@ fn failed_compare_stack_types(
 
 fn generate_type_mismatch_diag(
     analyzer: &Analyzer,
+    interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     operator_str: &str,
     op: &Op,
     types: &[ValueId],
@@ -326,28 +255,36 @@ fn generate_type_mismatch_diag(
     match types {
         [] => unreachable!(),
         [a] => {
-            let kind = analyzer
-                .value_types([*a])
-                .map_or("Unknown", |[v]| v.name_str());
+            let kind = analyzer.value_types([*a]).map_or("Unknown", |[v]| {
+                let type_info = type_store.get_type_info(v);
+                interner.resolve_lexeme(type_info.name)
+            });
             write!(&mut message, "`{kind}`").unwrap();
         }
         [a, b] => {
             let [a, b] = analyzer
                 .value_types([*a, *b])
-                .map_or(["Unknown", "Unknown"], |k| k.map(PorthTypeKind::name_str));
+                .map_or(["Unknown", "Unknown"], |k| {
+                    k.map(|id| {
+                        let type_info = type_store.get_type_info(id);
+                        interner.resolve_lexeme(type_info.name)
+                    })
+                });
             write!(&mut message, "`{a}` and `{b}`").unwrap()
         }
         [xs @ .., last] => {
             for x in xs {
-                let kind = analyzer
-                    .value_types([*x])
-                    .map_or("Unknown", |[v]| v.name_str());
+                let kind = analyzer.value_types([*x]).map_or("Unknown", |[v]| {
+                    let type_info = type_store.get_type_info(v);
+                    interner.resolve_lexeme(type_info.name)
+                });
                 write!(&mut message, "`{kind}`, ").unwrap();
             }
 
-            let kind = analyzer
-                .value_types([*last])
-                .map_or("Unknown", |[v]| v.name_str());
+            let kind = analyzer.value_types([*last]).map_or("Unknown", |[v]| {
+                let type_info = type_store.get_type_info(v);
+                interner.resolve_lexeme(type_info.name)
+            });
             write!(&mut message, "and `{kind}`").unwrap();
         }
     }
@@ -364,9 +301,10 @@ fn generate_type_mismatch_diag(
 
     for (value_id, order) in types.iter().rev().zip(1..) {
         let [value] = analyzer.values([*value_id]);
-        let value_type = analyzer
-            .value_types([*value_id])
-            .map_or("Unknown", |[v]| v.name_str());
+        let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
+            let type_info = type_store.get_type_info(v);
+            interner.resolve_lexeme(type_info.name)
+        });
         labels.push(
             Label::new(value.creator_token.location)
                 .with_color(Color::Yellow)

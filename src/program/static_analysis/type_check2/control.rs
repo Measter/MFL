@@ -6,7 +6,8 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
-        static_analysis::{failed_compare_stack_types, Analyzer, IntWidth, PorthTypeKind},
+        static_analysis::{failed_compare_stack_types, Analyzer},
+        type_store::{BuiltinTypes, TypeStore},
         ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
     },
     source_file::SourceStorage,
@@ -15,7 +16,9 @@ use crate::{
 pub(super) fn epilogue_return(
     program: &Program,
     analyzer: &mut Analyzer,
+    interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
     proc_id: ProcedureId,
@@ -30,7 +33,9 @@ pub(super) fn epilogue_return(
         if actual_type != Some([expected]) {
             failed_compare_stack_types(
                 analyzer,
+                interner,
                 source_store,
+                type_store,
                 &op_data.inputs,
                 proc_sig.exit_stack(),
                 proc_sig_tokens.exit_stack_location(),
@@ -55,7 +60,9 @@ pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, proc_sig: &ProcedureSig
 pub(super) fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
+    interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
     proc_id: ProcedureId,
@@ -68,7 +75,7 @@ pub(super) fn resolved_ident(
     match referenced_proc.kind() {
         ProcedureKind::Memory => {
             let output_id = op_data.outputs[0];
-            analyzer.set_value_type(output_id, PorthTypeKind::Ptr);
+            analyzer.set_value_type(output_id, type_store.get_builtin(BuiltinTypes::Pointer).id);
         }
         _ => {
             for (&expected, actual_id) in referenced_proc_sig
@@ -81,7 +88,9 @@ pub(super) fn resolved_ident(
                 if actual_type != Some([expected]) {
                     failed_compare_stack_types(
                         analyzer,
+                        interner,
                         source_store,
+                        type_store,
                         &op_data.inputs,
                         referenced_proc_sig.entry_stack(),
                         referenced_proc_sig_tokens.entry_stack_location(),
@@ -103,13 +112,16 @@ pub(super) fn resolved_ident(
     }
 }
 
-pub(super) fn syscall(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
 
     // All syscall inputs are untyped.
     // The output is always an int.
 
-    analyzer.set_value_type(op_data.outputs[0], PorthTypeKind::Int(IntWidth::I64));
+    analyzer.set_value_type(
+        op_data.outputs[0],
+        type_store.get_builtin(BuiltinTypes::U64).id,
+    );
 }
 
 pub(super) fn analyze_while(
@@ -119,6 +131,7 @@ pub(super) fn analyze_while(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     op: &Op,
     while_op: &While,
 ) {
@@ -153,9 +166,11 @@ pub(super) fn analyze_while(
     let condition_inputs = *op_data.inputs.as_arr::<1>();
     let Some([condition_type]) = analyzer.value_types(condition_inputs) else { return };
 
-    if condition_type != PorthTypeKind::Bool {
+    if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
         *had_error = true;
         let [value] = analyzer.values(condition_inputs);
+        let condition_info = type_store.get_type_info(condition_type);
+        let condition_type_name = interner.resolve_lexeme(condition_info.name);
 
         diagnostics::emit_error(
             while_op.do_token.location,
@@ -166,7 +181,7 @@ pub(super) fn analyze_while(
                     .with_message("expected here"),
                 Label::new(value.creator_token.location)
                     .with_color(Color::Red)
-                    .with_message(condition_type.name_str())
+                    .with_message(condition_type_name)
                     .with_order(1),
             ],
             None,
@@ -177,9 +192,13 @@ pub(super) fn analyze_while(
     for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
         let [pre_value, condition_value] =
             analyzer.values([merge_pair.pre_value, merge_pair.condition_value]);
-        let Some([pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
+        let Some(input_type_ids @ [pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
 
         if pre_type != condition_type {
+            let [pre_type_name, condition_type_name] = input_type_ids.map(|id| {
+                let info = type_store.get_type_info(id);
+                interner.resolve_lexeme(info.name)
+            });
             *had_error = true;
             diagnostics::emit_error(
                 condition_value.creator_token.location,
@@ -187,10 +206,10 @@ pub(super) fn analyze_while(
                 [
                     Label::new(condition_value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(condition_type.name_str()),
+                        .with_message(condition_type_name),
                     Label::new(pre_value.creator_token.location)
                         .with_color(Color::Cyan)
-                        .with_message(pre_type.name_str())
+                        .with_message(pre_type_name)
                         .with_order(1),
                 ],
                 None,
@@ -207,6 +226,7 @@ pub(super) fn analyze_if(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     op: &Op,
     if_op: &If,
 ) {
@@ -244,9 +264,11 @@ pub(super) fn analyze_if(
     let op_data = analyzer.get_op_io(op.id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type]) = analyzer.value_types([condition_value_id]) {
-        if condition_type != PorthTypeKind::Bool {
+        if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
             *had_error = true;
             let [value] = analyzer.values([condition_value_id]);
+            let condition_type_info = type_store.get_type_info(condition_type);
+            let condition_type_name = interner.resolve_lexeme(condition_type_info.name);
 
             diagnostics::emit_error(
                 if_op.do_token.location,
@@ -257,7 +279,7 @@ pub(super) fn analyze_if(
                         .with_message("expected here"),
                     Label::new(value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(condition_type.name_str())
+                        .with_message(condition_type_name)
                         .with_order(1),
                 ],
                 None,
@@ -274,9 +296,14 @@ pub(super) fn analyze_if(
     for merge_pair in merges {
         let [then_value, else_value] =
             analyzer.values([merge_pair.then_value, merge_pair.else_value]);
-        let Some([then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
+        let Some(input_type_ids @ [then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
 
         if then_type != else_type {
+            let [then_type_name, else_type_name] = input_type_ids.map(|id| {
+                let info = type_store.get_type_info(id);
+                interner.resolve_lexeme(info.name)
+            });
+
             *had_error = true;
             diagnostics::emit_error(
                 then_value.creator_token.location,
@@ -284,10 +311,10 @@ pub(super) fn analyze_if(
                 [
                     Label::new(then_value.creator_token.location)
                         .with_color(Color::Red)
-                        .with_message(then_type.name_str()),
+                        .with_message(then_type_name),
                     Label::new(else_value.creator_token.location)
                         .with_color(Color::Cyan)
-                        .with_message(else_type.name_str())
+                        .with_message(else_type_name)
                         .with_order(1),
                 ],
                 None,

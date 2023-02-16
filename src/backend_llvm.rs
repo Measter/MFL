@@ -29,7 +29,8 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
     program::{
-        static_analysis::{Analyzer, ConstVal, IntWidth, PorthTypeKind, PtrId, ValueId},
+        static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
+        type_store::{IntWidth, TypeKind, TypeStore},
         ProcedureId, ProcedureKind, Program,
     },
 };
@@ -126,14 +127,17 @@ impl<'ctx> ValueStore<'ctx> {
         id: ValueId,
         const_val: ConstVal,
         analyzer: &Analyzer,
+        type_store: &TypeStore,
         interner: &mut Interners,
     ) -> BasicValueEnum<'ctx> {
         trace!("Fetching const {id:?}");
         match const_val {
             ConstVal::Int(val) => {
-                let Some([PorthTypeKind::Int(target_width)]) = analyzer.value_types([id]) else {
-                            panic!("ICE: ConstInt for non-int type");
-                        };
+                let [type_id] = analyzer.value_types([id]).unwrap();
+                let type_info = type_store.get_type_info(type_id);
+                let TypeKind::Integer(target_width) = type_info.kind else {
+                    panic!("ICE: ConstInt for non-int type");
+                };
                 let target_type = target_width.get_int_type(cg.ctx);
                 target_type
                     .const_int(val, false)
@@ -162,10 +166,13 @@ impl<'ctx> ValueStore<'ctx> {
         cg: &CodeGen<'ctx>,
         id: ValueId,
         analyzer: &Analyzer,
+        type_store: &TypeStore,
         interner: &mut Interners,
     ) -> BasicValueEnum<'ctx> {
         match analyzer.value_consts([id]) {
-            Some([const_val]) => self.load_const_value(cg, id, const_val, analyzer, interner),
+            Some([const_val]) => {
+                self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
+            }
             _ => {
                 if let Some(&ptr) = self.merge_pair_map.get(&id) {
                     trace!(
@@ -252,12 +259,15 @@ impl<'ctx> CodeGen<'ctx> {
             let entry_stack: Vec<BasicMetadataTypeEnum> = proc_sig
                 .entry_stack()
                 .iter()
-                .map(|t| match t {
-                    PorthTypeKind::Int(width) => width.get_int_type(self.ctx).into(),
-                    PorthTypeKind::Ptr => {
-                        self.ctx.i8_type().ptr_type(AddressSpace::default()).into()
+                .map(|t| {
+                    let type_info = program.get_type_store().get_type_info(*t);
+                    match type_info.kind {
+                        TypeKind::Integer(width) => width.get_int_type(self.ctx).into(),
+                        TypeKind::Pointer => {
+                            self.ctx.i8_type().ptr_type(AddressSpace::default()).into()
+                        }
+                        TypeKind::Bool => self.ctx.bool_type().into(),
                     }
-                    PorthTypeKind::Bool => self.ctx.bool_type().into(),
                 })
                 .collect();
 
@@ -267,16 +277,19 @@ impl<'ctx> CodeGen<'ctx> {
                 let exit_stack: Vec<_> = proc_sig
                     .exit_stack()
                     .iter()
-                    .map(|t| match t {
-                        PorthTypeKind::Int(width) => {
-                            width.get_int_type(self.ctx).as_basic_type_enum()
+                    .map(|t| {
+                        let type_info = program.get_type_store().get_type_info(*t);
+                        match type_info.kind {
+                            TypeKind::Integer(width) => {
+                                width.get_int_type(self.ctx).as_basic_type_enum()
+                            }
+                            TypeKind::Pointer => self
+                                .ctx
+                                .i8_type()
+                                .ptr_type(AddressSpace::default())
+                                .as_basic_type_enum(),
+                            TypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
                         }
-                        PorthTypeKind::Ptr => self
-                            .ctx
-                            .i8_type()
-                            .ptr_type(AddressSpace::default())
-                            .as_basic_type_enum(),
-                        PorthTypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
                     })
                     .collect();
                 self.ctx
@@ -378,20 +391,27 @@ impl<'ctx> CodeGen<'ctx> {
 
             match &op.code {
                 OpCode::Add | OpCode::Subtract => {
-                    let [a, b] = *op_io.inputs().as_arr();
-                    let [a_type, b_type] = analyzer.value_types([a, b]).unwrap();
+                    let input_value_ids @ [a, b] = *op_io.inputs().as_arr();
+                    let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
+                    let input_type_infos =
+                        input_type_ids.map(|id| program.get_type_store().get_type_info(id));
 
-                    let res: BasicValueEnum = match [a_type, b_type] {
-                        [PorthTypeKind::Int(_), PorthTypeKind::Int(_)] => {
-                            let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                    let res: BasicValueEnum = match input_type_infos.map(|ti| ti.kind) {
+                        [TypeKind::Integer(_), TypeKind::Integer(_)] => {
+                            let [output_type_id] =
+                                analyzer.value_types([op_io.outputs()[0]]).unwrap();
+                            let output_type_info =
+                                program.get_type_store().get_type_info(output_type_id);
+
+                            let TypeKind::Integer(width) = output_type_info.kind else {
                                 panic!("ICE: Non-int output of int-int arithmetic");
                             };
 
                             let a_val = value_store
-                                .load_value(self, a, analyzer, interner)
+                                .load_value(self, a, analyzer, program.get_type_store(), interner)
                                 .into_int_value();
                             let b_val = value_store
-                                .load_value(self, b, analyzer, interner)
+                                .load_value(self, b, analyzer, program.get_type_store(), interner)
                                 .into_int_value();
 
                             let target_type = width.get_int_type(self.ctx);
@@ -401,27 +421,27 @@ impl<'ctx> CodeGen<'ctx> {
                             let (func, name) = op.code.get_arith_fn();
                             func(&self.builder, a_val, b_val, name).into()
                         }
-                        [PorthTypeKind::Int(_), PorthTypeKind::Ptr] => {
+                        [TypeKind::Integer(_), TypeKind::Pointer] => {
                             assert!(matches!(op.code, OpCode::Add));
                             let offset = value_store
-                                .load_value(self, a, analyzer, interner)
+                                .load_value(self, a, analyzer, program.get_type_store(), interner)
                                 .into_int_value();
 
                             let offset = self.resize_int(offset, self.ctx.i64_type());
                             let ptr = value_store
-                                .load_value(self, b, analyzer, interner)
+                                .load_value(self, b, analyzer, program.get_type_store(), interner)
                                 .into_pointer_value();
 
                             unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
                         }
-                        [PorthTypeKind::Ptr, PorthTypeKind::Int(_)] => {
+                        [TypeKind::Pointer, TypeKind::Integer(_)] => {
                             let offset = value_store
-                                .load_value(self, b, analyzer, interner)
+                                .load_value(self, b, analyzer, program.get_type_store(), interner)
                                 .into_int_value();
 
                             let offset = self.resize_int(offset, self.ctx.i64_type());
                             let ptr = value_store
-                                .load_value(self, a, analyzer, interner)
+                                .load_value(self, a, analyzer, program.get_type_store(), interner)
                                 .into_pointer_value();
 
                             // If we're subtracting, then we need to negate the offset.
@@ -433,14 +453,14 @@ impl<'ctx> CodeGen<'ctx> {
 
                             unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
                         }
-                        [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => {
+                        [TypeKind::Pointer, TypeKind::Pointer] => {
                             assert!(matches!(op.code, OpCode::Subtract));
 
                             let lhs = value_store
-                                .load_value(self, a, analyzer, interner)
+                                .load_value(self, a, analyzer, program.get_type_store(), interner)
                                 .into_pointer_value();
                             let rhs = value_store
-                                .load_value(self, b, analyzer, interner)
+                                .load_value(self, b, analyzer, program.get_type_store(), interner)
                                 .into_pointer_value();
                             let diff = self.builder.build_ptr_diff(lhs, rhs, "ptr_diff");
                             self.builder
@@ -454,16 +474,17 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
                     let [a, b] = *op_io.inputs().as_arr();
-                    let [output_type] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
+                    let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
+                    let output_type_info = program.get_type_store().get_type_info(output_type_id);
 
                     let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
+                        .load_value(self, a, analyzer, program.get_type_store(), interner)
                         .into_int_value();
                     let b_val = value_store
-                        .load_value(self, b, analyzer, interner)
+                        .load_value(self, b, analyzer, program.get_type_store(), interner)
                         .into_int_value();
 
-                    let (a_val, b_val) = if let PorthTypeKind::Int(width) = output_type {
+                    let (a_val, b_val) = if let TypeKind::Integer(width) = output_type_info.kind {
                         let target_type = width.get_int_type(self.ctx);
                         let a_val = self.resize_int(a_val, target_type);
                         let b_val = self.resize_int(b_val, target_type);
@@ -479,16 +500,18 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::DivMod => {
                     let [a, b] = *op_io.inputs().as_arr();
+                    let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
+                    let output_type_info = program.get_type_store().get_type_info(output_type_id);
 
-                    let [PorthTypeKind::Int(output_width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                    let TypeKind::Integer(output_width) = output_type_info.kind else {
                         panic!("ICE: Non-int output of int-int arithmetic");
                     };
 
                     let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
+                        .load_value(self, a, analyzer, program.get_type_store(), interner)
                         .into_int_value();
                     let b_val = value_store
-                        .load_value(self, b, analyzer, interner)
+                        .load_value(self, b, analyzer, program.get_type_store(), interner)
                         .into_int_value();
 
                     let target_type = output_width.get_int_type(self.ctx);
@@ -511,23 +534,25 @@ impl<'ctx> CodeGen<'ctx> {
                 | OpCode::LessEqual => {
                     let [a, b] = *op_io.inputs().as_arr();
                     let input_types = analyzer.value_types([a, b]).unwrap();
+                    let input_type_infos =
+                        input_types.map(|id| program.get_type_store().get_type_info(id));
 
                     let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
+                        .load_value(self, a, analyzer, program.get_type_store(), interner)
                         .into_int_value();
                     let b_val = value_store
-                        .load_value(self, b, analyzer, interner)
+                        .load_value(self, b, analyzer, program.get_type_store(), interner)
                         .into_int_value();
 
-                    let (a_val, b_val) = match input_types {
-                        [PorthTypeKind::Int(a_width), PorthTypeKind::Int(b_width)] => {
+                    let (a_val, b_val) = match input_type_infos.map(|ti| ti.kind) {
+                        [TypeKind::Integer(a_width), TypeKind::Integer(b_width)] => {
                             let target_type = a_width.max(b_width).get_int_type(self.ctx);
                             let a_val = self.resize_int(a_val, target_type);
                             let b_val = self.resize_int(b_val, target_type);
                             (a_val, b_val)
                         }
-                        [PorthTypeKind::Ptr, PorthTypeKind::Ptr] => todo!(),
-                        [PorthTypeKind::Bool, PorthTypeKind::Bool] => (a_val, b_val),
+                        [TypeKind::Pointer, TypeKind::Pointer] => todo!(),
+                        [TypeKind::Bool, TypeKind::Bool] => (a_val, b_val),
                         _ => unreachable!(),
                     };
 
@@ -539,15 +564,18 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::ShiftLeft | OpCode::ShiftRight => {
                     let [a, b] = *op_io.inputs().as_arr();
 
-                    let [PorthTypeKind::Int(width)] = analyzer.value_types([op_io.outputs()[0]]).unwrap() else {
+                    let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
+                    let output_type_info = program.get_type_store().get_type_info(output_type_id);
+
+                    let TypeKind::Integer(width) = output_type_info.kind else {
                         panic!("ICE: Non-int output of int-int arithmetic");
                     };
 
                     let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
+                        .load_value(self, a, analyzer, program.get_type_store(), interner)
                         .into_int_value();
                     let b_val = value_store
-                        .load_value(self, b, analyzer, interner)
+                        .load_value(self, b, analyzer, program.get_type_store(), interner)
                         .into_int_value();
 
                     let target_type = width.get_int_type(self.ctx);
@@ -566,7 +594,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::BitNot => {
                     let a = op_io.inputs()[0];
                     let a_val = value_store
-                        .load_value(self, a, analyzer, interner)
+                        .load_value(self, a, analyzer, program.get_type_store(), interner)
                         .into_int_value();
 
                     let res = self.builder.build_not(a_val, "not");
@@ -581,7 +609,15 @@ impl<'ctx> CodeGen<'ctx> {
                     let args: Vec<BasicMetadataValueEnum> = op_io
                         .inputs()
                         .iter()
-                        .map(|id| value_store.load_value(self, *id, analyzer, interner))
+                        .map(|id| {
+                            value_store.load_value(
+                                self,
+                                *id,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            )
+                        })
                         .map(Into::into)
                         .collect();
 
@@ -610,65 +646,84 @@ impl<'ctx> CodeGen<'ctx> {
                         value_store.store_value(self, id, value);
                     }
                 }
-                // OpCode::Cast {
-                //     kind: PorthTypeKind::Int(output_width),
-                //     ..
-                // } => {
-                //     let input_id = op_io.inputs()[0];
-                //     let input_type = analyzer.value_types([input_id]).unwrap()[0];
-                //     let input_data = value_store.load_value(self, input_id, analyzer, interner);
 
-                //     let output = match input_type {
-                //         PorthTypeKind::Int(_) => {
-                //             let val = input_data.into_int_value();
-                //             let target_type = output_width.get_int_type(self.ctx);
-                //             self.resize_int(val, target_type)
-                //         }
-                //         PorthTypeKind::Bool => {
-                //             let val = input_data.into_int_value();
-                //             let target_type = output_width.get_int_type(self.ctx);
+                OpCode::ResolvedCast { id } => {
+                    let type_info = program.get_type_store().get_type_info(*id);
+                    match type_info.kind {
+                        TypeKind::Integer(output_width) => {
+                            let input_id = op_io.inputs()[0];
+                            let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
+                            let input_type_info =
+                                program.get_type_store().get_type_info(input_type_id);
 
-                //             self.resize_int(val, target_type)
-                //         }
-                //         PorthTypeKind::Ptr => self.builder.build_ptr_to_int(
-                //             input_data.into_pointer_value(),
-                //             self.ctx.i64_type(),
-                //             "cast_ptr",
-                //         ),
-                //     };
+                            let input_data = value_store.load_value(
+                                self,
+                                input_id,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            );
 
-                //     value_store.store_value(self, op_io.outputs()[0], output.into());
-                // }
-                // OpCode::Cast {
-                //     kind: PorthTypeKind::Ptr,
-                //     ..
-                // } => {
-                //     let input_id = op_io.inputs()[0];
-                //     let input_type = analyzer.value_types([input_id]).unwrap()[0];
-                //     let input_data = value_store.load_value(self, input_id, analyzer, interner);
+                            let output = match input_type_info.kind {
+                                TypeKind::Integer(_) => {
+                                    let val = input_data.into_int_value();
+                                    let target_type = output_width.get_int_type(self.ctx);
+                                    self.resize_int(val, target_type)
+                                }
+                                TypeKind::Bool => {
+                                    let val = input_data.into_int_value();
+                                    let target_type = output_width.get_int_type(self.ctx);
 
-                //     let output = match input_type {
-                //         PorthTypeKind::Int(_) | PorthTypeKind::Bool => {
-                //             self.builder.build_int_to_ptr(
-                //                 input_data.into_int_value(),
-                //                 self.ctx.i8_type().ptr_type(AddressSpace::default()),
-                //                 "cast_int",
-                //             )
-                //         }
-                //         PorthTypeKind::Ptr => input_data.into_pointer_value(),
-                //     };
+                                    self.resize_int(val, target_type)
+                                }
+                                TypeKind::Pointer => self.builder.build_ptr_to_int(
+                                    input_data.into_pointer_value(),
+                                    self.ctx.i64_type(),
+                                    "cast_ptr",
+                                ),
+                            };
 
-                //     value_store.store_value(self, op_io.outputs()[0], output.into());
-                // }
-                // OpCode::Cast {
-                //     kind: PorthTypeKind::Bool,
-                //     ..
-                // } => {
-                //     unreachable!()
-                // }
+                            value_store.store_value(self, op_io.outputs()[0], output.into());
+                        }
+                        TypeKind::Pointer => {
+                            let input_id = op_io.inputs()[0];
+                            let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
+                            let input_type_info =
+                                program.get_type_store().get_type_info(input_type_id);
+                            let input_data = value_store.load_value(
+                                self,
+                                input_id,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            );
+
+                            let output = match input_type_info.kind {
+                                TypeKind::Integer(_) | TypeKind::Bool => {
+                                    self.builder.build_int_to_ptr(
+                                        input_data.into_int_value(),
+                                        self.ctx.i8_type().ptr_type(AddressSpace::default()),
+                                        "cast_int",
+                                    )
+                                }
+                                TypeKind::Pointer => input_data.into_pointer_value(),
+                            };
+
+                            value_store.store_value(self, op_io.outputs()[0], output.into());
+                        }
+                        TypeKind::Bool => unreachable!(),
+                    }
+                }
+
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
                     for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-                        let value = value_store.load_value(self, input_id, analyzer, interner);
+                        let value = value_store.load_value(
+                            self,
+                            input_id,
+                            analyzer,
+                            program.get_type_store(),
+                            interner,
+                        );
                         value_store.store_value(self, output_id, value);
                     }
                 }
@@ -682,7 +737,15 @@ impl<'ctx> CodeGen<'ctx> {
                     let return_values: Vec<BasicValueEnum> = op_io
                         .inputs()
                         .iter()
-                        .map(|id| value_store.load_value(self, *id, analyzer, interner))
+                        .map(|id| {
+                            value_store.load_value(
+                                self,
+                                *id,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            )
+                        })
                         .collect();
                     self.builder.build_aggregate_return(&return_values);
                 }
@@ -718,7 +781,13 @@ impl<'ctx> CodeGen<'ctx> {
                     let op_io = analyzer.get_op_io(op.id);
                     self.builder.build_conditional_branch(
                         value_store
-                            .load_value(self, op_io.inputs()[0], analyzer, interner)
+                            .load_value(
+                                self,
+                                op_io.inputs()[0],
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            )
                             .into_int_value(),
                         then_basic_block,
                         else_basic_block,
@@ -742,8 +811,13 @@ impl<'ctx> CodeGen<'ctx> {
                                 panic!("ICE: If block doesn't have merges");
                             };
                         for merge in merges {
-                            let data =
-                                value_store.load_value(self, merge.then_value, analyzer, interner);
+                            let data = value_store.load_value(
+                                self,
+                                merge.then_value,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            );
                             value_store.store_value(self, merge.output_value, data);
                         }
                     }
@@ -768,8 +842,13 @@ impl<'ctx> CodeGen<'ctx> {
                                 panic!("ICE: If block doesn't have merges");
                             };
                         for merge in merges {
-                            let data =
-                                value_store.load_value(self, merge.else_value, analyzer, interner);
+                            let data = value_store.load_value(
+                                self,
+                                merge.else_value,
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            );
                             value_store.store_value(self, merge.output_value, data);
                         }
                     }
@@ -814,6 +893,7 @@ impl<'ctx> CodeGen<'ctx> {
                                 self,
                                 merge.condition_value,
                                 analyzer,
+                                program.get_type_store(),
                                 interner,
                             );
                             value_store.store_value(self, merge.pre_value, data);
@@ -825,7 +905,13 @@ impl<'ctx> CodeGen<'ctx> {
                     let op_io = analyzer.get_op_io(op.id);
                     self.builder.build_conditional_branch(
                         value_store
-                            .load_value(self, op_io.inputs()[0], analyzer, interner)
+                            .load_value(
+                                self,
+                                op_io.inputs()[0],
+                                analyzer,
+                                program.get_type_store(),
+                                interner,
+                            )
                             .into_int_value(),
                         body_block,
                         post_block,
@@ -853,6 +939,7 @@ impl<'ctx> CodeGen<'ctx> {
                                 self,
                                 merge.condition_value,
                                 analyzer,
+                                program.get_type_store(),
                                 interner,
                             );
                             value_store.store_value(self, merge.pre_value, data);
@@ -864,68 +951,83 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.position_at_end(post_block);
                 }
 
-                // OpCode::UnresolvedLoad { kind_token: kind } => {
-                //     let ptr_value_id = op_io.inputs()[0];
-                //     let ptr = value_store
-                //         .load_value(self, ptr_value_id, analyzer, interner)
-                //         .into_pointer_value();
+                OpCode::ResolvedLoad { id } => {
+                    let ptr_value_id = op_io.inputs()[0];
+                    let ptr = value_store
+                        .load_value(
+                            self,
+                            ptr_value_id,
+                            analyzer,
+                            program.get_type_store(),
+                            interner,
+                        )
+                        .into_pointer_value();
 
-                //     let cast_ptr = match kind {
-                //         PorthTypeKind::Int(width) => {
-                //             let ptr_type = width
-                //                 .get_int_type(self.ctx)
-                //                 .ptr_type(AddressSpace::default());
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //         PorthTypeKind::Ptr => {
-                //             let ptr_type = self
-                //                 .ctx
-                //                 .i8_type()
-                //                 .ptr_type(AddressSpace::default())
-                //                 .ptr_type(AddressSpace::default());
+                    let type_info = program.get_type_store().get_type_info(*id);
 
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //         PorthTypeKind::Bool => {
-                //             let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //     };
+                    let cast_ptr = match type_info.kind {
+                        TypeKind::Integer(width) => {
+                            let ptr_type = width
+                                .get_int_type(self.ctx)
+                                .ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        TypeKind::Pointer => {
+                            let ptr_type = self
+                                .ctx
+                                .i8_type()
+                                .ptr_type(AddressSpace::default())
+                                .ptr_type(AddressSpace::default());
 
-                //     let value = self.builder.build_load(cast_ptr, "load");
-                //     value_store.store_value(self, op_io.outputs()[0], value);
-                // }
-                // OpCode::UnresolvedStore { kind_token: kind } => {
-                //     let [data, ptr] = *op_io.inputs().as_arr();
-                //     let data = value_store.load_value(self, data, analyzer, interner);
-                //     let ptr = value_store
-                //         .load_value(self, ptr, analyzer, interner)
-                //         .into_pointer_value();
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        TypeKind::Bool => {
+                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                    };
 
-                //     let cast_ptr = match kind {
-                //         PorthTypeKind::Int(width) => {
-                //             let ptr_type = width
-                //                 .get_int_type(self.ctx)
-                //                 .ptr_type(AddressSpace::default());
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //         PorthTypeKind::Ptr => {
-                //             let ptr_type = self
-                //                 .ctx
-                //                 .i8_type()
-                //                 .ptr_type(AddressSpace::default())
-                //                 .ptr_type(AddressSpace::default());
+                    let value = self.builder.build_load(cast_ptr, "load");
+                    value_store.store_value(self, op_io.outputs()[0], value);
+                }
+                OpCode::ResolvedStore { id } => {
+                    let [data, ptr] = *op_io.inputs().as_arr();
+                    let data = value_store.load_value(
+                        self,
+                        data,
+                        analyzer,
+                        program.get_type_store(),
+                        interner,
+                    );
+                    let ptr = value_store
+                        .load_value(self, ptr, analyzer, program.get_type_store(), interner)
+                        .into_pointer_value();
 
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //         PorthTypeKind::Bool => {
-                //             let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
-                //             self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
-                //         }
-                //     };
+                    let type_info = program.get_type_store().get_type_info(*id);
+                    let cast_ptr = match type_info.kind {
+                        TypeKind::Integer(width) => {
+                            let ptr_type = width
+                                .get_int_type(self.ctx)
+                                .ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        TypeKind::Pointer => {
+                            let ptr_type = self
+                                .ctx
+                                .i8_type()
+                                .ptr_type(AddressSpace::default())
+                                .ptr_type(AddressSpace::default());
 
-                //     self.builder.build_store(cast_ptr, data);
-                // }
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                        TypeKind::Bool => {
+                            let ptr_type = self.ctx.bool_type().ptr_type(AddressSpace::default());
+                            self.builder.build_pointer_cast(ptr, ptr_type, "cast_ptr")
+                        }
+                    };
+
+                    self.builder.build_store(cast_ptr, data);
+                }
                 OpCode::Memory {
                     proc_id,
                     global: false,
@@ -970,8 +1072,14 @@ impl<'ctx> CodeGen<'ctx> {
                         op_io
                             .inputs()
                             .iter()
-                            .map(
-                                |id| match value_store.load_value(self, *id, analyzer, interner) {
+                            .map(|id| {
+                                match value_store.load_value(
+                                    self,
+                                    *id,
+                                    analyzer,
+                                    program.get_type_store(),
+                                    interner,
+                                ) {
                                     BasicValueEnum::PointerValue(v) => self
                                         .builder
                                         .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast"),
@@ -979,8 +1087,8 @@ impl<'ctx> CodeGen<'ctx> {
                                         self.resize_int(i, self.ctx.i64_type())
                                     }
                                     t => panic!("ICE: Unexected type: {t:?}"),
-                                },
-                            )
+                                }
+                            })
                             .map(Into::into)
                             .collect();
 
@@ -1023,23 +1131,26 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         block: &[Op],
         analyzer: &Analyzer,
+        type_store: &TypeStore,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
     ) {
         fn make_variable<'ctx>(
             value_id: ValueId,
             cg: &CodeGen<'ctx>,
             analyzer: &Analyzer,
+            type_store: &TypeStore,
             merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
         ) {
             if merge_pair_map.contains_key(&value_id) {
                 trace!("        Variable already exists for `{value_id:?}`");
                 return;
             }
-
-            let typ = match analyzer.value_types([value_id]).unwrap()[0] {
-                PorthTypeKind::Int(width) => width.get_int_type(cg.ctx).as_basic_type_enum(),
-                PorthTypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
-                PorthTypeKind::Ptr => cg
+            let type_id = analyzer.value_types([value_id]).unwrap()[0];
+            let type_info = type_store.get_type_info(type_id);
+            let typ = match type_info.kind {
+                TypeKind::Integer(width) => width.get_int_type(cg.ctx).as_basic_type_enum(),
+                TypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
+                TypeKind::Pointer => cg
                     .ctx
                     .i8_type()
                     .ptr_type(AddressSpace::default())
@@ -1059,26 +1170,52 @@ impl<'ctx> CodeGen<'ctx> {
                         panic!("ICE: If block doesn't have merge info");
                     };
                     for merge in op_merges {
-                        make_variable(merge.output_value, self, analyzer, merge_pair_map);
+                        make_variable(
+                            merge.output_value,
+                            self,
+                            analyzer,
+                            type_store,
+                            merge_pair_map,
+                        );
                     }
 
-                    self.build_merge_variables(&if_op.then_block, analyzer, merge_pair_map);
-                    self.build_merge_variables(&if_op.else_block, analyzer, merge_pair_map);
+                    self.build_merge_variables(
+                        &if_op.then_block,
+                        analyzer,
+                        type_store,
+                        merge_pair_map,
+                    );
+                    self.build_merge_variables(
+                        &if_op.else_block,
+                        analyzer,
+                        type_store,
+                        merge_pair_map,
+                    );
                 }
                 OpCode::While(while_op) => {
                     let Some(op_merges) = analyzer.get_while_merges(op.id) else {
                         panic!("ICE: While block doesn't have merge info");
                     };
                     for merge in &op_merges.condition {
-                        make_variable(merge.pre_value, self, analyzer, merge_pair_map);
+                        make_variable(merge.pre_value, self, analyzer, type_store, merge_pair_map);
                     }
 
                     for merge in &op_merges.body {
-                        make_variable(merge.pre_value, self, analyzer, merge_pair_map);
+                        make_variable(merge.pre_value, self, analyzer, type_store, merge_pair_map);
                     }
 
-                    self.build_merge_variables(&while_op.condition, analyzer, merge_pair_map);
-                    self.build_merge_variables(&while_op.body_block, analyzer, merge_pair_map);
+                    self.build_merge_variables(
+                        &while_op.condition,
+                        analyzer,
+                        type_store,
+                        merge_pair_map,
+                    );
+                    self.build_merge_variables(
+                        &while_op.body_block,
+                        analyzer,
+                        type_store,
+                        merge_pair_map,
+                    );
                 }
 
                 _ => continue,
@@ -1120,6 +1257,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.build_merge_variables(
             program.get_proc_body(id),
             program.get_analyzer(id),
+            program.get_type_store(),
             &mut value_store.merge_pair_map,
         );
 

@@ -14,7 +14,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{static_analysis::IntWidth, ModuleId, ProcedureId, ProcedureKind, Program};
+use super::{type_store::IntWidth, ModuleId, ProcedureId, ProcedureKind, Program};
 
 fn expect_token<'a>(
     tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
@@ -922,7 +922,7 @@ fn parse_memory_header<'a>(
         module_id,
         ProcedureKind::Memory,
         parent,
-        vec![name],
+        Vec::new(),
         name.location,
         Vec::new(),
         name.location,

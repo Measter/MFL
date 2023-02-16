@@ -4,18 +4,23 @@ use crate::{
     diagnostics,
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
-    program::static_analysis::{Analyzer, ConstVal, PorthTypeKind},
+    program::{
+        static_analysis::{Analyzer, ConstVal},
+        type_store::{TypeKind, TypeStore},
+    },
     source_file::SourceStorage,
 };
 
-pub(super) fn add(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
     let Some(val_consts) = analyzer.value_consts(val_ids) else { return };
 
     let new_const_val = match val_consts {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+            let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+            let output_type_info = type_store.get_type_info(output_type_id);
+            let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
             ConstVal::Int((a + b) & output_width.mask())
         }
 
@@ -50,13 +55,16 @@ pub(super) fn add(analyzer: &mut Analyzer, op: &Op) {
 pub(super) fn subtract(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
-    let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let output_type_info = type_store.get_type_info(output_type_id);
+    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
 
     let new_const_val = match types {
         [ConstVal::Int(a), ConstVal::Int(b)] => ConstVal::Int((a - b) & output_width.mask()),
@@ -158,11 +166,13 @@ pub(super) fn subtract(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitnot(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
-    let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let output_type_info = type_store.get_type_info(output_type_id);
+    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
 
     let new_const_val = match types {
         ConstVal::Int(a) => ConstVal::Int((!a) & output_width.mask()),
@@ -174,11 +184,13 @@ pub(super) fn bitnot(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitand_bitor(analyzer: &mut Analyzer, op: &Op) {
+pub(super) fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
-    let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let output_type_info = type_store.get_type_info(output_type_id);
+    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
 
     let new_const_val = match types {
         [ConstVal::Int(a), ConstVal::Int(b)] => match op.code {
@@ -198,11 +210,18 @@ pub(super) fn bitand_bitor(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn multiply_and_shift(analyzer: &mut Analyzer, source_store: &SourceStorage, op: &Op) {
+pub(super) fn multiply_and_shift(
+    analyzer: &mut Analyzer,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    op: &Op,
+) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(types) = analyzer.value_consts(input_ids) else { return };
-    let Some([PorthTypeKind::Int(output_width)]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let output_type_info = type_store.get_type_info(output_type_id);
+    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
 
     if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (&op.code, types[1])
     {
