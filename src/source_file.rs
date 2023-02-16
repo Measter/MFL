@@ -21,8 +21,6 @@ pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: u32,
     pub source_end: u32,
-    pub line: u16,
-    pub column: u16,
 }
 
 impl Default for SourceLocation {
@@ -31,8 +29,6 @@ impl Default for SourceLocation {
             file_id: FileId::blank(),
             source_start: Default::default(),
             source_end: Default::default(),
-            line: Default::default(),
-            column: Default::default(),
         }
     }
 }
@@ -54,13 +50,11 @@ impl Span for SourceLocation {
 }
 
 impl SourceLocation {
-    pub fn new(file_id: FileId, range: Range<u32>, line: u16, column: u16) -> Self {
+    pub fn new(file_id: FileId, range: Range<u32>) -> Self {
         Self {
             file_id,
             source_start: range.start,
             source_end: range.end,
-            line,
-            column,
         }
     }
 
@@ -72,8 +66,6 @@ impl SourceLocation {
             file_id: self.file_id,
             source_start: self.source_start.min(other.source_start),
             source_end: self.source_end.max(other.source_end),
-            line: self.line.min(other.line),
-            column: self.column.min(other.column),
         }
     }
 }

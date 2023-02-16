@@ -133,18 +133,11 @@ pub struct Token {
 }
 
 impl Token {
-    fn new(
-        kind: TokenKind,
-        lexeme: Spur,
-        file_id: FileId,
-        source_range: Range<u32>,
-        line: u16,
-        column: u16,
-    ) -> Self {
+    fn new(kind: TokenKind, lexeme: Spur, file_id: FileId, source_range: Range<u32>) -> Self {
         Self {
             kind,
             lexeme,
-            location: SourceLocation::new(file_id, source_range, line, column),
+            location: SourceLocation::new(file_id, source_range),
         }
     }
 }
@@ -255,12 +248,7 @@ impl<'source> Scanner<'source> {
         }
 
         if ch != close_char && self.is_at_end() {
-            let loc = SourceLocation::new(
-                self.file_id,
-                self.lexeme_range(),
-                self.line,
-                self.cur_token_column,
-            );
+            let loc = SourceLocation::new(self.file_id, self.lexeme_range());
             diagnostics::emit_error(
                 loc,
                 format!("unclosed {kind} literal"),
@@ -311,14 +299,7 @@ impl<'source> Scanner<'source> {
                 self.advance(); // Consume the '='
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    kind,
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
-                ))
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']' | '(' | ')' | '@' | '!', _) => {
@@ -339,14 +320,7 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    kind,
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
-                ))
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             ('"', _) => {
@@ -370,8 +344,6 @@ impl<'source> Scanner<'source> {
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
                 ))
             }
 
@@ -379,12 +351,7 @@ impl<'source> Scanner<'source> {
                 self.consume_string_or_char_literal('\'', "char", source_store)?;
 
                 if self.string_buf.chars().count() != 1 {
-                    let loc = SourceLocation::new(
-                        self.file_id,
-                        self.lexeme_range(),
-                        self.line,
-                        self.cur_token_column,
-                    );
+                    let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                     diagnostics::emit_error(
                         loc,
                         "invalid char literal",
@@ -403,8 +370,6 @@ impl<'source> Scanner<'source> {
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
                 ))
             }
 
@@ -416,8 +381,6 @@ impl<'source> Scanner<'source> {
                     lexeme,
                     self.file_id,
                     self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
                 ))
             }
 
@@ -434,12 +397,7 @@ impl<'source> Scanner<'source> {
                 match self.peek() {
                     Some(c) if !is_valid_post_number(c) => {
                         self.advance();
-                        let loc = SourceLocation::new(
-                            self.file_id,
-                            self.lexeme_range(),
-                            self.line,
-                            self.cur_token_column,
-                        );
+                        let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                         diagnostics::emit_error(
                             loc,
                             format!("unexpected character in input: `{c}`"),
@@ -457,14 +415,7 @@ impl<'source> Scanner<'source> {
                 let kind = TokenKind::Integer(stripped_id);
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    kind,
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
-                ))
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             (c, _) if is_ident_start(c) => {
@@ -528,23 +479,11 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    kind,
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
-                ))
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
             (c, _) => {
-                let loc = SourceLocation::new(
-                    self.file_id,
-                    self.lexeme_range(),
-                    self.line,
-                    self.cur_token_column,
-                );
+                let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                 diagnostics::emit_error(
                     loc,
                     format!("unexpected character in input: `{c}`"),
