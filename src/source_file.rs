@@ -13,7 +13,7 @@ pub struct FileId(u16);
 pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: u32,
-    pub source_end: u32,
+    pub len: u16,
 }
 
 impl Span for SourceLocation {
@@ -28,7 +28,7 @@ impl Span for SourceLocation {
     }
 
     fn end(&self) -> usize {
-        self.source_end.to_usize()
+        self.source_start.to_usize() + self.len.to_usize()
     }
 }
 
@@ -37,7 +37,7 @@ impl SourceLocation {
         Self {
             file_id,
             source_start: range.start,
-            source_end: range.end,
+            len: (range.end - range.start).to_u16().unwrap(),
         }
     }
 
@@ -45,10 +45,13 @@ impl SourceLocation {
     #[allow(unused)]
     pub fn merge(self, other: Self) -> Self {
         assert!(self.file_id == other.file_id);
+        let start = self.start().min(other.start());
+        let end = self.end().max(other.end());
+        let len = end - start;
         Self {
             file_id: self.file_id,
-            source_start: self.source_start.min(other.source_start),
-            source_end: self.source_end.max(other.source_end),
+            source_start: start.to_u32().unwrap(),
+            len: len.to_u16().unwrap(),
         }
     }
 }
