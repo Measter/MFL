@@ -4,6 +4,7 @@ use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
@@ -45,13 +46,13 @@ pub struct ValueId(u16);
 #[derive(Debug)]
 struct Value {
     creator_token: Token,
-    consumer: Vec<OpId>,
+    consumer: SmallVec<[OpId; 4]>,
 }
 
 #[derive(Debug)]
 pub struct OpData {
-    inputs: Vec<ValueId>,
-    outputs: Vec<ValueId>,
+    inputs: SmallVec<[ValueId; 8]>,
+    outputs: SmallVec<[ValueId; 8]>,
 }
 
 impl OpData {
@@ -79,8 +80,8 @@ pub struct WhileMerge {
 
 #[derive(Debug, Clone)]
 pub struct WhileMerges {
-    pub condition: Vec<WhileMerge>,
-    pub body: Vec<WhileMerge>,
+    pub condition: SmallVec<[WhileMerge; 4]>,
+    pub body: SmallVec<[WhileMerge; 4]>,
 }
 
 #[derive(Debug, Default)]
@@ -106,7 +107,7 @@ impl Analyzer {
                 id,
                 Value {
                     creator_token: creator.token,
-                    consumer: Vec::new(),
+                    consumer: SmallVec::new(),
                 },
             )
             .is_some();
@@ -175,8 +176,8 @@ impl Analyzer {
         let prev = self.op_io_data.insert(
             op.id,
             OpData {
-                inputs: inputs.to_owned(),
-                outputs: outputs.to_owned(),
+                inputs: inputs.into(),
+                outputs: outputs.into(),
             },
         );
 

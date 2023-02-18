@@ -4,6 +4,7 @@ use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
 use num_traits::{PrimInt, Unsigned};
+use smallvec::SmallVec;
 use tracing::debug_span;
 
 use crate::{
@@ -1120,7 +1121,7 @@ fn parse_procedure<'a>(
                 code: OpCode::Prologue,
                 id: op_id_gen(),
                 token: name_token,
-                expansions: Vec::new(),
+                expansions: SmallVec::new(),
             },
         );
 
@@ -1128,7 +1129,7 @@ fn parse_procedure<'a>(
             code: OpCode::Epilogue,
             id: op_id_gen(),
             token: end_token,
-            expansions: Vec::new(),
+            expansions: SmallVec::new(),
         });
     }
 

@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use smallvec::SmallVec;
 use tracing::trace;
 
 use crate::{
@@ -237,7 +238,7 @@ pub(super) fn analyze_while(
     let condition_value = stack.pop().unwrap();
 
     // Might need something smarter than this for the codegen.
-    let mut condition_merges = Vec::new();
+    let mut condition_merges = SmallVec::new();
 
     // Now we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.
@@ -286,7 +287,7 @@ pub(super) fn analyze_while(
         }
     }
 
-    let mut body_merges = Vec::new();
+    let mut body_merges = SmallVec::new();
 
     // Again, we need to see which value IDs have been changed, so the codegen phase will know
     // where to merge the new data.

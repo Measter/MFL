@@ -1,4 +1,5 @@
 use lasso::Spur;
+use smallvec::SmallVec;
 
 use crate::{
     lexer::Token,
@@ -185,14 +186,14 @@ impl OpCode {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct OpId(pub usize);
+pub struct OpId(pub u32);
 
 #[derive(Debug, Clone)]
 pub struct Op {
     pub code: OpCode,
     pub id: OpId,
     pub token: Token,
-    pub expansions: Vec<SourceLocation>,
+    pub expansions: SmallVec<[SourceLocation; 2]>,
 }
 
 impl Op {
@@ -201,7 +202,7 @@ impl Op {
             id,
             code,
             token,
-            expansions: Vec::new(),
+            expansions: SmallVec::new(),
         }
     }
 }

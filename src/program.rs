@@ -9,6 +9,7 @@ use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 use tracing::{debug_span, trace, trace_span};
 
 use crate::{
@@ -55,7 +56,7 @@ pub struct ProcedureHeader {
     id: ProcedureId,
     parent: Option<ProcedureId>,
     kind: ProcedureKind,
-    new_op_id: usize,
+    new_op_id: u32,
 }
 
 impl ProcedureHeader {
@@ -106,8 +107,8 @@ impl ProcedureSignatureUnresolved {
     }
 }
 pub struct ProcedureSignatureResolved {
-    exit_stack: Vec<TypeId>,
-    entry_stack: Vec<TypeId>,
+    exit_stack: SmallVec<[TypeId; 8]>,
+    entry_stack: SmallVec<[TypeId; 8]>,
 }
 
 impl ProcedureSignatureResolved {
@@ -588,8 +589,8 @@ impl Program {
 
             let unresolved_sig = &self.procedure_signatures_unresolved[&proc_id];
 
-            let mut resolved_entry = Vec::with_capacity(unresolved_sig.entry_stack.len());
-            let mut resolved_exit = Vec::with_capacity(unresolved_sig.exit_stack.len());
+            let mut resolved_entry = SmallVec::with_capacity(unresolved_sig.entry_stack.len());
+            let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.len());
 
             if proc.kind == ProcedureKind::Memory {
                 resolved_exit.push(
