@@ -4,7 +4,6 @@ use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
-use variantly::Variantly;
 
 use crate::{
     diagnostics,
@@ -23,13 +22,13 @@ mod const_prop;
 mod data_flow;
 mod type_check2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PtrId {
     Mem(ProcedureId),
     Str(Spur),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Variantly)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstVal {
     Int(u64),
     Bool(bool),
