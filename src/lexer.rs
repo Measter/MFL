@@ -1,4 +1,9 @@
-use std::{fmt::Write, iter::Peekable, ops::Range, str::CharIndices};
+use std::{
+    fmt::Write,
+    iter::Peekable,
+    ops::{Not, Range},
+    str::CharIndices,
+};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
@@ -519,16 +524,18 @@ pub(crate) fn lex_file(
     };
 
     let mut ops = Vec::new();
+    let mut had_error = false;
 
     while scanner.peek().is_some() {
         scanner.cur_token_start = scanner.next_token_start;
         scanner.cur_token_column = scanner.column;
 
-        match scanner.scan_token(contents, interner, source_store)? {
-            Some(op) => ops.push(op),
-            None => continue,
+        match scanner.scan_token(contents, interner, source_store) {
+            Ok(Some(op)) => ops.push(op),
+            Ok(None) => continue,
+            Err(_) => had_error = true,
         };
     }
 
-    Ok(ops)
+    had_error.not().then_some(ops).ok_or(())
 }
