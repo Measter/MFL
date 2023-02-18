@@ -400,7 +400,7 @@ impl<'source> Scanner<'source> {
                         let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                         diagnostics::emit_error(
                             loc,
-                            format!("unexpected character in input: `{c}`"),
+                            format!("invalid character in number: `{c}`"),
                             Some(Label::new(loc).with_color(Color::Red)),
                             None,
                             source_store,
