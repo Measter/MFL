@@ -5,13 +5,12 @@ use std::{path::Path, process::Command};
 use ariadne::{Color, Label};
 use clap::Parser;
 use color_eyre::eyre::{eyre, Context, Result};
-use interners::Interners;
-use program::ProcedureId;
-use source_file::SourceStorage;
 use tracing::{debug, debug_span};
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
-use crate::program::{ProcedureKind, Program};
+use interners::Interners;
+use program::{ProcedureId, ProcedureKind, Program};
+use source_file::SourceStorage;
 
 mod backend_llvm;
 mod diagnostics;
