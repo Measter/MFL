@@ -9,28 +9,11 @@ use intcast::IntCast;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u16);
 
-impl FileId {
-    #[inline(always)]
-    pub const fn blank() -> Self {
-        Self(0)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: u32,
     pub source_end: u32,
-}
-
-impl Default for SourceLocation {
-    fn default() -> Self {
-        Self {
-            file_id: FileId::blank(),
-            source_start: Default::default(),
-            source_end: Default::default(),
-        }
-    }
 }
 
 impl Span for SourceLocation {
