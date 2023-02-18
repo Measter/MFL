@@ -17,16 +17,32 @@ use crate::{
 
 use super::{type_store::IntWidth, ModuleId, ProcedureId, ProcedureKind, Program};
 
+trait Recover<T, E> {
+    fn recover(self, had_error: &mut bool, fallback: T) -> T;
+}
+
+impl<T, E> Recover<T, E> for Result<T, E> {
+    fn recover(self, had_error: &mut bool, fallback: T) -> T {
+        match self {
+            Ok(kk) => kk,
+            Err(_) => {
+                *had_error = true;
+                fallback
+            }
+        }
+    }
+}
+
 fn expect_token<'a>(
-    tokens: &mut impl Iterator<Item = (usize, &'a Token)>,
+    tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     kind_str: &str,
     expected: fn(TokenKind) -> bool,
     prev: Token,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(usize, Token), ()> {
-    match tokens.next() {
-        Some((idx, ident)) if expected(ident.kind) => Ok((idx, *ident)),
+    match tokens.peek() {
+        Some((_, ident)) if expected(ident.kind) => tokens.next().map(|(a, b)| (a, *b)).ok_or(()),
         Some((_, ident)) => {
             diagnostics::emit_error(
                 ident.location,
@@ -35,11 +51,7 @@ fn expect_token<'a>(
                     kind_str,
                     interner.resolve_lexeme(ident.lexeme)
                 ),
-                Some(
-                    Label::new(ident.location)
-                        .with_color(Color::Red)
-                        .with_message("here"),
-                ),
+                Some(Label::new(ident.location).with_color(Color::Red)),
                 None,
                 source_store,
             );
@@ -49,11 +61,7 @@ fn expect_token<'a>(
             diagnostics::emit_error(
                 prev.location,
                 "unexpected end of tokens",
-                Some(
-                    Label::new(prev.location)
-                        .with_color(Color::Red)
-                        .with_message("here"),
-                ),
+                Some(Label::new(prev.location).with_color(Color::Red)),
                 None,
                 source_store,
             );
@@ -72,6 +80,7 @@ fn parse_delimited_token_list<'a>(
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(Token, Vec<Token>, Token), ()> {
+    let mut had_error = false;
     let (_, open_token) = expect_token(
         token_iter,
         open_delim_str,
@@ -79,29 +88,14 @@ fn parse_delimited_token_list<'a>(
         prev,
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (0, prev));
 
     let mut tokens = Vec::new();
 
     let mut prev = open_token;
-    if let Some(expected_len) = expected_len {
-        for _ in 0..expected_len {
-            let (_, item_token) = expect_token(
-                token_iter,
-                token_str,
-                token_fn,
-                prev,
-                interner,
-                source_store,
-            )?;
-
-            tokens.push(item_token);
-            prev = item_token;
-        }
-    } else {
-        // Keep going until the close token.
-        loop {
-            let Some((_, next_token)) = token_iter.peek() else {
+    loop {
+        let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
                 diagnostics::emit_error(
                     prev.location,
                     "unexpected end of tokens",
@@ -116,22 +110,30 @@ fn parse_delimited_token_list<'a>(
                 return Err(());
             };
 
-            if close_delim_fn(next_token.kind) {
-                // The end of the list, so break the loop.
-                break;
-            }
+        if close_delim_fn(next_token.kind) {
+            // The end of the list, so break the loop.
+            break;
+        }
 
-            let (_, item_token) = expect_token(
+        let Ok((_, item_token)) = expect_token(
                 token_iter,
                 token_str,
                 token_fn,
                 prev,
                 interner,
                 source_store,
-            )?;
-            tokens.push(item_token);
-            prev = item_token;
-        }
+            ) else {
+                had_error = true;
+
+                // If it's not the close token, we should consume it so we can continue.
+                if !close_delim_fn(next_token.kind) {
+                    token_iter.next();
+                }
+
+                continue;
+            };
+        tokens.push(item_token);
+        prev = item_token;
     }
 
     let (_, close_token) = expect_token(
@@ -141,9 +143,27 @@ fn parse_delimited_token_list<'a>(
         prev,
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (0, prev));
 
-    Ok((open_token, tokens, close_token))
+    if let Some(len) = expected_len {
+        if len != tokens.len() {
+            let range = open_token.location.merge(close_token.location);
+            diagnostics::emit_error(
+                range,
+                format!("expected {len} tokens, found {}", tokens.len()),
+                [Label::new(range).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            had_error = true;
+        }
+    }
+
+    had_error
+        .not()
+        .then_some((open_token, tokens, close_token))
+        .ok_or(())
 }
 
 fn parse_integer_lexeme<T>(
@@ -268,7 +288,7 @@ pub fn parse_procedure_body(
             | TokenKind::SysCall => {
                 let (count, count_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
                 {
-                    let (_, count_token, _) = parse_delimited_token_list(
+                    let Ok((_, count_token, _)) = parse_delimited_token_list(
                         &mut token_iter,
                         *token,
                         Some(1),
@@ -277,7 +297,11 @@ pub fn parse_procedure_body(
                         (")", |t| t == TokenKind::ParenthesisClosed),
                         interner,
                         source_store,
-                    )?;
+                    ) else {
+                        had_error = true;
+                        continue;
+                    };
+
                     let count_token = count_token[0];
                     let count = parse_integer_lexeme(count_token, interner, source_store)?;
                     (count, count_token)
@@ -302,59 +326,82 @@ pub fn parse_procedure_body(
                 }
             }
             TokenKind::Rot => {
-                let (_, paren_open) = expect_token(
-                    &mut token_iter,
-                    "(",
-                    |t| t == TokenKind::ParenthesisOpen,
+                let Ok((_, tokens, _)) = parse_delimited_token_list(&mut token_iter,
                     *token,
+                    Some(3),
+                    ("(", |t| t == TokenKind::ParenthesisOpen),
+                    ("", |_| true),
+                    (")", |t| t == TokenKind::ParenthesisClosed),
                     interner,
-                    source_store,
-                )?;
+                    source_store
+                )
+                else {
+                    had_error = true;
+                    continue;
+                };
 
-                let (_, item_count_token) = expect_token(
-                    &mut token_iter,
-                    "Integer",
-                    |t| matches!(t, TokenKind::Integer(_)),
-                    paren_open,
-                    interner,
-                    source_store,
-                )?;
+                let mut local_error = false;
+                let [item_count_token, direction_token, shift_count_token] = &*tokens else { unreachable!() };
+                let item_count_token = *item_count_token;
+                let shift_count_token = *shift_count_token;
 
-                let (_, direction_token) = expect_token(
-                    &mut token_iter,
-                    "<, >",
-                    |t| matches!(t, TokenKind::Less | TokenKind::Greater),
-                    item_count_token,
-                    interner,
-                    source_store,
-                )?;
+                let item_count = if !matches!(item_count_token.kind, TokenKind::Integer(_)) {
+                    diagnostics::emit_error(
+                        item_count_token.location,
+                        format!(
+                            "expected `integer`, found `{}`",
+                            interner.resolve_lexeme(item_count_token.lexeme)
+                        ),
+                        Some(Label::new(item_count_token.location).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    local_error = true;
+                    1
+                } else {
+                    parse_integer_lexeme(item_count_token, interner, source_store)?
+                };
 
-                let (_, shift_count_token) = expect_token(
-                    &mut token_iter,
-                    "Integer",
-                    |t| matches!(t, TokenKind::Integer(_)),
-                    direction_token,
-                    interner,
-                    source_store,
-                )?;
-
-                let (_, _) = expect_token(
-                    &mut token_iter,
-                    "(",
-                    |t| t == TokenKind::ParenthesisClosed,
-                    shift_count_token,
-                    interner,
-                    source_store,
-                )?;
-
-                let item_count = parse_integer_lexeme(item_count_token, interner, source_store)?;
-                let shift_count = parse_integer_lexeme(shift_count_token, interner, source_store)?;
+                let shift_count = if !matches!(shift_count_token.kind, TokenKind::Integer(_)) {
+                    diagnostics::emit_error(
+                        shift_count_token.location,
+                        format!(
+                            "expected `integer`, found `{}`",
+                            interner.resolve_lexeme(shift_count_token.lexeme)
+                        ),
+                        Some(Label::new(shift_count_token.location).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    local_error = true;
+                    1
+                } else {
+                    parse_integer_lexeme(shift_count_token, interner, source_store)?
+                };
 
                 let direction = match direction_token.kind {
                     TokenKind::Less => Direction::Left,
                     TokenKind::Greater => Direction::Right,
-                    _ => unreachable!(),
+                    _ => {
+                        diagnostics::emit_error(
+                            direction_token.location,
+                            format!(
+                                "expected `<` or `>`, found `{}`",
+                                interner.resolve_lexeme(direction_token.lexeme)
+                            ),
+                            Some(Label::new(direction_token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        local_error = true;
+                        Direction::Left
+                    }
                 };
+
+                if local_error {
+                    had_error = true;
+                    continue;
+                }
 
                 OpCode::Rot {
                     item_count,
@@ -366,7 +413,7 @@ pub fn parse_procedure_body(
             }
 
             TokenKind::Cast | TokenKind::Load | TokenKind::Store => {
-                let (_, ident_token, _) = parse_delimited_token_list(
+                let Ok((_, ident_token, _)) = parse_delimited_token_list(
                     &mut token_iter,
                     *token,
                     Some(1),
@@ -375,7 +422,10 @@ pub fn parse_procedure_body(
                     (")", |t| t == TokenKind::ParenthesisClosed),
                     interner,
                     source_store,
-                )?;
+                ) else {
+                    had_error = true;
+                    continue;
+                };
                 let kind_token = ident_token[0];
 
                 match token.kind {
@@ -428,7 +478,12 @@ pub fn parse_procedure_body(
                 OpCode::UnresolvedIdent { module, proc }
             }
             TokenKind::Integer(id) => {
-                parse_integer_op(&mut token_iter, *token, id, false, interner, source_store)?
+                let Ok(int) = parse_integer_op(&mut token_iter, *token, id, false, interner, source_store) else {
+                    had_error = true;
+                    continue;
+                };
+
+                int
             }
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
             TokenKind::Here(id) => OpCode::PushStr {
@@ -854,6 +909,7 @@ fn parse_function_header<'a>(
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
 ) -> Result<(Token, ProcedureId), ()> {
+    let mut had_error = false;
     let (entry_stack_start, entry_tokens, entry_stack_end) = parse_delimited_token_list(
         token_iter,
         name,
@@ -863,7 +919,8 @@ fn parse_function_header<'a>(
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (name, Vec::new(), name));
     let entry_stack_location = entry_stack_start.location.merge(entry_stack_end.location);
 
     expect_token(
@@ -873,7 +930,8 @@ fn parse_function_header<'a>(
         name,
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (0, name));
 
     let (exit_stack_start, exit_tokens, exit_stack_end) = parse_delimited_token_list(
         token_iter,
@@ -884,7 +942,8 @@ fn parse_function_header<'a>(
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (name, Vec::new(), name));
     let exit_stack_location = exit_stack_start.location.merge(exit_stack_end.location);
 
     let new_proc = program.new_procedure(
@@ -905,8 +964,10 @@ fn parse_function_header<'a>(
         name,
         interner,
         source_store,
-    )?;
-    Ok((is_token, new_proc))
+    )
+    .recover(&mut had_error, (0, name));
+
+    had_error.not().then_some((is_token, new_proc)).ok_or(())
 }
 
 fn parse_memory_header<'a>(
@@ -929,6 +990,8 @@ fn parse_memory_header<'a>(
         name.location,
     );
 
+    let mut had_error = false;
+
     let (_, is_token) = expect_token(
         token_iter,
         "is",
@@ -936,8 +999,10 @@ fn parse_memory_header<'a>(
         name,
         interner,
         source_store,
-    )?;
-    Ok((is_token, new_proc))
+    )
+    .recover(&mut had_error, (0, name));
+
+    had_error.not().then_some((is_token, new_proc)).ok_or(())
 }
 
 fn parse_macro_header<'a>(
@@ -960,6 +1025,7 @@ fn parse_macro_header<'a>(
         name.location,
     );
 
+    let mut had_error = false;
     let (_, is_token) = expect_token(
         token_iter,
         "is",
@@ -967,8 +1033,10 @@ fn parse_macro_header<'a>(
         name,
         interner,
         source_store,
-    )?;
-    Ok((is_token, new_proc))
+    )
+    .recover(&mut had_error, (0, name));
+
+    had_error.not().then_some((is_token, new_proc)).ok_or(())
 }
 
 fn parse_const_header<'a>(
@@ -980,6 +1048,7 @@ fn parse_const_header<'a>(
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
 ) -> Result<(Token, ProcedureId), ()> {
+    let mut had_error = false;
     let (exit_stack_start, exit_tokens, exit_stack_end) = parse_delimited_token_list(
         token_iter,
         name,
@@ -989,7 +1058,9 @@ fn parse_const_header<'a>(
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (name, Vec::new(), name));
+
     let exit_stack_location = exit_stack_start.location.merge(exit_stack_end.location);
 
     let new_proc = program.new_procedure(
@@ -1010,8 +1081,10 @@ fn parse_const_header<'a>(
         name,
         interner,
         source_store,
-    )?;
-    Ok((is_token, new_proc))
+    )
+    .recover(&mut had_error, (0, name));
+
+    had_error.not().then_some((is_token, new_proc)).ok_or(())
 }
 
 fn parse_assert_header<'a>(
@@ -1034,6 +1107,7 @@ fn parse_assert_header<'a>(
         name.location,
     );
 
+    let mut had_error = false;
     let (_, is_token) = expect_token(
         token_iter,
         "is",
@@ -1041,9 +1115,10 @@ fn parse_assert_header<'a>(
         name,
         interner,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (0, name));
 
-    Ok((is_token, new_proc))
+    had_error.not().then_some((is_token, new_proc)).ok_or(())
 }
 
 fn parse_procedure<'a>(
@@ -1056,6 +1131,7 @@ fn parse_procedure<'a>(
     parent: Option<ProcedureId>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
+    let mut had_error = false;
     let name_token = expect_token(
         token_iter,
         "ident",
@@ -1064,7 +1140,8 @@ fn parse_procedure<'a>(
         interner,
         source_store,
     )
-    .map(|(_, a)| a)?;
+    .map(|(_, a)| a)
+    .recover(&mut had_error, keyword);
 
     let header_func = match keyword.kind {
         TokenKind::Proc => parse_function_header,
@@ -1083,7 +1160,8 @@ fn parse_procedure<'a>(
         name_token,
         parent,
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (name_token, ProcedureId::dud()));
 
     let (body, end_token) = get_procedure_body(
         &mut *token_iter,
@@ -1092,7 +1170,8 @@ fn parse_procedure<'a>(
         is_token,
         |t| matches!(t, TokenKind::End),
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, (&[], is_token));
 
     let mut op_id = 0;
     let mut op_id_gen = || {
@@ -1109,7 +1188,13 @@ fn parse_procedure<'a>(
         interner,
         Some(procedure_id),
         source_store,
-    )?;
+    )
+    .recover(&mut had_error, Vec::new());
+
+    if procedure_id == ProcedureId::dud() {
+        // We can't continue from here.
+        return Err(());
+    }
 
     let proc_header = program.get_proc_header_mut(procedure_id);
 
@@ -1160,7 +1245,7 @@ fn parse_procedure<'a>(
             None,
             source_store,
         );
-        return Err(());
+        had_error = true;
     }
 
     if let Some(parent_id) = parent {
@@ -1179,7 +1264,11 @@ fn parse_procedure<'a>(
         }
     }
 
-    Ok(())
+    if had_error {
+        Err(())
+    } else {
+        Ok(())
+    }
 }
 
 pub(super) fn parse_module(

@@ -31,6 +31,12 @@ pub mod type_store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcedureId(u16);
+impl ProcedureId {
+    // This is only used during parse failure, so it shouldn't cause problems?
+    pub fn dud() -> Self {
+        Self(u16::MAX)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct FunctionData {
