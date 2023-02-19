@@ -15,7 +15,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-use super::{type_store::IntWidth, ModuleId, ProcedureId, ProcedureKind, Program};
+use super::{type_store::IntWidth, ItemId, ItemKind, ModuleId, Program};
 
 trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;
@@ -266,13 +266,13 @@ fn parse_integer_op<'a>(
     Ok(OpCode::PushInt { width, value })
 }
 
-pub fn parse_procedure_body(
+pub fn parse_item_body(
     program: &mut Program,
     module_id: ModuleId,
     tokens: &[Token],
     op_id_gen: &mut impl FnMut() -> OpId,
     interner: &Interners,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
 ) -> Result<Vec<Op>, ()> {
     let mut ops = Vec::new();
@@ -449,7 +449,7 @@ pub fn parse_procedure_body(
                 value: (ch as u8).to_u64(),
             },
             TokenKind::Ident => {
-                let (module, proc) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
+                let (module, item_token) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
                 {
                     let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
                     let expected = expect_token(
@@ -463,19 +463,22 @@ pub fn parse_procedure_body(
                     .ok()
                     .map(|(_, t)| t);
 
-                    let proc_id = if let Some(t) = expected {
+                    let item_id = if let Some(t) = expected {
                         t
                     } else {
                         had_error = true;
                         continue;
                     };
 
-                    (Some(*token), proc_id)
+                    (Some(*token), item_id)
                 } else {
                     (None, *token)
                 };
 
-                OpCode::UnresolvedIdent { module, proc }
+                OpCode::UnresolvedIdent {
+                    module,
+                    item: item_token,
+                }
             }
             TokenKind::Integer(id) => {
                 let Ok(int) = parse_integer_op(&mut token_iter, *token, id, false, interner, source_store) else {
@@ -514,7 +517,7 @@ pub fn parse_procedure_body(
             }
 
             TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
-                if parse_procedure(
+                if parse_item(
                     program,
                     module_id,
                     &mut token_iter,
@@ -614,7 +617,7 @@ pub fn parse_procedure_body(
     had_error.not().then_some(ops).ok_or(())
 }
 
-fn get_procedure_body<'a>(
+fn get_item_body<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
@@ -692,11 +695,11 @@ fn parse_if<'a>(
     tokens: &'a [Token],
     keyword: Token,
     op_id_gen: &mut impl FnMut() -> OpId,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (condition, do_token) = get_procedure_body(
+    let (condition, do_token) = get_item_body(
         token_iter,
         tokens,
         keyword,
@@ -705,7 +708,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let condition = parse_procedure_body(
+    let condition = parse_item_body(
         program,
         module_id,
         condition,
@@ -715,7 +718,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let (main_block, mut close_token) = get_procedure_body(
+    let (main_block, mut close_token) = get_item_body(
         token_iter,
         tokens,
         keyword,
@@ -724,7 +727,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let then_block = parse_procedure_body(
+    let then_block = parse_item_body(
         program,
         module_id,
         main_block,
@@ -738,7 +741,7 @@ fn parse_if<'a>(
     let mut elif_blocks = Vec::new();
 
     while close_token.kind == TokenKind::Elif {
-        let (elif_condition, do_token) = get_procedure_body(
+        let (elif_condition, do_token) = get_item_body(
             token_iter,
             tokens,
             keyword,
@@ -747,7 +750,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let elif_condition = parse_procedure_body(
+        let elif_condition = parse_item_body(
             program,
             module_id,
             elif_condition,
@@ -757,7 +760,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let (elif_block, cur_close_token) = get_procedure_body(
+        let (elif_block, cur_close_token) = get_item_body(
             token_iter,
             tokens,
             keyword,
@@ -766,7 +769,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let elif_block = parse_procedure_body(
+        let elif_block = parse_item_body(
             program,
             module_id,
             elif_block,
@@ -787,7 +790,7 @@ fn parse_if<'a>(
     }
 
     let mut else_block = if close_token.kind == TokenKind::Else {
-        let (else_block, end_token) = get_procedure_body(
+        let (else_block, end_token) = get_item_body(
             token_iter,
             tokens,
             keyword,
@@ -796,7 +799,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let else_block = parse_procedure_body(
+        let else_block = parse_item_body(
             program,
             module_id,
             else_block,
@@ -850,11 +853,11 @@ fn parse_while<'a>(
     tokens: &'a [Token],
     keyword: Token,
     op_id_gen: &mut impl FnMut() -> OpId,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (condition, do_token) = get_procedure_body(
+    let (condition, do_token) = get_item_body(
         token_iter,
         tokens,
         keyword,
@@ -863,7 +866,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let condition = parse_procedure_body(
+    let condition = parse_item_body(
         program,
         module_id,
         condition,
@@ -873,7 +876,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let (body, end_token) = get_procedure_body(
+    let (body, end_token) = get_item_body(
         token_iter,
         tokens,
         keyword,
@@ -882,7 +885,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let body_block = parse_procedure_body(
+    let body_block = parse_item_body(
         program,
         module_id,
         body,
@@ -906,9 +909,9 @@ fn parse_function_header<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
+) -> Result<(Token, ItemId), ()> {
     let mut had_error = false;
     let (entry_stack_start, entry_tokens, entry_stack_end) = parse_delimited_token_list(
         token_iter,
@@ -946,10 +949,10 @@ fn parse_function_header<'a>(
     .recover(&mut had_error, (name, Vec::new(), name));
     let exit_stack_location = exit_stack_start.location.merge(exit_stack_end.location);
 
-    let new_proc = program.new_procedure(
+    let new_item = program.new_item(
         name,
         module_id,
-        ProcedureKind::Function,
+        ItemKind::Function,
         parent,
         exit_tokens,
         exit_stack_location,
@@ -967,7 +970,7 @@ fn parse_function_header<'a>(
     )
     .recover(&mut had_error, (0, name));
 
-    had_error.not().then_some((is_token, new_proc)).ok_or(())
+    had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
 fn parse_memory_header<'a>(
@@ -976,13 +979,13 @@ fn parse_memory_header<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let new_proc = program.new_procedure(
+) -> Result<(Token, ItemId), ()> {
+    let new_item = program.new_item(
         name,
         module_id,
-        ProcedureKind::Memory,
+        ItemKind::Memory,
         parent,
         Vec::new(),
         name.location,
@@ -1002,7 +1005,7 @@ fn parse_memory_header<'a>(
     )
     .recover(&mut had_error, (0, name));
 
-    had_error.not().then_some((is_token, new_proc)).ok_or(())
+    had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
 fn parse_macro_header<'a>(
@@ -1011,13 +1014,13 @@ fn parse_macro_header<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let new_proc = program.new_procedure(
+) -> Result<(Token, ItemId), ()> {
+    let new_item = program.new_item(
         name,
         module_id,
-        ProcedureKind::Macro,
+        ItemKind::Macro,
         parent,
         Vec::new(),
         name.location,
@@ -1036,7 +1039,7 @@ fn parse_macro_header<'a>(
     )
     .recover(&mut had_error, (0, name));
 
-    had_error.not().then_some((is_token, new_proc)).ok_or(())
+    had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
 fn parse_const_header<'a>(
@@ -1045,9 +1048,9 @@ fn parse_const_header<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
+) -> Result<(Token, ItemId), ()> {
     let mut had_error = false;
     let (exit_stack_start, exit_tokens, exit_stack_end) = parse_delimited_token_list(
         token_iter,
@@ -1063,10 +1066,10 @@ fn parse_const_header<'a>(
 
     let exit_stack_location = exit_stack_start.location.merge(exit_stack_end.location);
 
-    let new_proc = program.new_procedure(
+    let new_item = program.new_item(
         name,
         module_id,
-        ProcedureKind::Const,
+        ItemKind::Const,
         parent,
         exit_tokens,
         exit_stack_location,
@@ -1084,7 +1087,7 @@ fn parse_const_header<'a>(
     )
     .recover(&mut had_error, (0, name));
 
-    had_error.not().then_some((is_token, new_proc)).ok_or(())
+    had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
 fn parse_assert_header<'a>(
@@ -1093,13 +1096,13 @@ fn parse_assert_header<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
-) -> Result<(Token, ProcedureId), ()> {
-    let new_proc = program.new_procedure(
+) -> Result<(Token, ItemId), ()> {
+    let new_item = program.new_item(
         name,
         module_id,
-        ProcedureKind::Assert,
+        ItemKind::Assert,
         parent,
         vec![name],
         name.location,
@@ -1118,17 +1121,17 @@ fn parse_assert_header<'a>(
     )
     .recover(&mut had_error, (0, name));
 
-    had_error.not().then_some((is_token, new_proc)).ok_or(())
+    had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
-fn parse_procedure<'a>(
+fn parse_item<'a>(
     program: &mut Program,
     module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
-    parent: Option<ProcedureId>,
+    parent: Option<ItemId>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -1152,7 +1155,7 @@ fn parse_procedure<'a>(
         _ => unreachable!(),
     };
 
-    let (is_token, procedure_id) = header_func(
+    let (is_token, item_id) = header_func(
         program,
         module_id,
         token_iter,
@@ -1161,9 +1164,9 @@ fn parse_procedure<'a>(
         parent,
         source_store,
     )
-    .recover(&mut had_error, (name_token, ProcedureId::dud()));
+    .recover(&mut had_error, (name_token, ItemId::dud()));
 
-    let (body, end_token) = get_procedure_body(
+    let (body, end_token) = get_item_body(
         &mut *token_iter,
         tokens,
         keyword,
@@ -1180,25 +1183,25 @@ fn parse_procedure<'a>(
         OpId(id)
     };
 
-    let mut body = parse_procedure_body(
+    let mut body = parse_item_body(
         program,
         module_id,
         body,
         &mut op_id_gen,
         interner,
-        Some(procedure_id),
+        Some(item_id),
         source_store,
     )
     .recover(&mut had_error, Vec::new());
 
-    if procedure_id == ProcedureId::dud() {
+    if item_id == ItemId::dud() {
         // We can't continue from here.
         return Err(());
     }
 
-    let proc_header = program.get_proc_header_mut(procedure_id);
+    let item_header = program.get_item_header_mut(item_id);
 
-    if proc_header.kind() != ProcedureKind::Macro {
+    if item_header.kind() != ItemKind::Macro {
         // Makes later logic a bit easier if we always have a prologue and epilogue.
         body.insert(
             0,
@@ -1218,18 +1221,18 @@ fn parse_procedure<'a>(
         });
     }
 
-    proc_header.new_op_id = op_id;
-    program.set_proc_body(procedure_id, body);
+    item_header.new_op_id = op_id;
+    program.set_item_body(item_id, body);
 
     // stupid borrow checker...
-    let _ = proc_header; // Need to discard the borrow;
-    let proc_header = program.get_proc_header(procedure_id);
+    let _ = item_header; // Need to discard the borrow;
+    let item_header = program.get_item_header(item_id);
 
     if let Some(prev_def) = program
-        .get_visible_symbol(proc_header, name_token.lexeme)
-        .filter(|&f| f != procedure_id)
+        .get_visible_symbol(item_header, name_token.lexeme)
+        .filter(|&f| f != item_id)
     {
-        let prev_proc = program.get_proc_header(prev_def).name();
+        let prev_item = program.get_item_header(prev_def).name();
 
         diagnostics::emit_error(
             name_token.location,
@@ -1238,7 +1241,7 @@ fn parse_procedure<'a>(
                 Label::new(name_token.location)
                     .with_message("defined here")
                     .with_color(Color::Red),
-                Label::new(prev_proc.location)
+                Label::new(prev_item.location)
                     .with_message("also defined here")
                     .with_color(Color::Blue),
             ],
@@ -1249,15 +1252,15 @@ fn parse_procedure<'a>(
     }
 
     if let Some(parent_id) = parent {
-        let parent_proc = program.get_proc_header(parent_id);
-        match (parent_proc.kind(), keyword.kind) {
-            (ProcedureKind::Function, TokenKind::Const) => {
+        let parent_item = program.get_item_header(parent_id);
+        match (parent_item.kind(), keyword.kind) {
+            (ItemKind::Function, TokenKind::Const) => {
                 let pd = program.get_function_data_mut(parent_id);
-                pd.consts.insert(name_token.lexeme, procedure_id);
+                pd.consts.insert(name_token.lexeme, item_id);
             }
-            (ProcedureKind::Function, TokenKind::Memory) => {
+            (ItemKind::Function, TokenKind::Memory) => {
                 let pd = program.get_function_data_mut(parent_id);
-                pd.allocs.insert(name_token.lexeme, procedure_id);
+                pd.allocs.insert(name_token.lexeme, item_id);
             }
             // The other types aren't stored in the proc
             _ => {}
@@ -1291,7 +1294,7 @@ pub(super) fn parse_module(
             | TokenKind::Macro
             | TokenKind::Memory
             | TokenKind::Proc => {
-                if parse_procedure(
+                if parse_item(
                     program,
                     module_id,
                     &mut token_iter,

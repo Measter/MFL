@@ -13,7 +13,7 @@ use crate::{
     opcode::{If, Op, While},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
-        ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
+        ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
 };
@@ -31,34 +31,34 @@ pub(super) fn epilogue_return(
     interner: &Interners,
     had_error: &mut bool,
     op: &Op,
-    proc_id: ProcedureId,
+    item_id: ItemId,
 ) {
-    let proc = program.get_proc_header(proc_id);
-    let proc_sig = program.get_proc_signature_resolved(proc_id);
-    let proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
+    let item = program.get_item_header(item_id);
+    let item_sig = program.get_item_signature_resolved(item_id);
+    let item_sig_tokens = program.get_item_signature_unresolved(item_id);
 
-    if stack.len() != proc_sig.exit_stack().len() {
+    if stack.len() != item_sig.exit_stack().len() {
         *had_error = true;
 
         let mut labels = vec![
             Label::new(op.token.location)
                 .with_color(Color::Red)
                 .with_message("returning here"),
-            Label::new(proc_sig_tokens.exit_stack_location())
+            Label::new(item_sig_tokens.exit_stack_location())
                 .with_color(Color::Cyan)
                 .with_message("return type defined here"),
         ];
 
-        match stack.len().cmp(&proc_sig.exit_stack().len()) {
+        match stack.len().cmp(&item_sig.exit_stack().len()) {
             Ordering::Less => {
-                let num_missing = usize::saturating_sub(proc_sig.exit_stack().len(), stack.len());
+                let num_missing = usize::saturating_sub(item_sig.exit_stack().len(), stack.len());
                 for _ in 0..num_missing {
                     let pad_value = analyzer.new_value(op);
                     stack.push(pad_value);
                 }
             }
             Ordering::Greater => {
-                for &value_id in &stack[..stack.len() - proc_sig.exit_stack().len()] {
+                for &value_id in &stack[..stack.len() - item_sig.exit_stack().len()] {
                     let [value] = analyzer.values([value_id]);
                     labels.push(
                         Label::new(value.creator_token.location)
@@ -74,8 +74,8 @@ pub(super) fn epilogue_return(
             op.token.location,
             format!(
                 "function `{}` returns {} values, found {}",
-                interner.resolve_lexeme(proc.name().lexeme),
-                proc_sig.exit_stack().len(),
+                interner.resolve_lexeme(item.name().lexeme),
+                item_sig.exit_stack().len(),
                 stack.len()
             ),
             labels,
@@ -84,7 +84,7 @@ pub(super) fn epilogue_return(
         );
     }
 
-    let inputs = stack.lastn(proc_sig.exit_stack().len()).unwrap();
+    let inputs = stack.lastn(item_sig.exit_stack().len()).unwrap();
 
     for &value_id in inputs {
         analyzer.consume_value(value_id, op.id);
@@ -97,10 +97,10 @@ pub(super) fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op: &Op,
-    proc_sig: &ProcedureSignatureResolved,
+    item_sig: &ItemSignatureResolved,
 ) {
     let mut outputs = Vec::new();
-    for _ in proc_sig.entry_stack() {
+    for _ in item_sig.entry_stack() {
         let new_id = analyzer.new_value(op);
         outputs.push(new_id);
         stack.push(new_id);
@@ -116,13 +116,13 @@ pub(super) fn resolved_ident(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    proc_id: ProcedureId,
+    item: ItemId,
 ) {
-    let referenced_proc = program.get_proc_header(proc_id);
-    let referenced_proc_sig = program.get_proc_signature_resolved(proc_id);
+    let referenced_item = program.get_item_header(item);
+    let referenced_item_sig = program.get_item_signature_resolved(item);
 
-    match referenced_proc.kind() {
-        ProcedureKind::Memory => {
+    match referenced_item.kind() {
+        ItemKind::Memory => {
             let new_id = analyzer.new_value(op);
             stack.push(new_id);
             analyzer.set_op_io(op, &[], &[new_id]);
@@ -135,16 +135,16 @@ pub(super) fn resolved_ident(
                 source_store,
                 had_error,
                 op,
-                referenced_proc_sig.entry_stack().len(),
+                referenced_item_sig.entry_stack().len(),
             );
 
-            let inputs = stack.split_off(stack.len() - referenced_proc_sig.entry_stack().len());
+            let inputs = stack.split_off(stack.len() - referenced_item_sig.entry_stack().len());
             for &value_id in &inputs {
                 analyzer.consume_value(value_id, op.id);
             }
             let mut outputs = Vec::new();
 
-            for _ in referenced_proc_sig.exit_stack() {
+            for _ in referenced_item_sig.exit_stack() {
                 let new_id = analyzer.new_value(op);
                 outputs.push(new_id);
                 stack.push(new_id);
@@ -194,7 +194,7 @@ pub(super) fn syscall(
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,
@@ -208,7 +208,7 @@ pub(super) fn analyze_while(
     // Evaluate the condition.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &while_op.condition,
         analyzer,
         stack,
@@ -262,7 +262,7 @@ pub(super) fn analyze_while(
     // Now we do the same thing as above, but with the body.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &while_op.body_block,
         analyzer,
         stack,
@@ -321,7 +321,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,
@@ -335,7 +335,7 @@ pub(super) fn analyze_if(
     // Evaluate condition.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.condition,
         analyzer,
         stack,
@@ -365,7 +365,7 @@ pub(super) fn analyze_if(
     // Now we can do the then-block.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.then_block,
         analyzer,
         stack,
@@ -385,7 +385,7 @@ pub(super) fn analyze_if(
     // Now analyze the else block.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.else_block,
         analyzer,
         stack,

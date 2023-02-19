@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use lasso::{Rodeo, Spur};
 
-use crate::program::{ProcedureId, Program};
+use crate::program::{ItemId, Program};
 
 pub struct Interners {
     lexemes: Rodeo,
 
-    symbols: HashMap<ProcedureId, Spur>,
+    symbols: HashMap<ItemId, Spur>,
 }
 
 impl Interners {
@@ -34,17 +34,17 @@ impl Interners {
         self.lexemes.resolve(&id)
     }
 
-    pub fn get_symbol_name(&mut self, program: &Program, id: ProcedureId) -> &str {
+    pub fn get_symbol_name(&mut self, program: &Program, id: ItemId) -> &str {
         if let Some(name) = self.symbols.get(&id) {
             return self.lexemes.resolve(name);
         }
 
-        let proc = program.get_proc_header(id);
-        let module = program.get_module(proc.module());
-        let proc_name = self.lexemes.resolve(&proc.name().lexeme);
+        let item = program.get_item_header(id);
+        let module = program.get_module(item.module());
+        let item_name = self.lexemes.resolve(&item.name().lexeme);
         let module_name = self.lexemes.resolve(&module.name());
 
-        let name = format!("{module_name}${proc_name}");
+        let name = format!("{module_name}${item_name}");
         let spur = self.intern_lexeme(&name);
 
         self.resolve_lexeme(spur)

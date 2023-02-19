@@ -30,8 +30,8 @@ use self::type_store::{TypeId, TypeKind, TypeStore};
 pub mod type_store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ProcedureId(u16);
-impl ProcedureId {
+pub struct ItemId(u16);
+impl ItemId {
     // This is only used during parse failure, so it shouldn't cause problems?
     pub fn dud() -> Self {
         Self(u16::MAX)
@@ -40,14 +40,14 @@ impl ProcedureId {
 
 #[derive(Debug, Default)]
 pub struct FunctionData {
-    pub allocs: HashMap<Spur, ProcedureId>,
-    pub alloc_sizes: HashMap<ProcedureId, usize>,
-    pub consts: HashMap<Spur, ProcedureId>,
+    pub allocs: HashMap<Spur, ItemId>,
+    pub alloc_sizes: HashMap<ItemId, usize>,
+    pub consts: HashMap<Spur, ItemId>,
 }
 
 // TODO: Add compile-time asserts
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ProcedureKind {
+pub enum ItemKind {
     Assert,
     Const,
     Macro,
@@ -56,16 +56,16 @@ pub enum ProcedureKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ProcedureHeader {
+pub struct ItemHeader {
     name: Token,
     module: ModuleId,
-    id: ProcedureId,
-    parent: Option<ProcedureId>,
-    kind: ProcedureKind,
+    id: ItemId,
+    parent: Option<ItemId>,
+    kind: ItemKind,
     new_op_id: u32,
 }
 
-impl ProcedureHeader {
+impl ItemHeader {
     pub fn name(&self) -> Token {
         self.name
     }
@@ -74,28 +74,28 @@ impl ProcedureHeader {
         self.module
     }
 
-    pub fn id(&self) -> ProcedureId {
+    pub fn id(&self) -> ItemId {
         self.id
     }
 
-    pub fn parent(&self) -> Option<ProcedureId> {
+    pub fn parent(&self) -> Option<ItemId> {
         self.parent
     }
 
-    pub fn kind(&self) -> ProcedureKind {
+    pub fn kind(&self) -> ItemKind {
         self.kind
     }
 }
 
 #[derive(Debug)]
-pub struct ProcedureSignatureUnresolved {
+pub struct ItemSignatureUnresolved {
     exit_stack: Vec<Token>,
     exit_stack_location: SourceLocation,
     entry_stack: Vec<Token>,
     entry_stack_location: SourceLocation,
 }
 
-impl ProcedureSignatureUnresolved {
+impl ItemSignatureUnresolved {
     pub fn exit_stack(&self) -> &[Token] {
         &self.exit_stack
     }
@@ -112,12 +112,12 @@ impl ProcedureSignatureUnresolved {
         self.entry_stack_location
     }
 }
-pub struct ProcedureSignatureResolved {
+pub struct ItemSignatureResolved {
     exit_stack: SmallVec<[TypeId; 8]>,
     entry_stack: SmallVec<[TypeId; 8]>,
 }
 
-impl ProcedureSignatureResolved {
+impl ItemSignatureResolved {
     pub fn exit_stack(&self) -> &[TypeId] {
         &self.exit_stack
     }
@@ -136,51 +136,51 @@ pub struct Program {
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
-    procedure_headers: HashMap<ProcedureId, ProcedureHeader>,
-    procedure_signatures_unresolved: HashMap<ProcedureId, ProcedureSignatureUnresolved>,
-    procedure_signatures_resolved: HashMap<ProcedureId, ProcedureSignatureResolved>,
-    procedure_bodies: HashMap<ProcedureId, Vec<Op>>,
-    function_data: HashMap<ProcedureId, FunctionData>,
-    const_vals: HashMap<ProcedureId, Vec<(TypeId, u64)>>,
-    analyzers: HashMap<ProcedureId, Analyzer>,
-    global_allocs: HashMap<ProcedureId, usize>,
+    item_headers: HashMap<ItemId, ItemHeader>,
+    item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
+    item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
+    item_bodies: HashMap<ItemId, Vec<Op>>,
+    function_data: HashMap<ItemId, FunctionData>,
+    const_vals: HashMap<ItemId, Vec<(TypeId, u64)>>,
+    analyzers: HashMap<ItemId, Analyzer>,
+    global_allocs: HashMap<ItemId, usize>,
 }
 
 impl Program {
-    pub fn get_all_procedures(&self) -> impl Iterator<Item = (ProcedureId, ProcedureHeader)> + '_ {
-        self.procedure_headers.iter().map(|(id, proc)| (*id, *proc))
+    pub fn get_all_items(&self) -> impl Iterator<Item = (ItemId, ItemHeader)> + '_ {
+        self.item_headers.iter().map(|(id, item)| (*id, *item))
     }
 
     pub fn get_module(&self, id: ModuleId) -> &Module {
         &self.modules[&id]
     }
 
-    pub fn get_proc_header(&self, id: ProcedureId) -> ProcedureHeader {
-        self.procedure_headers[&id]
+    pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
+        self.item_headers[&id]
     }
 
-    pub fn get_proc_header_mut(&mut self, id: ProcedureId) -> &mut ProcedureHeader {
-        self.procedure_headers.get_mut(&id).unwrap()
+    pub fn get_item_header_mut(&mut self, id: ItemId) -> &mut ItemHeader {
+        self.item_headers.get_mut(&id).unwrap()
     }
 
-    pub fn get_proc_signature_unresolved(&self, id: ProcedureId) -> &ProcedureSignatureUnresolved {
-        &self.procedure_signatures_unresolved[&id]
+    pub fn get_item_signature_unresolved(&self, id: ItemId) -> &ItemSignatureUnresolved {
+        &self.item_signatures_unresolved[&id]
     }
 
     #[track_caller]
-    pub fn get_proc_signature_resolved(&self, id: ProcedureId) -> &ProcedureSignatureResolved {
-        &self.procedure_signatures_resolved[&id]
+    pub fn get_item_signature_resolved(&self, id: ItemId) -> &ItemSignatureResolved {
+        &self.item_signatures_resolved[&id]
     }
 
-    pub fn get_proc_body(&self, id: ProcedureId) -> &[Op] {
-        &self.procedure_bodies[&id]
+    pub fn get_item_body(&self, id: ItemId) -> &[Op] {
+        &self.item_bodies[&id]
     }
 
-    pub fn set_proc_body(&mut self, id: ProcedureId, body: Vec<Op>) {
-        self.procedure_bodies.insert(id, body);
+    pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op>) {
+        self.item_bodies.insert(id, body);
     }
 
-    pub fn get_analyzer(&self, id: ProcedureId) -> &Analyzer {
+    pub fn get_analyzer(&self, id: ItemId) -> &Analyzer {
         &self.analyzers[&id]
     }
 
@@ -189,20 +189,20 @@ impl Program {
     }
 
     #[track_caller]
-    pub fn get_function_data(&self, id: ProcedureId) -> &FunctionData {
+    pub fn get_function_data(&self, id: ItemId) -> &FunctionData {
         self.function_data
             .get(&id)
-            .expect("ICE: tried to get function data for non-function proc")
+            .expect("ICE: tried to get function data for non-function item")
     }
 
     #[track_caller]
-    pub fn get_function_data_mut(&mut self, id: ProcedureId) -> &mut FunctionData {
+    pub fn get_function_data_mut(&mut self, id: ItemId) -> &mut FunctionData {
         self.function_data
             .get_mut(&id)
-            .expect("ICE: tried to get function data for non-function proc")
+            .expect("ICE: tried to get function data for non-function item")
     }
 
-    pub fn get_consts(&self, id: ProcedureId) -> Option<&[(TypeId, u64)]> {
+    pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, u64)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
 }
@@ -213,10 +213,10 @@ impl Program {
             type_store: TypeStore::new(),
             modules: Default::default(),
             module_ident_map: Default::default(),
-            procedure_headers: HashMap::new(),
-            procedure_signatures_unresolved: HashMap::new(),
-            procedure_signatures_resolved: HashMap::new(),
-            procedure_bodies: HashMap::new(),
+            item_headers: HashMap::new(),
+            item_signatures_unresolved: HashMap::new(),
+            item_signatures_resolved: HashMap::new(),
+            item_bodies: HashMap::new(),
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
@@ -333,14 +333,14 @@ impl Program {
             return Err(eyre!("failed to load program"));
         }
 
-        self.post_process_procs(interner, source_store)?;
+        self.post_process_items(interner, source_store)?;
 
         Ok(entry_module_id)
     }
 
     fn resolve_idents_in_block(
         &self,
-        proc: ProcedureHeader,
+        item: ItemHeader,
         mut body: Vec<Op>,
         had_error: &mut bool,
         interner: &Interners,
@@ -351,7 +351,7 @@ impl Program {
                 OpCode::While(while_op) => {
                     let temp_body = std::mem::take(&mut while_op.condition);
                     while_op.condition = self.resolve_idents_in_block(
-                        proc,
+                        item,
                         temp_body,
                         had_error,
                         interner,
@@ -359,7 +359,7 @@ impl Program {
                     );
                     let temp_body = std::mem::take(&mut while_op.body_block);
                     while_op.body_block = self.resolve_idents_in_block(
-                        proc,
+                        item,
                         temp_body,
                         had_error,
                         interner,
@@ -370,7 +370,7 @@ impl Program {
                     // Mmmm.. repetition...
                     let temp_body = std::mem::take(&mut if_op.condition);
                     if_op.condition = self.resolve_idents_in_block(
-                        proc,
+                        item,
                         temp_body,
                         had_error,
                         interner,
@@ -378,7 +378,7 @@ impl Program {
                     );
                     let temp_body = std::mem::take(&mut if_op.then_block);
                     if_op.then_block = self.resolve_idents_in_block(
-                        proc,
+                        item,
                         temp_body,
                         had_error,
                         interner,
@@ -386,7 +386,7 @@ impl Program {
                     );
                     let temp_body = std::mem::take(&mut if_op.else_block);
                     if_op.else_block = self.resolve_idents_in_block(
-                        proc,
+                        item,
                         temp_body,
                         had_error,
                         interner,
@@ -395,32 +395,32 @@ impl Program {
                 }
                 // Symbol in own module.
                 OpCode::UnresolvedIdent {
-                    proc: proc_token,
+                    item: item_token,
                     module: None,
                 } => {
                     // Obviously a symbol is visible to itself.
-                    let visible_id = if proc_token.lexeme == proc.name.lexeme {
-                        Some(proc.id())
+                    let visible_id = if item_token.lexeme == item.name.lexeme {
+                        Some(item.id())
                     } else {
-                        self.get_visible_symbol(proc, proc_token.lexeme)
+                        self.get_visible_symbol(item, item_token.lexeme)
                     };
                     if let Some(id) = visible_id {
                         op.code = OpCode::ResolvedIdent {
-                            module: proc.module,
-                            proc_id: id,
+                            module: item.module,
+                            item_id: id,
                         };
                     } else {
-                        let module = &self.modules[&proc.module];
-                        let token_lexeme = interner.resolve_lexeme(proc_token.lexeme);
+                        let module = &self.modules[&item.module];
+                        let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
                         let module_lexeme = interner.resolve_lexeme(module.name);
                         *had_error = true;
                         diagnostics::emit_error(
-                            proc_token.location,
+                            item_token.location,
                             format!(
                                 "symbol `{token_lexeme}` not found in module `{module_lexeme}`"
                             ),
                             Some(
-                                Label::new(proc_token.location)
+                                Label::new(item_token.location)
                                     .with_color(Color::Red)
                                     .with_message("not found"),
                             ),
@@ -431,7 +431,7 @@ impl Program {
                 }
                 // Symbol in other module.
                 OpCode::UnresolvedIdent {
-                    proc: proc_token,
+                    item: item_token,
                     module: Some(module_token),
                 } => {
                     let module_id = match self.module_ident_map.get(&module_token.lexeme) {
@@ -439,10 +439,10 @@ impl Program {
                         None => {
                             let module_name = interner.resolve_lexeme(module_token.lexeme);
                             diagnostics::emit_error(
-                                proc_token.location,
+                                item_token.location,
                                 format!("module `{module_name}` not found"),
                                 Some(
-                                    Label::new(proc_token.location)
+                                    Label::new(item_token.location)
                                         .with_color(Color::Red)
                                         .with_message("not found"),
                                 ),
@@ -455,21 +455,21 @@ impl Program {
                     };
 
                     let module = &self.modules[&module_id];
-                    match module.top_level_symbols.get(&proc_token.lexeme) {
-                        Some(proc_id) => {
+                    match module.top_level_symbols.get(&item_token.lexeme) {
+                        Some(item_id) => {
                             op.code = OpCode::ResolvedIdent {
                                 module: module_id,
-                                proc_id: *proc_id,
+                                item_id: *item_id,
                             };
                         }
                         None => {
-                            let proc_name = interner.resolve_lexeme(proc_token.lexeme);
+                            let item_name = interner.resolve_lexeme(item_token.lexeme);
                             let module_name = interner.resolve_lexeme(module_token.lexeme);
                             diagnostics::emit_error(
-                                proc_token.location,
-                                format!("symbol `{proc_name}` not found in module `{module_name}`"),
+                                item_token.location,
+                                format!("symbol `{item_name}` not found in module `{module_name}`"),
                                 Some(
-                                    Label::new(proc_token.location)
+                                    Label::new(item_token.location)
                                         .with_color(Color::Red)
                                         .with_message("not found"),
                                 ),
@@ -495,19 +495,19 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
-        let procs: Vec<_> = self
-            .procedure_headers
+        let items: Vec<_> = self
+            .item_headers
             .iter()
-            .map(|(id, proc)| (*id, *proc))
+            .map(|(id, item)| (*id, *item))
             .collect();
 
-        for (proc_id, proc) in procs {
-            trace!(name = interner.get_symbol_name(self, proc_id));
-            let body = self.procedure_bodies.remove(&proc_id).unwrap();
+        for (item_id, item) in items {
+            trace!(name = interner.get_symbol_name(self, item_id));
+            let body = self.item_bodies.remove(&item_id).unwrap();
 
-            self.procedure_bodies.insert(
-                proc_id,
-                self.resolve_idents_in_block(proc, body, &mut had_error, interner, source_store),
+            self.item_bodies.insert(
+                item_id,
+                self.resolve_idents_in_block(item, body, &mut had_error, interner, source_store),
             );
         }
 
@@ -590,15 +590,15 @@ impl Program {
         let _span = debug_span!(stringify!(Program::resolve_types)).entered();
         let mut had_error = false;
 
-        for (proc_id, proc) in self.procedure_headers.iter().map(|(id, proc)| (*id, *proc)) {
-            trace!(name = interner.get_symbol_name(self, proc_id));
+        for (item_id, item) in self.item_headers.iter().map(|(id, item)| (*id, *item)) {
+            trace!(name = interner.get_symbol_name(self, item_id));
 
-            let unresolved_sig = &self.procedure_signatures_unresolved[&proc_id];
+            let unresolved_sig = &self.item_signatures_unresolved[&item_id];
 
             let mut resolved_entry = SmallVec::with_capacity(unresolved_sig.entry_stack.len());
             let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.len());
 
-            if proc.kind == ProcedureKind::Memory {
+            if item.kind == ItemKind::Memory {
                 resolved_exit.push(
                     self.type_store
                         .get_builtin(type_store::BuiltinTypes::U64)
@@ -624,17 +624,17 @@ impl Program {
                 }
             }
 
-            self.procedure_signatures_resolved.insert(
-                proc_id,
-                ProcedureSignatureResolved {
+            self.item_signatures_resolved.insert(
+                item_id,
+                ItemSignatureResolved {
                     entry_stack: resolved_entry,
                     exit_stack: resolved_exit,
                 },
             );
 
-            let body = self.procedure_bodies.remove(&proc_id).unwrap();
-            self.procedure_bodies.insert(
-                proc_id,
+            let body = self.item_bodies.remove(&item_id).unwrap();
+            self.item_bodies.insert(
+                item_id,
                 self.resolve_types_in_block(body, &mut had_error, interner, source_store),
             );
         }
@@ -648,7 +648,7 @@ impl Program {
     fn expand_macros_in_block(
         &self,
         block: &mut Vec<Op>,
-        id: ProcedureId,
+        id: ItemId,
         new_op_id: &mut impl FnMut() -> OpId,
     ) {
         let mut i = 0;
@@ -663,12 +663,12 @@ impl Program {
                     self.expand_macros_in_block(&mut if_op.then_block, id, new_op_id);
                     self.expand_macros_in_block(&mut if_op.else_block, id, new_op_id);
                 }
-                OpCode::ResolvedIdent { proc_id, .. } if proc_id != id => {
-                    let found_proc = self.procedure_headers[&proc_id];
-                    if found_proc.kind() == ProcedureKind::Macro {
+                OpCode::ResolvedIdent { item_id, .. } if item_id != id => {
+                    let found_item = self.item_headers[&item_id];
+                    if found_item.kind() == ItemKind::Macro {
                         let token = block[i].token;
                         let expansions = block[i].expansions.clone();
-                        let new_ops = self.get_proc_body(proc_id).iter().map(|new_op| {
+                        let new_ops = self.get_item_body(item_id).iter().map(|new_op| {
                             let mut new_op = new_op.clone();
                             new_op.id = new_op_id();
                             new_op.expansions.push(token.location);
@@ -692,16 +692,16 @@ impl Program {
 
     fn expand_macros(&mut self, interner: &mut Interners) {
         let _span = debug_span!(stringify!(Program::expand_macros)).entered();
-        let non_macro_procs: Vec<_> = self
-            .procedure_headers
+        let non_macro_items: Vec<_> = self
+            .item_headers
             .iter()
-            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
-            .map(|(id, proc)| (*id, *proc))
+            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .map(|(id, item)| (*id, *item))
             .collect();
 
-        for (proc_id, proc) in non_macro_procs {
-            trace!(name = interner.get_symbol_name(self, proc_id));
-            let mut new_op_id = proc.new_op_id;
+        for (item_id, item) in non_macro_items {
+            trace!(name = interner.get_symbol_name(self, item_id));
+            let mut new_op_id = item.new_op_id;
 
             let mut op_id_gen = || {
                 let id = new_op_id;
@@ -709,20 +709,20 @@ impl Program {
                 OpId(id)
             };
 
-            let mut body = self.procedure_bodies.remove(&proc_id).unwrap();
-            self.expand_macros_in_block(&mut body, proc_id, &mut op_id_gen);
-            self.procedure_bodies.insert(proc_id, body);
+            let mut body = self.item_bodies.remove(&item_id).unwrap();
+            self.expand_macros_in_block(&mut body, item_id, &mut op_id_gen);
+            self.item_bodies.insert(item_id, body);
         }
     }
 
     fn check_invalid_cyclic_refs_in_block(
         &self,
-        own_proc: ProcedureHeader,
+        root_item: ItemHeader,
         block: &[Op],
-        cur_proc: ProcedureHeader,
+        cur_item: ItemHeader,
         kind: &str,
-        already_checked: &mut HashSet<ProcedureId>,
-        check_queue: &mut Vec<ProcedureHeader>,
+        already_checked: &mut HashSet<ItemId>,
+        check_queue: &mut Vec<ItemHeader>,
         had_error: &mut bool,
         source_store: &SourceStorage,
     ) {
@@ -730,9 +730,9 @@ impl Program {
             match op.code {
                 OpCode::While(ref while_op) => {
                     self.check_invalid_cyclic_refs_in_block(
-                        own_proc,
+                        root_item,
                         &while_op.condition,
-                        cur_proc,
+                        cur_item,
                         kind,
                         already_checked,
                         check_queue,
@@ -740,9 +740,9 @@ impl Program {
                         source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
-                        own_proc,
+                        root_item,
                         &while_op.body_block,
-                        cur_proc,
+                        cur_item,
                         kind,
                         already_checked,
                         check_queue,
@@ -753,9 +753,9 @@ impl Program {
                 }
                 OpCode::If(ref if_op) => {
                     self.check_invalid_cyclic_refs_in_block(
-                        own_proc,
+                        root_item,
                         &if_op.condition,
-                        cur_proc,
+                        cur_item,
                         kind,
                         already_checked,
                         check_queue,
@@ -763,9 +763,9 @@ impl Program {
                         source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
-                        own_proc,
+                        root_item,
                         &if_op.then_block,
-                        cur_proc,
+                        cur_item,
                         kind,
                         already_checked,
                         check_queue,
@@ -773,9 +773,9 @@ impl Program {
                         source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
-                        own_proc,
+                        root_item,
                         &if_op.else_block,
-                        cur_proc,
+                        cur_item,
                         kind,
                         already_checked,
                         check_queue,
@@ -783,20 +783,20 @@ impl Program {
                         source_store,
                     );
                 }
-                OpCode::ResolvedIdent { proc_id, .. } => {
-                    // False means that there was already a value in the set with this proc_id
+                OpCode::ResolvedIdent { item_id, .. } => {
+                    // False means that there was already a value in the set with this item_id
                     #[allow(clippy::bool_comparison)]
-                    if already_checked.insert(proc_id) == false {
+                    if already_checked.insert(item_id) == false {
                         continue;
                     }
 
-                    if proc_id == own_proc.id() {
+                    if item_id == root_item.id() {
                         *had_error = true;
                         diagnostics::emit_error(
-                            cur_proc.name.location,
+                            cur_item.name.location,
                             format!("cyclic {kind} detected"),
                             [
-                                Label::new(own_proc.name.location)
+                                Label::new(root_item.name.location)
                                     .with_color(Color::Red)
                                     .with_message(format!("in this {kind}")),
                                 Label::new(op.token.location)
@@ -807,7 +807,7 @@ impl Program {
                             source_store,
                         );
                     } else {
-                        check_queue.push(self.get_proc_header(proc_id));
+                        check_queue.push(self.get_item_header(item_id));
                     }
                 }
                 _ => (),
@@ -825,25 +825,25 @@ impl Program {
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for own_proc in self.procedure_headers.values().copied() {
-            trace!(name = interner.get_symbol_name(self, own_proc.id()));
+        for root_item in self.item_headers.values().copied() {
+            trace!(name = interner.get_symbol_name(self, root_item.id()));
 
-            let kind = match own_proc.kind() {
-                ProcedureKind::Const => "const",
-                ProcedureKind::Macro => "macro",
-                ProcedureKind::Assert => "assert",
-                ProcedureKind::Memory | ProcedureKind::Function => continue,
+            let kind = match root_item.kind() {
+                ItemKind::Const => "const",
+                ItemKind::Macro => "macro",
+                ItemKind::Assert => "assert",
+                ItemKind::Memory | ItemKind::Function => continue,
             };
 
             check_queue.clear();
-            check_queue.push(own_proc);
+            check_queue.push(root_item);
             already_checked.clear();
 
-            while let Some(proc) = check_queue.pop() {
+            while let Some(item) = check_queue.pop() {
                 self.check_invalid_cyclic_refs_in_block(
-                    own_proc,
-                    &self.procedure_bodies[&proc.id],
-                    proc,
+                    root_item,
+                    &self.item_bodies[&item.id],
+                    item,
                     kind,
                     &mut already_checked,
                     &mut check_queue,
@@ -866,19 +866,16 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
-        let procs: Vec<_> = self
-            .procedure_headers
+        let items: Vec<_> = self
+            .item_headers
             .iter()
-            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
-        for id in procs {
-            let _span = trace_span!(
-                "Analyzing procedure",
-                name = interner.get_symbol_name(self, id)
-            )
-            .entered();
+        for id in items {
+            let _span =
+                trace_span!("Analyzing item", name = interner.get_symbol_name(self, id)).entered();
             let mut analyzer = Analyzer::default();
             let mut local_error = false;
             local_error |= static_analysis::data_flow_analysis(
@@ -917,30 +914,30 @@ impl Program {
             .ok_or_else(|| eyre!("data analysis error"))
     }
 
-    fn evaluate_const_procs(
+    fn evaluate_const_items(
         &mut self,
         interner: &Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        let _span = debug_span!(stringify!(Program::evaluate_const_procs)).entered();
+        let _span = debug_span!(stringify!(Program::evaluate_const_items)).entered();
         let mut had_error = false;
 
         let mut const_queue: Vec<_> = self
-            .procedure_headers
+            .item_headers
             .iter()
-            .filter(|(_, proc)| proc.kind() == ProcedureKind::Const)
+            .filter(|(_, item)| item.kind() == ItemKind::Const)
             .map(|(id, _)| *id)
             .collect();
         let mut next_run_queue = Vec::with_capacity(const_queue.len());
 
         loop {
             for const_id in const_queue.drain(..) {
-                let proc_sig = self.get_proc_signature_resolved(const_id);
+                let item_sig = self.get_item_signature_resolved(const_id);
                 match simulate_execute_program(self, const_id, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
-                            .zip(&proc_sig.exit_stack)
+                            .zip(&item_sig.exit_stack)
                             .map(|(val, ty)| (*ty, val))
                             .collect();
 
@@ -970,7 +967,7 @@ impl Program {
 
     fn process_idents_in_block(
         &mut self,
-        own_proc_id: ProcedureId,
+        own_item_id: ItemId,
         block: Vec<Op>,
         had_error: &mut bool,
         interner: &Interners,
@@ -983,14 +980,14 @@ impl Program {
                     new_ops.push(Op {
                         code: OpCode::While(Box::new(While {
                             condition: self.process_idents_in_block(
-                                own_proc_id,
+                                own_item_id,
                                 while_op.condition,
                                 had_error,
                                 interner,
                                 source_store,
                             ),
                             body_block: self.process_idents_in_block(
-                                own_proc_id,
+                                own_item_id,
                                 while_op.body_block,
                                 had_error,
                                 interner,
@@ -1005,21 +1002,21 @@ impl Program {
                 }
                 OpCode::If(if_op) => {
                     let new_condition = self.process_idents_in_block(
-                        own_proc_id,
+                        own_item_id,
                         if_op.condition,
                         had_error,
                         interner,
                         source_store,
                     );
                     let new_then_block = self.process_idents_in_block(
-                        own_proc_id,
+                        own_item_id,
                         if_op.then_block,
                         had_error,
                         interner,
                         source_store,
                     );
                     let new_else_block = self.process_idents_in_block(
-                        own_proc_id,
+                        own_item_id,
                         if_op.else_block,
                         had_error,
                         interner,
@@ -1039,14 +1036,14 @@ impl Program {
                     });
                 }
 
-                OpCode::ResolvedIdent { module, proc_id } => {
-                    let found_proc = self.procedure_headers[&proc_id];
+                OpCode::ResolvedIdent { module, item_id } => {
+                    let found_item = self.item_headers[&item_id];
 
-                    match found_proc.kind() {
-                        ProcedureKind::Const => {
-                            let Some(vals) = self.const_vals.get( &found_proc.id ) else {
-                                let own_proc = self.procedure_headers[&own_proc_id];
-                                let name = interner.resolve_lexeme(own_proc.name.lexeme);
+                    match found_item.kind() {
+                        ItemKind::Const => {
+                            let Some(vals) = self.const_vals.get( &found_item.id ) else {
+                                let own_item = self.item_headers[&own_item_id];
+                                let name = interner.resolve_lexeme(own_item.name.lexeme);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (kind, val) in vals {
@@ -1070,42 +1067,42 @@ impl Program {
                                     expansions: op.expansions.clone(),
                                 });
 
-                                let analyzer = self.analyzers.get_mut(&own_proc_id).unwrap();
+                                let analyzer = self.analyzers.get_mut(&own_item_id).unwrap();
                                 let op_io = analyzer.get_op_io(op.id);
                                 let out_id = op_io.outputs()[0];
                                 analyzer.set_value_const(out_id, const_val);
                             }
                         }
-                        ProcedureKind::Memory => {
+                        ItemKind::Memory => {
                             new_ops.push(Op {
                                 code: OpCode::Memory {
                                     module_id: module,
-                                    proc_id,
+                                    item_id,
                                     offset: 0,
-                                    global: found_proc.parent().is_none(),
+                                    global: found_item.parent().is_none(),
                                 },
                                 id: op.id,
                                 token: op.token,
                                 expansions: op.expansions,
                             });
                         }
-                        ProcedureKind::Function => {
+                        ItemKind::Function => {
                             new_ops.push(Op {
-                                code: OpCode::CallProc { module, proc_id },
+                                code: OpCode::CallFunction { module, item_id },
                                 id: op.id,
                                 token: op.token,
                                 expansions: op.expansions,
                             });
                         }
-                        ProcedureKind::Macro => {
-                            let own_proc = self.procedure_headers[&own_proc_id];
-                            let name = interner.resolve_lexeme(own_proc.name.lexeme);
+                        ItemKind::Macro => {
+                            let own_item = self.item_headers[&own_item_id];
+                            let name = interner.resolve_lexeme(own_item.name.lexeme);
                             panic!(
                                 "ICE: Encountered assert, or macro during ident processing {name}"
                             );
                         }
 
-                        ProcedureKind::Assert => {
+                        ItemKind::Assert => {
                             *had_error = true;
                             diagnostics::emit_error(
                                 op.token.location,
@@ -1137,25 +1134,25 @@ impl Program {
         let mut had_error = false;
 
         // Macros should already have been expanded.
-        let all_proc_ids: Vec<_> = self
-            .procedure_headers
+        let all_item_ids: Vec<_> = self
+            .item_headers
             .iter()
-            .filter(|(_, p)| p.kind() != ProcedureKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro)
             .map(|(id, _)| *id)
             .collect();
 
-        for own_proc_id in all_proc_ids {
-            trace!("Processing {}", interner.get_symbol_name(self, own_proc_id));
+        for own_item_id in all_item_ids {
+            trace!("Processing {}", interner.get_symbol_name(self, own_item_id));
 
-            let old_body = self.procedure_bodies.remove(&own_proc_id).unwrap();
+            let old_body = self.item_bodies.remove(&own_item_id).unwrap();
             let new_body = self.process_idents_in_block(
-                own_proc_id,
+                own_item_id,
                 old_body,
                 &mut had_error,
                 interner,
                 source_store,
             );
-            self.procedure_bodies.insert(own_proc_id, new_body);
+            self.item_bodies.insert(own_item_id, new_body);
         }
 
         had_error
@@ -1172,15 +1169,15 @@ impl Program {
         let _span = debug_span!(stringify!(Program::evaluate_allocation_sizes)).entered();
         let mut had_error = false;
 
-        let all_mem_procs: Vec<_> = self
-            .procedure_headers
+        let all_mem_items: Vec<_> = self
+            .item_headers
             .iter()
-            .filter(|(_, p)| p.kind() == ProcedureKind::Memory)
-            .map(|(id, proc)| (*id, *proc))
+            .filter(|(_, i)| i.kind() == ItemKind::Memory)
+            .map(|(id, item)| (*id, *item))
             .collect();
 
-        for (proc_id, proc) in all_mem_procs {
-            let mut stack = match simulate_execute_program(self, proc_id, interner, source_store) {
+        for (item_id, item) in all_mem_items {
+            let mut stack = match simulate_execute_program(self, item_id, interner, source_store) {
                 Ok(stack) => stack,
                 Err(_) => {
                     had_error = true;
@@ -1191,17 +1188,17 @@ impl Program {
             // The type checker ensures a single stack item.
             let alloc_size = stack.pop().unwrap().to_usize();
 
-            match proc.parent {
+            match item.parent {
                 // If we have a parent, it means it's a local allocation.
                 Some(parent_id) => {
                     let function_data = self.function_data.get_mut(&parent_id).unwrap();
-                    function_data.alloc_sizes.insert(proc_id, alloc_size);
+                    function_data.alloc_sizes.insert(item_id, alloc_size);
                 }
 
                 // If not, this is global, and needs to be placed in the program.
                 // Less work needs doing here as global allocs are always referenced by name.
                 None => {
-                    self.global_allocs.insert(proc_id, alloc_size);
+                    self.global_allocs.insert(item_id, alloc_size);
                 }
             }
         }
@@ -1216,8 +1213,8 @@ impl Program {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
-        for (&id, &proc) in self.procedure_headers.iter() {
-            if proc.kind() != ProcedureKind::Memory {
+        for (&id, &item) in self.item_headers.iter() {
+            if item.kind() != ItemKind::Memory {
                 continue;
             }
 
@@ -1232,10 +1229,10 @@ impl Program {
 
             if !assert_result {
                 diagnostics::emit_error(
-                    proc.name.location,
+                    item.name.location,
                     "assert failure",
                     Some(
-                        Label::new(proc.name.location)
+                        Label::new(item.name.location)
                             .with_color(Color::Red)
                             .with_message("evaluated to false"),
                     ),
@@ -1252,12 +1249,12 @@ impl Program {
             .ok_or_else(|| eyre!("failed assert check"))
     }
 
-    fn post_process_procs(
+    fn post_process_items(
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
     ) -> Result<()> {
-        let _span = debug_span!(stringify!(Program::post_process_procs)).entered();
+        let _span = debug_span!(stringify!(Program::post_process_items)).entered();
         self.resolve_idents(interner, source_store)?;
         self.resolve_types(interner, source_store)?;
 
@@ -1265,7 +1262,7 @@ impl Program {
         self.expand_macros(interner);
 
         self.analyze_data_flow(interner, source_store)?;
-        self.evaluate_const_procs(interner, source_store)?;
+        self.evaluate_const_items(interner, source_store)?;
 
         self.process_idents(interner, source_store)?;
         self.evaluate_allocation_sizes(interner, source_store)?;
@@ -1274,21 +1271,21 @@ impl Program {
         Ok(())
     }
 
-    pub fn new_procedure(
+    pub fn new_item(
         &mut self,
         name: Token,
         module: ModuleId,
-        kind: ProcedureKind,
-        parent: Option<ProcedureId>,
+        kind: ItemKind,
+        parent: Option<ItemId>,
         exit_stack: Vec<Token>,
         exit_stack_location: SourceLocation,
         entry_stack: Vec<Token>,
         entry_stack_location: SourceLocation,
-    ) -> ProcedureId {
-        let id = self.procedure_headers.len();
-        let id = ProcedureId(id.to_u16().unwrap());
+    ) -> ItemId {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
 
-        let proc = ProcedureHeader {
+        let item = ItemHeader {
             name,
             module,
             id,
@@ -1297,17 +1294,17 @@ impl Program {
             new_op_id: 0,
         };
 
-        let sig = ProcedureSignatureUnresolved {
+        let sig = ItemSignatureUnresolved {
             exit_stack,
             exit_stack_location,
             entry_stack,
             entry_stack_location,
         };
 
-        self.procedure_headers.insert(id, proc);
-        self.procedure_signatures_unresolved.insert(id, sig);
+        self.item_headers.insert(id, item);
+        self.item_signatures_unresolved.insert(id, sig);
 
-        if kind == ProcedureKind::Function {
+        if kind == ItemKind::Function {
             self.function_data.insert(id, FunctionData::default());
         }
 
@@ -1319,13 +1316,13 @@ impl Program {
         id
     }
 
-    pub fn get_visible_symbol(&self, from: ProcedureHeader, symbol: Spur) -> Option<ProcedureId> {
+    pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
         if from.name.lexeme == symbol {
             return Some(from.id);
         }
 
         // Check our own children.
-        if from.kind == ProcedureKind::Function {
+        if from.kind == ItemKind::Function {
             let fd = self.get_function_data(from.id);
             if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                 return Some(*found_id);
@@ -1335,19 +1332,19 @@ impl Program {
         // Check our parent's children.
         let mut cur_id = from.parent;
         while let Some(id) = cur_id {
-            let proc = self.get_proc_header(id);
+            let item = self.get_item_header(id);
 
-            if proc.name.lexeme == symbol {
-                return Some(proc.id);
+            if item.name.lexeme == symbol {
+                return Some(item.id);
             }
 
-            if proc.kind == ProcedureKind::Function {
-                let fd = self.get_function_data(proc.id);
+            if item.kind == ItemKind::Function {
+                let fd = self.get_function_data(item.id);
                 if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                     return Some(*found_id);
                 }
             }
-            cur_id = proc.parent;
+            cur_id = item.parent;
         }
 
         let module = &self.modules[&from.module];
@@ -1357,7 +1354,7 @@ impl Program {
 
 pub struct Module {
     name: Spur,
-    top_level_symbols: HashMap<Spur, ProcedureId>,
+    top_level_symbols: HashMap<Spur, ItemId>,
 }
 
 impl Module {
@@ -1395,7 +1392,7 @@ impl Module {
         Ok(())
     }
 
-    pub fn get_proc_id(&self, name: Spur) -> Option<ProcedureId> {
+    pub fn get_item_id(&self, name: Spur) -> Option<ItemId> {
         self.top_level_symbols.get(&name).copied()
     }
 

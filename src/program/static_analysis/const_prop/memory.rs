@@ -82,7 +82,7 @@ pub(super) fn load(
 
     let new_const_val = match types {
         // We can't do memory allocation checks yet, as we haven't evaluated sizes yet.
-        // Maybe move this const evaluation pass after const proc evaluation.
+        // Maybe move this const evaluation pass after const item evaluation.
         ConstVal::Ptr {
             id: PtrId::Str(spur),
             src_op_loc,

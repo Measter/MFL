@@ -8,7 +8,7 @@ use crate::{
     program::{
         static_analysis::{failed_compare_stack_types, Analyzer},
         type_store::{BuiltinTypes, TypeStore},
-        ProcedureId, ProcedureKind, ProcedureSignatureResolved, Program,
+        ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
 };
@@ -21,13 +21,13 @@ pub(super) fn epilogue_return(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
-    proc_id: ProcedureId,
+    item_id: ItemId,
 ) {
-    let proc_sig = program.get_proc_signature_resolved(proc_id);
-    let proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
+    let item_sig = program.get_item_signature_resolved(item_id);
+    let item_sig_tokens = program.get_item_signature_unresolved(item_id);
     let op_data = analyzer.get_op_io(op.id);
 
-    for (&expected, actual_id) in proc_sig.exit_stack().iter().zip(&op_data.inputs) {
+    for (&expected, actual_id) in item_sig.exit_stack().iter().zip(&op_data.inputs) {
         let actual_type = analyzer.value_types([*actual_id]);
 
         if actual_type != Some([expected]) {
@@ -37,10 +37,10 @@ pub(super) fn epilogue_return(
                 source_store,
                 type_store,
                 &op_data.inputs,
-                proc_sig.exit_stack(),
-                proc_sig_tokens.exit_stack_location(),
+                item_sig.exit_stack(),
+                item_sig_tokens.exit_stack_location(),
                 op.token.location,
-                "procedure return stack mismatch",
+                "item return stack mismatch",
             );
             *had_error = true;
             break;
@@ -48,11 +48,11 @@ pub(super) fn epilogue_return(
     }
 }
 
-pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, proc_sig: &ProcedureSignatureResolved) {
+pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatureResolved) {
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs.clone();
 
-    for (output_id, &output_type) in outputs.into_iter().zip(proc_sig.entry_stack()) {
+    for (output_id, &output_type) in outputs.into_iter().zip(item_sig.entry_stack()) {
         analyzer.set_value_type(output_id, output_type);
     }
 }
@@ -65,20 +65,20 @@ pub(super) fn resolved_ident(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
-    proc_id: ProcedureId,
+    item_id: ItemId,
 ) {
-    let referenced_proc = program.get_proc_header(proc_id);
-    let referenced_proc_sig = program.get_proc_signature_resolved(proc_id);
-    let referenced_proc_sig_tokens = program.get_proc_signature_unresolved(proc_id);
+    let referenced_item = program.get_item_header(item_id);
+    let referenced_item_sig = program.get_item_signature_resolved(item_id);
+    let referenced_item_sig_tokens = program.get_item_signature_unresolved(item_id);
     let op_data = analyzer.get_op_io(op.id);
 
-    match referenced_proc.kind() {
-        ProcedureKind::Memory => {
+    match referenced_item.kind() {
+        ItemKind::Memory => {
             let output_id = op_data.outputs[0];
             analyzer.set_value_type(output_id, type_store.get_builtin(BuiltinTypes::Pointer).id);
         }
         _ => {
-            for (&expected, actual_id) in referenced_proc_sig
+            for (&expected, actual_id) in referenced_item_sig
                 .entry_stack()
                 .iter()
                 .zip(&op_data.inputs)
@@ -92,8 +92,8 @@ pub(super) fn resolved_ident(
                         source_store,
                         type_store,
                         &op_data.inputs,
-                        referenced_proc_sig.entry_stack(),
-                        referenced_proc_sig_tokens.entry_stack_location(),
+                        referenced_item_sig.entry_stack(),
+                        referenced_item_sig_tokens.entry_stack_location(),
                         op.token.location,
                         "procedure call signature mismatch",
                     );
@@ -104,7 +104,7 @@ pub(super) fn resolved_ident(
 
             let output_ids = op_data.outputs.clone();
 
-            for (&output_type, output_id) in referenced_proc_sig.exit_stack().iter().zip(output_ids)
+            for (&output_type, output_id) in referenced_item_sig.exit_stack().iter().zip(output_ids)
             {
                 analyzer.set_value_type(output_id, output_type);
             }
@@ -126,7 +126,7 @@ pub(super) fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) 
 
 pub(super) fn analyze_while(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -143,7 +143,7 @@ pub(super) fn analyze_while(
     // Evaluate the condition.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &while_op.condition,
         analyzer,
         had_error,
@@ -153,7 +153,7 @@ pub(super) fn analyze_while(
     // Evaluate the body.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &while_op.body_block,
         analyzer,
         had_error,
@@ -221,7 +221,7 @@ pub(super) fn analyze_while(
 
 pub(super) fn analyze_if(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     interner: &Interners,
@@ -234,7 +234,7 @@ pub(super) fn analyze_if(
     // Thankfully the order is unimportant here.
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.condition,
         analyzer,
         had_error,
@@ -243,7 +243,7 @@ pub(super) fn analyze_if(
     );
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.then_block,
         analyzer,
         had_error,
@@ -252,7 +252,7 @@ pub(super) fn analyze_if(
     );
     super::analyze_block(
         program,
-        proc_id,
+        item_id,
         &if_op.else_block,
         analyzer,
         had_error,

@@ -13,7 +13,7 @@ use crate::{
     n_ops::HashMapNOps,
     opcode::{Op, OpId},
     option::OptionExt,
-    program::{ProcedureId, Program},
+    program::{ItemId, Program},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -25,7 +25,7 @@ mod type_check2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PtrId {
-    Mem(ProcedureId),
+    Mem(ItemId),
     Str(Spur),
 }
 
@@ -345,7 +345,7 @@ fn generate_stack_length_mismatch_diag(
 
 pub fn data_flow_analysis(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -353,11 +353,10 @@ pub fn data_flow_analysis(
     let mut stack = Vec::new();
     let mut had_error = false;
 
-    // TODO: Only pass in the proc id.
     data_flow::analyze_block(
         program,
-        proc_id,
-        program.get_proc_body(proc_id),
+        item_id,
+        program.get_item_body(item_id),
         analyzer,
         &mut stack,
         &mut had_error,
@@ -371,7 +370,7 @@ pub fn data_flow_analysis(
 
 pub fn type_check(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -380,8 +379,8 @@ pub fn type_check(
 
     type_check2::analyze_block(
         program,
-        proc_id,
-        program.get_proc_body(proc_id),
+        item_id,
+        program.get_item_body(item_id),
         analyzer,
         &mut had_error,
         interner,
@@ -393,7 +392,7 @@ pub fn type_check(
 
 pub fn const_propagation(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -402,8 +401,8 @@ pub fn const_propagation(
 
     const_prop::analyze_block(
         program,
-        proc_id,
-        program.get_proc_body(proc_id),
+        item_id,
+        program.get_item_body(item_id),
         analyzer,
         &mut had_error,
         interner,

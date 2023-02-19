@@ -31,7 +31,7 @@ use crate::{
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
         type_store::{IntWidth, TypeKind, TypeStore},
-        ProcedureId, ProcedureKind, Program,
+        ItemId, ItemKind, Program,
     },
 };
 
@@ -94,7 +94,7 @@ fn is_fully_const(id: ValueId, analyzer: &Analyzer) -> bool {
 #[derive(Debug, Default)]
 struct ValueStore<'ctx> {
     value_map: HashMap<ValueId, BasicValueEnum<'ctx>>,
-    variable_map: HashMap<ProcedureId, PointerValue<'ctx>>,
+    variable_map: HashMap<ItemId, PointerValue<'ctx>>,
     string_map: HashMap<Spur, PointerValue<'ctx>>,
     merge_pair_map: HashMap<ValueId, PointerValue<'ctx>>,
 }
@@ -208,9 +208,9 @@ struct CodeGen<'ctx> {
     builder: Builder<'ctx>,
     pass_manager: PassManager<Module<'ctx>>,
 
-    function_queue: Vec<ProcedureId>,
-    processed_functions: HashSet<ProcedureId>,
-    proc_function_map: HashMap<ProcedureId, FunctionValue<'ctx>>,
+    function_queue: Vec<ItemId>,
+    processed_functions: HashSet<ItemId>,
+    item_function_map: HashMap<ItemId, FunctionValue<'ctx>>,
     syscall_wrappers: Vec<FunctionValue<'ctx>>,
 }
 
@@ -232,16 +232,16 @@ impl<'ctx> CodeGen<'ctx> {
             pass_manager,
             function_queue: Vec::new(),
             processed_functions: HashSet::new(),
-            proc_function_map: HashMap::new(),
+            item_function_map: HashMap::new(),
             syscall_wrappers: Vec::new(),
         }
     }
 
-    fn enqueue_function(&mut self, proc: ProcedureId) {
-        if !self.processed_functions.contains(&proc) {
-            trace!(name = ?proc, "Enqueing function");
-            self.function_queue.push(proc);
-            self.processed_functions.insert(proc);
+    fn enqueue_function(&mut self, item: ItemId) {
+        if !self.processed_functions.contains(&item) {
+            trace!(name = ?item, "Enqueing function");
+            self.function_queue.push(item);
+            self.processed_functions.insert(item);
         }
     }
 
@@ -249,14 +249,16 @@ impl<'ctx> CodeGen<'ctx> {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
-        for (id, proc) in program.get_all_procedures() {
-            let ProcedureKind::Function = proc.kind() else { continue };
-            let proc_sig = program.get_proc_signature_resolved(id);
+        for (id, item) in program.get_all_items() {
+            if item.kind() != ItemKind::Function {
+                continue;
+            }
+            let item_sig = program.get_item_signature_resolved(id);
 
             let name = interner.get_symbol_name(program, id);
             trace!(name, "Building prototype");
 
-            let entry_stack: Vec<BasicMetadataTypeEnum> = proc_sig
+            let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
                 .entry_stack()
                 .iter()
                 .map(|t| {
@@ -271,10 +273,10 @@ impl<'ctx> CodeGen<'ctx> {
                 })
                 .collect();
 
-            let function_type = if proc_sig.exit_stack().is_empty() {
+            let function_type = if item_sig.exit_stack().is_empty() {
                 self.ctx.void_type().fn_type(&entry_stack, false)
             } else {
-                let exit_stack: Vec<_> = proc_sig
+                let exit_stack: Vec<_> = item_sig
                     .exit_stack()
                     .iter()
                     .map(|t| {
@@ -300,7 +302,7 @@ impl<'ctx> CodeGen<'ctx> {
             let function = self
                 .module
                 .add_function(name, function_type, Some(Linkage::Private));
-            self.proc_function_map.insert(id, function);
+            self.item_function_map.insert(id, function);
         }
         proto_span.exit();
 
@@ -344,7 +346,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         value_store: &mut ValueStore<'ctx>,
-        id: ProcedureId,
+        id: ItemId,
         block: &[Op],
         function: FunctionValue<'ctx>,
         interner: &mut Interners,
@@ -360,8 +362,8 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
                 OpCode::Over { depth, .. } => trace!(?op.id, depth, "Over"),
                 OpCode::Memory {
-                    proc_id, global, ..
-                } => trace!(?op.id, ?proc_id, global, "Memory"),
+                    item_id, global, ..
+                } => trace!(?op.id, ?item_id, global, "Memory"),
                 OpCode::Rot {
                     item_count,
                     direction,
@@ -603,8 +605,8 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::ArgC => todo!(),
                 OpCode::ArgV => todo!(),
-                OpCode::CallProc {
-                    proc_id: callee_id, ..
+                OpCode::CallFunction {
+                    item_id: callee_id, ..
                 } => {
                     let args: Vec<BasicMetadataValueEnum> = op_io
                         .inputs()
@@ -622,7 +624,7 @@ impl<'ctx> CodeGen<'ctx> {
                         .collect();
 
                     let callee_name = interner.get_symbol_name(program, *callee_id);
-                    let callee_value = self.proc_function_map[callee_id];
+                    let callee_value = self.item_function_map[callee_id];
 
                     let result = self.builder.build_call(
                         callee_value,
@@ -1029,16 +1031,16 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_store(cast_ptr, data);
                 }
                 OpCode::Memory {
-                    proc_id,
+                    item_id,
                     global: false,
                     ..
                 } => {
-                    let ptr = value_store.variable_map[proc_id];
+                    let ptr = value_store.variable_map[item_id];
                     value_store.store_value(self, op_io.outputs()[0], ptr.into());
                 }
                 OpCode::Memory {
                     module_id,
-                    proc_id,
+                    item_id,
                     offset,
                     global: true,
                 } => todo!(),
@@ -1226,7 +1228,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn compile_procedure(
         &mut self,
         program: &Program,
-        id: ProcedureId,
+        id: ItemId,
         function: FunctionValue<'ctx>,
         interner: &mut Interners,
     ) {
@@ -1238,11 +1240,11 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let proc_data = program.get_function_data(id);
-        for (&proc_id, alloc_size) in &proc_data.alloc_sizes {
+        let function_data = program.get_function_data(id);
+        for (&item_id, alloc_size) in &function_data.alloc_sizes {
             let variable = self.builder.build_alloca(
                 self.ctx.i8_type().array_type(alloc_size.to_u32().unwrap()),
-                interner.get_symbol_name(program, proc_id),
+                interner.get_symbol_name(program, item_id),
             );
             let variable = self.builder.build_pointer_cast(
                 variable,
@@ -1250,12 +1252,12 @@ impl<'ctx> CodeGen<'ctx> {
                 "ptr_cast",
             );
 
-            value_store.variable_map.insert(proc_id, variable);
+            value_store.variable_map.insert(item_id, variable);
         }
 
         trace!("Defining merge variables");
         self.build_merge_variables(
-            program.get_proc_body(id),
+            program.get_item_body(id),
             program.get_analyzer(id),
             program.get_type_store(),
             &mut value_store.merge_pair_map,
@@ -1267,7 +1269,7 @@ impl<'ctx> CodeGen<'ctx> {
                 program,
                 &mut value_store,
                 id,
-                program.get_proc_body(id),
+                program.get_item_body(id),
                 function,
                 interner,
             );
@@ -1284,22 +1286,22 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build(&mut self, program: &Program, interner: &mut Interners) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
-        while let Some(proc_id) = self.function_queue.pop() {
-            let function = self.proc_function_map[&proc_id];
-            self.compile_procedure(program, proc_id, function, interner);
+        while let Some(item_id) = self.function_queue.pop() {
+            let function = self.item_function_map[&item_id];
+            self.compile_procedure(program, item_id, function, interner);
         }
 
         self.pass_manager.run_on(&self.module);
     }
 
-    fn build_entry(&mut self, entry_id: ProcedureId) {
+    fn build_entry(&mut self, entry_id: ItemId) {
         let function_type = self.ctx.void_type().fn_type(&[], false);
         let entry_func = self
             .module
             .add_function("entry", function_type, Some(Linkage::External));
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
-        let user_entry = self.proc_function_map[&entry_id];
+        let user_entry = self.item_function_map[&entry_id];
         self.builder.build_call(user_entry, &[], "call_user_entry");
         self.builder.build_return(None);
     }
@@ -1311,7 +1313,7 @@ impl<'ctx> CodeGen<'ctx> {
 
 pub(crate) fn compile(
     program: &Program,
-    entry_function: ProcedureId,
+    entry_function: ItemId,
     interner: &mut Interners,
     file: &str,
     opt_level: u8,

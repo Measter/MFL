@@ -1,7 +1,7 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{type_store::TypeKind, ProcedureId, Program},
+    program::{type_store::TypeKind, ItemId, Program},
     source_file::SourceStorage,
 };
 
@@ -15,7 +15,7 @@ mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
@@ -91,7 +91,7 @@ pub(super) fn analyze_block(
 
             OpCode::While(ref while_op) => control::analyze_while(
                 program,
-                proc_id,
+                item_id,
                 analyzer,
                 had_error,
                 interner,
@@ -101,7 +101,7 @@ pub(super) fn analyze_block(
             ),
             OpCode::If(ref if_op) => control::analyze_if(
                 program,
-                proc_id,
+                item_id,
                 analyzer,
                 had_error,
                 interner,
@@ -114,11 +114,11 @@ pub(super) fn analyze_block(
             OpCode::Swap{..} |
             OpCode::Rot{..} => {},
 
-            OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
+            OpCode::ResolvedIdent{item_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
                 op,
-                proc_id,
+                item_id,
             ),
 
             // There's nothing to do with these, as they're always non-const.
@@ -128,7 +128,7 @@ pub(super) fn analyze_block(
             OpCode::Epilogue | OpCode::Return |
             OpCode::Prologue => {},
 
-            OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallFunction { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types should be resolved.
             | OpCode::UnresolvedLoad { .. }

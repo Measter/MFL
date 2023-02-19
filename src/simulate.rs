@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, Op, OpCode},
-    program::{ProcedureId, ProcedureKind, Program},
+    program::{ItemId, ItemKind, Program},
     source_file::SourceStorage,
 };
 
@@ -211,12 +211,12 @@ fn simulate_execute_program_block(
             OpCode::Epilogue | OpCode::Prologue => {}
             OpCode::Return { .. } => break,
 
-            OpCode::ResolvedIdent { proc_id, .. } => {
-                let referenced_proc = program.get_proc_header(*proc_id);
+            OpCode::ResolvedIdent { item_id, .. } => {
+                let referenced_item = program.get_item_header(*item_id);
 
-                match referenced_proc.kind() {
-                    ProcedureKind::Const => {
-                        let Some(vals) = program.get_consts(*proc_id) else {
+                match referenced_item.kind() {
+                    ItemKind::Const => {
+                        let Some(vals) = program.get_consts(*item_id) else {
                             return Err(SimulationError::UnreadyConst);
                         };
                         value_stack.extend(vals.iter().map(|(_, v)| *v));
@@ -230,7 +230,7 @@ fn simulate_execute_program_block(
 
             OpCode::ArgC
             | OpCode::ArgV
-            | OpCode::CallProc { .. }
+            | OpCode::CallFunction { .. }
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
             | OpCode::ResolvedLoad { .. }
@@ -260,7 +260,7 @@ fn simulate_execute_program_block(
 
 pub(crate) fn simulate_execute_program(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<Vec<u64>, SimulationError> {
@@ -269,7 +269,7 @@ pub(crate) fn simulate_execute_program(
 
     simulate_execute_program_block(
         program,
-        program.get_proc_body(proc_id),
+        program.get_item_body(item_id),
         &mut value_stack,
         interner,
         source_store,

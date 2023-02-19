@@ -2,7 +2,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Op, OpCode},
-    program::{ProcedureId, Program},
+    program::{ItemId, Program},
     source_file::SourceStorage,
 };
 
@@ -83,7 +83,7 @@ pub(super) fn make_one(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &O
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc_id: ProcedureId,
+    item_id: ItemId,
     block: &[Op],
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -148,7 +148,7 @@ pub(super) fn analyze_block(
             OpCode::While(ref while_op) => {
                 control::analyze_while(
                     program,
-                    proc_id,
+                    item_id,
                     analyzer,
                     stack,
                     had_error,
@@ -160,7 +160,7 @@ pub(super) fn analyze_block(
             },
             OpCode::If(ref if_op) => control::analyze_if(
                 program,
-                proc_id,
+                item_id,
                 analyzer,
                 stack,
                 had_error,
@@ -226,14 +226,14 @@ pub(super) fn analyze_block(
                 had_error,
                 op
             ),
-            OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
+            OpCode::ResolvedIdent{item_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
                 stack,
                 source_store,
                 had_error,
                 op,
-                proc_id,
+                item_id,
             ),
             OpCode::SysCall{ arg_count, arg_count_token } => control::syscall(
                 analyzer,
@@ -245,7 +245,7 @@ pub(super) fn analyze_block(
                 arg_count_token
             ),
 
-            OpCode::Prologue => control::prologue(analyzer,  stack, op, program.get_proc_signature_resolved(proc_id)),
+            OpCode::Prologue => control::prologue(analyzer,  stack, op, program.get_item_signature_resolved(item_id)),
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 program,
                 analyzer,
@@ -254,10 +254,10 @@ pub(super) fn analyze_block(
                 interner,
                 had_error,
                 op,
-                proc_id,
+                item_id,
             ),
 
-            OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallFunction { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types are resolved.
             | OpCode::UnresolvedLoad { .. }

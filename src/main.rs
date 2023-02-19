@@ -9,7 +9,7 @@ use tracing::{debug, debug_span};
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
 use interners::Interners;
-use program::{ProcedureId, ProcedureKind, Program};
+use program::{ItemId, ItemKind, Program};
 use source_file::SourceStorage;
 
 mod backend_llvm;
@@ -43,7 +43,7 @@ struct Args {
 fn load_program(
     file: &str,
     include_paths: Vec<String>,
-) -> Result<(Program, SourceStorage, Interners, ProcedureId)> {
+) -> Result<(Program, SourceStorage, Interners, ItemId)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
@@ -56,20 +56,20 @@ fn load_program(
     let entry_module = program.get_module(entry_module_id);
 
     let entry_function_id = entry_module
-        .get_proc_id(entry_symbol)
+        .get_item_id(entry_symbol)
         .ok_or_else(|| eyre!("`entry` function not found"))?;
 
     debug!("checking entry signature");
-    let entry_proc = program.get_proc_header(entry_function_id);
-    if !matches!(entry_proc.kind(), ProcedureKind::Function) {
-        let name = entry_proc.name();
+    let entry_item = program.get_item_header(entry_function_id);
+    if !matches!(entry_item.kind(), ItemKind::Function) {
+        let name = entry_item.name();
         diagnostics::emit_error(
             name.location,
             "`entry` must be a function",
             Some(
                 Label::new(name.location)
                     .with_color(Color::Red)
-                    .with_message(format!("found `{:?}`", entry_proc.kind())),
+                    .with_message(format!("found `{:?}`", entry_item.kind())),
             ),
             None,
             &source_storage,
@@ -77,9 +77,9 @@ fn load_program(
         return Err(eyre!("invalid `entry` procedure type"));
     }
 
-    let entry_sig = program.get_proc_signature_resolved(entry_function_id);
+    let entry_sig = program.get_item_signature_resolved(entry_function_id);
     if !entry_sig.entry_stack().is_empty() || !entry_sig.exit_stack().is_empty() {
-        let name = entry_proc.name();
+        let name = entry_item.name();
         diagnostics::emit_error(
             name.location,
             "`entry` must have the signature `[] to []`",

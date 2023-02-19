@@ -3,7 +3,7 @@ use ariadne::{Label, Color};
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Program, ProcedureId, type_store::{TypeKind}},
+    program::{Program, ItemId, type_store::{TypeKind}},
     source_file::SourceStorage, diagnostics,
 };
 
@@ -19,7 +19,7 @@ mod stack_ops;
 
 pub(super) fn analyze_block(
     program: &Program,
-    proc_id: ProcedureId,
+    item: ItemId,
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
@@ -164,7 +164,7 @@ pub(super) fn analyze_block(
 
             OpCode::While(ref while_op) => control::analyze_while(
                 program,
-                proc_id,
+                item,
                 analyzer,
                 had_error,
                 interner,
@@ -175,7 +175,7 @@ pub(super) fn analyze_block(
             ),
             OpCode::If(ref if_op) => control::analyze_if(
                 program,
-                proc_id,
+                item,
                 analyzer,
                 had_error,
                 interner,
@@ -189,7 +189,7 @@ pub(super) fn analyze_block(
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over{ .. } => stack_ops::over(analyzer, op),
 
-            OpCode::ResolvedIdent{proc_id, ..} => control::resolved_ident(
+            OpCode::ResolvedIdent{item_id, ..} => control::resolved_ident(
                 program,
                 analyzer,
                 interner,
@@ -197,7 +197,7 @@ pub(super) fn analyze_block(
                 &program.type_store,
                 had_error,
                 op,
-                proc_id,
+                item_id,
             ),
             OpCode::SysCall{..} => control::syscall(analyzer, &program.type_store, op),
 
@@ -209,17 +209,17 @@ pub(super) fn analyze_block(
                 &program.type_store,
                 had_error,
                 op,
-                proc_id,
+                item,
             ),
 
-            OpCode::Prologue => control::prologue(analyzer, op, program.get_proc_signature_resolved(proc_id)),
+            OpCode::Prologue => control::prologue(analyzer, op, program.get_item_signature_resolved(item)),
             
             // These only manipulate the stack order, so there's nothing to do here.
             OpCode::Drop{..} |
             OpCode::Swap{..} |
             OpCode::Rot{..} => {},
 
-            OpCode::CallProc { .. } // These haven't been generated yet.
+            OpCode::CallFunction { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types should be resolved.
             | OpCode::UnresolvedLoad { .. }

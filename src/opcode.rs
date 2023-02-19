@@ -5,7 +5,7 @@ use crate::{
     lexer::Token,
     program::{
         type_store::{IntWidth, TypeId},
-        ModuleId, ProcedureId,
+        ItemId, ModuleId,
     },
     source_file::SourceLocation,
 };
@@ -43,9 +43,9 @@ pub enum OpCode {
     BitAnd,
     BitNot,
     BitOr,
-    CallProc {
+    CallFunction {
         module: ModuleId,
-        proc_id: ProcedureId,
+        item_id: ItemId,
     },
     DivMod,
     Dup {
@@ -65,7 +65,7 @@ pub enum OpCode {
     GreaterEqual,
     Memory {
         module_id: ModuleId,
-        proc_id: ProcedureId,
+        item_id: ItemId,
         offset: usize,
         global: bool,
     },
@@ -90,7 +90,7 @@ pub enum OpCode {
     },
     ResolvedIdent {
         module: ModuleId,
-        proc_id: ProcedureId,
+        item_id: ItemId,
     },
     ResolvedLoad {
         id: TypeId,
@@ -122,7 +122,7 @@ pub enum OpCode {
     },
     UnresolvedIdent {
         module: Option<Token>,
-        proc: Token,
+        item: Token,
     },
     UnresolvedLoad {
         kind_token: Token,
@@ -154,7 +154,7 @@ impl OpCode {
             ArgC
             | ArgV
             | BitNot
-            | CallProc { .. }
+            | CallFunction { .. }
             | DivMod
             | Drop { .. }
             | Dup { .. }
