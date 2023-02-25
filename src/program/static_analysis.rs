@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
+    lexer::{Token, TokenKind},
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpId},
     option::OptionExt,
@@ -82,6 +82,7 @@ pub struct ValueId(u16);
 #[derive(Debug)]
 struct Value {
     creator_token: Token,
+    creator_id: OpId,
     consumer: SmallVec<[OpId; 4]>,
 }
 
@@ -143,6 +144,7 @@ impl Analyzer {
                 id,
                 Value {
                     creator_token: creator.token,
+                    creator_id: creator.id,
                     consumer: SmallVec::new(),
                 },
             )
@@ -225,6 +227,31 @@ impl Analyzer {
 
     pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
         &self.op_io_data[&op_idx]
+    }
+
+    /// Returns the creator token of a value, treating Dup and Over tokens as transparent.
+    fn get_creator_token(&self, mut value_id: ValueId) -> Vec<Token> {
+        let mut creators = Vec::new();
+
+        let mut value_info = &self.value_lifetime[&value_id];
+        let mut cur_creator = value_info.creator_token;
+        creators.push(cur_creator);
+
+        while let TokenKind::Dup | TokenKind::Over = cur_creator.kind {
+            let op_io = self.get_op_io(value_info.creator_id);
+
+            for (&in_id, &out_id) in op_io.inputs().iter().zip(op_io.outputs()) {
+                if out_id == value_id {
+                    value_id = in_id;
+                    value_info = &self.value_lifetime[&in_id];
+                    cur_creator = value_info.creator_token;
+                    creators.push(cur_creator);
+                    break;
+                }
+            }
+        }
+
+        creators
     }
 }
 
@@ -336,17 +363,38 @@ fn generate_type_mismatch_diag(
     }
 
     for (value_id, order) in types.iter().rev().zip(1..) {
-        let [value] = analyzer.values([*value_id]);
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
             interner.resolve_lexeme(type_info.name)
         });
-        labels.push(
-            Label::new(value.creator_token.location)
-                .with_color(Color::Yellow)
-                .with_message(value_type.to_string())
-                .with_order(order),
-        )
+
+        let mut creator_tokens = analyzer.get_creator_token(*value_id);
+        let root_creator = creator_tokens.pop().unwrap();
+
+        for creator in &creator_tokens {
+            labels.push(
+                Label::new(creator.location)
+                    .with_color(Color::Cyan)
+                    .with_message(format!("{value_type} (id {})", value_id.0))
+                    .with_order(order),
+            )
+        }
+
+        if creator_tokens.is_empty() {
+            labels.push(
+                Label::new(root_creator.location)
+                    .with_color(Color::Yellow)
+                    .with_message(value_type.to_string())
+                    .with_order(order),
+            )
+        } else {
+            labels.push(
+                Label::new(root_creator.location)
+                    .with_color(Color::Yellow)
+                    .with_message(format!("{value_type} (id {})", value_id.0))
+                    .with_order(order),
+            )
+        }
     }
 
     diagnostics::emit_error(op.token.location, message, labels, None, source_store);
