@@ -1,4 +1,4 @@
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue};
 use intcast::IntCast;
 use tracing::trace;
 
@@ -30,7 +30,35 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .map(|id| value_store.load_value(self, *id, analyzer, type_store, interner))
+            .zip(program.get_item_signature_resolved(callee_id).entry_stack())
+            .map(|(&value_id, &expected_type)| {
+                let value = value_store.load_value(self, value_id, analyzer, type_store, interner);
+                let [input_type_id] = analyzer.value_types([value_id]).unwrap();
+
+                match (
+                    type_store.get_type_info(expected_type).kind,
+                    type_store.get_type_info(input_type_id).kind,
+                ) {
+                    (
+                        TypeKind::Integer {
+                            width: expected_width,
+                            signed: expected_signed,
+                        },
+                        TypeKind::Integer {
+                            signed: input_signed,
+                            ..
+                        },
+                    ) => self
+                        .cast_int(
+                            value.into_int_value(),
+                            expected_width.get_int_type(self.ctx),
+                            input_signed,
+                            expected_signed,
+                        )
+                        .as_basic_value_enum(),
+                    _ => value,
+                }
+            })
             .map(Into::into)
             .collect();
 

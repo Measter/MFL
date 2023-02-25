@@ -6,8 +6,8 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
-        static_analysis::{failed_compare_stack_types, Analyzer},
-        type_store::{BuiltinTypes, TypeStore},
+        static_analysis::{can_promote_int, failed_compare_stack_types, Analyzer},
+        type_store::{BuiltinTypes, TypeKind, TypeStore},
         ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
@@ -83,24 +83,33 @@ pub(super) fn resolved_ident(
                 .iter()
                 .zip(&op_data.inputs)
             {
-                let Some(actual_type) = analyzer.value_types([*actual_id]) else {
+                let Some([actual_type]) = analyzer.value_types([*actual_id]) else {
                     continue;
                 };
 
-                if actual_type != [expected] {
-                    failed_compare_stack_types(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &op_data.inputs,
-                        referenced_item_sig.entry_stack(),
-                        referenced_item_sig_tokens.entry_stack_location(),
-                        op.token.location,
-                        "procedure call signature mismatch",
-                    );
-                    *had_error = true;
-                    break;
+                if actual_type != expected {
+                    let actual_type_info = type_store.get_type_info(actual_type);
+                    let expected_type_info = type_store.get_type_info(actual_type);
+
+                    if !matches!((actual_type_info.kind, expected_type_info.kind), (
+                        TypeKind::Integer { width: actual_width, signed: actual_signed },
+                        TypeKind::Integer { width: expected_width, signed: expected_signed }
+                    ) if can_promote_int(actual_width, actual_signed, expected_width, expected_signed ))
+                    {
+                        failed_compare_stack_types(
+                            analyzer,
+                            interner,
+                            source_store,
+                            type_store,
+                            &op_data.inputs,
+                            referenced_item_sig.entry_stack(),
+                            referenced_item_sig_tokens.entry_stack_location(),
+                            op.token.location,
+                            "procedure call signature mismatch",
+                        );
+                        *had_error = true;
+                        break;
+                    }
                 }
             }
 
