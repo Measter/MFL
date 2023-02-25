@@ -476,6 +476,7 @@ impl Program {
                                 None,
                                 source_store,
                             );
+                            *had_error = true;
                             continue;
                         }
                     }
