@@ -11,17 +11,53 @@ use crate::{
     interners::Interners,
     lexer::Token,
     n_ops::HashMapNOps,
-    opcode::{Op, OpId},
+    opcode::{IntKind, Op, OpId},
     option::OptionExt,
     program::{ItemId, Program},
     source_file::{SourceLocation, SourceStorage},
 };
 
-use super::type_store::{IntWidth, TypeId, TypeStore};
+use super::type_store::{IntWidth, Signedness, TypeId, TypeStore};
 
 mod const_prop;
 mod data_flow;
 mod type_check2;
+
+fn can_promote_int(
+    a_width: IntWidth,
+    a_signed: Signedness,
+    b_width: IntWidth,
+    b_signed: Signedness,
+) -> bool {
+    promote_int_type(a_width, a_signed, b_width, b_signed).is_some()
+}
+
+// When doing a conversion:
+// * If both are the same signedness but different widths, then a sign- or zero- extension is performed.
+// * When both are the same width but different signs, then the bits are simply reinterpreted.
+// * When both signedness and width differ, width is converted first, then sign.
+pub fn promote_int_type(
+    a_width: IntWidth,
+    a_signed: Signedness,
+    b_width: IntWidth,
+    b_signed: Signedness,
+) -> Option<(Signedness, IntWidth)> {
+    let widest = a_width.max(b_width);
+
+    let (signed_width, unsigned_width) = if a_signed == Signedness::Signed {
+        (a_width, b_width)
+    } else {
+        (b_width, a_width)
+    };
+
+    if a_signed == b_signed {
+        Some((a_signed, widest))
+    } else if signed_width > unsigned_width {
+        Some((Signedness::Signed, signed_width))
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PtrId {
@@ -31,7 +67,7 @@ pub enum PtrId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstVal {
-    Int(u64),
+    Int(IntKind),
     Bool(bool),
     Ptr {
         id: PtrId,
@@ -407,6 +443,7 @@ pub fn const_propagation(
         &mut had_error,
         interner,
         source_store,
+        &program.type_store,
     );
 
     // dbg!(&analyzer);

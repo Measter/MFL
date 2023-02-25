@@ -12,7 +12,7 @@ use crate::{
     source_file::SourceStorage,
 };
 
-pub(super) fn cast_int(
+pub(super) fn cast_to_int(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -20,6 +20,7 @@ pub(super) fn cast_int(
     had_error: &mut bool,
     op: &Op,
     width: IntWidth,
+    sign: Signedness,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
@@ -29,17 +30,17 @@ pub(super) fn cast_int(
     match input_type_info.kind {
         TypeKind::Bool => {}
         TypeKind::Pointer => {
-            if width != IntWidth::I64 {
+            if (width, sign) != (IntWidth::I64, Signedness::Unsigned) {
                 *had_error = true;
                 let [input_value] = analyzer.values(input_ids);
 
                 diagnostics::emit_error(
                     op.token.location,
-                    format!("cannot cast to {}", width.name()),
+                    format!("cannot cast to {}", width.name(sign)),
                     [
                         Label::new(op.token.location).with_color(Color::Red),
                         Label::new(input_value.creator_token.location)
-                            .with_message(format!("{} cannot hold a ptr", width.name()))
+                            .with_message(format!("{} cannot hold a ptr", width.name(sign)))
                             .with_color(Color::Cyan),
                     ],
                     None,
@@ -47,8 +48,11 @@ pub(super) fn cast_int(
                 );
             }
         }
-        TypeKind::Integer(from_width) => {
-            if from_width == width {
+        TypeKind::Integer {
+            width: from_width,
+            signed: from_sign,
+        } => {
+            if (from_width, from_sign) == (width, sign) {
                 let [input_value] = analyzer.values(input_ids);
 
                 diagnostics::emit_warning(
@@ -57,7 +61,7 @@ pub(super) fn cast_int(
                     [
                         Label::new(op.token.location).with_color(Color::Yellow),
                         Label::new(input_value.creator_token.location)
-                            .with_message(format!("already an {}", width.name()))
+                            .with_message(format!("already an {}", width.name(sign)))
                             .with_color(Color::Cyan),
                     ],
                     None,
@@ -85,13 +89,13 @@ pub(super) fn cast_int(
         }
     };
 
-    let output_kind = (Signedness::Unsigned, width).into();
+    let output_kind = (sign, width).into();
     let output_type_id = type_store.get_builtin(output_kind).id;
 
     analyzer.set_value_type(op_data.outputs[0], output_type_id);
 }
 
-pub(super) fn cast_ptr(
+pub(super) fn cast_to_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -105,7 +109,10 @@ pub(super) fn cast_ptr(
     let input_type_info = type_store.get_type_info(input);
 
     match input_type_info.kind {
-        TypeKind::Integer(IntWidth::I64) => {}
+        TypeKind::Integer {
+            width: IntWidth::I64,
+            signed: Signedness::Unsigned,
+        } => {}
         TypeKind::Pointer => {
             let [value] = analyzer.values(input_ids);
 
@@ -123,7 +130,7 @@ pub(super) fn cast_ptr(
             );
         }
 
-        TypeKind::Integer(width) => {
+        TypeKind::Integer { width, signed } => {
             *had_error = true;
             let [input_value] = analyzer.values(input_ids);
 
@@ -133,7 +140,7 @@ pub(super) fn cast_ptr(
                 [
                     Label::new(op.token.location).with_color(Color::Red),
                     Label::new(input_value.creator_token.location)
-                        .with_message(format!("cannot cast {} to ptr", width.name()))
+                        .with_message(format!("cannot cast {} to ptr", width.name(signed)))
                         .with_color(Color::Cyan),
                 ],
                 None,
@@ -192,9 +199,15 @@ pub(super) fn push_bool(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op
     );
 }
 
-pub(super) fn push_int(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, kind: IntWidth) {
+pub(super) fn push_int(
+    analyzer: &mut Analyzer,
+    type_store: &TypeStore,
+    op: &Op,
+    width: IntWidth,
+    sign: Signedness,
+) {
     let op_data = analyzer.get_op_io(op.id);
-    let builtin = (Signedness::Unsigned, kind).into();
+    let builtin = (sign, width).into();
     analyzer.set_value_type(op_data.outputs[0], type_store.get_builtin(builtin).id);
 }
 

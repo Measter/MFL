@@ -1,7 +1,10 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{type_store::TypeKind, ItemId, Program},
+    program::{
+        type_store::{TypeKind, TypeStore},
+        ItemId, Program,
+    },
     source_file::SourceStorage,
 };
 
@@ -21,6 +24,7 @@ pub(super) fn analyze_block(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
 ) {
     for op in block {
         match op.code {
@@ -44,24 +48,27 @@ pub(super) fn analyze_block(
             OpCode::DivMod => arithmetic::divmod(
                 analyzer,
                 source_store,
+                type_store,
                 op,
             ),
 
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => comparative::compare(
                 analyzer,
                 source_store,
+                type_store,
                 had_error,
                 op,
             ),
             OpCode::Equal | OpCode::NotEq => comparative::equal(
                 analyzer,
                 source_store,
+                type_store,
                 had_error,
                 op,
             ),
 
             OpCode::PushBool(v) => stack_ops::push_bool(analyzer, op, v),
-            OpCode::PushInt {  value,.. }=> stack_ops::push_int(analyzer, op, value),
+            OpCode::PushInt {  value, .. }=> stack_ops::push_int(analyzer, op,  value),
             OpCode::PushStr{ id, is_c_str } => stack_ops::push_str(analyzer, interner, op, id, is_c_str),
 
             // OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(analyzer, op, width),
@@ -71,7 +78,7 @@ pub(super) fn analyze_block(
             OpCode::ResolvedCast { id } => {
                 let type_info = program.type_store.get_type_info(id);
                 match type_info.kind {
-                    TypeKind::Integer(width) => stack_ops::cast_int(analyzer, op, width),
+                    TypeKind::Integer{ width, signed } => stack_ops::cast_to_int(analyzer, op, width, signed),
                     TypeKind::Pointer => {},
                     TypeKind::Bool => {},
                 }
@@ -96,6 +103,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
+                type_store,
                 op,
                 while_op,
             ),
@@ -106,6 +114,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
+                type_store,
                 if_op,
             ),
 

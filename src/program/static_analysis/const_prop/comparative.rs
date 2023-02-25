@@ -3,23 +3,43 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     n_ops::SliceNOps,
-    opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal},
+    opcode::{IntKind, Op},
+    program::{
+        static_analysis::{Analyzer, ConstVal},
+        type_store::{TypeKind, TypeStore},
+    },
     source_file::SourceStorage,
 };
 
 pub(super) fn compare(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
+    let Some([output_type_id]) = analyzer.value_types(*op_data.outputs.as_arr()) else { return };
+    let Some(input_const_val) = analyzer.value_consts(input_ids) else { return };
 
-    let new_const_val = match types {
-        [ConstVal::Int(a), ConstVal::Int(b)] => op.code.get_binary_op()(a, b) != 0,
+    let new_const_val = match input_const_val {
+        [ConstVal::Int(a), ConstVal::Int(b)] => {
+            let TypeKind::Integer { width: output_width, signed: output_sign }  = type_store.get_type_info(output_type_id).kind else {unreachable!()};
+
+            // If we got here then the cast already type-checked.
+            let a_kind = a.cast(output_width, output_sign);
+            let b_kind = b.cast(output_width, output_sign);
+            match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                    op.code.get_signed_binary_op()(a, b) != 0
+                }
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                    op.code.get_unsigned_binary_op()(a, b) != 0
+                }
+                _ => unreachable!(),
+            }
+        }
 
         // Static pointers with different IDs.
         [ConstVal::Ptr {
@@ -61,7 +81,7 @@ pub(super) fn compare(
         }, ConstVal::Ptr {
             offset: Some(offset2),
             ..
-        }] => op.code.get_binary_op()(offset1, offset2) != 0,
+        }] => op.code.get_unsigned_binary_op()(offset1, offset2) != 0,
 
         _ => {
             return;
@@ -75,16 +95,33 @@ pub(super) fn compare(
 pub(super) fn equal(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
+    let Some([output_type_id]) = analyzer.value_types(*op_data.outputs.as_arr()) else { return };
+    let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
 
-    let new_const_val = match types {
-        [ConstVal::Int(a), ConstVal::Int(b)] => op.code.get_binary_op()(a, b) != 0,
-        [ConstVal::Bool(a), ConstVal::Bool(b)] => op.code.get_binary_op()(a as _, b as _) != 0,
+    let new_const_val = match input_const_vals {
+        [ConstVal::Int(a), ConstVal::Int(b)] => {
+            let TypeKind::Integer { width: output_width, signed: output_sign }  = type_store.get_type_info(output_type_id).kind else {unreachable!()};
+
+            // If we got here then the cast already type-checked.
+            let a_kind = a.cast(output_width, output_sign);
+            let b_kind = b.cast(output_width, output_sign);
+            match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                    op.code.get_signed_binary_op()(a, b) != 0
+                }
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                    op.code.get_unsigned_binary_op()(a, b) != 0
+                }
+                _ => unreachable!(),
+            }
+        }
+        [ConstVal::Bool(a), ConstVal::Bool(b)] => op.code.get_bool_binary_op()(a, b),
 
         // Static pointers with different IDs.
         [ConstVal::Ptr {
@@ -149,9 +186,9 @@ pub(super) fn equal(
                     None,
                     source_store,
                 );
-                op.code.get_binary_op()(0, 1) != 0
+                op.code.get_unsigned_binary_op()(0, 1) != 0
             } else {
-                op.code.get_binary_op()(1, 1) != 0
+                op.code.get_unsigned_binary_op()(1, 1) != 0
             }
         }
 

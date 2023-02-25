@@ -3,7 +3,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::{
-        static_analysis::{generate_type_mismatch_diag, Analyzer},
+        static_analysis::{can_promote_int, generate_type_mismatch_diag, Analyzer},
         type_store::{BuiltinTypes, TypeKind, TypeStore},
     },
     source_file::SourceStorage,
@@ -23,9 +23,17 @@ pub(super) fn compare(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer(_), TypeKind::Integer(_)] | [TypeKind::Pointer, TypeKind::Pointer] => {
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
+
+        [TypeKind::Pointer, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::Bool).id,
 
         _ => {
             // Type mismatch
@@ -62,9 +70,17 @@ pub(super) fn equal(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Bool, TypeKind::Bool]
-        | [TypeKind::Pointer, TypeKind::Pointer]
-        | [TypeKind::Integer(_), TypeKind::Integer(_)] => {
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store.get_builtin(BuiltinTypes::Bool).id
+        }
+
+        [TypeKind::Bool, TypeKind::Bool] | [TypeKind::Pointer, TypeKind::Pointer] => {
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 

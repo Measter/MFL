@@ -54,6 +54,11 @@ impl SourceLocation {
             len: len.to_u16().unwrap(),
         }
     }
+
+    pub fn neighbour_of(self, other: Self) -> bool {
+        self.source_start + self.len.to_u32() == other.source_start
+            || other.source_start + other.len.to_u32() == self.source_start
+    }
 }
 
 struct LoadedSource {

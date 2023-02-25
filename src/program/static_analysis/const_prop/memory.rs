@@ -4,11 +4,10 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     interners::Interners,
-    n_ops::SliceNOps,
-    opcode::Op,
+    opcode::{IntKind, Op},
     program::{
         static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
-        type_store::{TypeId, TypeKind, TypeStore},
+        type_store::{Signedness, TypeId, TypeKind, TypeStore},
     },
     source_file::{SourceLocation, SourceStorage},
 };
@@ -109,23 +108,23 @@ pub(super) fn load(
             let range_end = (offset + kind_info.width.to_u64()).to_usize();
             let bytes = &string.as_bytes()[range_start..range_end];
             match kind_info.kind {
-                TypeKind::Integer(IntWidth::I8) | TypeKind::Bool => bytes[0].to_u64(),
-                TypeKind::Integer(IntWidth::I16) => u16::from_le_bytes(*bytes.as_arr()).to_u64(),
-                TypeKind::Integer(IntWidth::I32) => u32::from_le_bytes(*bytes.as_arr()).to_u64(),
-                TypeKind::Integer(IntWidth::I64) => u64::from_le_bytes(*bytes.as_arr()).to_u64(),
                 TypeKind::Pointer => {
                     // Can't const_load a pointer.
                     return;
                 }
+                TypeKind::Bool => ConstVal::Bool(bytes[0] != 0),
+
+                TypeKind::Integer {
+                    width: IntWidth::I8,
+                    signed: Signedness::Unsigned,
+                } => ConstVal::Int(IntKind::Unsigned(bytes[0].to_u64())),
+
+                // Don't support const loading non-bytes.
+                TypeKind::Integer { .. } => return,
             }
         }
         _ => return,
     };
 
-    let new_const_val = match kind_info.kind {
-        TypeKind::Integer(_) => ConstVal::Int(new_const_val),
-        TypeKind::Bool => ConstVal::Bool(new_const_val != 0),
-        TypeKind::Pointer => return, // Can't do a const here.
-    };
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
 }

@@ -1,3 +1,5 @@
+use std::ops::{Div, Rem};
+
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use tracing::error;
@@ -6,8 +8,8 @@ use crate::{
     diagnostics,
     interners::Interners,
     n_ops::VecNOps,
-    opcode::{Direction, Op, OpCode},
-    program::{ItemId, ItemKind, Program},
+    opcode::{Direction, IntKind, Op, OpCode},
+    program::{static_analysis::promote_int_type, type_store::IntWidth, ItemId, ItemKind, Program},
     source_file::SourceStorage,
 };
 
@@ -15,6 +17,95 @@ use crate::{
 pub enum SimulationError {
     UnsupportedOp,
     UnreadyConst,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimulatorValue {
+    Int { width: IntWidth, kind: IntKind },
+    Bool(bool),
+}
+
+fn apply_int_op(
+    a: SimulatorValue,
+    b: SimulatorValue,
+    u_op: fn(u64, u64) -> u64,
+    s_op: fn(i64, i64) -> i64,
+) -> SimulatorValue {
+    match (a, b) {
+        (
+            SimulatorValue::Int {
+                width: a_width,
+                kind: a_kind,
+            },
+            SimulatorValue::Int {
+                width: b_width,
+                kind: b_kind,
+            },
+        ) => {
+            let (to_signed, to_width) = promote_int_type(
+                a_width,
+                a_kind.to_signedness(),
+                b_width,
+                b_kind.to_signedness(),
+            )
+            .unwrap();
+            let a_kind = a_kind.cast(to_width, to_signed);
+            let b_kind = b_kind.cast(to_width, to_signed);
+
+            let out_kind = match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => IntKind::Signed(s_op(a, b)),
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => IntKind::Unsigned(u_op(a, b)),
+                _ => unreachable!(),
+            };
+
+            SimulatorValue::Int {
+                width: to_width,
+                kind: out_kind,
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn apply_bool_op(
+    a: SimulatorValue,
+    b: SimulatorValue,
+    u_op: fn(u64, u64) -> u64,
+    s_op: fn(i64, i64) -> i64,
+    b_op: fn(bool, bool) -> bool,
+) -> SimulatorValue {
+    match (a, b) {
+        (
+            SimulatorValue::Int {
+                width: a_width,
+                kind: a_kind,
+            },
+            SimulatorValue::Int {
+                width: b_width,
+                kind: b_kind,
+            },
+        ) => {
+            let (to_signed, to_width) = promote_int_type(
+                a_width,
+                a_kind.to_signedness(),
+                b_width,
+                b_kind.to_signedness(),
+            )
+            .unwrap();
+            let a_kind = a_kind.cast(to_width, to_signed);
+            let b_kind = b_kind.cast(to_width, to_signed);
+
+            let res = match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => s_op(a, b) != 0,
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => u_op(a, b) != 0,
+                _ => unreachable!(),
+            };
+
+            SimulatorValue::Bool(res)
+        }
+        (SimulatorValue::Bool(a), SimulatorValue::Bool(b)) => SimulatorValue::Bool(b_op(a, b)),
+        _ => unreachable!(),
+    }
 }
 
 fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
@@ -34,55 +125,54 @@ fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
 fn simulate_execute_program_block(
     program: &Program,
     block: &[Op],
-    value_stack: &mut Vec<u64>,
+    value_stack: &mut Vec<SimulatorValue>,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
     while let Some(op) = block.get(ip) {
         match &op.code {
-            OpCode::Add => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a += b;
-            }
-            OpCode::Subtract => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a -= b;
-            }
-            OpCode::Multiply => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a *= b;
+            OpCode::Add
+            | OpCode::Subtract
+            | OpCode::Multiply
+            | OpCode::BitOr
+            | OpCode::BitAnd
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight => {
+                let [a, b] = value_stack.popn().unwrap();
+                value_stack.push(apply_int_op(
+                    a,
+                    b,
+                    op.code.get_unsigned_binary_op(),
+                    op.code.get_signed_binary_op(),
+                ));
             }
             OpCode::DivMod => {
                 let [a, b] = value_stack.popn().unwrap();
-                let (rem, quot) = (a % b, a / b);
-                value_stack.push(quot);
-                value_stack.push(rem);
+                value_stack.push(apply_int_op(a, b, u64::div, i64::div));
+                value_stack.push(apply_int_op(a, b, u64::rem, i64::rem));
             }
 
-            OpCode::BitOr => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a |= b;
-            }
             OpCode::BitNot => {
                 let a = value_stack.last_mut().unwrap();
-                *a = !*a;
-            }
-            OpCode::BitAnd => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a &= b;
-            }
-            OpCode::ShiftLeft => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a <<= b;
-            }
-            OpCode::ShiftRight => {
-                let ([b], a) = value_stack.popn_last_mut().unwrap();
-                *a >>= b;
+                match a {
+                    SimulatorValue::Int {
+                        width,
+                        kind: IntKind::Signed(v),
+                    } => *v = !*v & width.mask() as i64,
+                    SimulatorValue::Int {
+                        width,
+                        kind: IntKind::Unsigned(v),
+                    } => *v = !*v & width.mask(),
+                    SimulatorValue::Bool(v) => *v = !*v,
+                }
             }
 
-            OpCode::PushBool(val) => value_stack.push(*val as _),
-            OpCode::PushInt { value, .. } => value_stack.push(*value),
+            OpCode::PushBool(val) => value_stack.push(SimulatorValue::Bool(*val)),
+            OpCode::PushInt { value, width } => value_stack.push(SimulatorValue::Int {
+                width: *width,
+                kind: *value,
+            }),
             // It's a bit weird, given you can't do much with a string, but
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
@@ -91,10 +181,16 @@ fn simulate_execute_program_block(
                 if !is_c_str {
                     // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
                     // include that character.
-                    value_stack.push(literal.len() as u64 - 1);
+                    value_stack.push(SimulatorValue::Int {
+                        width: IntWidth::I64,
+                        kind: IntKind::Unsigned(literal.len() as u64 - 1),
+                    });
                 }
-                // Nullptr is fine, because you can't read/write memory in a const-context anyway.
-                value_stack.push(0);
+                // A garbage value is fine, because you can't read/write memory in a const-context anyway.
+                value_stack.push(SimulatorValue::Int {
+                    width: IntWidth::I64,
+                    kind: IntKind::Unsigned(0),
+                });
             }
             OpCode::Drop { count, .. } => {
                 value_stack.truncate(value_stack.len() - count.to_usize())
@@ -109,7 +205,7 @@ fn simulate_execute_program_block(
                     source_store,
                 )?;
                 let a = value_stack.pop().unwrap();
-                if a == 0 {
+                if a == SimulatorValue::Bool(false) {
                     break;
                 }
                 simulate_execute_program_block(
@@ -131,7 +227,7 @@ fn simulate_execute_program_block(
                 )?;
 
                 let a = value_stack.pop().unwrap();
-                if a == 0 {
+                if a == SimulatorValue::Bool(true) {
                     simulate_execute_program_block(
                         program,
                         &if_op.then_block,
@@ -150,31 +246,21 @@ fn simulate_execute_program_block(
                 }
             }
 
-            OpCode::Greater => {
+            OpCode::Greater
+            | OpCode::GreaterEqual
+            | OpCode::Less
+            | OpCode::LessEqual
+            | OpCode::Equal
+            | OpCode::NotEq => {
                 let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a > b) as u64);
+                value_stack.push(apply_bool_op(
+                    a,
+                    b,
+                    op.code.get_unsigned_binary_op(),
+                    op.code.get_signed_binary_op(),
+                    op.code.get_bool_binary_op(),
+                ));
             }
-            OpCode::GreaterEqual => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a >= b) as u64);
-            }
-            OpCode::Less => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a < b) as u64);
-            }
-            OpCode::LessEqual => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a <= b) as u64);
-            }
-            OpCode::Equal => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a == b) as u64);
-            }
-            OpCode::NotEq => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push((a != b) as u64);
-            }
-
             OpCode::Dup { count, .. } => {
                 let range = (value_stack.len() - count.to_usize())..value_stack.len();
                 for i in range {
@@ -263,9 +349,9 @@ pub(crate) fn simulate_execute_program(
     item_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<Vec<u64>, SimulationError> {
+) -> Result<Vec<SimulatorValue>, SimulationError> {
     error!("Make simulator type representation better.");
-    let mut value_stack: Vec<u64> = Vec::new();
+    let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     simulate_execute_program_block(
         program,

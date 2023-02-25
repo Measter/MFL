@@ -28,9 +28,9 @@ pub(super) fn epilogue_return(
     let op_data = analyzer.get_op_io(op.id);
 
     for (&expected, actual_id) in item_sig.exit_stack().iter().zip(&op_data.inputs) {
-        let actual_type = analyzer.value_types([*actual_id]);
+        let Some(actual_type) = analyzer.value_types([*actual_id]) else {continue};
 
-        if actual_type != Some([expected]) {
+        if actual_type != [expected] {
             failed_compare_stack_types(
                 analyzer,
                 interner,
@@ -83,9 +83,11 @@ pub(super) fn resolved_ident(
                 .iter()
                 .zip(&op_data.inputs)
             {
-                let actual_type = analyzer.value_types([*actual_id]);
+                let Some(actual_type) = analyzer.value_types([*actual_id]) else {
+                    continue;
+                };
 
-                if actual_type != Some([expected]) {
+                if actual_type != [expected] {
                     failed_compare_stack_types(
                         analyzer,
                         interner,

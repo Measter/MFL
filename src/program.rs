@@ -16,9 +16,9 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{If, Op, OpCode, OpId, While},
+    opcode::{If, IntKind, Op, OpCode, OpId, While},
     program::static_analysis::ConstVal,
-    simulate::{simulate_execute_program, SimulationError},
+    simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -141,7 +141,7 @@ pub struct Program {
     item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
     item_bodies: HashMap<ItemId, Vec<Op>>,
     function_data: HashMap<ItemId, FunctionData>,
-    const_vals: HashMap<ItemId, Vec<(TypeId, u64)>>,
+    const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
     analyzers: HashMap<ItemId, Analyzer>,
     global_allocs: HashMap<ItemId, usize>,
 }
@@ -202,7 +202,7 @@ impl Program {
             .expect("ICE: tried to get function data for non-function item")
     }
 
-    pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, u64)]> {
+    pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
 }
@@ -1048,16 +1048,32 @@ impl Program {
                             };
                             for (kind, val) in vals {
                                 let type_info = self.type_store.get_type_info(*kind);
-                                let (code, const_val) = match type_info.kind {
-                                    TypeKind::Integer(width) => (
-                                        OpCode::PushInt { width, value: *val },
-                                        ConstVal::Int(*val),
-                                    ),
-                                    TypeKind::Bool => {
-                                        (OpCode::PushBool(*val != 0), ConstVal::Bool(*val != 0))
+                                let (code, const_val) = match (type_info.kind, val) {
+                                    (
+                                        TypeKind::Integer {
+                                            width: type_width,
+                                            signed,
+                                        },
+                                        SimulatorValue::Int {
+                                            width: sim_width,
+                                            kind,
+                                        },
+                                    ) => {
+                                        assert_eq!(type_width, *sim_width);
+                                        assert_eq!(signed, kind.to_signedness());
+                                        (
+                                            OpCode::PushInt {
+                                                width: type_width,
+                                                value: *kind,
+                                            },
+                                            ConstVal::Int(*kind),
+                                        )
                                     }
-                                    TypeKind::Pointer => {
-                                        panic!("ICE: Const pointers not supported")
+                                    (TypeKind::Bool, SimulatorValue::Bool(val)) => {
+                                        (OpCode::PushBool(*val), ConstVal::Bool(*val))
+                                    }
+                                    _ => {
+                                        panic!("ICE: Type mismatch in simulator and type-check");
                                     }
                                 };
                                 new_ops.push(Op {
@@ -1186,7 +1202,10 @@ impl Program {
             };
 
             // The type checker ensures a single stack item.
-            let alloc_size = stack.pop().unwrap().to_usize();
+            let Some(SimulatorValue::Int { kind: IntKind::Unsigned(alloc_size), .. }) = stack.pop() else {
+                panic!("ICE: Allocation size returned a value that wasn't an unsigned integer");
+            };
+            let alloc_size = alloc_size.to_usize();
 
             match item.parent {
                 // If we have a parent, it means it's a local allocation.
@@ -1214,13 +1233,18 @@ impl Program {
         let mut had_error = false;
 
         for (&id, &item) in self.item_headers.iter() {
-            if item.kind() != ItemKind::Memory {
+            if item.kind() != ItemKind::Assert {
                 continue;
             }
 
             let assert_result = match simulate_execute_program(self, id, interner, source_store) {
                 // Type check says we'll have a value at this point.
-                Ok(mut stack) => stack.pop().unwrap() != 0,
+                Ok(mut stack) => {
+                    let Some(SimulatorValue::Bool(val)) = stack.pop() else {
+                        panic!("ICE: Simulated assert returned non-bool");
+                    };
+                    val
+                }
                 Err(_) => {
                     had_error = true;
                     continue;

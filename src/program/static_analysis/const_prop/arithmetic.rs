@@ -3,7 +3,7 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     n_ops::SliceNOps,
-    opcode::{Op, OpCode},
+    opcode::{IntKind, Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal},
         type_store::{TypeKind, TypeStore},
@@ -14,14 +14,28 @@ use crate::{
 pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
-    let Some(val_consts) = analyzer.value_consts(val_ids) else { return };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let output_type_info = type_store.get_type_info(output_type_id);
+    let Some(input_const_vals) = analyzer.value_consts(val_ids) else { return };
 
-    let new_const_val = match val_consts {
+    let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
-            let output_type_info = type_store.get_type_info(output_type_id);
-            let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
-            ConstVal::Int((a + b) & output_width.mask())
+            let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
+
+            // If we got here then the cast already type-checked.
+            let a_kind = a.cast(output_width, output_signed);
+            let b_kind = b.cast(output_width, output_signed);
+            let kind = match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                    IntKind::Signed(op.code.get_signed_binary_op()(a, b))
+                }
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                    IntKind::Unsigned(op.code.get_unsigned_binary_op()(a, b))
+                }
+                _ => unreachable!(),
+            };
+
+            ConstVal::Int(kind)
         }
 
         // Const pointer with a constant offset.
@@ -29,13 +43,13 @@ pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
             offset: Some(offset),
             id,
             src_op_loc,
-        }, ConstVal::Int(v)] => ConstVal::Ptr {
+        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::Ptr {
             offset: Some(offset + v),
             id,
             src_op_loc,
         },
         // Const pointer with a constant offset.
-        [ConstVal::Int(v), ConstVal::Ptr {
+        [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::Ptr {
             offset: Some(offset),
             id,
             src_op_loc,
@@ -61,20 +75,35 @@ pub(super) fn subtract(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
+    let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
 
-    let new_const_val = match types {
-        [ConstVal::Int(a), ConstVal::Int(b)] => ConstVal::Int((a - b) & output_width.mask()),
+    let new_const_val = match input_const_vals {
+        [ConstVal::Int(a), ConstVal::Int(b)] => {
+            let TypeKind::Integer{ width: output_width , signed: output_signed } = output_type_info.kind else { unreachable!() };
+
+            // If we got here then the cast already type-checked.
+            let a_kind = a.cast(output_width, output_signed);
+            let b_kind = b.cast(output_width, output_signed);
+            let kind = match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                    IntKind::Signed(op.code.get_signed_binary_op()(a, b))
+                }
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                    IntKind::Unsigned(op.code.get_unsigned_binary_op()(a, b))
+                }
+                _ => unreachable!(),
+            };
+            ConstVal::Int(kind)
+        }
 
         // Static pointer, constant offset.
         [ConstVal::Ptr {
             id,
             src_op_loc,
             offset,
-        }, ConstVal::Int(v)] => ConstVal::Ptr {
+        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::Ptr {
             id,
             src_op_loc,
             offset: offset.map(|off| off - v),
@@ -148,7 +177,7 @@ pub(super) fn subtract(
                 *had_error = true;
                 return;
             } else {
-                ConstVal::Int(offset2 - offset1)
+                ConstVal::Int(IntKind::Unsigned(offset2 - offset1))
             }
         }
 
@@ -172,10 +201,15 @@ pub(super) fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
+    let TypeKind::Integer{ width: output_width, .. } = output_type_info.kind else { unreachable!() };
 
     let new_const_val = match types {
-        ConstVal::Int(a) => ConstVal::Int((!a) & output_width.mask()),
+        ConstVal::Int(IntKind::Unsigned(a)) => {
+            ConstVal::Int(IntKind::Unsigned((!a) & output_width.mask()))
+        }
+        ConstVal::Int(IntKind::Signed(a)) => {
+            ConstVal::Int(IntKind::Signed((!a) & output_width.mask() as i64))
+        }
         ConstVal::Bool(a) => ConstVal::Bool(!a),
         _ => return,
     };
@@ -187,22 +221,31 @@ pub(super) fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
 pub(super) fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
+    let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
+    let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
 
-    let new_const_val = match types {
-        [ConstVal::Int(a), ConstVal::Int(b)] => match op.code {
-            OpCode::BitAnd => ConstVal::Int((a & b) & output_width.mask()),
-            OpCode::BitOr => ConstVal::Int((a | b) & output_width.mask()),
-            _ => unreachable!(),
-        },
-        [ConstVal::Bool(a), ConstVal::Bool(b)] => match op.code {
-            OpCode::BitAnd => ConstVal::Bool(a & b),
-            OpCode::BitOr => ConstVal::Bool(a | b),
-            _ => unreachable!(),
-        },
+    let new_const_val = match input_const_vals {
+        [ConstVal::Int(a), ConstVal::Int(b)] => {
+            // If we got here then the cast already type-checked.
+            let a_kind = a.cast(output_width, output_signed);
+            let b_kind = b.cast(output_width, output_signed);
+            let kind = match (a_kind, b_kind) {
+                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                    IntKind::Signed(op.code.get_signed_binary_op()(a, b))
+                }
+                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                    IntKind::Unsigned(op.code.get_unsigned_binary_op()(a, b))
+                }
+                _ => unreachable!(),
+            };
+
+            ConstVal::Int(kind)
+        }
+        [ConstVal::Bool(a), ConstVal::Bool(b)] => {
+            ConstVal::Bool(op.code.get_bool_binary_op()(a, b))
+        }
         _ => return,
     };
 
@@ -218,51 +261,95 @@ pub(super) fn multiply_and_shift(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
+
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer(output_width) = output_type_info.kind else { unreachable!() };
+    let TypeKind::Integer{ width: output_width, signed: output_sign } = output_type_info.kind else { unreachable!() };
 
-    if let (OpCode::ShiftLeft | OpCode::ShiftRight, ConstVal::Int(sv @ 64..)) = (&op.code, types[1])
-    {
-        let [shift_val] = analyzer.values([input_ids[1]]);
-        diagnostics::emit_warning(
-            op.token.location,
-            "shift value exceeds 63",
-            [
-                Label::new(op.token.location)
-                    .with_color(Color::Yellow)
-                    .with_message("here"),
-                Label::new(shift_val.creator_token.location)
-                    .with_color(Color::Cyan)
-                    .with_message("Shift value from here")
-                    .with_order(1),
-            ],
-            format!("shift value ({sv}) will be masked to the lower 6 bits"),
-            source_store,
-        )
+    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) = analyzer.value_consts(input_ids) else { return };
+
+    if matches!(&op.code, OpCode::ShiftLeft | OpCode::ShiftRight) {
+        let shift_amount = match b_const_val {
+            IntKind::Signed(v) => v as u8,
+            IntKind::Unsigned(v) => v as u8,
+        };
+
+        if shift_amount > 63 {
+            let [shift_val] = analyzer.values([input_ids[1]]);
+            diagnostics::emit_warning(
+                op.token.location,
+                "shift value exceeds 63",
+                [
+                    Label::new(op.token.location)
+                        .with_color(Color::Yellow)
+                        .with_message("here"),
+                    Label::new(shift_val.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message("Shift value from here")
+                        .with_order(1),
+                ],
+                format!("shift value ({shift_amount}) will be masked to the lower 6 bits"),
+                source_store,
+            )
+        }
+
+        if (shift_amount & 63) >= output_width.bit_width() {
+            let [shift_val] = analyzer.values([input_ids[1]]);
+            diagnostics::emit_warning(
+                op.token.location,
+                "shift value exceeds 63",
+                [
+                    Label::new(op.token.location)
+                        .with_color(Color::Yellow)
+                        .with_message("here"),
+                    Label::new(shift_val.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message("Shift value from here")
+                        .with_order(1),
+                ],
+                format!("shift value ({shift_amount}) exceeds width"),
+                source_store,
+            )
+        }
     }
 
-    let new_const_val = match types {
-        [ConstVal::Int(a), ConstVal::Int(b)] => match op.code {
-            OpCode::Multiply => ConstVal::Int((a * b) & output_width.mask()),
-            OpCode::ShiftLeft => ConstVal::Int((a << b) & output_width.mask()),
-            OpCode::ShiftRight => ConstVal::Int((a >> b) & output_width.mask()),
-            _ => return,
-        },
-        _ => return,
+    let a_val = a_const_val.cast(output_width, output_sign);
+    let b_val = b_const_val.cast(output_width, output_sign);
+
+    let new_kind = match (a_val, b_val) {
+        (IntKind::Signed(a), IntKind::Signed(b)) => {
+            IntKind::Signed(op.code.get_signed_binary_op()(a, b))
+        }
+        (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+            IntKind::Unsigned(op.code.get_unsigned_binary_op()(a, b))
+        }
+        _ => unreachable!(),
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_const(output_id, new_const_val);
+    analyzer.set_value_const(output_id, ConstVal::Int(new_kind));
 }
 
-pub(super) fn divmod(analyzer: &mut Analyzer, source_store: &SourceStorage, op: &Op) {
+pub(super) fn divmod(
+    analyzer: &mut Analyzer,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    op: &Op,
+) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(types) = analyzer.value_consts(input_ids) else { return };
 
-    if let ConstVal::Int(0) = types[1] {
+    let Some([output_type_id, _]) = analyzer.value_types(*op_data.outputs.as_arr()) else { return };
+    let TypeKind::Integer {
+        width: output_width,
+        signed: output_signed,
+    } = type_store.get_type_info(output_type_id).kind else {
+        return
+    };
+
+    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) = analyzer.value_consts(input_ids) else { return };
+
+    if let IntKind::Signed(0) | IntKind::Unsigned(0) = b_const_val {
         let [div_val] = analyzer.values([input_ids[1]]);
         diagnostics::emit_error(
             op.token.location,
@@ -278,15 +365,24 @@ pub(super) fn divmod(analyzer: &mut Analyzer, source_store: &SourceStorage, op: 
             ],
             None,
             source_store,
-        )
+        );
+        return;
     }
 
-    let [new_quot_val, new_rem_val] = match types {
-        [ConstVal::Int(a), ConstVal::Int(b @ 1..)] => [ConstVal::Int(a / b), ConstVal::Int(a % b)],
-        _ => return,
+    let a_val = a_const_val.cast(output_width, output_signed);
+    let b_val = b_const_val.cast(output_width, output_signed);
+
+    let [new_quot_val, new_rem_val] = match [a_val, b_val] {
+        [IntKind::Signed(a), IntKind::Signed(b)] => {
+            [IntKind::Signed(a / b), IntKind::Signed(a % b)]
+        }
+        [IntKind::Unsigned(a), IntKind::Unsigned(b)] => {
+            [IntKind::Unsigned(a / b), IntKind::Unsigned(a % b)]
+        }
+        _ => unreachable!(),
     };
 
     let [quot_id, rem_id] = *op_data.outputs.as_arr::<2>();
-    analyzer.set_value_const(quot_id, new_quot_val);
-    analyzer.set_value_const(rem_id, new_rem_val);
+    analyzer.set_value_const(quot_id, ConstVal::Int(new_quot_val));
+    analyzer.set_value_const(rem_id, ConstVal::Int(new_rem_val));
 }

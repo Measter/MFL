@@ -3,11 +3,11 @@ use ariadne::{Label, Color};
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Program, ItemId, type_store::{TypeKind}},
+    program::{Program, ItemId, type_store::{TypeKind, Signedness}},
     source_file::SourceStorage, diagnostics,
 };
 
-use self::stack_ops::{cast_int, cast_ptr};
+use self::stack_ops::{cast_to_int, cast_to_ptr};
 
 use super::{Analyzer, IntWidth};
 
@@ -101,11 +101,12 @@ pub(super) fn analyze_block(
                 &program.type_store,
                 op,
             ),
-            OpCode::PushInt{ width, .. } => stack_ops::push_int(
+            OpCode::PushInt{ width, value } => stack_ops::push_int(
                 analyzer,
                 &program.type_store,
                 op,
                 width,
+                value.to_signedness(),
             ),
             OpCode::PushStr{  is_c_str, .. } => stack_ops::push_str(
                 analyzer,
@@ -119,6 +120,7 @@ pub(super) fn analyze_block(
                 &program.type_store,
                 op,
                 IntWidth::I64,
+                Signedness::Unsigned,
             ),
             OpCode::ArgV => stack_ops::push_str(
                 analyzer,
@@ -130,8 +132,8 @@ pub(super) fn analyze_block(
             OpCode::ResolvedCast { id } => {
                 let info = &program.type_store.get_type_info(id);
                 match info.kind {
-                    TypeKind::Integer(width) => cast_int(analyzer, source_store, interner, &program.type_store, had_error, op, width),
-                    TypeKind::Pointer => cast_ptr(analyzer, source_store, interner, &program.type_store, had_error, op),
+                    TypeKind::Integer{ width, signed  } => cast_to_int(analyzer, source_store, interner, &program.type_store, had_error, op, width, signed),
+                    TypeKind::Pointer => cast_to_ptr(analyzer, source_store, interner, &program.type_store, had_error, op),
                     TypeKind::Bool => {
                         diagnostics::emit_error(
                             op.token.location,

@@ -4,18 +4,26 @@ use lasso::Spur;
 use crate::{
     interners::Interners,
     n_ops::SliceNOps,
-    opcode::Op,
-    program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
+    opcode::{IntKind, Op},
+    program::{
+        static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
+        type_store::Signedness,
+    },
 };
 
-pub(super) fn cast_int(analyzer: &mut Analyzer, op: &Op, width: IntWidth) {
+pub(super) fn cast_to_int(
+    analyzer: &mut Analyzer,
+    op: &Op,
+    to_width: IntWidth,
+    to_signed: Signedness,
+) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([types]) = analyzer.value_consts(input_ids) else { return };
+    let Some([input_const_val]) = analyzer.value_consts(input_ids) else { return };
 
-    let new_const_val = match types {
-        ConstVal::Int(v) => ConstVal::Int(v & width.mask()),
-        ConstVal::Bool(b) => ConstVal::Int(b as _),
+    let new_const_val = match input_const_val {
+        ConstVal::Int(v) => ConstVal::Int(v.cast(to_width, to_signed)),
+        ConstVal::Bool(b) => ConstVal::Int(IntKind::Unsigned(b as _)),
         _ => return,
     };
 
@@ -47,7 +55,7 @@ pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op, value: bool) {
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
-pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op, value: u64) {
+pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op, value: IntKind) {
     let op_data = analyzer.get_op_io(op.id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(value));
 }
@@ -73,7 +81,7 @@ pub(super) fn push_str(
     } else {
         let str_len = interner.resolve_literal(id).len() - 1; // All strings are null-terminated.
         let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        analyzer.set_value_const(len, ConstVal::Int(str_len.to_u64()));
+        analyzer.set_value_const(len, ConstVal::Int(IntKind::Unsigned(str_len.to_u64())));
         analyzer.set_value_const(
             ptr,
             ConstVal::Ptr {

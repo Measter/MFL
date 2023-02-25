@@ -11,11 +11,14 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Direction, If, Op, OpCode, OpId, While},
+    opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     source_file::SourceStorage,
 };
 
-use super::{type_store::IntWidth, ItemId, ItemKind, ModuleId, Program};
+use super::{
+    type_store::{IntWidth, Signedness},
+    ItemId, ItemKind, ModuleId, Program,
+};
 
 trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;
@@ -102,7 +105,6 @@ fn parse_delimited_token_list<'a>(
                     Some(
                         Label::new(prev.location)
                             .with_color(Color::Red)
-                            .with_message("here"),
                     ),
                     None,
                     source_store,
@@ -111,8 +113,7 @@ fn parse_delimited_token_list<'a>(
             };
 
         if close_delim_fn(next_token.kind) {
-            // The end of the list, so break the loop.
-            break;
+            break; // The end of the list, so break the loop.
         }
 
         let Ok((_, item_token)) = expect_token(
@@ -202,11 +203,11 @@ fn parse_integer_op<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     token: Token,
     stripped_spur: Spur,
-    _is_negative: bool,
+    is_known_negative: bool,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (width, ident_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+    let (kind_token, signedness_kind) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
     {
         let (_, ident_token, _) = parse_delimited_token_list(
             token_iter,
@@ -220,11 +221,9 @@ fn parse_integer_op<'a>(
         )?;
         let ident_token = ident_token[0];
 
-        let width = match interner.resolve_lexeme(ident_token.lexeme) {
-            "u8" => IntWidth::I8,
-            "u16" => IntWidth::I16,
-            "u32" => IntWidth::I32,
-            "u64" => IntWidth::I64,
+        let is_signed_kind = match interner.resolve_lexeme(ident_token.lexeme) {
+            "u8" | "u16" | "u32" | "u64" => Signedness::Unsigned,
+            "s8" | "s16" | "s32" | "s64" => Signedness::Signed,
 
             _ => {
                 diagnostics::emit_error(
@@ -239,29 +238,77 @@ fn parse_integer_op<'a>(
                 return Err(());
             }
         };
-        (width, ident_token)
+        (Some(ident_token), is_signed_kind)
     } else {
-        (IntWidth::I64, token)
+        (None, Signedness::Signed)
     };
 
-    let value = interner.resolve_literal(stripped_spur).parse().unwrap();
-
-    if !width.bounds().contains(&value) {
+    if signedness_kind == Signedness::Unsigned && is_known_negative {
+        let kind_token = kind_token.unwrap();
         diagnostics::emit_error(
-            ident_token.location,
-            "literal out of bounds",
-            [Label::new(ident_token.location)
-                .with_color(Color::Red)
-                .with_message(format!(
-                    "valid range for {} is {:?}",
-                    width.name(),
-                    width.bounds(),
-                ))],
+            kind_token.location,
+            "signed integer literal with unsigned type kind",
+            [Label::new(token.location).with_color(Color::Red)],
             None,
             source_store,
         );
         return Err(());
     }
+
+    let width = match kind_token {
+        Some(token) => match interner.resolve_lexeme(token.lexeme) {
+            "u8" | "s8" => IntWidth::I8,
+            "u16" | "s16" => IntWidth::I16,
+            "u32" | "s32" => IntWidth::I32,
+            "u64" | "s64" => IntWidth::I64,
+            _ => unreachable!(),
+        },
+        None => IntWidth::I32,
+    };
+
+    let value = match signedness_kind {
+        Signedness::Signed => {
+            let value: i64 = interner.resolve_literal(stripped_spur).parse().unwrap();
+
+            if !width.bounds_signed().contains(&value) {
+                diagnostics::emit_error(
+                    token.location,
+                    "literal out of bounds",
+                    [Label::new(token.location)
+                        .with_color(Color::Red)
+                        .with_message(format!(
+                            "valid range for {} is {:?}",
+                            width.name(signedness_kind),
+                            width.bounds_signed(),
+                        ))],
+                    None,
+                    source_store,
+                );
+                return Err(());
+            }
+            IntKind::Signed(value)
+        }
+        Signedness::Unsigned => {
+            let value: u64 = interner.resolve_literal(stripped_spur).parse().unwrap();
+            if !width.bounds_unsigned().contains(&value) {
+                diagnostics::emit_error(
+                    token.location,
+                    "literal out of bounds",
+                    [Label::new(token.location)
+                        .with_color(Color::Red)
+                        .with_message(format!(
+                            "valid range for {} is {:?}",
+                            width.name(signedness_kind),
+                            width.bounds_unsigned(),
+                        ))],
+                    None,
+                    source_store,
+                );
+                return Err(());
+            }
+            IntKind::Unsigned(value)
+        }
+    };
 
     Ok(OpCode::PushInt { width, value })
 }
@@ -446,7 +493,7 @@ pub fn parse_item_body(
             TokenKind::Boolean(b) => OpCode::PushBool(b),
             TokenKind::Char(ch) => OpCode::PushInt {
                 width: IntWidth::I8,
-                value: (ch as u8).to_u64(),
+                value: IntKind::Unsigned((ch as u8).to_u64()),
             },
             TokenKind::Ident => {
                 let (module, item_token) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
@@ -569,7 +616,24 @@ pub fn parse_item_body(
                 }
             }
 
-            TokenKind::Minus => OpCode::Subtract,
+            TokenKind::Minus => match token_iter.peek().copied() {
+                Some((_, int_token))
+                    if int_token.location.neighbour_of(token.location)
+                        && matches!(int_token.kind, TokenKind::Integer(_)) =>
+                {
+                    token_iter.next();
+                    let mut int_token = *int_token;
+                    int_token.location = int_token.location.merge(token.location);
+                    let TokenKind::Integer(id) = int_token.kind else { unreachable!() };
+                    let Ok(int) = parse_integer_op(&mut token_iter, int_token, id, true, interner, source_store) else {
+                        had_error = true;
+                        continue;
+                    };
+
+                    int
+                }
+                _ => OpCode::Subtract,
+            },
             TokenKind::Plus => OpCode::Add,
             TokenKind::Star => OpCode::Multiply,
             TokenKind::DivMod => OpCode::DivMod,

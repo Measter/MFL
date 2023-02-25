@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 use crate::{
     lexer::Token,
     program::{
-        type_store::{IntWidth, TypeId},
+        type_store::{IntWidth, Signedness, TypeId},
         ItemId, ModuleId,
     },
     source_file::SourceLocation,
@@ -14,6 +14,35 @@ use crate::{
 pub enum Direction {
     Left,
     Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntKind {
+    Signed(i64),
+    Unsigned(u64),
+}
+
+impl IntKind {
+    pub fn to_signedness(self) -> Signedness {
+        match self {
+            IntKind::Signed(_) => Signedness::Signed,
+            IntKind::Unsigned(_) => Signedness::Unsigned,
+        }
+    }
+
+    // The cast has already been typechecked, so we know it's valid.
+    pub fn cast(self, to_width: IntWidth, to_signed: Signedness) -> IntKind {
+        match (self, to_signed) {
+            (IntKind::Signed(v), Signedness::Signed) => IntKind::Signed(v & to_width.mask() as i64),
+            (IntKind::Unsigned(v), Signedness::Unsigned) => IntKind::Unsigned(v & to_width.mask()),
+            (IntKind::Signed(v), Signedness::Unsigned) => {
+                IntKind::Unsigned((v & to_width.mask() as i64) as u64)
+            }
+            (IntKind::Unsigned(v), Signedness::Signed) => {
+                IntKind::Signed((v & to_width.mask()) as i64)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +108,7 @@ pub enum OpCode {
     PushBool(bool),
     PushInt {
         width: IntWidth,
-        value: u64,
+        value: IntKind,
     },
     PushStr {
         id: Spur,
@@ -134,7 +163,7 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn get_binary_op(&self) -> fn(u64, u64) -> u64 {
+    pub fn get_unsigned_binary_op(&self) -> fn(u64, u64) -> u64 {
         use OpCode::*;
         match self {
             Add => |a, b| a + b,
@@ -151,35 +180,48 @@ impl OpCode {
             ShiftRight => |a, b| a >> b,
             Subtract => |a, b| a - b,
 
-            ArgC
-            | ArgV
-            | BitNot
-            | CallFunction { .. }
-            | DivMod
-            | Drop { .. }
-            | Dup { .. }
-            | Epilogue
-            | If(_)
-            | Memory { .. }
-            | Over { .. }
-            | Prologue
-            | PushBool(_)
-            | PushInt { .. }
-            | PushStr { .. }
-            | ResolvedCast { .. }
-            | ResolvedIdent { .. }
-            | ResolvedLoad { .. }
-            | ResolvedStore { .. }
-            | Return { .. }
-            | Rot { .. }
-            | Swap { .. }
-            | SysCall { .. }
-            | UnresolvedCast { .. }
-            | UnresolvedIdent { .. }
-            | UnresolvedLoad { .. }
-            | UnresolvedStore { .. }
-            | While(_) => {
+            _ => {
                 panic!("ICE: Attempted to get the binary_op of a {self:?}")
+            }
+        }
+    }
+
+    pub fn get_signed_binary_op(&self) -> fn(i64, i64) -> i64 {
+        use OpCode::*;
+        match self {
+            Add => |a, b| a + b,
+            BitOr => |a, b| a | b,
+            BitAnd => |a, b| a & b,
+            Equal => |a, b| (a == b) as i64,
+            Greater => |a, b| (a > b) as i64,
+            GreaterEqual => |a, b| (a >= b) as i64,
+            Less => |a, b| (a < b) as i64,
+            LessEqual => |a, b| (a <= b) as i64,
+            Multiply => |a, b| a * b,
+            NotEq => |a, b| (a != b) as i64,
+            ShiftLeft => |a, b| a << b,
+            ShiftRight => |a, b| a >> b,
+            Subtract => |a, b| a - b,
+
+            _ => {
+                panic!("ICE: Attempted to get the binary_op of a {self:?}")
+            }
+        }
+    }
+
+    pub fn get_bool_binary_op(&self) -> fn(bool, bool) -> bool {
+        use OpCode::*;
+        #[allow(clippy::bool_comparison)]
+        match self {
+            Equal => |a, b| a == b,
+            NotEq => |a, b| a != b,
+            Greater => |a, b| a > b,
+            GreaterEqual => |a, b| a >= b,
+            Less => |a, b| a < b,
+            LessEqual => |a, b| a <= b,
+
+            _ => {
+                panic!("ICE: Attempted to get the bool_op of a {self:?}")
             }
         }
     }

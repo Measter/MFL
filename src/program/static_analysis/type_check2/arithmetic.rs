@@ -3,8 +3,10 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::{
-        static_analysis::{generate_type_mismatch_diag, Analyzer},
-        type_store::{BuiltinTypes, Signedness, TypeKind, TypeStore},
+        static_analysis::{
+            can_promote_int, generate_type_mismatch_diag, promote_int_type, Analyzer,
+        },
+        type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
     },
     source_file::SourceStorage,
 };
@@ -23,14 +25,30 @@ pub(super) fn add(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        // One of these was the result of an earlier error. Nothing else to do, just leave.
-        [TypeKind::Integer(a), TypeKind::Integer(b)] => {
-            let kind = (Signedness::Unsigned, a.max(b)).into();
-            type_store.get_builtin(kind).id
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store
+                .get_builtin(
+                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                        .unwrap()
+                        .into(),
+                )
+                .id
         }
-        [TypeKind::Pointer, TypeKind::Integer(_)] | [TypeKind::Integer(_), TypeKind::Pointer] => {
-            type_store.get_builtin(BuiltinTypes::Pointer).id
-        }
+
+        [TypeKind::Pointer, TypeKind::Integer {
+            width: IntWidth::I64,
+            signed: Signedness::Unsigned,
+        }]
+        | [TypeKind::Integer {
+            width: IntWidth::I64,
+            signed: Signedness::Unsigned,
+        }, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::Pointer).id,
 
         _ => {
             // Type mismatch
@@ -68,14 +86,27 @@ pub(super) fn subtract(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer(a), TypeKind::Integer(b)] => {
-            let kind = (Signedness::Unsigned, a.max(b)).into();
-            type_store.get_builtin(kind).id
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store
+                .get_builtin(
+                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                        .unwrap()
+                        .into(),
+                )
+                .id
         }
+
         [TypeKind::Pointer, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::U64).id,
-        [TypeKind::Pointer, TypeKind::Integer(_)] => {
-            type_store.get_builtin(BuiltinTypes::Pointer).id
-        }
+        [TypeKind::Pointer, TypeKind::Integer {
+            width: IntWidth::I64,
+            signed: Signedness::Unsigned,
+        }] => type_store.get_builtin(BuiltinTypes::Pointer).id,
 
         _ => {
             // Type mismatch
@@ -113,7 +144,7 @@ pub(super) fn bitnot(
     let input_type_info = type_store.get_type_info(input);
 
     let new_type = match input_type_info.kind {
-        TypeKind::Integer(_) | TypeKind::Bool => input,
+        TypeKind::Integer { .. } | TypeKind::Bool => input,
 
         _ => {
             // Type mismatch
@@ -151,10 +182,22 @@ pub(super) fn bitand_bitor(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer(a), TypeKind::Integer(b)] => {
-            let kind = (Signedness::Unsigned, a.max(b)).into();
-            type_store.get_builtin(kind).id
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store
+                .get_builtin(
+                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                        .unwrap()
+                        .into(),
+                )
+                .id
         }
+
         [TypeKind::Bool, TypeKind::Bool] => type_store.get_builtin(BuiltinTypes::Bool).id,
 
         _ => {
@@ -192,9 +235,20 @@ pub(super) fn multiply_and_shift(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer(a), TypeKind::Integer(b)] => {
-            let kind = (Signedness::Unsigned, a.max(b)).into();
-            type_store.get_builtin(kind).id
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store
+                .get_builtin(
+                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                        .unwrap()
+                        .into(),
+                )
+                .id
         }
 
         _ => {
@@ -232,9 +286,20 @@ pub(super) fn divmod(
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer(a), TypeKind::Integer(b)] => {
-            let kind = (Signedness::Unsigned, a.max(b)).into();
-            type_store.get_builtin(kind).id
+        [TypeKind::Integer {
+            width: a_width,
+            signed: a_signed,
+        }, TypeKind::Integer {
+            width: b_width,
+            signed: b_signed,
+        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+            type_store
+                .get_builtin(
+                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                        .unwrap()
+                        .into(),
+                )
+                .id
         }
 
         _ => {

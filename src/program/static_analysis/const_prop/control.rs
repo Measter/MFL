@@ -3,6 +3,7 @@ use crate::{
     opcode::{If, Op, While},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId},
+        type_store::TypeStore,
         ItemId, ItemKind, Program,
     },
     source_file::SourceStorage,
@@ -32,6 +33,7 @@ pub(super) fn analyze_while(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     op: &Op,
     while_op: &While,
 ) {
@@ -54,6 +56,7 @@ pub(super) fn analyze_while(
         had_error,
         interner,
         source_store,
+        type_store,
     );
     super::analyze_block(
         program,
@@ -63,6 +66,7 @@ pub(super) fn analyze_while(
         had_error,
         interner,
         source_store,
+        type_store,
     );
 }
 
@@ -73,6 +77,7 @@ pub(super) fn analyze_if(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &TypeStore,
     if_op: &If,
 ) {
     // The condition is always executed, so we can const prop that.
@@ -84,6 +89,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
 
     // Both blocks should be analyzed with const prop allowed.
@@ -95,6 +101,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
     super::analyze_block(
         program,
@@ -104,6 +111,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
 
     // Don't set the const value of merge outputs.
