@@ -270,12 +270,36 @@ fn failed_compare_stack_types(
         \t\t______|__________|_________"
         .to_owned();
 
+    let mut labels = vec![
+        Label::new(error_location)
+            .with_color(Color::Red)
+            .with_message("actual sampled here"),
+        Label::new(sample_location)
+            .with_color(Color::Cyan)
+            .with_message("expected sampled here"),
+    ];
+
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
     for (idx, (expected, actual_id)) in pairs {
         let value_type = analyzer.value_types([*actual_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
             interner.resolve_lexeme(type_info.name)
         });
+
+        let mut creators = analyzer.get_creator_token(*actual_id);
+        let root = creators.pop().unwrap();
+        labels.push(
+            Label::new(root.location)
+                .with_color(Color::Yellow)
+                .with_message(format!("{value_type} (depth {idx})")),
+        );
+        for creator in creators {
+            labels.push(
+                Label::new(creator.location)
+                    .with_color(Color::Cyan)
+                    .with_message(format!("{value_type} (depth {idx})")),
+            );
+        }
 
         let expected_type_info = type_store.get_type_info(*expected);
         let expected_name = interner.resolve_lexeme(expected_type_info.name);
@@ -289,20 +313,7 @@ fn failed_compare_stack_types(
         .unwrap();
     }
 
-    diagnostics::emit_error(
-        error_location,
-        msg,
-        [
-            Label::new(error_location)
-                .with_color(Color::Red)
-                .with_message("actual sampled here"),
-            Label::new(sample_location)
-                .with_color(Color::Cyan)
-                .with_message("expected sampled here"),
-        ],
-        note,
-        source_store,
-    );
+    diagnostics::emit_error(error_location, msg, labels, note, source_store);
 }
 
 fn generate_type_mismatch_diag(
