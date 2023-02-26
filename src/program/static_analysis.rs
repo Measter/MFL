@@ -59,6 +59,30 @@ pub fn promote_int_type(
     }
 }
 
+#[test]
+fn test_promote_int() {
+    use IntWidth::*;
+    use Signedness::*;
+
+    assert_eq!(
+        promote_int_type(I16, Unsigned, I16, Unsigned),
+        Some((Unsigned, I16))
+    );
+
+    assert_eq!(
+        promote_int_type(I16, Unsigned, I32, Unsigned),
+        Some((Unsigned, I32))
+    );
+
+    assert_eq!(
+        promote_int_type(I16, Unsigned, I32, Signed),
+        Some((Signed, I32))
+    );
+
+    assert_eq!(promote_int_type(I16, Unsigned, I16, Signed), None);
+    assert_eq!(promote_int_type(I16, Signed, I64, Unsigned), None);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PtrId {
     Mem(ItemId),
