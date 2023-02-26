@@ -33,8 +33,24 @@ impl IntKind {
     // The cast has already been typechecked, so we know it's valid.
     pub fn cast(self, to_width: IntWidth, to_signed: Signedness) -> IntKind {
         match (self, to_signed) {
-            (IntKind::Signed(v), Signedness::Signed) => IntKind::Signed(v & to_width.mask() as i64),
+            (IntKind::Signed(v), Signedness::Signed) if to_width == IntWidth::I64 => {
+                IntKind::Signed(v)
+            }
+            (IntKind::Signed(v), Signedness::Signed) => {
+                let (min, max) = to_width.bounds_signed().into_inner();
+                let full_range = to_width.bounds_unsigned().into_inner().1 as i64;
+                let v = if v < min {
+                    v + full_range
+                } else if v > max {
+                    v - full_range
+                } else {
+                    v
+                };
+                IntKind::Signed(v)
+            }
+
             (IntKind::Unsigned(v), Signedness::Unsigned) => IntKind::Unsigned(v & to_width.mask()),
+
             (IntKind::Signed(v), Signedness::Unsigned) => {
                 IntKind::Unsigned((v & to_width.mask() as i64) as u64)
             }

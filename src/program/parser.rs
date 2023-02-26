@@ -269,6 +269,7 @@ fn parse_integer_op<'a>(
     let value = match signedness_kind {
         Signedness::Signed => {
             let value: i64 = interner.resolve_literal(stripped_spur).parse().unwrap();
+            let value = if is_known_negative { -value } else { value };
 
             if !width.bounds_signed().contains(&value) {
                 diagnostics::emit_error(

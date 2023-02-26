@@ -363,12 +363,13 @@ impl<'ctx> CodeGen<'ctx> {
                 .build_int_truncate_or_bit_cast(v, target_type, name),
         };
 
-        self.builder.build_int_cast_sign_flag(
-            widened,
-            target_type,
-            to_signedness == Signedness::Signed,
-            name,
-        )
+        widened
+        // self.builder.build_int_cast_sign_flag(
+        //     widened,
+        //     target_type,
+        //     to_signedness == Signedness::Signed,
+        //     name,
+        // )
     }
 
     fn compile_block(

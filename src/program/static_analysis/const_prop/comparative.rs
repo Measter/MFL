@@ -5,7 +5,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::{
-        static_analysis::{Analyzer, ConstVal},
+        static_analysis::{promote_int_type, Analyzer, ConstVal},
         type_store::{TypeKind, TypeStore},
     },
     source_file::SourceStorage,
@@ -20,16 +20,25 @@ pub(super) fn compare(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some([output_type_id]) = analyzer.value_types(*op_data.outputs.as_arr()) else { return };
+    let input_type_ids = analyzer.value_types(input_ids).unwrap();
     let Some(input_const_val) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match input_const_val {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer { width: output_width, signed: output_sign }  = type_store.get_type_info(output_type_id).kind else {unreachable!()};
+            let [
+                TypeKind::Integer { width: a_width, signed: a_signed },
+                TypeKind::Integer { width: b_width, signed: b_signed }
+            ] = input_type_ids.map(|id| type_store.get_type_info(id).kind) else {
+                unreachable!()
+            };
 
             // If we got here then the cast already type-checked.
+            let (output_sign, output_width) =
+                promote_int_type(a_width, a_signed, b_width, b_signed).unwrap();
+
             let a_kind = a.cast(output_width, output_sign);
             let b_kind = b.cast(output_width, output_sign);
+
             match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     op.code.get_signed_binary_op()(a, b) != 0
