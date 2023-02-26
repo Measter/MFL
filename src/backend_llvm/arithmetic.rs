@@ -304,14 +304,10 @@ impl<'ctx> CodeGen<'ctx> {
         let input_types = analyzer.value_types([a, b]).unwrap();
         let input_type_infos = input_types.map(|id| type_store.get_type_info(id));
 
-        let a_val = value_store
-            .load_value(self, a, analyzer, type_store, interner)
-            .into_int_value();
-        let b_val = value_store
-            .load_value(self, b, analyzer, type_store, interner)
-            .into_int_value();
+        let a_val = value_store.load_value(self, a, analyzer, type_store, interner);
+        let b_val = value_store.load_value(self, b, analyzer, type_store, interner);
 
-        let (a_val, b_val) = match input_type_infos.map(|ti| ti.kind) {
+        let (a_val, b_val, signed) = match input_type_infos.map(|ti| ti.kind) {
             [TypeKind::Integer {
                 width: a_width,
                 signed: a_signed,
@@ -323,16 +319,24 @@ impl<'ctx> CodeGen<'ctx> {
                     promote_int_type(a_width, a_signed, b_width, b_signed).unwrap();
                 let target_type = to_width.get_int_type(self.ctx);
 
+                let a_val = a_val.into_int_value();
+                let b_val = b_val.into_int_value();
+
                 let a_val = self.cast_int(a_val, target_type, a_signed, to_signed);
                 let b_val = self.cast_int(b_val, target_type, b_signed, to_signed);
-                (a_val, b_val)
+
+                (a_val, b_val, to_signed)
             }
             [TypeKind::Pointer, TypeKind::Pointer] => todo!(),
-            [TypeKind::Bool, TypeKind::Bool] => (a_val, b_val),
+            [TypeKind::Bool, TypeKind::Bool] => (
+                a_val.into_int_value(),
+                b_val.into_int_value(),
+                Signedness::Unsigned,
+            ),
             _ => unreachable!(),
         };
 
-        let (pred, name) = op.code.get_predicate();
+        let (pred, name) = op.code.get_predicate(signed);
         let res = self.builder.build_int_compare(pred, a_val, b_val, name);
         value_store.store_value(self, op_io.outputs()[0], res.into());
     }

@@ -64,14 +64,18 @@ impl OpCode {
         }
     }
 
-    fn get_predicate(&self) -> (IntPredicate, &'static str) {
-        match self {
-            OpCode::Equal => (IntPredicate::EQ, "equal"),
-            OpCode::Less => (IntPredicate::ULT, "less"),
-            OpCode::LessEqual => (IntPredicate::ULE, "less-equal"),
-            OpCode::Greater => (IntPredicate::UGT, "greater"),
-            OpCode::GreaterEqual => (IntPredicate::UGE, "greater-equal"),
-            OpCode::NotEq => (IntPredicate::NE, "not-equal"),
+    fn get_predicate(&self, signed: Signedness) -> (IntPredicate, &'static str) {
+        match (self, signed) {
+            (OpCode::Equal, _) => (IntPredicate::EQ, "equal"),
+            (OpCode::Less, Signedness::Unsigned) => (IntPredicate::ULT, "less"),
+            (OpCode::LessEqual, Signedness::Unsigned) => (IntPredicate::ULE, "less-equal"),
+            (OpCode::Greater, Signedness::Unsigned) => (IntPredicate::UGT, "greater"),
+            (OpCode::GreaterEqual, Signedness::Unsigned) => (IntPredicate::UGE, "greater-equal"),
+            (OpCode::Less, Signedness::Signed) => (IntPredicate::SLT, "less"),
+            (OpCode::LessEqual, Signedness::Signed) => (IntPredicate::SLE, "less-equal"),
+            (OpCode::Greater, Signedness::Signed) => (IntPredicate::SGT, "greater"),
+            (OpCode::GreaterEqual, Signedness::Signed) => (IntPredicate::SGE, "greater-equal"),
+            (OpCode::NotEq, _) => (IntPredicate::NE, "not-equal"),
             _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
         }
     }
