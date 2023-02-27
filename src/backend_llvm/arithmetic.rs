@@ -170,7 +170,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store.store_value(self, op_io.outputs()[0], sum.into());
     }
 
-    pub(super) fn build_divmod(
+    pub(super) fn build_div_rem(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,
@@ -210,12 +210,11 @@ impl<'ctx> CodeGen<'ctx> {
         let a_val = self.cast_int(a_val, target_type, a_signed, output_signed);
         let b_val = self.cast_int(b_val, target_type, b_signed, output_signed);
 
-        let rem_res = self.builder.build_int_unsigned_rem(a_val, b_val, "rem");
-        let quot_res = self.builder.build_int_unsigned_div(a_val, b_val, "div");
+        let (func, name) = op.code.get_div_rem_fn(output_signed);
+        let res = func(&self.builder, a_val, b_val, name);
 
-        let [quot_val, rem_val] = *op_io.outputs().as_arr();
-        value_store.store_value(self, quot_val, quot_res.into());
-        value_store.store_value(self, rem_val, rem_res.into());
+        let [res_val] = *op_io.outputs().as_arr();
+        value_store.store_value(self, res_val, res.into());
     }
 
     pub(super) fn build_shift_left_right(

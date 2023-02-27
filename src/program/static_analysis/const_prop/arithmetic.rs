@@ -253,7 +253,7 @@ pub(super) fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: 
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn multiply_and_shift(
+pub(super) fn multiply_div_rem_shift(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     type_store: &TypeStore,
@@ -311,8 +311,29 @@ pub(super) fn multiply_and_shift(
                 source_store,
             )
         }
+    } else if matches!(&op.code, OpCode::Div | OpCode::Rem) {
+        let div_amount = match b_const_val {
+            IntKind::Signed(v) => v as u64,
+            IntKind::Unsigned(v) => v,
+        };
+        if div_amount == 0 {
+            let [div_val] = analyzer.values([input_ids[1]]);
+            diagnostics::emit_error(
+                op.token.location,
+                "division by 0",
+                [
+                    Label::new(op.token.location).with_color(Color::Red),
+                    Label::new(div_val.creator_token.location)
+                        .with_color(Color::Cyan)
+                        .with_message("divisor from here")
+                        .with_order(1),
+                ],
+                None,
+                source_store,
+            );
+            return;
+        }
     }
-
     let a_val = a_const_val.cast(output_width, output_sign);
     let b_val = b_const_val.cast(output_width, output_sign);
 
@@ -328,61 +349,4 @@ pub(super) fn multiply_and_shift(
 
     let output_id = op_data.outputs[0];
     analyzer.set_value_const(output_id, ConstVal::Int(new_kind));
-}
-
-pub(super) fn divmod(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
-    op: &Op,
-) {
-    let op_data = analyzer.get_op_io(op.id);
-    let input_ids = *op_data.inputs.as_arr::<2>();
-
-    let Some([output_type_id, _]) = analyzer.value_types(*op_data.outputs.as_arr()) else { return };
-    let TypeKind::Integer {
-        width: output_width,
-        signed: output_signed,
-    } = type_store.get_type_info(output_type_id).kind else {
-        return
-    };
-
-    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) = analyzer.value_consts(input_ids) else { return };
-
-    if let IntKind::Signed(0) | IntKind::Unsigned(0) = b_const_val {
-        let [div_val] = analyzer.values([input_ids[1]]);
-        diagnostics::emit_error(
-            op.token.location,
-            "division by 0",
-            [
-                Label::new(op.token.location)
-                    .with_color(Color::Red)
-                    .with_message("division here"),
-                Label::new(div_val.creator_token.location)
-                    .with_color(Color::Cyan)
-                    .with_message("divisor from here")
-                    .with_order(1),
-            ],
-            None,
-            source_store,
-        );
-        return;
-    }
-
-    let a_val = a_const_val.cast(output_width, output_signed);
-    let b_val = b_const_val.cast(output_width, output_signed);
-
-    let [new_quot_val, new_rem_val] = match [a_val, b_val] {
-        [IntKind::Signed(a), IntKind::Signed(b)] => {
-            [IntKind::Signed(a / b), IntKind::Signed(a % b)]
-        }
-        [IntKind::Unsigned(a), IntKind::Unsigned(b)] => {
-            [IntKind::Unsigned(a / b), IntKind::Unsigned(a % b)]
-        }
-        _ => unreachable!(),
-    };
-
-    let [quot_id, rem_id] = *op_data.outputs.as_arr::<2>();
-    analyzer.set_value_const(quot_id, ConstVal::Int(new_quot_val));
-    analyzer.set_value_const(rem_id, ConstVal::Int(new_rem_val));
 }

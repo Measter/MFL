@@ -64,6 +64,19 @@ impl OpCode {
         }
     }
 
+    fn get_div_rem_fn<'ctx, T: IntMathValue<'ctx>>(
+        &self,
+        signed: Signedness,
+    ) -> (BuilderArithFunc<'ctx, T>, &'static str) {
+        match (self, signed) {
+            (OpCode::Div, Signedness::Signed) => (Builder::build_int_signed_div, "div"),
+            (OpCode::Div, Signedness::Unsigned) => (Builder::build_int_unsigned_div, "div"),
+            (OpCode::Rem, Signedness::Signed) => (Builder::build_int_signed_rem, "rem"),
+            (OpCode::Rem, Signedness::Unsigned) => (Builder::build_int_unsigned_rem, "rem"),
+            _ => panic!("ICE: Called get_div_rem_fn on non-div-rem opcode"),
+        }
+    }
+
     fn get_predicate(&self, signed: Signedness) -> (IntPredicate, &'static str) {
         match (self, signed) {
             (OpCode::Equal, _) => (IntPredicate::EQ, "equal"),
@@ -429,8 +442,8 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
                     self.build_multiply_and_or(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::DivMod => {
-                    self.build_divmod(interner, analyzer, value_store, type_store, op)
+                OpCode::Div | OpCode::Rem => {
+                    self.build_div_rem(interner, analyzer, value_store, type_store, op)
                 }
 
                 OpCode::Equal

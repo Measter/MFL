@@ -39,16 +39,10 @@ pub(super) fn analyze_block(
 
             OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(analyzer, &program.type_store, op),
             OpCode::BitNot => arithmetic::bitnot(analyzer, &program.type_store, op),
-            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
+            OpCode::Div | OpCode::Multiply | OpCode::Rem | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_div_rem_shift(
                 analyzer,
                 source_store,
                 &program.type_store,
-                op,
-            ),
-            OpCode::DivMod => arithmetic::divmod(
-                analyzer,
-                source_store,
-                type_store,
                 op,
             ),
 

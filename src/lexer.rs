@@ -29,7 +29,7 @@ pub enum TokenKind {
     Char(char),
     ColonColon,
     Const,
-    DivMod,
+    Div,
     Do,
     Drop,
     Dup,
@@ -58,6 +58,7 @@ pub enum TokenKind {
     ParenthesisOpen,
     Plus,
     Proc,
+    Rem,
     Return,
     Rot,
     ShiftLeft,
@@ -86,7 +87,7 @@ impl TokenKind {
             | TokenKind::Char(_)
             | TokenKind::ColonColon
             | TokenKind::Const
-            | TokenKind::DivMod
+            | TokenKind::Div
             | TokenKind::Do
             | TokenKind::Drop
             | TokenKind::Dup
@@ -113,6 +114,7 @@ impl TokenKind {
             | TokenKind::ParenthesisOpen
             | TokenKind::Plus
             | TokenKind::Proc
+            | TokenKind::Rem
             | TokenKind::Return
             | TokenKind::Rot
             | TokenKind::ShiftLeft
@@ -169,7 +171,7 @@ fn is_ident_continue(c: char) -> bool {
 fn is_valid_post_number(c: char) -> bool {
     matches!(
         c,
-        '+' | '-' | '*' | '=' | '<' | '>' | '/' | '(' | ')' | '!' | '@'
+        '+' | '-' | '*' | '=' | '<' | '>' | '/' | '(' | ')' | '!' | '@' | '%'
     ) || c.is_whitespace()
 }
 
@@ -307,11 +309,16 @@ impl<'source> Scanner<'source> {
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
             }
 
-            ('+' | '-' | '=' | '<' | '>' | '*' | '[' | ']' | '(' | ')' | '@' | '!', _) => {
+            (
+                '+' | '-' | '=' | '<' | '>' | '*' | '/' | '%' | '[' | ']' | '(' | ')' | '@' | '!',
+                _,
+            ) => {
                 let kind = match ch {
                     '+' => TokenKind::Plus,
                     '-' => TokenKind::Minus,
                     '*' => TokenKind::Star,
+                    '/' => TokenKind::Div,
+                    '%' => TokenKind::Rem,
                     '=' => TokenKind::Equal,
                     '<' => TokenKind::Less,
                     '>' => TokenKind::Greater,
@@ -439,7 +446,6 @@ impl<'source> Scanner<'source> {
                     "assert" => TokenKind::Assert,
                     "cast" => TokenKind::Cast,
                     "const" => TokenKind::Const,
-                    "divmod" => TokenKind::DivMod,
                     "do" => TokenKind::Do,
                     "drop" => TokenKind::Drop,
                     "dup" => TokenKind::Dup,

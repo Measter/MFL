@@ -637,7 +637,8 @@ pub fn parse_item_body(
             },
             TokenKind::Plus => OpCode::Add,
             TokenKind::Star => OpCode::Multiply,
-            TokenKind::DivMod => OpCode::DivMod,
+            TokenKind::Div => OpCode::Div,
+            TokenKind::Rem => OpCode::Rem,
 
             TokenKind::BitAnd => OpCode::BitAnd,
             TokenKind::BitNot => OpCode::BitNot,

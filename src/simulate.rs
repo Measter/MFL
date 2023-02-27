@@ -1,5 +1,3 @@
-use std::ops::{Div, Rem};
-
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use tracing::error;
@@ -135,6 +133,8 @@ fn simulate_execute_program_block(
             OpCode::Add
             | OpCode::Subtract
             | OpCode::Multiply
+            | OpCode::Div
+            | OpCode::Rem
             | OpCode::BitOr
             | OpCode::BitAnd
             | OpCode::ShiftLeft
@@ -146,11 +146,6 @@ fn simulate_execute_program_block(
                     op.code.get_unsigned_binary_op(),
                     op.code.get_signed_binary_op(),
                 ));
-            }
-            OpCode::DivMod => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push(apply_int_op(a, b, u64::div, i64::div));
-                value_stack.push(apply_int_op(a, b, u64::rem, i64::rem));
             }
 
             OpCode::BitNot => {

@@ -61,7 +61,7 @@ pub(super) fn analyze_block(
                 had_error,
                 op,
             ),
-            OpCode::Multiply | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_and_shift(
+            OpCode::Div | OpCode::Multiply | OpCode::Rem | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_div_rem_shift(
                 analyzer,
                 source_store,
                 interner,
@@ -70,15 +70,6 @@ pub(super) fn analyze_block(
                 op,
             ),
             
-            OpCode::DivMod => arithmetic::divmod(
-                analyzer,
-                source_store,
-                interner,
-                &program.type_store,
-                had_error,
-                op,
-            ),
-
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => comparative::compare(
                 analyzer,
                 source_store,

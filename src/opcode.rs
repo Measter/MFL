@@ -92,7 +92,7 @@ pub enum OpCode {
         module: ModuleId,
         item_id: ItemId,
     },
-    DivMod,
+    Div,
     Dup {
         count: u8,
         count_token: Token,
@@ -143,6 +143,7 @@ pub enum OpCode {
     ResolvedStore {
         id: TypeId,
     },
+    Rem,
     Return,
     Rot {
         item_count: u8,
@@ -185,6 +186,7 @@ impl OpCode {
             Add => |a, b| a + b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
+            Div => |a, b| a / b,
             Equal => |a, b| (a == b) as u64,
             Greater => |a, b| (a > b) as u64,
             GreaterEqual => |a, b| (a >= b) as u64,
@@ -192,6 +194,7 @@ impl OpCode {
             LessEqual => |a, b| (a <= b) as u64,
             Multiply => |a, b| a * b,
             NotEq => |a, b| (a != b) as u64,
+            Rem => |a, b| a % b,
             ShiftLeft => |a, b| a << b,
             ShiftRight => |a, b| a >> b,
             Subtract => |a, b| a - b,
@@ -208,6 +211,7 @@ impl OpCode {
             Add => |a, b| a + b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
+            Div => |a, b| a / b,
             Equal => |a, b| (a == b) as i64,
             Greater => |a, b| (a > b) as i64,
             GreaterEqual => |a, b| (a >= b) as i64,
@@ -215,6 +219,7 @@ impl OpCode {
             LessEqual => |a, b| (a <= b) as i64,
             Multiply => |a, b| a * b,
             NotEq => |a, b| (a != b) as i64,
+            Rem => |a, b| a % b,
             ShiftLeft => |a, b| a << b,
             ShiftRight => |a, b| a >> b,
             Subtract => |a, b| a - b,
