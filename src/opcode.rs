@@ -81,6 +81,12 @@ pub struct If {
 }
 
 #[derive(Debug, Clone)]
+pub enum UnresolvedType {
+    NonPointer(Token),
+    Pointer(SourceLocation, Box<UnresolvedType>),
+}
+
+#[derive(Debug, Clone)]
 pub enum OpCode {
     Add,
     ArgC,
@@ -108,6 +114,7 @@ pub enum OpCode {
     LessEqual,
     Greater,
     GreaterEqual,
+    Load,
     Memory {
         module_id: ModuleId,
         item_id: ItemId,
@@ -137,12 +144,6 @@ pub enum OpCode {
         module: ModuleId,
         item_id: ItemId,
     },
-    ResolvedLoad {
-        id: TypeId,
-    },
-    ResolvedStore {
-        id: TypeId,
-    },
     Rem,
     Return,
     Rot {
@@ -154,6 +155,7 @@ pub enum OpCode {
     },
     ShiftLeft,
     ShiftRight,
+    Store,
     Subtract,
     Swap {
         count: u8,
@@ -164,17 +166,11 @@ pub enum OpCode {
         arg_count_token: Token,
     },
     UnresolvedCast {
-        kind_token: Token,
+        unresolved_type: UnresolvedType,
     },
     UnresolvedIdent {
         module: Option<Token>,
         item: Token,
-    },
-    UnresolvedLoad {
-        kind_token: Token,
-    },
-    UnresolvedStore {
-        kind_token: Token,
     },
     While(Box<While>),
 }

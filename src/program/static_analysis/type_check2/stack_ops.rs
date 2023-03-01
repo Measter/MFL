@@ -7,7 +7,7 @@ use crate::{
     opcode::Op,
     program::{
         static_analysis::{generate_type_mismatch_diag, Analyzer},
-        type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
+        type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     source_file::SourceStorage,
 };
@@ -29,7 +29,7 @@ pub(super) fn cast_to_int(
 
     match input_type_info.kind {
         TypeKind::Bool => {}
-        TypeKind::Pointer => {
+        TypeKind::Pointer(_) => {
             if (width, sign) != (IntWidth::I64, Signedness::Unsigned) {
                 *had_error = true;
                 let [input_value] = analyzer.values(input_ids);
@@ -98,10 +98,11 @@ pub(super) fn cast_to_int(
 pub(super) fn cast_to_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
-    type_store: &TypeStore,
+    interner: &mut Interners,
+    type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
+    to_kind: TypeId,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
@@ -113,8 +114,10 @@ pub(super) fn cast_to_ptr(
             width: IntWidth::I64,
             signed: Signedness::Unsigned,
         } => {}
-        TypeKind::Pointer => {
+        TypeKind::Pointer(from_kind) if from_kind == to_kind => {
             let [value] = analyzer.values(input_ids);
+            let ptr_info = type_store.get_pointer(interner, from_kind);
+            let ptr_type_name = interner.resolve_lexeme(ptr_info.name);
 
             diagnostics::emit_warning(
                 op.token.location,
@@ -122,13 +125,14 @@ pub(super) fn cast_to_ptr(
                 [
                     Label::new(op.token.location).with_color(Color::Yellow),
                     Label::new(value.creator_token.location)
-                        .with_message("already a Pointer")
+                        .with_message(format!("already a {ptr_type_name}"))
                         .with_color(Color::Cyan),
                 ],
                 None,
                 source_store,
             );
         }
+        TypeKind::Pointer(_) => {}
 
         TypeKind::Integer { width, signed } => {
             *had_error = true;
@@ -167,7 +171,7 @@ pub(super) fn cast_to_ptr(
 
     analyzer.set_value_type(
         op_data.outputs[0],
-        type_store.get_builtin(BuiltinTypes::Pointer).id,
+        type_store.get_pointer(interner, to_kind).id,
     );
 }
 
@@ -217,12 +221,12 @@ pub(super) fn push_str(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op,
     if is_c_str {
         analyzer.set_value_type(
             op_data.outputs[0],
-            type_store.get_builtin(BuiltinTypes::Pointer).id,
+            type_store.get_builtin_ptr(BuiltinTypes::U8).id,
         );
     } else {
         let [len, ptr] = *op_data.outputs.as_arr::<2>();
         let builtin = (Signedness::Unsigned, IntWidth::I64).into();
         analyzer.set_value_type(len, type_store.get_builtin(builtin).id);
-        analyzer.set_value_type(ptr, type_store.get_builtin(BuiltinTypes::Pointer).id);
+        analyzer.set_value_type(ptr, type_store.get_builtin_ptr(BuiltinTypes::U8).id);
     }
 }

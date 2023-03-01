@@ -3,7 +3,7 @@ use ariadne::{Label, Color};
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Program, ItemId, type_store::{TypeKind, Signedness}},
+    program::{Program, ItemId, type_store::{TypeKind, Signedness, TypeStore}},
     source_file::SourceStorage, diagnostics,
 };
 
@@ -23,8 +23,9 @@ pub(super) fn analyze_block(
     block: &[Op],
     analyzer: &mut Analyzer,
     had_error: &mut bool,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
 ) {
     for op in block {
         match op.code {
@@ -32,7 +33,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -40,7 +41,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -49,7 +50,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -57,7 +58,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -65,7 +66,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -74,7 +75,7 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
@@ -82,49 +83,66 @@ pub(super) fn analyze_block(
                 analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
             
             OpCode::PushBool(_) => stack_ops::push_bool(
                 analyzer,
-                &program.type_store,
+                type_store,
                 op,
             ),
             OpCode::PushInt{ width, value } => stack_ops::push_int(
                 analyzer,
-                &program.type_store,
+                type_store,
                 op,
                 width,
                 value.to_signedness(),
             ),
             OpCode::PushStr{  is_c_str, .. } => stack_ops::push_str(
                 analyzer,
-                &program.type_store,
+                type_store,
                 op,
                 is_c_str,
             ),
 
             OpCode::ArgC => stack_ops::push_int(
                 analyzer,
-                &program.type_store,
+                type_store,
                 op,
                 IntWidth::I64,
                 Signedness::Unsigned,
             ),
             OpCode::ArgV => stack_ops::push_str(
                 analyzer,
-                &program.type_store,
+                type_store,
                 op,
                 true,
             ),
 
             OpCode::ResolvedCast { id } => {
-                let info = &program.type_store.get_type_info(id);
+                let info = type_store.get_type_info(id);
                 match info.kind {
-                    TypeKind::Integer{ width, signed  } => cast_to_int(analyzer, source_store, interner, &program.type_store, had_error, op, width, signed),
-                    TypeKind::Pointer => cast_to_ptr(analyzer, source_store, interner, &program.type_store, had_error, op),
+                    TypeKind::Integer{ width, signed  } => cast_to_int(
+                        analyzer, 
+                        source_store, 
+                        interner, 
+                        type_store, 
+                        had_error, 
+                        op, 
+                        width, 
+                        signed
+                    ),
+                    TypeKind::Pointer(kind) => cast_to_ptr(
+                        analyzer, 
+                        source_store, 
+                        interner, 
+                        type_store, 
+                        had_error, 
+                        op, 
+                        kind
+                    ),
                     TypeKind::Bool => {
                         diagnostics::emit_error(
                             op.token.location,
@@ -136,23 +154,21 @@ pub(super) fn analyze_block(
                     }
                 }
             }
-            OpCode::ResolvedLoad { id } => memory::load(
+            OpCode::Load => memory::load(
                 analyzer,
                 interner,
                 source_store, 
-                &program.type_store,
+                type_store,
                 had_error, 
                 op,
-                id
             ),
-            OpCode::ResolvedStore { id } => memory::store(
+            OpCode::Store => memory::store(
                 analyzer,
                 interner,
                 source_store,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
-                id
             ),
 
             OpCode::While(ref while_op) => control::analyze_while(
@@ -162,7 +178,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
-                &program.type_store,
+                type_store,
                 op,
                 while_op,
             ),
@@ -173,7 +189,7 @@ pub(super) fn analyze_block(
                 had_error,
                 interner,
                 source_store,
-                &program.type_store,
+                type_store,
                 op,
                 if_op,
             ),
@@ -187,19 +203,19 @@ pub(super) fn analyze_block(
                 analyzer,
                 interner,
                 source_store,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
                 item_id,
             ),
-            OpCode::SysCall{..} => control::syscall(analyzer, &program.type_store, op),
+            OpCode::SysCall{..} => control::syscall(analyzer, type_store, op),
 
             OpCode::Epilogue | OpCode::Return => control::epilogue_return(
                 program,
                 analyzer,
                 interner,
                 source_store,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
                 item,
@@ -215,8 +231,6 @@ pub(super) fn analyze_block(
             OpCode::CallFunction { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types should be resolved.
-            | OpCode::UnresolvedLoad { .. }
-            | OpCode::UnresolvedStore { .. }
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

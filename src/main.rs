@@ -12,6 +12,8 @@ use interners::Interners;
 use program::{ItemId, ItemKind, Program};
 use source_file::SourceStorage;
 
+use crate::program::type_store::TypeStore;
+
 mod backend_llvm;
 mod diagnostics;
 mod interners;
@@ -43,14 +45,20 @@ struct Args {
 fn load_program(
     file: &str,
     include_paths: Vec<String>,
-) -> Result<(Program, SourceStorage, Interners, ItemId)> {
+) -> Result<(Program, SourceStorage, Interners, TypeStore, ItemId)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
+    let mut type_store = TypeStore::new(&mut interner);
 
     let mut program = Program::new();
-    let entry_module_id =
-        program.load_program(file, &mut interner, &mut source_storage, &include_paths)?;
+    let entry_module_id = program.load_program(
+        file,
+        &mut interner,
+        &mut source_storage,
+        &mut type_store,
+        &include_paths,
+    )?;
 
     let entry_symbol = interner.intern_lexeme("entry");
     let entry_module = program.get_module(entry_module_id);
@@ -94,17 +102,30 @@ fn load_program(
         return Err(eyre!("invalid `entry` signature"));
     }
 
-    Ok((program, source_storage, interner, entry_function_id))
+    Ok((
+        program,
+        source_storage,
+        interner,
+        type_store,
+        entry_function_id,
+    ))
 }
 
 fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
     let mut output_binary = Path::new(&file).to_path_buf();
     output_binary.set_extension("");
 
-    let (program, _source_storage, mut interner, entry_function) =
+    let (program, _source_storage, mut interner, mut type_store, entry_function) =
         load_program(&file, include_paths)?;
 
-    let objects = backend_llvm::compile(&program, entry_function, &mut interner, &file, opt_level)?;
+    let objects = backend_llvm::compile(
+        &program,
+        entry_function,
+        &mut interner,
+        &mut type_store,
+        &file,
+        opt_level,
+    )?;
 
     println!("Linking... into {}", output_binary.display());
     let ld = Command::new("ld")

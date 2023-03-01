@@ -314,8 +314,8 @@ fn simulate_execute_program_block(
             | OpCode::CallFunction { .. }
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
-            | OpCode::ResolvedLoad { .. }
-            | OpCode::ResolvedStore { .. }
+            | OpCode::Load
+            | OpCode::Store
             | OpCode::SysCall { .. } => {
                 generate_error(
                     "operation not supported during const evaluation",
@@ -325,10 +325,7 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::UnresolvedCast { .. }
-            | OpCode::UnresolvedIdent { .. }
-            | OpCode::UnresolvedLoad { .. }
-            | OpCode::UnresolvedStore { .. } => {
+            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent { .. } => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

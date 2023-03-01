@@ -5,7 +5,10 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
 
-use crate::{diagnostics, interners::Interners, lexer::Token, source_file::SourceStorage};
+use crate::{
+    diagnostics, interners::Interners, lexer::Token, opcode::UnresolvedType,
+    source_file::SourceStorage,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);
@@ -78,7 +81,7 @@ pub enum Signedness {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Integer { width: IntWidth, signed: Signedness },
-    Pointer,
+    Pointer(TypeId),
     Bool,
 }
 
@@ -93,7 +96,6 @@ pub enum BuiltinTypes {
     S32,
     S64,
     Bool,
-    Pointer,
 }
 
 impl From<(Signedness, IntWidth)> for BuiltinTypes {
@@ -119,23 +121,34 @@ pub struct TypeInfo {
     pub width: u8,
 }
 
+#[derive(Debug, Clone)]
+struct PointerInfo {
+    ptr_id: TypeId,
+    name: Spur,
+    pointee_id: TypeId,
+}
+
 #[derive(Debug)]
 pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
     name_map: HashMap<Spur, TypeId>,
-    builtins: [TypeId; 10],
+    pointer_map: HashMap<TypeId, PointerInfo>,
+    builtins: [TypeId; 9],
 }
 
 impl TypeStore {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(interner: &mut Interners) -> Self {
+        let mut s = Self {
             kinds: HashMap::new(),
             name_map: HashMap::new(),
-            builtins: [TypeId(0); 10],
-        }
+            pointer_map: HashMap::new(),
+            builtins: [TypeId(0); 9],
+        };
+        s.init_builtins(interner);
+        s
     }
 
-    pub(super) fn init_builtins(&mut self, interner: &mut Interners) {
+    fn init_builtins(&mut self, interner: &mut Interners) {
         let builtins = [
             (
                 "u8",
@@ -210,13 +223,15 @@ impl TypeStore {
                 8,
             ),
             ("bool", BuiltinTypes::Bool, TypeKind::Bool, 1),
-            ("ptr", BuiltinTypes::Pointer, TypeKind::Pointer, 8),
         ];
 
-        for (name, builtin, kind, size) in builtins {
-            let name = interner.intern_lexeme(name);
+        for (name_str, builtin, kind, size) in builtins {
+            let name = interner.intern_lexeme(name_str);
             let id = self.add_type(name, kind, size);
             self.builtins[builtin as usize] = id;
+
+            // A couple parts of the compiler need to construct pointers to basic types.
+            self.get_pointer(interner, id);
         }
     }
 
@@ -237,8 +252,49 @@ impl TypeStore {
         id
     }
 
-    pub fn resolve_type(&self, name: Spur) -> Option<TypeInfo> {
-        self.name_map.get(&name).map(|id| self.kinds[id])
+    pub fn resolve_type(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+        tp: &UnresolvedType,
+    ) -> Option<TypeInfo> {
+        match tp {
+            UnresolvedType::NonPointer(st) => {
+                let ti = self.name_map.get(&st.lexeme).map(|id| self.kinds[id]);
+                if ti.is_none() {
+                    emit_type_error_diag(*st, interner, source_store);
+                }
+                ti
+            }
+            UnresolvedType::Pointer(location, pt) => {
+                let pointee = self.resolve_type(interner, source_store, pt)?;
+                Some(self.get_pointer(interner, pointee.id))
+            }
+        }
+    }
+
+    pub fn get_pointer(&mut self, interner: &mut Interners, pointee_id: TypeId) -> TypeInfo {
+        let pointee = self.get_type_info(pointee_id);
+
+        if let Some(pi) = self.pointer_map.get(&pointee.id) {
+            self.kinds[&pi.ptr_id]
+        } else {
+            let pointee_name = interner.resolve_lexeme(pointee.name);
+            let name = format!("ptr({pointee_name})");
+            let name = interner.intern_lexeme(&name);
+
+            let pointer_info = self.add_type(name, TypeKind::Pointer(pointee.id), 8);
+            self.pointer_map.insert(
+                pointee.id,
+                PointerInfo {
+                    ptr_id: pointer_info,
+                    name,
+                    pointee_id: pointee.id,
+                },
+            );
+
+            self.kinds[&pointer_info]
+        }
     }
 
     pub fn get_type_info(&self, id: TypeId) -> TypeInfo {
@@ -248,9 +304,14 @@ impl TypeStore {
     pub fn get_builtin(&self, id: BuiltinTypes) -> TypeInfo {
         self.kinds[&self.builtins[id as usize]]
     }
+
+    pub fn get_builtin_ptr(&self, id: BuiltinTypes) -> TypeInfo {
+        let id = &self.pointer_map[&self.builtins[id as usize]];
+        self.kinds[&id.ptr_id]
+    }
 }
 
-pub fn emit_type_error_diag(token: Token, interner: &Interners, source_store: &SourceStorage) {
+fn emit_type_error_diag(token: Token, interner: &Interners, source_store: &SourceStorage) {
     diagnostics::emit_error(
         token.location,
         format!("unknown type `{}`", interner.resolve_lexeme(token.lexeme)),

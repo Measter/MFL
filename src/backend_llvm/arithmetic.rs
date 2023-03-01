@@ -56,7 +56,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let (func, name) = op.code.get_arith_fn();
                 func(&self.builder, a_val, b_val, name).into()
             }
-            [TypeKind::Integer { signed, .. }, TypeKind::Pointer] => {
+            [TypeKind::Integer { signed, .. }, TypeKind::Pointer(_)] => {
                 assert!(matches!(op.code, OpCode::Add));
                 assert_eq!(signed, Signedness::Unsigned);
                 let offset = value_store
@@ -75,7 +75,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
             }
-            [TypeKind::Pointer, TypeKind::Integer { signed, .. }] => {
+            [TypeKind::Pointer(_), TypeKind::Integer { signed, .. }] => {
                 assert_eq!(signed, Signedness::Unsigned);
                 let offset = value_store
                     .load_value(self, b, analyzer, type_store, interner)
@@ -100,7 +100,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
             }
-            [TypeKind::Pointer, TypeKind::Pointer] => {
+            [TypeKind::Pointer(_), TypeKind::Pointer(_)] => {
                 assert!(matches!(op.code, OpCode::Subtract));
 
                 let lhs = value_store
@@ -326,7 +326,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 (a_val, b_val, to_signed)
             }
-            [TypeKind::Pointer, TypeKind::Pointer] => todo!(),
+            [TypeKind::Pointer(_), TypeKind::Pointer(_)] => todo!(),
             [TypeKind::Bool, TypeKind::Bool] => (
                 a_val.into_int_value(),
                 b_val.into_int_value(),

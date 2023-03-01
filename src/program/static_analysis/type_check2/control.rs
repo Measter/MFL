@@ -60,9 +60,9 @@ pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatur
 pub(super) fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
     item_id: ItemId,
@@ -74,8 +74,10 @@ pub(super) fn resolved_ident(
 
     match referenced_item.kind() {
         ItemKind::Memory => {
+            let pointer_type = referenced_item_sig.memory_type();
+
             let output_id = op_data.outputs[0];
-            analyzer.set_value_type(output_id, type_store.get_builtin(BuiltinTypes::Pointer).id);
+            analyzer.set_value_type(output_id, type_store.get_pointer(interner, pointer_type).id);
         }
         _ => {
             for (&expected, actual_id) in referenced_item_sig
@@ -140,9 +142,9 @@ pub(super) fn analyze_while(
     item_id: ItemId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
 ) {
@@ -160,6 +162,7 @@ pub(super) fn analyze_while(
         had_error,
         interner,
         source_store,
+        type_store,
     );
     // Evaluate the body.
     super::analyze_block(
@@ -170,6 +173,7 @@ pub(super) fn analyze_while(
         had_error,
         interner,
         source_store,
+        type_store,
     );
 
     // We expect a boolean to be the result of evaluating the condition.
@@ -235,9 +239,9 @@ pub(super) fn analyze_if(
     item_id: ItemId,
     analyzer: &mut Analyzer,
     had_error: &mut bool,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     op: &Op,
     if_op: &If,
 ) {
@@ -251,6 +255,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
     super::analyze_block(
         program,
@@ -260,6 +265,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
     super::analyze_block(
         program,
@@ -269,6 +275,7 @@ pub(super) fn analyze_if(
         had_error,
         interner,
         source_store,
+        type_store,
     );
 
     // All the conditions are stored in the op inputs.

@@ -88,8 +88,8 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_epilogue_return(
         &mut self,
-        program: &Program,
         interner: &mut Interners,
+        type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
@@ -104,9 +104,7 @@ impl<'ctx> CodeGen<'ctx> {
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()
             .iter()
-            .map(|id| {
-                value_store.load_value(self, *id, analyzer, program.get_type_store(), interner)
-            })
+            .map(|id| value_store.load_value(self, *id, analyzer, type_store, interner))
             .collect();
         self.builder.build_aggregate_return(&return_values);
     }
@@ -128,7 +126,6 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_syscall(
         &mut self,
-        program: &Program,
         interner: &mut Interners,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -142,14 +139,8 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .map(|id| {
-                match value_store.load_value(
-                    self,
-                    *id,
-                    analyzer,
-                    program.get_type_store(),
-                    interner,
-                ) {
+            .map(
+                |id| match value_store.load_value(self, *id, analyzer, type_store, interner) {
                     BasicValueEnum::PointerValue(v) => {
                         self.builder
                             .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")
@@ -163,8 +154,8 @@ impl<'ctx> CodeGen<'ctx> {
                         self.cast_int(i, self.ctx.i64_type(), signed, signed)
                     }
                     t => panic!("ICE: Unexected type: {t:?}"),
-                }
-            })
+                },
+            )
             .map(Into::into)
             .collect();
 
@@ -183,6 +174,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         interner: &mut Interners,
+        type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
@@ -213,6 +205,7 @@ impl<'ctx> CodeGen<'ctx> {
             &if_op.condition,
             function,
             interner,
+            type_store,
         );
 
         trace!("Compiling jump for {:?}", op.id);
@@ -220,13 +213,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = analyzer.get_op_io(op.id);
         self.builder.build_conditional_branch(
             value_store
-                .load_value(
-                    self,
-                    op_io.inputs()[0],
-                    analyzer,
-                    program.get_type_store(),
-                    interner,
-                )
+                .load_value(self, op_io.inputs()[0], analyzer, type_store, interner)
                 .into_int_value(),
             then_basic_block,
             else_basic_block,
@@ -242,6 +229,7 @@ impl<'ctx> CodeGen<'ctx> {
             &if_op.then_block,
             function,
             interner,
+            type_store,
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
@@ -250,13 +238,8 @@ impl<'ctx> CodeGen<'ctx> {
                                 panic!("ICE: If block doesn't have merges");
                             };
             for merge in merges {
-                let data = value_store.load_value(
-                    self,
-                    merge.then_value,
-                    analyzer,
-                    program.get_type_store(),
-                    interner,
-                );
+                let data =
+                    value_store.load_value(self, merge.then_value, analyzer, type_store, interner);
                 value_store.store_value(self, merge.output_value, data);
             }
         }
@@ -273,6 +256,7 @@ impl<'ctx> CodeGen<'ctx> {
             &if_op.else_block,
             function,
             interner,
+            type_store,
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
@@ -281,13 +265,8 @@ impl<'ctx> CodeGen<'ctx> {
                                 panic!("ICE: If block doesn't have merges");
                             };
             for merge in merges {
-                let data = value_store.load_value(
-                    self,
-                    merge.else_value,
-                    analyzer,
-                    program.get_type_store(),
-                    interner,
-                );
+                let data =
+                    value_store.load_value(self, merge.else_value, analyzer, type_store, interner);
                 value_store.store_value(self, merge.output_value, data);
             }
         }
@@ -301,6 +280,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         interner: &mut Interners,
+        type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
@@ -331,6 +311,7 @@ impl<'ctx> CodeGen<'ctx> {
             &while_op.condition,
             function,
             interner,
+            type_store,
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
@@ -343,7 +324,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self,
                     merge.condition_value,
                     analyzer,
-                    program.get_type_store(),
+                    type_store,
                     interner,
                 );
                 value_store.store_value(self, merge.pre_value, data);
@@ -355,13 +336,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = analyzer.get_op_io(op.id);
         self.builder.build_conditional_branch(
             value_store
-                .load_value(
-                    self,
-                    op_io.inputs()[0],
-                    analyzer,
-                    program.get_type_store(),
-                    interner,
-                )
+                .load_value(self, op_io.inputs()[0], analyzer, type_store, interner)
                 .into_int_value(),
             body_block,
             post_block,
@@ -377,6 +352,7 @@ impl<'ctx> CodeGen<'ctx> {
             &while_op.body_block,
             function,
             interner,
+            type_store,
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
@@ -389,7 +365,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self,
                     merge.condition_value,
                     analyzer,
-                    program.get_type_store(),
+                    type_store,
                     interner,
                 );
                 value_store.store_value(self, merge.pre_value, data);

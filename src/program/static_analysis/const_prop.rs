@@ -24,25 +24,25 @@ pub(super) fn analyze_block(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
 ) {
     for op in block {
         match op.code {
-            OpCode::Add => arithmetic::add(analyzer, &program.type_store, op),
+            OpCode::Add => arithmetic::add(analyzer, type_store, op),
             OpCode::Subtract => arithmetic::subtract(
                 analyzer,
                 source_store,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
             ),
 
-            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(analyzer, &program.type_store, op),
-            OpCode::BitNot => arithmetic::bitnot(analyzer, &program.type_store, op),
+            OpCode::BitAnd | OpCode::BitOr => arithmetic::bitand_bitor(analyzer, type_store, op),
+            OpCode::BitNot => arithmetic::bitnot(analyzer, type_store, op),
             OpCode::Div | OpCode::Multiply | OpCode::Rem | OpCode::ShiftLeft | OpCode::ShiftRight => arithmetic::multiply_div_rem_shift(
                 analyzer,
                 source_store,
-                &program.type_store,
+                type_store,
                 op,
             ),
 
@@ -70,22 +70,21 @@ pub(super) fn analyze_block(
             // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
             // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
             OpCode::ResolvedCast { id } => {
-                let type_info = program.type_store.get_type_info(id);
+                let type_info = type_store.get_type_info(id);
                 match type_info.kind {
                     TypeKind::Integer{ width, signed } => stack_ops::cast_to_int(analyzer, op, width, signed),
-                    TypeKind::Pointer => {},
+                    TypeKind::Pointer(kind) => stack_ops::cast_to_ptr(analyzer, op, kind),
                     TypeKind::Bool => {},
                 }
             }
-            OpCode::ResolvedLoad { id } => memory::load(analyzer,
+            OpCode::Load => memory::load(analyzer,
                 source_store,
                 interner,
-                &program.type_store,
+                type_store,
                 had_error,
                 op,
-                id
             ),
-            OpCode::ResolvedStore { .. } => {} // Nothing to do for store.
+            OpCode::Store => {} // Nothing to do for store.
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over { .. } => stack_ops::over(analyzer, op),
@@ -134,8 +133,6 @@ pub(super) fn analyze_block(
             OpCode::CallFunction { .. } // These haven't been generated yet.
             | OpCode::Memory { .. } // Nor have these.
             | OpCode::UnresolvedCast { .. } // All types should be resolved.
-            | OpCode::UnresolvedLoad { .. }
-            | OpCode::UnresolvedStore { .. }
             | OpCode::UnresolvedIdent { .. } // All idents should be resolved.
             => {
                 panic!("ICE: Encountered {:?}", op.code)

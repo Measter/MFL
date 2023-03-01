@@ -33,7 +33,9 @@ pub(super) fn compare(
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 
-        [TypeKind::Pointer, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::Bool).id,
+        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
+            type_store.get_builtin(BuiltinTypes::Bool).id
+        }
 
         _ => {
             // Type mismatch
@@ -80,7 +82,8 @@ pub(super) fn equal(
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 
-        [TypeKind::Bool, TypeKind::Bool] | [TypeKind::Pointer, TypeKind::Pointer] => {
+        [TypeKind::Bool, TypeKind::Bool] => type_store.get_builtin(BuiltinTypes::Bool).id,
+        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 

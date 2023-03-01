@@ -72,12 +72,13 @@ pub(super) fn load(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
-    kind: TypeId,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
-    let kind_info = type_store.get_type_info(kind);
+    let [type_id] = analyzer.value_types([input_id]).unwrap();
+    let TypeKind::Pointer(pointee_id) = type_store.get_type_info(type_id).kind else {unreachable!()};
+    let pointee_info = type_store.get_type_info(pointee_id);
 
     let new_const_val = match types {
         // We can't do memory allocation checks yet, as we haven't evaluated sizes yet.
@@ -97,7 +98,7 @@ pub(super) fn load(
                 had_error,
                 op,
                 src_op_loc,
-                kind,
+                pointee_id,
                 offset,
                 memory_size,
             ) {
@@ -105,10 +106,10 @@ pub(super) fn load(
             }
 
             let range_start = offset.to_usize();
-            let range_end = (offset + kind_info.width.to_u64()).to_usize();
+            let range_end = (offset + pointee_info.width.to_u64()).to_usize();
             let bytes = &string.as_bytes()[range_start..range_end];
-            match kind_info.kind {
-                TypeKind::Pointer => {
+            match pointee_info.kind {
+                TypeKind::Pointer(_) => {
                     // Can't const_load a pointer.
                     return;
                 }

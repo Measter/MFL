@@ -7,7 +7,7 @@ use crate::{
     opcode::{IntKind, Op},
     program::{
         static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
-        type_store::Signedness,
+        type_store::{Signedness, TypeId},
     },
 };
 
@@ -28,6 +28,17 @@ pub(super) fn cast_to_int(
     };
 
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
+}
+
+pub(super) fn cast_to_ptr(analyzer: &mut Analyzer, op: &Op, to_kind: TypeId) {
+    let op_data = analyzer.get_op_io(op.id);
+    let input_id = op_data.inputs()[0];
+    let Some([input_const_val]) = analyzer.value_consts([input_id]) else { return };
+
+    let [input_type_id] = analyzer.value_types([input_id]).unwrap();
+    if input_type_id == to_kind {
+        analyzer.set_value_const(input_id, input_const_val);
+    }
 }
 
 pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {

@@ -14,7 +14,7 @@ use inkwell::{
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
-    types::{BasicMetadataTypeEnum, BasicType, IntType},
+    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType},
     values::{BasicValueEnum, FunctionValue, IntMathValue, IntValue, PointerValue},
     AddressSpace, IntPredicate, OptimizationLevel,
 };
@@ -27,7 +27,7 @@ use crate::{
     opcode::{IntKind, Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
-        type_store::{IntWidth, Signedness, TypeKind, TypeStore},
+        type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
         ItemId, ItemKind, Program,
     },
 };
@@ -129,7 +129,7 @@ impl<'ctx> ValueStore<'ctx> {
             Some(&ptr) => ptr,
             None => {
                 let string = interner.resolve_literal(id);
-                let global = cg.builder.build_global_string_ptr(string, "global_string");
+                let global = cg.builder.build_global_string_ptr(string, string);
 
                 let ptr = global
                     .as_pointer_value()
@@ -237,6 +237,7 @@ struct CodeGen<'ctx> {
     processed_functions: HashSet<ItemId>,
     item_function_map: HashMap<ItemId, FunctionValue<'ctx>>,
     syscall_wrappers: Vec<FunctionValue<'ctx>>,
+    type_map: HashMap<TypeId, BasicTypeEnum<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -259,6 +260,7 @@ impl<'ctx> CodeGen<'ctx> {
             processed_functions: HashSet::new(),
             item_function_map: HashMap::new(),
             syscall_wrappers: Vec::new(),
+            type_map: HashMap::new(),
         }
     }
 
@@ -270,7 +272,12 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_function_prototypes(&mut self, program: &Program, interner: &mut Interners) {
+    fn build_function_prototypes(
+        &mut self,
+        program: &Program,
+        interner: &mut Interners,
+        type_store: &mut TypeStore,
+    ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
@@ -287,12 +294,13 @@ impl<'ctx> CodeGen<'ctx> {
                 .entry_stack()
                 .iter()
                 .map(|t| {
-                    let type_info = program.get_type_store().get_type_info(*t);
+                    let type_info = type_store.get_type_info(*t);
                     match type_info.kind {
                         TypeKind::Integer { width, .. } => width.get_int_type(self.ctx).into(),
-                        TypeKind::Pointer => {
-                            self.ctx.i8_type().ptr_type(AddressSpace::default()).into()
-                        }
+                        TypeKind::Pointer(to_kind) => self
+                            .get_type(type_store, to_kind)
+                            .ptr_type(AddressSpace::default())
+                            .into(),
                         TypeKind::Bool => self.ctx.bool_type().into(),
                     }
                 })
@@ -305,14 +313,13 @@ impl<'ctx> CodeGen<'ctx> {
                     .exit_stack()
                     .iter()
                     .map(|t| {
-                        let type_info = program.get_type_store().get_type_info(*t);
+                        let type_info = type_store.get_type_info(*t);
                         match type_info.kind {
                             TypeKind::Integer { width, .. } => {
                                 width.get_int_type(self.ctx).as_basic_type_enum()
                             }
-                            TypeKind::Pointer => self
-                                .ctx
-                                .i8_type()
+                            TypeKind::Pointer(to_kind) => self
+                                .get_type(type_store, to_kind)
                                 .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             TypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
@@ -385,6 +392,30 @@ impl<'ctx> CodeGen<'ctx> {
         // )
     }
 
+    fn get_type(&mut self, type_store: &TypeStore, kind: TypeId) -> BasicTypeEnum<'ctx> {
+        if let Some(tp) = self.type_map.get(&kind) {
+            return *tp;
+        }
+
+        let tp = match type_store.get_type_info(kind).kind {
+            TypeKind::Integer { width, .. } => match width {
+                IntWidth::I8 => self.ctx.i8_type().into(),
+                IntWidth::I16 => self.ctx.i16_type().into(),
+                IntWidth::I32 => self.ctx.i32_type().into(),
+                IntWidth::I64 => self.ctx.i64_type().into(),
+            },
+            TypeKind::Bool => self.ctx.bool_type().into(),
+            TypeKind::Pointer(sub_to_kind) => self
+                .get_type(type_store, sub_to_kind)
+                .ptr_type(AddressSpace::default())
+                .into(),
+        };
+
+        self.type_map.insert(kind, tp);
+
+        tp
+    }
+
     fn compile_block(
         &mut self,
         program: &Program,
@@ -393,9 +424,9 @@ impl<'ctx> CodeGen<'ctx> {
         block: &[Op],
         function: FunctionValue<'ctx>,
         interner: &mut Interners,
+        type_store: &mut TypeStore,
     ) {
         let analyzer = program.get_analyzer(id);
-        let type_store = program.get_type_store();
 
         for op in block {
             match op.code {
@@ -476,27 +507,22 @@ impl<'ctx> CodeGen<'ctx> {
                     *callee_id,
                 ),
 
-                OpCode::ResolvedCast { id: type_id } => self.build_cast(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *type_id,
-                ),
+                OpCode::ResolvedCast { id: type_id } => {
+                    self.build_cast(interner, analyzer, value_store, type_store, op, *type_id)
+                }
 
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
-                    self.build_dup_over(program, interner, analyzer, value_store, op)
+                    self.build_dup_over(interner, type_store, analyzer, value_store, op)
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
-                    self.build_epilogue_return(program, interner, analyzer, value_store, op)
+                    self.build_epilogue_return(interner, type_store, analyzer, value_store, op)
                 }
 
                 OpCode::If(if_op) => self.build_if(
                     program,
                     interner,
+                    type_store,
                     analyzer,
                     value_store,
                     function,
@@ -507,6 +533,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::While(while_op) => self.build_while(
                     program,
                     interner,
+                    type_store,
                     analyzer,
                     value_store,
                     function,
@@ -515,24 +542,8 @@ impl<'ctx> CodeGen<'ctx> {
                     while_op,
                 ),
 
-                OpCode::ResolvedLoad { id: type_id } => self.build_load(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *type_id,
-                ),
-                OpCode::ResolvedStore { id: type_id } => self.build_store(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *type_id,
-                ),
+                OpCode::Load => self.build_load(interner, analyzer, value_store, type_store, op),
+                OpCode::Store => self.build_store(interner, analyzer, value_store, type_store, op),
                 OpCode::Memory {
                     item_id,
                     global: false,
@@ -554,15 +565,9 @@ impl<'ctx> CodeGen<'ctx> {
                     todo!()
                 }
 
-                OpCode::SysCall { arg_count, .. } => self.build_syscall(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *arg_count,
-                ),
+                OpCode::SysCall { arg_count, .. } => {
+                    self.build_syscall(interner, analyzer, value_store, type_store, op, *arg_count)
+                }
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop { .. } | OpCode::Rot { .. } | OpCode::Swap { .. } => continue,
@@ -572,12 +577,6 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::UnresolvedCast { .. } => {
                     panic!("ICE: Encountered unresolved cast during codegen")
-                }
-                OpCode::UnresolvedLoad { .. } => {
-                    panic!("ICE: Encountered unresolved load during codegen")
-                }
-                OpCode::UnresolvedStore { .. } => {
-                    panic!("ICE: Encountered unresolved store during codegen")
                 }
                 OpCode::UnresolvedIdent { .. } => {
                     panic!("ICE: Encountered unresolved ident during codegen")
@@ -595,7 +594,7 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         fn make_variable<'ctx>(
             value_id: ValueId,
-            cg: &CodeGen<'ctx>,
+            cg: &mut CodeGen<'ctx>,
             analyzer: &Analyzer,
             type_store: &TypeStore,
             merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
@@ -609,9 +608,8 @@ impl<'ctx> CodeGen<'ctx> {
             let typ = match type_info.kind {
                 TypeKind::Integer { width, .. } => width.get_int_type(cg.ctx).as_basic_type_enum(),
                 TypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
-                TypeKind::Pointer => cg
-                    .ctx
-                    .i8_type()
+                TypeKind::Pointer(to_kind) => cg
+                    .get_type(type_store, to_kind)
                     .ptr_type(AddressSpace::default())
                     .as_basic_type_enum(),
             };
@@ -688,6 +686,7 @@ impl<'ctx> CodeGen<'ctx> {
         id: ItemId,
         function: FunctionValue<'ctx>,
         interner: &mut Interners,
+        type_store: &mut TypeStore,
     ) {
         let mut value_store = ValueStore::default();
         let name = interner.get_symbol_name(program, id);
@@ -699,14 +698,16 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining local allocations");
         let function_data = program.get_function_data(id);
         for (&item_id, alloc_size) in &function_data.alloc_sizes {
+            let mem_type_id = program.get_item_signature_resolved(item_id).memory_type();
+            let mem_type = self.get_type(type_store, mem_type_id);
             let variable = self.builder.build_alloca(
-                self.ctx.i8_type().array_type(alloc_size.to_u32().unwrap()),
+                mem_type.array_type(alloc_size.to_u32().unwrap()),
                 interner.get_symbol_name(program, item_id),
             );
             let variable = self.builder.build_pointer_cast(
                 variable,
-                self.ctx.i8_type().ptr_type(AddressSpace::default()),
-                "ptr_cast",
+                mem_type.ptr_type(AddressSpace::default()),
+                "ptr",
             );
 
             value_store.variable_map.insert(item_id, variable);
@@ -716,7 +717,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.build_merge_variables(
             program.get_item_body(id),
             program.get_analyzer(id),
-            program.get_type_store(),
+            type_store,
             &mut value_store.merge_pair_map,
         );
 
@@ -729,6 +730,7 @@ impl<'ctx> CodeGen<'ctx> {
                 program.get_item_body(id),
                 function,
                 interner,
+                type_store,
             );
         }
 
@@ -741,11 +743,11 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build(&mut self, program: &Program, interner: &mut Interners) {
+    fn build(&mut self, program: &Program, interner: &mut Interners, type_store: &mut TypeStore) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(item_id) = self.function_queue.pop() {
             let function = self.item_function_map[&item_id];
-            self.compile_procedure(program, item_id, function, interner);
+            self.compile_procedure(program, item_id, function, interner, type_store);
         }
 
         self.pass_manager.run_on(&self.module);
@@ -772,6 +774,7 @@ pub(crate) fn compile(
     program: &Program,
     entry_function: ItemId,
     interner: &mut Interners,
+    type_store: &mut TypeStore,
     file: &str,
     opt_level: u8,
 ) -> Result<Vec<PathBuf>> {
@@ -815,9 +818,9 @@ pub(crate) fn compile(
     let mut codegen = CodeGen::from_context(&context, opt_level);
 
     codegen.enqueue_function(entry_function);
-    codegen.build_function_prototypes(program, interner);
+    codegen.build_function_prototypes(program, interner, type_store);
     codegen.build_entry(entry_function);
-    codegen.build(program, interner);
+    codegen.build(program, interner, type_store);
 
     {
         let _span = trace_span!("Writing object file").entered();

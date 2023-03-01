@@ -24,14 +24,20 @@ pub(super) fn add(
     let Some(inputs) = analyzer.value_types(input_ids) else { return };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
-    let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+    let new_type = match input_type_info.map(|ti| (ti.id, ti.kind)) {
+        [(
+            _,
+            TypeKind::Integer {
+                width: a_width,
+                signed: a_signed,
+            },
+        ), (
+            _,
+            TypeKind::Integer {
+                width: b_width,
+                signed: b_signed,
+            },
+        )] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
             type_store
                 .get_builtin(
                     promote_int_type(a_width, a_signed, b_width, b_signed)
@@ -41,14 +47,20 @@ pub(super) fn add(
                 .id
         }
 
-        [TypeKind::Pointer, TypeKind::Integer {
-            width: IntWidth::I64,
-            signed: Signedness::Unsigned,
-        }]
-        | [TypeKind::Integer {
-            width: IntWidth::I64,
-            signed: Signedness::Unsigned,
-        }, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::Pointer).id,
+        [(ptr_id, TypeKind::Pointer(_)), (
+            _,
+            TypeKind::Integer {
+                width: IntWidth::I64,
+                signed: Signedness::Unsigned,
+            },
+        )]
+        | [(
+            _,
+            TypeKind::Integer {
+                width: IntWidth::I64,
+                signed: Signedness::Unsigned,
+            },
+        ), (ptr_id, TypeKind::Pointer(_))] => ptr_id,
 
         _ => {
             // Type mismatch
@@ -102,11 +114,13 @@ pub(super) fn subtract(
                 .id
         }
 
-        [TypeKind::Pointer, TypeKind::Pointer] => type_store.get_builtin(BuiltinTypes::U64).id,
-        [TypeKind::Pointer, TypeKind::Integer {
+        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
+            type_store.get_builtin(BuiltinTypes::U64).id
+        }
+        [TypeKind::Pointer(_), TypeKind::Integer {
             width: IntWidth::I64,
             signed: Signedness::Unsigned,
-        }] => type_store.get_builtin(BuiltinTypes::Pointer).id,
+        }] => inputs[0],
 
         _ => {
             // Type mismatch

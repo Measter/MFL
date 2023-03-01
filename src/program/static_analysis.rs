@@ -491,8 +491,9 @@ pub fn type_check(
     program: &Program,
     item_id: ItemId,
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
 ) -> Result<(), ()> {
     let mut had_error = false;
 
@@ -504,6 +505,7 @@ pub fn type_check(
         &mut had_error,
         interner,
         source_store,
+        type_store,
     );
 
     had_error.not().then_some(()).ok_or(())
@@ -515,6 +517,7 @@ pub fn const_propagation(
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
 ) -> Result<(), ()> {
     let mut had_error = false;
 
@@ -526,7 +529,7 @@ pub fn const_propagation(
         &mut had_error,
         interner,
         source_store,
-        &program.type_store,
+        type_store,
     );
 
     // dbg!(&analyzer);

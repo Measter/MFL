@@ -16,7 +16,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{If, IntKind, Op, OpCode, OpId, While},
+    opcode::{If, IntKind, Op, OpCode, OpId, UnresolvedType, While},
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
@@ -89,14 +89,16 @@ impl ItemHeader {
 
 #[derive(Debug)]
 pub struct ItemSignatureUnresolved {
-    exit_stack: Vec<Token>,
+    exit_stack: Vec<UnresolvedType>,
     exit_stack_location: SourceLocation,
-    entry_stack: Vec<Token>,
+    entry_stack: Vec<UnresolvedType>,
     entry_stack_location: SourceLocation,
+    memory_type: Option<UnresolvedType>,
+    memory_type_location: SourceLocation,
 }
 
 impl ItemSignatureUnresolved {
-    pub fn exit_stack(&self) -> &[Token] {
+    pub fn exit_stack(&self) -> &[UnresolvedType] {
         &self.exit_stack
     }
 
@@ -104,17 +106,26 @@ impl ItemSignatureUnresolved {
         self.exit_stack_location
     }
 
-    pub fn entry_stack(&self) -> &[Token] {
+    pub fn entry_stack(&self) -> &[UnresolvedType] {
         &self.entry_stack
     }
 
     pub fn entry_stack_location(&self) -> SourceLocation {
         self.entry_stack_location
     }
+
+    pub fn memory_type(&self) -> &UnresolvedType {
+        self.memory_type.as_ref().unwrap()
+    }
+
+    pub fn memory_type_location(&self) -> SourceLocation {
+        self.memory_type_location
+    }
 }
 pub struct ItemSignatureResolved {
     exit_stack: SmallVec<[TypeId; 8]>,
     entry_stack: SmallVec<[TypeId; 8]>,
+    memory_type: Option<TypeId>,
 }
 
 impl ItemSignatureResolved {
@@ -125,14 +136,16 @@ impl ItemSignatureResolved {
     pub fn entry_stack(&self) -> &[TypeId] {
         &self.entry_stack
     }
+
+    pub fn memory_type(&self) -> TypeId {
+        self.memory_type.unwrap()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModuleId(u16);
 
 pub struct Program {
-    type_store: TypeStore,
-
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
@@ -184,10 +197,6 @@ impl Program {
         &self.analyzers[&id]
     }
 
-    pub fn get_type_store(&self) -> &TypeStore {
-        &self.type_store
-    }
-
     #[track_caller]
     pub fn get_function_data(&self, id: ItemId) -> &FunctionData {
         self.function_data
@@ -210,7 +219,6 @@ impl Program {
 impl Program {
     pub fn new() -> Self {
         Program {
-            type_store: TypeStore::new(),
             modules: Default::default(),
             module_ident_map: Default::default(),
             item_headers: HashMap::new(),
@@ -243,11 +251,10 @@ impl Program {
         file: &str,
         interner: &mut Interners,
         source_store: &mut SourceStorage,
+        type_store: &mut TypeStore,
         library_paths: &[String],
     ) -> Result<ModuleId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
-
-        self.type_store.init_builtins(interner);
 
         let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
         let module_name = interner.intern_lexeme(module_name);
@@ -333,7 +340,7 @@ impl Program {
             return Err(eyre!("failed to load program"));
         }
 
-        self.post_process_items(interner, source_store)?;
+        self.post_process_items(interner, source_store, type_store)?;
 
         Ok(entry_module_id)
     }
@@ -522,58 +529,65 @@ impl Program {
         &self,
         mut body: Vec<Op>,
         had_error: &mut bool,
-        interner: &Interners,
+        interner: &mut Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Vec<Op> {
         for op in &mut body {
             match &mut op.code {
                 OpCode::While(while_op) => {
                     let temp_body = std::mem::take(&mut while_op.condition);
-                    while_op.condition =
-                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    while_op.condition = self.resolve_types_in_block(
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    );
                     let temp_body = std::mem::take(&mut while_op.body_block);
-                    while_op.body_block =
-                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    while_op.body_block = self.resolve_types_in_block(
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    );
                 }
                 OpCode::If(if_op) => {
                     // Mmmm.. repetition...
                     let temp_body = std::mem::take(&mut if_op.condition);
-                    if_op.condition =
-                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    if_op.condition = self.resolve_types_in_block(
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    );
                     let temp_body = std::mem::take(&mut if_op.then_block);
-                    if_op.then_block =
-                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    if_op.then_block = self.resolve_types_in_block(
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    );
                     let temp_body = std::mem::take(&mut if_op.else_block);
-                    if_op.else_block =
-                        self.resolve_types_in_block(temp_body, had_error, interner, source_store);
+                    if_op.else_block = self.resolve_types_in_block(
+                        temp_body,
+                        had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    );
                 }
 
-                OpCode::UnresolvedCast { kind_token } => {
-                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
-                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
+                OpCode::UnresolvedCast { unresolved_type } => {
+                    let Some(type_info) = type_store.resolve_type(interner, source_store, unresolved_type) else {
                         *had_error = true;
                         continue;
                     };
 
                     op.code = OpCode::ResolvedCast { id: type_info.id };
-                }
-                OpCode::UnresolvedLoad { kind_token } => {
-                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
-                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
-                        *had_error = true;
-                        continue;
-                    };
-
-                    op.code = OpCode::ResolvedLoad { id: type_info.id };
-                }
-                OpCode::UnresolvedStore { kind_token } => {
-                    let Some(type_info) = self.type_store.resolve_type(kind_token.lexeme) else {
-                        type_store::emit_type_error_diag(*kind_token, interner, source_store);
-                        *had_error = true;
-                        continue;
-                    };
-
-                    op.code = OpCode::ResolvedStore { id: type_info.id };
                 }
 
                 _ => {}
@@ -587,6 +601,7 @@ impl Program {
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_types)).entered();
         let mut had_error = false;
@@ -598,29 +613,29 @@ impl Program {
 
             let mut resolved_entry = SmallVec::with_capacity(unresolved_sig.entry_stack.len());
             let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.len());
+            let mut resolved_memory_type = None;
 
             if item.kind == ItemKind::Memory {
-                resolved_exit.push(
-                    self.type_store
-                        .get_builtin(type_store::BuiltinTypes::U64)
-                        .id,
-                );
-            } else {
-                for input_sig in unresolved_sig.entry_stack() {
-                    let Some(info) = self.type_store.resolve_type(input_sig.lexeme) else {
-                    type_store::emit_type_error_diag(*input_sig, interner, source_store);
+                resolved_exit.push(type_store.get_builtin(type_store::BuiltinTypes::U64).id);
+                let Some(info) = type_store.resolve_type(interner, source_store, unresolved_sig.memory_type()) else {
                     had_error = true;
                     continue;
                 };
+                resolved_memory_type = Some(info.id);
+            } else {
+                for input_sig in unresolved_sig.entry_stack() {
+                    let Some(info) = type_store.resolve_type(interner, source_store, input_sig) else {
+                        had_error = true;
+                        continue;
+                    };
                     resolved_entry.push(info.id);
                 }
 
                 for input_sig in unresolved_sig.exit_stack() {
-                    let Some(info) = self.type_store.resolve_type(input_sig.lexeme) else {
-                    type_store::emit_type_error_diag(*input_sig, interner, source_store);
-                    had_error = true;
-                    continue;
-                };
+                    let Some(info) = type_store.resolve_type(interner, source_store, input_sig) else {
+                        had_error = true;
+                        continue;
+                    };
                     resolved_exit.push(info.id);
                 }
             }
@@ -630,13 +645,20 @@ impl Program {
                 ItemSignatureResolved {
                     entry_stack: resolved_entry,
                     exit_stack: resolved_exit,
+                    memory_type: resolved_memory_type,
                 },
             );
 
             let body = self.item_bodies.remove(&item_id).unwrap();
             self.item_bodies.insert(
                 item_id,
-                self.resolve_types_in_block(body, &mut had_error, interner, source_store),
+                self.resolve_types_in_block(
+                    body,
+                    &mut had_error,
+                    interner,
+                    source_store,
+                    type_store,
+                ),
             );
         }
 
@@ -864,6 +886,7 @@ impl Program {
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
@@ -889,9 +912,15 @@ impl Program {
             .is_err();
 
             if !local_error {
-                local_error |=
-                    static_analysis::type_check(self, id, &mut analyzer, interner, source_store)
-                        .is_err();
+                local_error |= static_analysis::type_check(
+                    self,
+                    id,
+                    &mut analyzer,
+                    interner,
+                    source_store,
+                    type_store,
+                )
+                .is_err();
             }
 
             if !local_error {
@@ -901,6 +930,7 @@ impl Program {
                     &mut analyzer,
                     interner,
                     source_store,
+                    type_store,
                 )
                 .is_err();
             }
@@ -973,6 +1003,7 @@ impl Program {
         had_error: &mut bool,
         interner: &Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Vec<Op> {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
         for op in block {
@@ -986,6 +1017,7 @@ impl Program {
                                 had_error,
                                 interner,
                                 source_store,
+                                type_store,
                             ),
                             body_block: self.process_idents_in_block(
                                 own_item_id,
@@ -993,6 +1025,7 @@ impl Program {
                                 had_error,
                                 interner,
                                 source_store,
+                                type_store,
                             ),
                             ..*while_op
                         })),
@@ -1008,6 +1041,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        type_store,
                     );
                     let new_then_block = self.process_idents_in_block(
                         own_item_id,
@@ -1015,6 +1049,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        type_store,
                     );
                     let new_else_block = self.process_idents_in_block(
                         own_item_id,
@@ -1022,6 +1057,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        type_store,
                     );
 
                     new_ops.push(Op {
@@ -1048,7 +1084,7 @@ impl Program {
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (kind, val) in vals {
-                                let type_info = self.type_store.get_type_info(*kind);
+                                let type_info = type_store.get_type_info(*kind);
                                 let (code, const_val) = match (type_info.kind, val) {
                                     (
                                         TypeKind::Integer {
@@ -1146,6 +1182,7 @@ impl Program {
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::process_idents)).entered();
         let mut had_error = false;
@@ -1168,6 +1205,7 @@ impl Program {
                 &mut had_error,
                 interner,
                 source_store,
+                type_store,
             );
             self.item_bodies.insert(own_item_id, new_body);
         }
@@ -1278,18 +1316,19 @@ impl Program {
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
         self.resolve_idents(interner, source_store)?;
-        self.resolve_types(interner, source_store)?;
+        self.resolve_types(interner, source_store, type_store)?;
 
         self.check_invalid_cyclic_refs(interner, source_store)?;
         self.expand_macros(interner);
 
-        self.analyze_data_flow(interner, source_store)?;
+        self.analyze_data_flow(interner, source_store, type_store)?;
         self.evaluate_const_items(interner, source_store)?;
 
-        self.process_idents(interner, source_store)?;
+        self.process_idents(interner, source_store, type_store)?;
         self.evaluate_allocation_sizes(interner, source_store)?;
         self.check_asserts(interner, source_store)?;
 
@@ -1302,10 +1341,7 @@ impl Program {
         module: ModuleId,
         kind: ItemKind,
         parent: Option<ItemId>,
-        exit_stack: Vec<Token>,
-        exit_stack_location: SourceLocation,
-        entry_stack: Vec<Token>,
-        entry_stack_location: SourceLocation,
+        sig: ItemSignatureUnresolved,
     ) -> ItemId {
         let id = self.item_headers.len();
         let id = ItemId(id.to_u16().unwrap());
@@ -1317,13 +1353,6 @@ impl Program {
             kind,
             parent,
             new_op_id: 0,
-        };
-
-        let sig = ItemSignatureUnresolved {
-            exit_stack,
-            exit_stack_location,
-            entry_stack,
-            entry_stack_location,
         };
 
         self.item_headers.insert(id, item);

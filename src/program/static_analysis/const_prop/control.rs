@@ -33,7 +33,7 @@ pub(super) fn analyze_while(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
 ) {
@@ -77,7 +77,7 @@ pub(super) fn analyze_if(
     had_error: &mut bool,
     interner: &Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     if_op: &If,
 ) {
     // The condition is always executed, so we can const prop that.
