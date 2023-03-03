@@ -194,22 +194,17 @@ impl<'ctx> ValueStore<'ctx> {
         type_store: &TypeStore,
         interner: &mut Interners,
     ) -> BasicValueEnum<'ctx> {
-        match analyzer.value_consts([id]) {
-            Some([const_val]) => {
-                self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
-            }
-            _ => {
-                if let Some(&ptr) = self.merge_pair_map.get(&id) {
-                    trace!(
-                        name = ptr.get_name().to_str().unwrap(),
-                        "Fetching variable {id:?}"
-                    );
-                    cg.builder.build_load(ptr, "load_var")
-                } else {
-                    trace!("Fetching live value {id:?}");
-                    self.value_map[&id]
-                }
-            }
+        if let Some([const_val]) = analyzer.value_consts([id]) {
+            self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
+        } else if let Some(&ptr) = self.merge_pair_map.get(&id) {
+            trace!(
+                name = ptr.get_name().to_str().unwrap(),
+                "Fetching variable {id:?}"
+            );
+            cg.builder.build_load(ptr, "load_var")
+        } else {
+            trace!("Fetching live value {id:?}");
+            self.value_map[&id]
         }
     }
 
