@@ -122,7 +122,7 @@ impl<'ctx> ValueStore<'ctx> {
     fn get_string_literal(
         &mut self,
         cg: &CodeGen<'ctx>,
-        interner: &mut Interners,
+        interner: &Interners,
         id: Spur,
     ) -> PointerValue<'ctx> {
         match self.string_map.get(&id) {
@@ -147,7 +147,7 @@ impl<'ctx> ValueStore<'ctx> {
         const_val: ConstVal,
         analyzer: &Analyzer,
         type_store: &TypeStore,
-        interner: &mut Interners,
+        interner: &Interners,
     ) -> BasicValueEnum<'ctx> {
         trace!("Fetching const {id:?}");
         match const_val {
@@ -192,7 +192,7 @@ impl<'ctx> ValueStore<'ctx> {
         id: ValueId,
         analyzer: &Analyzer,
         type_store: &TypeStore,
-        interner: &mut Interners,
+        interner: &Interners,
     ) -> BasicValueEnum<'ctx> {
         if let Some([const_val]) = analyzer.value_consts([id]) {
             self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
