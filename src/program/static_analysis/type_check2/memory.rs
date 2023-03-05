@@ -5,11 +5,9 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{
-        static_analysis::Analyzer,
-        type_store::{TypeKind, TypeStore},
-    },
+    program::static_analysis::Analyzer,
     source_file::SourceStorage,
+    type_store::{TypeKind, TypeStore},
 };
 
 pub(super) fn load(

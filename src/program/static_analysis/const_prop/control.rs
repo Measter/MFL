@@ -3,10 +3,10 @@ use crate::{
     opcode::{If, Op, While},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId},
-        type_store::TypeStore,
         ItemId, ItemKind, Program,
     },
     source_file::SourceStorage,
+    type_store::TypeStore,
 };
 
 pub(super) fn resolved_ident(program: &Program, analyzer: &mut Analyzer, op: &Op, item_id: ItemId) {

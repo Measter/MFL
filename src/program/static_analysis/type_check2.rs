@@ -3,8 +3,9 @@ use ariadne::{Label, Color};
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{Program, ItemId, type_store::{TypeKind, Signedness, TypeStore}},
+    program::{Program, ItemId},
     source_file::SourceStorage, diagnostics,
+    type_store::{TypeKind, Signedness, TypeStore}
 };
 
 use self::stack_ops::{cast_to_int, cast_to_ptr};

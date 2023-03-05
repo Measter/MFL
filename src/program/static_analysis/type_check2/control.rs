@@ -7,10 +7,10 @@ use crate::{
     opcode::{If, Op, While},
     program::{
         static_analysis::{can_promote_int, failed_compare_stack_types, Analyzer},
-        type_store::{BuiltinTypes, TypeKind, TypeStore},
         ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
+    type_store::{BuiltinTypes, TypeKind, TypeStore},
 };
 
 pub(super) fn epilogue_return(

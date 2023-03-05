@@ -5,11 +5,9 @@ use crate::{
     diagnostics,
     interners::Interners,
     opcode::{IntKind, Op},
-    program::{
-        static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
-        type_store::{Signedness, TypeId, TypeKind, TypeStore},
-    },
+    program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
     source_file::{SourceLocation, SourceStorage},
+    type_store::{Signedness, TypeId, TypeKind, TypeStore},
 };
 
 fn check_memory_bounds(

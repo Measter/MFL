@@ -15,9 +15,8 @@ use crate::{
     option::OptionExt,
     program::{ItemId, Program},
     source_file::{SourceLocation, SourceStorage},
+    type_store::{IntWidth, Signedness, TypeId, TypeStore},
 };
-
-use super::type_store::{IntWidth, Signedness, TypeId, TypeStore};
 
 mod const_prop;
 mod data_flow;

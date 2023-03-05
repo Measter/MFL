@@ -1,11 +1,9 @@
 use crate::{
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{
-        type_store::{TypeKind, TypeStore},
-        ItemId, Program,
-    },
+    program::{ItemId, Program},
     source_file::SourceStorage,
+    type_store::{TypeKind, TypeStore},
 };
 
 use super::Analyzer;

@@ -4,11 +4,9 @@ use crate::{
     diagnostics,
     n_ops::SliceNOps,
     opcode::{IntKind, Op, OpCode},
-    program::{
-        static_analysis::{Analyzer, ConstVal},
-        type_store::{TypeKind, TypeStore},
-    },
+    program::static_analysis::{Analyzer, ConstVal},
     source_file::SourceStorage,
+    type_store::{TypeKind, TypeStore},
 };
 
 pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {

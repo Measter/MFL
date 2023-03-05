@@ -11,8 +11,7 @@ use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 use interners::Interners;
 use program::{ItemId, ItemKind, Program};
 use source_file::SourceStorage;
-
-use crate::program::type_store::TypeStore;
+use type_store::TypeStore;
 
 mod backend_llvm;
 mod diagnostics;
@@ -24,6 +23,7 @@ mod option;
 mod program;
 mod simulate;
 mod source_file;
+mod type_store;
 
 #[derive(Debug, Parser)]
 struct Args {

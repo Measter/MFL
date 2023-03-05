@@ -3,11 +3,9 @@ use smallvec::SmallVec;
 
 use crate::{
     lexer::Token,
-    program::{
-        type_store::{IntWidth, Signedness, TypeId},
-        ItemId, ModuleId,
-    },
+    program::{ItemId, ModuleId},
     source_file::SourceLocation,
+    type_store::{IntWidth, Signedness, TypeId},
 };
 
 #[derive(Debug, Clone, Copy)]

@@ -2,7 +2,8 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{static_analysis::Analyzer, type_store::TypeStore, ItemId},
+    program::{static_analysis::Analyzer, ItemId},
+    type_store::TypeStore,
 };
 
 use super::{CodeGen, ValueStore};

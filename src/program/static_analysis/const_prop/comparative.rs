@@ -4,11 +4,9 @@ use crate::{
     diagnostics,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
-    program::{
-        static_analysis::{promote_int_type, Analyzer, ConstVal},
-        type_store::{TypeKind, TypeStore},
-    },
+    program::static_analysis::{promote_int_type, Analyzer, ConstVal},
     source_file::SourceStorage,
+    type_store::{TypeKind, TypeStore},
 };
 
 pub(super) fn compare(

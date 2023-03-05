@@ -27,9 +27,9 @@ use crate::{
     opcode::{IntKind, Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
-        type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
         ItemId, ItemKind, Program,
     },
+    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
 mod arithmetic;

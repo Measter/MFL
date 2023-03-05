@@ -4,10 +4,8 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
-    program::{
-        static_analysis::{promote_int_type, Analyzer},
-        type_store::{Signedness, TypeKind, TypeStore},
-    },
+    program::static_analysis::{promote_int_type, Analyzer},
+    type_store::{Signedness, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};

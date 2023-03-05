@@ -3,10 +3,8 @@ use inkwell::{types::BasicType, AddressSpace};
 use crate::{
     interners::Interners,
     opcode::{IntKind, Op},
-    program::{
-        static_analysis::Analyzer,
-        type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
-    },
+    program::static_analysis::Analyzer,
+    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};

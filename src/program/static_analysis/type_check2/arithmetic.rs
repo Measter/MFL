@@ -2,13 +2,11 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{
-        static_analysis::{
-            can_promote_int, generate_type_mismatch_diag, promote_int_type, Analyzer,
-        },
-        type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
+    program::static_analysis::{
+        can_promote_int, generate_type_mismatch_diag, promote_int_type, Analyzer,
     },
     source_file::SourceStorage,
+    type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
 };
 
 pub(super) fn add(

@@ -5,10 +5,8 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
-    program::{
-        static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
-        type_store::{Signedness, TypeId},
-    },
+    program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
+    type_store::{Signedness, TypeId},
 };
 
 pub(super) fn cast_to_int(

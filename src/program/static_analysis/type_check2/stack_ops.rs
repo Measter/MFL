@@ -5,11 +5,9 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{
-        static_analysis::{generate_type_mismatch_diag, Analyzer},
-        type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
-    },
+    program::static_analysis::{generate_type_mismatch_diag, Analyzer},
     source_file::SourceStorage,
+    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
 pub(super) fn cast_to_int(

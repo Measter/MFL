@@ -5,11 +5,8 @@ use tracing::trace;
 use crate::{
     interners::Interners,
     opcode::{If, Op, While},
-    program::{
-        static_analysis::Analyzer,
-        type_store::{TypeKind, TypeStore},
-        ItemId, Program,
-    },
+    program::{static_analysis::Analyzer, ItemId, Program},
+    type_store::{TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};

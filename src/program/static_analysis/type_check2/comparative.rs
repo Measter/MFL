@@ -2,11 +2,9 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{
-        static_analysis::{can_promote_int, generate_type_mismatch_diag, Analyzer},
-        type_store::{BuiltinTypes, TypeKind, TypeStore},
-    },
+    program::static_analysis::{can_promote_int, generate_type_mismatch_diag, Analyzer},
     source_file::SourceStorage,
+    type_store::{BuiltinTypes, TypeKind, TypeStore},
 };
 
 pub(super) fn compare(

@@ -13,12 +13,10 @@ use crate::{
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedType, While},
     source_file::SourceStorage,
+    type_store::{IntWidth, Signedness},
 };
 
-use super::{
-    type_store::{IntWidth, Signedness},
-    ItemId, ItemKind, ItemSignatureUnresolved, ModuleId, Program,
-};
+use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleId, Program};
 
 trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;

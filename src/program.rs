@@ -20,14 +20,12 @@ use crate::{
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
+    type_store::{BuiltinTypes, TypeId, TypeKind, TypeStore},
 };
 
 mod parser;
 pub mod static_analysis;
 use static_analysis::Analyzer;
-
-use self::type_store::{TypeId, TypeKind, TypeStore};
-pub mod type_store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ItemId(u16);
@@ -616,7 +614,7 @@ impl Program {
             let mut resolved_memory_type = None;
 
             if item.kind == ItemKind::Memory {
-                resolved_exit.push(type_store.get_builtin(type_store::BuiltinTypes::U64).id);
+                resolved_exit.push(type_store.get_builtin(BuiltinTypes::U64).id);
                 let Some(info) = type_store.resolve_type(interner, source_store, unresolved_sig.memory_type()) else {
                     had_error = true;
                     continue;

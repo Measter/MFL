@@ -7,8 +7,9 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, IntKind, Op, OpCode},
-    program::{static_analysis::promote_int_type, type_store::IntWidth, ItemId, ItemKind, Program},
+    program::{static_analysis::promote_int_type, ItemId, ItemKind, Program},
     source_file::SourceStorage,
+    type_store::IntWidth,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
