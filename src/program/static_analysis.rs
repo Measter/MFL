@@ -22,40 +22,50 @@ mod const_prop;
 mod data_flow;
 mod type_check2;
 
-fn can_promote_int(
+fn can_promote_int_unidirectional(
+    from_width: IntWidth,
+    from_signed: Signedness,
+    to_width: IntWidth,
+    to_signed: Signedness,
+) -> bool {
+    promote_int_type_uni_directional(from_width, from_signed, to_width, to_signed).is_some()
+}
+
+pub fn promote_int_type_uni_directional(
+    from_width: IntWidth,
+    from_signed: Signedness,
+    to_width: IntWidth,
+    to_signed: Signedness,
+) -> Option<(Signedness, IntWidth)> {
+    if from_signed == Signedness::Unsigned
+        && to_signed == Signedness::Signed
+        && to_width > from_width
+    {
+        Some((Signedness::Signed, to_width))
+    } else if from_signed == to_signed && to_width >= from_width {
+        Some((to_signed, to_width))
+    } else {
+        None
+    }
+}
+
+fn can_promote_int_bidirectional(
     a_width: IntWidth,
     a_signed: Signedness,
     b_width: IntWidth,
     b_signed: Signedness,
 ) -> bool {
-    promote_int_type(a_width, a_signed, b_width, b_signed).is_some()
+    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).is_some()
 }
 
-// When doing a conversion:
-// * If both are the same signedness but different widths, then a sign- or zero- extension is performed.
-// * When both are the same width but different signs, then the bits are simply reinterpreted.
-// * When both signedness and width differ, width is converted first, then sign.
-pub fn promote_int_type(
+pub fn promote_int_type_bidirectional(
     a_width: IntWidth,
     a_signed: Signedness,
     b_width: IntWidth,
     b_signed: Signedness,
 ) -> Option<(Signedness, IntWidth)> {
-    let widest = a_width.max(b_width);
-
-    let (signed_width, unsigned_width) = if a_signed == Signedness::Signed {
-        (a_width, b_width)
-    } else {
-        (b_width, a_width)
-    };
-
-    if a_signed == b_signed {
-        Some((a_signed, widest))
-    } else if signed_width > unsigned_width {
-        Some((Signedness::Signed, signed_width))
-    } else {
-        None
-    }
+    promote_int_type_uni_directional(a_width, a_signed, b_width, b_signed)
+        .or_else(|| promote_int_type_uni_directional(b_width, b_signed, a_width, a_signed))
 }
 
 #[test]
@@ -64,22 +74,28 @@ fn test_promote_int() {
     use Signedness::*;
 
     assert_eq!(
-        promote_int_type(I16, Unsigned, I16, Unsigned),
+        promote_int_type_bidirectional(I16, Unsigned, I16, Unsigned),
         Some((Unsigned, I16))
     );
 
     assert_eq!(
-        promote_int_type(I16, Unsigned, I32, Unsigned),
+        promote_int_type_bidirectional(I16, Unsigned, I32, Unsigned),
         Some((Unsigned, I32))
     );
 
     assert_eq!(
-        promote_int_type(I16, Unsigned, I32, Signed),
+        promote_int_type_bidirectional(I16, Unsigned, I32, Signed),
         Some((Signed, I32))
     );
 
-    assert_eq!(promote_int_type(I16, Unsigned, I16, Signed), None);
-    assert_eq!(promote_int_type(I16, Signed, I64, Unsigned), None);
+    assert_eq!(
+        promote_int_type_bidirectional(I16, Unsigned, I16, Signed),
+        None
+    );
+    assert_eq!(
+        promote_int_type_bidirectional(I16, Signed, I64, Unsigned),
+        None
+    );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
