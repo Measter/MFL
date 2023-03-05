@@ -91,7 +91,7 @@ pub(super) fn resolved_ident(
 
                 if actual_type != expected {
                     let actual_type_info = type_store.get_type_info(actual_type);
-                    let expected_type_info = type_store.get_type_info(actual_type);
+                    let expected_type_info = type_store.get_type_info(expected);
 
                     if !matches!((actual_type_info.kind, expected_type_info.kind), (
                         TypeKind::Integer { width: actual_width, signed: actual_signed },
