@@ -2,7 +2,9 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{can_promote_int, generate_type_mismatch_diag, Analyzer},
+    program::static_analysis::{
+        can_promote_int_bidirectional, generate_type_mismatch_diag, Analyzer,
+    },
     source_file::SourceStorage,
     type_store::{BuiltinTypes, TypeKind, TypeStore},
 };
@@ -27,7 +29,7 @@ pub(super) fn compare(
         }, TypeKind::Integer {
             width: b_width,
             signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 
@@ -76,7 +78,7 @@ pub(super) fn equal(
         }, TypeKind::Integer {
             width: b_width,
             signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store.get_builtin(BuiltinTypes::Bool).id
         }
 

@@ -291,7 +291,34 @@ fn parse_integer_op<'a>(
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (kind_token, signedness_kind) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+    let mut had_error = false;
+    let literal_value: u64 = match interner.resolve_literal(stripped_spur).parse() {
+        Ok(lit) => lit,
+        Err(_) => {
+            diagnostics::emit_error(
+                token.location,
+                "literal too large",
+                [Label::new(token.location).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            had_error = true;
+            0
+        }
+    };
+
+    if is_known_negative && literal_value.to_i64().is_none() {
+        diagnostics::emit_error(
+            token.location,
+            "literal out of range of signed integer",
+            [Label::new(token.location).with_color(Color::Red)],
+            None,
+            source_store,
+        );
+        had_error = true;
+    }
+
+    let (width, value) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
     {
         let (_, ident_token, _) = parse_delimited_token_list(
             token_iter,
@@ -305,9 +332,15 @@ fn parse_integer_op<'a>(
         )?;
         let ident_token = ident_token[0];
 
-        let is_signed_kind = match interner.resolve_lexeme(ident_token.lexeme) {
-            "u8" | "u16" | "u32" | "u64" => Signedness::Unsigned,
-            "s8" | "s16" | "s32" | "s64" => Signedness::Signed,
+        let (width, is_signed_kind) = match interner.resolve_lexeme(ident_token.lexeme) {
+            "u8" => (IntWidth::I8, Signedness::Unsigned),
+            "s8" => (IntWidth::I8, Signedness::Signed),
+            "u16" => (IntWidth::I16, Signedness::Unsigned),
+            "s16" => (IntWidth::I16, Signedness::Signed),
+            "u32" => (IntWidth::I32, Signedness::Unsigned),
+            "s32" => (IntWidth::I32, Signedness::Signed),
+            "u64" => (IntWidth::I64, Signedness::Unsigned),
+            "s64" => (IntWidth::I64, Signedness::Signed),
 
             _ => {
                 diagnostics::emit_error(
@@ -322,78 +355,95 @@ fn parse_integer_op<'a>(
                 return Err(());
             }
         };
-        (Some(ident_token), is_signed_kind)
+
+        // The user specified an unsigned type, but gave a negative literal.
+        if is_signed_kind == Signedness::Unsigned && is_known_negative {
+            diagnostics::emit_error(
+                ident_token.location,
+                "signed integer literal with unsigned type kind",
+                [Label::new(token.location).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            return Err(());
+        }
+
+        let int_value = match is_signed_kind {
+            Signedness::Signed => {
+                let value: i64 = literal_value as i64;
+                let value = if is_known_negative { -value } else { value };
+
+                if !width.bounds_signed().contains(&value) {
+                    diagnostics::emit_error(
+                        token.location,
+                        "literal out of bounds",
+                        [Label::new(token.location)
+                            .with_color(Color::Red)
+                            .with_message(format!(
+                                "valid range for {} is {:?}",
+                                width.name(is_signed_kind),
+                                width.bounds_signed(),
+                            ))],
+                        None,
+                        source_store,
+                    );
+                    return Err(());
+                }
+                IntKind::Signed(value)
+            }
+            Signedness::Unsigned => {
+                if !width.bounds_unsigned().contains(&literal_value) {
+                    diagnostics::emit_error(
+                        token.location,
+                        "literal out of bounds",
+                        [Label::new(token.location)
+                            .with_color(Color::Red)
+                            .with_message(format!(
+                                "valid range for {} is {:?}",
+                                width.name(is_signed_kind),
+                                width.bounds_unsigned(),
+                            ))],
+                        None,
+                        source_store,
+                    );
+                    return Err(());
+                }
+                IntKind::Unsigned(literal_value)
+            }
+        };
+
+        (width, int_value)
+    } else if is_known_negative {
+        let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
+        let mut width = IntWidth::I64;
+        let literal_value = literal_value.to_i64().unwrap();
+
+        for size in sizes {
+            if size.bounds_signed().contains(&literal_value) {
+                width = size;
+                break;
+            }
+        }
+
+        (width, IntKind::Signed(literal_value))
     } else {
-        (None, Signedness::Signed)
+        let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
+        let mut width = IntWidth::I64;
+
+        for size in sizes {
+            if size.bounds_unsigned().contains(&literal_value) {
+                width = size;
+                break;
+            }
+        }
+
+        (width, IntKind::Unsigned(literal_value))
     };
 
-    if signedness_kind == Signedness::Unsigned && is_known_negative {
-        let kind_token = kind_token.unwrap();
-        diagnostics::emit_error(
-            kind_token.location,
-            "signed integer literal with unsigned type kind",
-            [Label::new(token.location).with_color(Color::Red)],
-            None,
-            source_store,
-        );
+    // Return down here so that we consume any given parameters.
+    if had_error {
         return Err(());
     }
-
-    let width = match kind_token {
-        Some(token) => match interner.resolve_lexeme(token.lexeme) {
-            "u8" | "s8" => IntWidth::I8,
-            "u16" | "s16" => IntWidth::I16,
-            "u32" | "s32" => IntWidth::I32,
-            "u64" | "s64" => IntWidth::I64,
-            _ => unreachable!(),
-        },
-        None => IntWidth::I32,
-    };
-
-    let value = match signedness_kind {
-        Signedness::Signed => {
-            let value: i64 = interner.resolve_literal(stripped_spur).parse().unwrap();
-            let value = if is_known_negative { -value } else { value };
-
-            if !width.bounds_signed().contains(&value) {
-                diagnostics::emit_error(
-                    token.location,
-                    "literal out of bounds",
-                    [Label::new(token.location)
-                        .with_color(Color::Red)
-                        .with_message(format!(
-                            "valid range for {} is {:?}",
-                            width.name(signedness_kind),
-                            width.bounds_signed(),
-                        ))],
-                    None,
-                    source_store,
-                );
-                return Err(());
-            }
-            IntKind::Signed(value)
-        }
-        Signedness::Unsigned => {
-            let value: u64 = interner.resolve_literal(stripped_spur).parse().unwrap();
-            if !width.bounds_unsigned().contains(&value) {
-                diagnostics::emit_error(
-                    token.location,
-                    "literal out of bounds",
-                    [Label::new(token.location)
-                        .with_color(Color::Red)
-                        .with_message(format!(
-                            "valid range for {} is {:?}",
-                            width.name(signedness_kind),
-                            width.bounds_unsigned(),
-                        ))],
-                    None,
-                    source_store,
-                );
-                return Err(());
-            }
-            IntKind::Unsigned(value)
-        }
-    };
 
     Ok(OpCode::PushInt { width, value })
 }

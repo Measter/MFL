@@ -51,15 +51,13 @@ impl IntWidth {
 }
 
 impl OpCode {
-    fn get_arith_fn<'ctx, T: IntMathValue<'ctx>>(
-        &self,
-    ) -> (BuilderArithFunc<'ctx, T>, &'static str) {
+    fn get_arith_fn<'ctx, T: IntMathValue<'ctx>>(&self) -> BuilderArithFunc<'ctx, T> {
         match self {
-            OpCode::Add => (Builder::build_int_add, "add"),
-            OpCode::BitAnd => (Builder::build_and, "and"),
-            OpCode::BitOr => (Builder::build_or, "or"),
-            OpCode::Multiply => (Builder::build_int_mul, "mul"),
-            OpCode::Subtract => (Builder::build_int_sub, "sub"),
+            OpCode::Add => Builder::build_int_add,
+            OpCode::BitAnd => Builder::build_and,
+            OpCode::BitOr => Builder::build_or,
+            OpCode::Multiply => Builder::build_int_mul,
+            OpCode::Subtract => Builder::build_int_sub,
             _ => panic!("ICE: Called get_arid_fn on non-arith opcode"),
         }
     }
@@ -67,28 +65,28 @@ impl OpCode {
     fn get_div_rem_fn<'ctx, T: IntMathValue<'ctx>>(
         &self,
         signed: Signedness,
-    ) -> (BuilderArithFunc<'ctx, T>, &'static str) {
+    ) -> BuilderArithFunc<'ctx, T> {
         match (self, signed) {
-            (OpCode::Div, Signedness::Signed) => (Builder::build_int_signed_div, "div"),
-            (OpCode::Div, Signedness::Unsigned) => (Builder::build_int_unsigned_div, "div"),
-            (OpCode::Rem, Signedness::Signed) => (Builder::build_int_signed_rem, "rem"),
-            (OpCode::Rem, Signedness::Unsigned) => (Builder::build_int_unsigned_rem, "rem"),
+            (OpCode::Div, Signedness::Signed) => Builder::build_int_signed_div,
+            (OpCode::Div, Signedness::Unsigned) => Builder::build_int_unsigned_div,
+            (OpCode::Rem, Signedness::Signed) => Builder::build_int_signed_rem,
+            (OpCode::Rem, Signedness::Unsigned) => Builder::build_int_unsigned_rem,
             _ => panic!("ICE: Called get_div_rem_fn on non-div-rem opcode"),
         }
     }
 
-    fn get_predicate(&self, signed: Signedness) -> (IntPredicate, &'static str) {
+    fn get_predicate(&self, signed: Signedness) -> IntPredicate {
         match (self, signed) {
-            (OpCode::Equal, _) => (IntPredicate::EQ, "equal"),
-            (OpCode::Less, Signedness::Unsigned) => (IntPredicate::ULT, "less"),
-            (OpCode::LessEqual, Signedness::Unsigned) => (IntPredicate::ULE, "less-equal"),
-            (OpCode::Greater, Signedness::Unsigned) => (IntPredicate::UGT, "greater"),
-            (OpCode::GreaterEqual, Signedness::Unsigned) => (IntPredicate::UGE, "greater-equal"),
-            (OpCode::Less, Signedness::Signed) => (IntPredicate::SLT, "less"),
-            (OpCode::LessEqual, Signedness::Signed) => (IntPredicate::SLE, "less-equal"),
-            (OpCode::Greater, Signedness::Signed) => (IntPredicate::SGT, "greater"),
-            (OpCode::GreaterEqual, Signedness::Signed) => (IntPredicate::SGE, "greater-equal"),
-            (OpCode::NotEq, _) => (IntPredicate::NE, "not-equal"),
+            (OpCode::Equal, _) => IntPredicate::EQ,
+            (OpCode::Less, Signedness::Unsigned) => IntPredicate::ULT,
+            (OpCode::LessEqual, Signedness::Unsigned) => IntPredicate::ULE,
+            (OpCode::Greater, Signedness::Unsigned) => IntPredicate::UGT,
+            (OpCode::GreaterEqual, Signedness::Unsigned) => IntPredicate::UGE,
+            (OpCode::Less, Signedness::Signed) => IntPredicate::SLT,
+            (OpCode::LessEqual, Signedness::Signed) => IntPredicate::SLE,
+            (OpCode::Greater, Signedness::Signed) => IntPredicate::SGT,
+            (OpCode::GreaterEqual, Signedness::Signed) => IntPredicate::SGE,
+            (OpCode::NotEq, _) => IntPredicate::NE,
             _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
         }
     }
@@ -178,7 +176,8 @@ impl<'ctx> ValueStore<'ctx> {
 
                 if let Some(offset) = offset {
                     let offset = cg.ctx.i64_type().const_int(offset, false);
-                    unsafe { cg.builder.build_gep(ptr, &[offset], "ptr offset") }.into()
+                    let name = ptr.get_name().to_str().unwrap();
+                    unsafe { cg.builder.build_gep(ptr, &[offset], name) }.into()
                 } else {
                     ptr.into()
                 }
@@ -197,11 +196,9 @@ impl<'ctx> ValueStore<'ctx> {
         if let Some([const_val]) = analyzer.value_consts([id]) {
             self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
         } else if let Some(&ptr) = self.merge_pair_map.get(&id) {
-            trace!(
-                name = ptr.get_name().to_str().unwrap(),
-                "Fetching variable {id:?}"
-            );
-            cg.builder.build_load(ptr, "load_var")
+            let name = ptr.get_name().to_str().unwrap();
+            trace!(name, "Fetching variable {id:?}");
+            cg.builder.build_load(ptr, name)
         } else {
             trace!("Fetching live value {id:?}");
             self.value_map[&id]
@@ -510,9 +507,15 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_dup_over(interner, type_store, analyzer, value_store, op)
                 }
 
-                OpCode::Epilogue | OpCode::Return => {
-                    self.build_epilogue_return(interner, type_store, analyzer, value_store, op)
-                }
+                OpCode::Epilogue | OpCode::Return => self.build_epilogue_return(
+                    program,
+                    interner,
+                    type_store,
+                    analyzer,
+                    value_store,
+                    id,
+                    op,
+                ),
 
                 OpCode::If(if_op) => self.build_if(
                     program,
@@ -608,7 +611,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .ptr_type(AddressSpace::default())
                     .as_basic_type_enum(),
             };
-            let name = format!("{value_id:?}_var");
+            let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
 
             let var = cg.builder.build_alloca(typ, &name);
@@ -695,14 +698,14 @@ impl<'ctx> CodeGen<'ctx> {
         for (&item_id, alloc_size) in &function_data.alloc_sizes {
             let mem_type_id = program.get_item_signature_resolved(item_id).memory_type();
             let mem_type = self.get_type(type_store, mem_type_id);
-            let variable = self.builder.build_alloca(
-                mem_type.array_type(alloc_size.to_u32().unwrap()),
-                interner.get_symbol_name(program, item_id),
-            );
+            let name = interner.get_symbol_name(program, item_id).to_owned() + "_";
+            let variable = self
+                .builder
+                .build_alloca(mem_type.array_type(alloc_size.to_u32().unwrap()), &name);
             let variable = self.builder.build_pointer_cast(
                 variable,
                 mem_type.ptr_type(AddressSpace::default()),
-                "ptr",
+                &name,
             );
 
             value_store.variable_map.insert(item_id, variable);

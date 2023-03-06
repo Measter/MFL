@@ -85,10 +85,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_epilogue_return(
         &mut self,
+        program: &Program,
         interner: &mut Interners,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
+        self_id: ItemId,
         op: &Op,
     ) {
         let op_io = analyzer.get_op_io(op.id);
@@ -98,10 +100,42 @@ impl<'ctx> CodeGen<'ctx> {
             return;
         }
 
+        let sig = program.get_item_signature_resolved(self_id);
+
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()
             .iter()
-            .map(|id| value_store.load_value(self, *id, analyzer, type_store, interner))
+            .zip(sig.exit_stack())
+            .map(|(value_id, expected_type_id)| {
+                let value = value_store.load_value(self, *value_id, analyzer, type_store, interner);
+                let [value_type_id] = analyzer.value_types([*value_id]).unwrap();
+
+                let value_type_info = type_store.get_type_info(value_type_id);
+                let expected_type_info = type_store.get_type_info(*expected_type_id);
+
+                let value = match (value_type_info.kind, expected_type_info.kind) {
+                    (
+                        TypeKind::Integer {
+                            signed: value_signed,
+                            ..
+                        },
+                        TypeKind::Integer {
+                            width: expected_width,
+                            signed: expected_signed,
+                        },
+                    ) => self
+                        .cast_int(
+                            value.into_int_value(),
+                            expected_width.get_int_type(self.ctx),
+                            value_signed,
+                            expected_signed,
+                        )
+                        .as_basic_value_enum(),
+                    _ => value,
+                };
+
+                value
+            })
             .collect();
         self.builder.build_aggregate_return(&return_values);
     }
@@ -184,13 +218,13 @@ impl<'ctx> CodeGen<'ctx> {
         // Generate new blocks for Then, Else, and Post.
         let then_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_then", op.id));
+            .append_basic_block(function, &format!("if_{}_then", op.id));
         let else_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_else", op.id));
+            .append_basic_block(function, &format!("if_{}_else", op.id));
         let post_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_post", op.id));
+            .append_basic_block(function, &format!("if_{}_post", op.id));
 
         self.builder.position_at_end(current_block);
         // Compile condition
@@ -232,11 +266,33 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Transfering to merge vars for {:?}", op.id);
         {
             let Some(merges) = analyzer.get_if_merges(op.id) else {
-                                panic!("ICE: If block doesn't have merges");
-                            };
+                panic!("ICE: If block doesn't have merges");
+            };
             for merge in merges {
+                let type_ids = analyzer
+                    .value_types([merge.then_value, merge.output_value])
+                    .unwrap();
+                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+
                 let data =
                     value_store.load_value(self, merge.then_value, analyzer, type_store, interner);
+
+                let data = if let [TypeKind::Integer {
+                    signed: then_signed,
+                    ..
+                }, TypeKind::Integer {
+                    width: output_width,
+                    signed: output_signed,
+                }] = type_info_kinds
+                {
+                    let int = data.into_int_value();
+                    let target_type = output_width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, then_signed, output_signed)
+                        .as_basic_value_enum()
+                } else {
+                    data
+                };
+
                 value_store.store_value(self, merge.output_value, data);
             }
         }
@@ -259,11 +315,33 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Transfering to merge vars for {:?}", op.id);
         {
             let Some(merges) = analyzer.get_if_merges(op.id) else {
-                                panic!("ICE: If block doesn't have merges");
-                            };
+                panic!("ICE: If block doesn't have merges");
+            };
             for merge in merges {
+                let type_ids = analyzer
+                    .value_types([merge.else_value, merge.output_value])
+                    .unwrap();
+                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+
                 let data =
                     value_store.load_value(self, merge.else_value, analyzer, type_store, interner);
+
+                let data = if let [TypeKind::Integer {
+                    signed: else_signed,
+                    ..
+                }, TypeKind::Integer {
+                    width: output_width,
+                    signed: output_signed,
+                }] = type_info_kinds
+                {
+                    let int = data.into_int_value();
+                    let target_type = output_width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, else_signed, output_signed)
+                        .as_basic_value_enum()
+                } else {
+                    data
+                };
+
                 value_store.store_value(self, merge.output_value, data);
             }
         }
@@ -288,13 +366,13 @@ impl<'ctx> CodeGen<'ctx> {
         let current_block = self.builder.get_insert_block().unwrap();
         let condition_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_condition", op.id));
+            .append_basic_block(function, &format!("while_{}_condition", op.id));
         let body_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_body", op.id));
+            .append_basic_block(function, &format!("while_{}_body", op.id));
         let post_block = self
             .ctx
-            .append_basic_block(function, &format!("{:?}_post", op.id));
+            .append_basic_block(function, &format!("while_{}_post", op.id));
 
         self.builder.position_at_end(current_block);
         self.builder.build_unconditional_branch(condition_block);
@@ -314,9 +392,14 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Transfering to merge vars for {:?}", op.id);
         {
             let Some(merges) = analyzer.get_while_merges(op.id) else {
-                                panic!("ICE: While block doesn't have merges");
-                            };
+                panic!("ICE: While block doesn't have merges");
+            };
             for merge in &merges.condition {
+                let type_ids = analyzer
+                    .value_types([merge.condition_value, merge.pre_value])
+                    .unwrap();
+                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+
                 let data = value_store.load_value(
                     self,
                     merge.condition_value,
@@ -324,6 +407,23 @@ impl<'ctx> CodeGen<'ctx> {
                     type_store,
                     interner,
                 );
+
+                let data = if let [TypeKind::Integer {
+                    signed: condition_signed,
+                    ..
+                }, TypeKind::Integer {
+                    width: pre_width,
+                    signed: pre_signed,
+                }] = type_info_kinds
+                {
+                    let int = data.into_int_value();
+                    let target_type = pre_width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, condition_signed, pre_signed)
+                        .as_basic_value_enum()
+                } else {
+                    data
+                };
+
                 value_store.store_value(self, merge.pre_value, data);
             }
         }
@@ -355,9 +455,14 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Transfering to merge vars for {:?}", op.id);
         {
             let Some(merges) = analyzer.get_while_merges(op.id) else {
-                                panic!("ICE: While block doesn't have merges");
-                            };
+                panic!("ICE: While block doesn't have merges");
+            };
             for merge in &merges.body {
+                let type_ids = analyzer
+                    .value_types([merge.condition_value, merge.pre_value])
+                    .unwrap();
+                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+
                 let data = value_store.load_value(
                     self,
                     merge.condition_value,
@@ -365,6 +470,23 @@ impl<'ctx> CodeGen<'ctx> {
                     type_store,
                     interner,
                 );
+
+                let data = if let [TypeKind::Integer {
+                    signed: condition_signed,
+                    ..
+                }, TypeKind::Integer {
+                    width: pre_width,
+                    signed: pre_signed,
+                }] = type_info_kinds
+                {
+                    let int = data.into_int_value();
+                    let target_type = pre_width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, condition_signed, pre_signed)
+                        .as_basic_value_enum()
+                } else {
+                    data
+                };
+
                 value_store.store_value(self, merge.pre_value, data);
             }
         }

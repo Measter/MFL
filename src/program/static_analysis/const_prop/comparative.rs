@@ -4,7 +4,7 @@ use crate::{
     diagnostics,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
-    program::static_analysis::{promote_int_type, Analyzer, ConstVal},
+    program::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
     source_file::SourceStorage,
     type_store::{TypeKind, TypeStore},
 };
@@ -32,7 +32,7 @@ pub(super) fn compare(
 
             // If we got here then the cast already type-checked.
             let (output_sign, output_width) =
-                promote_int_type(a_width, a_signed, b_width, b_signed).unwrap();
+                promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
 
             let a_kind = a.cast(output_width, output_sign);
             let b_kind = b.cast(output_width, output_sign);
@@ -122,7 +122,7 @@ pub(super) fn equal(
 
             // If we got here then the cast already type-checked.
             let (output_sign, output_width) =
-                promote_int_type(a_width, a_signed, b_width, b_signed).unwrap();
+                promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
 
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_sign);

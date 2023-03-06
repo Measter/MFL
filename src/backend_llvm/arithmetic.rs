@@ -4,7 +4,7 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
-    program::static_analysis::{promote_int_type, Analyzer},
+    program::static_analysis::{promote_int_type_bidirectional, Analyzer},
     type_store::{Signedness, TypeKind, TypeStore},
 };
 
@@ -24,6 +24,8 @@ impl<'ctx> CodeGen<'ctx> {
         let input_value_ids @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
         let input_type_infos = input_type_ids.map(|id| type_store.get_type_info(id));
+
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let res: BasicValueEnum = match input_type_infos.map(|ti| ti.kind) {
             [TypeKind::Integer {
@@ -51,8 +53,8 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = self.cast_int(a_val, target_type, a_from_signed, to_signed);
                 let b_val = self.cast_int(b_val, target_type, b_from_signed, to_signed);
 
-                let (func, name) = op.code.get_arith_fn();
-                func(&self.builder, a_val, b_val, name).into()
+                let func = op.code.get_arith_fn();
+                func(&self.builder, a_val, b_val, &output_name).into()
             }
             [TypeKind::Integer { signed, .. }, TypeKind::Pointer(_)] => {
                 assert!(matches!(op.code, OpCode::Add));
@@ -71,7 +73,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .load_value(self, b, analyzer, type_store, interner)
                     .into_pointer_value();
 
-                unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
+                unsafe { self.builder.build_gep(ptr, &[offset], &output_name) }.into()
             }
             [TypeKind::Pointer(_), TypeKind::Integer { signed, .. }] => {
                 assert_eq!(signed, Signedness::Unsigned);
@@ -91,12 +93,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 // If we're subtracting, then we need to negate the offset.
                 let offset = if let OpCode::Subtract = &op.code {
-                    self.builder.build_int_neg(offset, "neg")
+                    self.builder.build_int_neg(offset, &output_name)
                 } else {
                     offset
                 };
 
-                unsafe { self.builder.build_gep(ptr, &[offset], "ptr_offset") }.into()
+                unsafe { self.builder.build_gep(ptr, &[offset], &output_name) }.into()
             }
             [TypeKind::Pointer(_), TypeKind::Pointer(_)] => {
                 assert!(matches!(op.code, OpCode::Subtract));
@@ -107,9 +109,9 @@ impl<'ctx> CodeGen<'ctx> {
                 let rhs = value_store
                     .load_value(self, b, analyzer, type_store, interner)
                     .into_pointer_value();
-                let diff = self.builder.build_ptr_diff(lhs, rhs, "ptr_diff");
+                let diff = self.builder.build_ptr_diff(lhs, rhs, &output_name);
                 self.builder
-                    .build_int_cast(diff, self.ctx.i64_type(), "wide_diff")
+                    .build_int_cast(diff, self.ctx.i64_type(), &output_name)
                     .into()
             }
             _ => panic!("ICE: Unexpected types"),
@@ -133,6 +135,7 @@ impl<'ctx> CodeGen<'ctx> {
         let input_type_infos = input_type_ids.map(|ti| type_store.get_type_info(ti));
         let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
         let output_type_info = type_store.get_type_info(output_type_id);
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let a_val = value_store
             .load_value(self, a, analyzer, type_store, interner)
@@ -163,8 +166,8 @@ impl<'ctx> CodeGen<'ctx> {
             (a_val, b_val)
         };
 
-        let (func, name) = op.code.get_arith_fn();
-        let sum = func(&self.builder, a_val, b_val, name);
+        let func = op.code.get_arith_fn();
+        let sum = func(&self.builder, a_val, b_val, &output_name);
         value_store.store_value(self, op_io.outputs()[0], sum.into());
     }
 
@@ -192,6 +195,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
         let output_type_info = type_store.get_type_info(output_type_id);
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else {
             panic!("ICE: Non-int output of int-int arithmetic");
@@ -208,8 +212,8 @@ impl<'ctx> CodeGen<'ctx> {
         let a_val = self.cast_int(a_val, target_type, a_signed, output_signed);
         let b_val = self.cast_int(b_val, target_type, b_signed, output_signed);
 
-        let (func, name) = op.code.get_div_rem_fn(output_signed);
-        let res = func(&self.builder, a_val, b_val, name);
+        let func = op.code.get_div_rem_fn(output_signed);
+        let res = func(&self.builder, a_val, b_val, &output_name);
 
         let [res_val] = *op_io.outputs().as_arr();
         value_store.store_value(self, res_val, res.into());
@@ -239,6 +243,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
         let output_type_info = type_store.get_type_info(output_type_id);
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else {
             panic!("ICE: Non-int output of int-int arithmetic");
@@ -256,12 +261,12 @@ impl<'ctx> CodeGen<'ctx> {
         let b_val = self.cast_int(b_val, target_type, b_signed, output_signed);
 
         let res = match &op.code {
-            OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, "shl"),
+            OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, &output_name),
             OpCode::ShiftRight => self.builder.build_right_shift(
                 a_val,
                 b_val,
                 output_signed == Signedness::Signed,
-                "shr",
+                &output_name,
             ),
             _ => unreachable!(),
         };
@@ -277,13 +282,14 @@ impl<'ctx> CodeGen<'ctx> {
         op: &Op,
     ) {
         let op_io = analyzer.get_op_io(op.id);
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let a = op_io.inputs()[0];
         let a_val = value_store
             .load_value(self, a, analyzer, type_store, interner)
             .into_int_value();
 
-        let res = self.builder.build_not(a_val, "not");
+        let res = self.builder.build_not(a_val, &output_name);
         value_store.store_value(self, op_io.outputs()[0], res.into());
     }
 
@@ -303,6 +309,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let a_val = value_store.load_value(self, a, analyzer, type_store, interner);
         let b_val = value_store.load_value(self, b, analyzer, type_store, interner);
+        let output_name = format!("{}", op_io.outputs()[0]);
 
         let (a_val, b_val, signed) = match input_type_infos.map(|ti| ti.kind) {
             [TypeKind::Integer {
@@ -313,7 +320,7 @@ impl<'ctx> CodeGen<'ctx> {
                 signed: b_signed,
             }] => {
                 let (to_signed, to_width) =
-                    promote_int_type(a_width, a_signed, b_width, b_signed).unwrap();
+                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
                 let target_type = to_width.get_int_type(self.ctx);
 
                 let a_val = a_val.into_int_value();
@@ -333,8 +340,10 @@ impl<'ctx> CodeGen<'ctx> {
             _ => unreachable!(),
         };
 
-        let (pred, name) = op.code.get_predicate(signed);
-        let res = self.builder.build_int_compare(pred, a_val, b_val, name);
+        let pred = op.code.get_predicate(signed);
+        let res = self
+            .builder
+            .build_int_compare(pred, a_val, b_val, &output_name);
         value_store.store_value(self, op_io.outputs()[0], res.into());
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     n_ops::VecNOps,
     opcode::{Direction, IntKind, Op, OpCode},
-    program::{static_analysis::promote_int_type, ItemId, ItemKind, Program},
+    program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
     source_file::SourceStorage,
     type_store::IntWidth,
 };
@@ -41,7 +41,7 @@ fn apply_int_op(
                 kind: b_kind,
             },
         ) => {
-            let (to_signed, to_width) = promote_int_type(
+            let (to_signed, to_width) = promote_int_type_bidirectional(
                 a_width,
                 a_kind.to_signedness(),
                 b_width,
@@ -84,7 +84,7 @@ fn apply_bool_op(
                 kind: b_kind,
             },
         ) => {
-            let (to_signed, to_width) = promote_int_type(
+            let (to_signed, to_width) = promote_int_type_bidirectional(
                 a_width,
                 a_kind.to_signedness(),
                 b_width,

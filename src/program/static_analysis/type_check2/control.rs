@@ -6,7 +6,10 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
-        static_analysis::{can_promote_int, failed_compare_stack_types, Analyzer},
+        static_analysis::{
+            can_promote_int_bidirectional, can_promote_int_unidirectional,
+            failed_compare_stack_types, promote_int_type_bidirectional, Analyzer,
+        },
         ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
@@ -28,22 +31,31 @@ pub(super) fn epilogue_return(
     let op_data = analyzer.get_op_io(op.id);
 
     for (&expected, actual_id) in item_sig.exit_stack().iter().zip(&op_data.inputs) {
-        let Some(actual_type) = analyzer.value_types([*actual_id]) else {continue};
+        let Some([actual_type]) = analyzer.value_types([*actual_id]) else {continue};
 
-        if actual_type != [expected] {
-            failed_compare_stack_types(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                &op_data.inputs,
-                item_sig.exit_stack(),
-                item_sig_tokens.exit_stack_location(),
-                op.token.location,
-                "item return stack mismatch",
-            );
-            *had_error = true;
-            break;
+        if actual_type != expected {
+            let actual_type_info = type_store.get_type_info(actual_type);
+            let expected_type_info = type_store.get_type_info(expected);
+
+            if !matches!((actual_type_info.kind, expected_type_info.kind), (
+                        TypeKind::Integer { width: actual_width, signed: actual_signed },
+                        TypeKind::Integer { width: expected_width, signed: expected_signed }
+                    ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
+            {
+                failed_compare_stack_types(
+                    analyzer,
+                    interner,
+                    source_store,
+                    type_store,
+                    &op_data.inputs,
+                    item_sig.exit_stack(),
+                    item_sig_tokens.exit_stack_location(),
+                    op.token.location,
+                    "item return stack mismatch",
+                );
+                *had_error = true;
+                break;
+            }
         }
     }
 }
@@ -96,7 +108,7 @@ pub(super) fn resolved_ident(
                     if !matches!((actual_type_info.kind, expected_type_info.kind), (
                         TypeKind::Integer { width: actual_width, signed: actual_signed },
                         TypeKind::Integer { width: expected_width, signed: expected_signed }
-                    ) if can_promote_int(actual_width, actual_signed, expected_width, expected_signed ))
+                    ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
                     {
                         failed_compare_stack_types(
                             analyzer,
@@ -208,8 +220,15 @@ pub(super) fn analyze_while(
         let [pre_value, condition_value] =
             analyzer.values([merge_pair.pre_value, merge_pair.condition_value]);
         let Some(input_type_ids @ [pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
+        let pre_type_info = type_store.get_type_info(pre_type);
+        let condition_type_info = type_store.get_type_info(condition_type);
 
-        if pre_type != condition_type {
+        if pre_type != condition_type
+            && !matches!((pre_type_info.kind, condition_type_info.kind), (
+                        TypeKind::Integer { width: pre_width, signed: pre_signed },
+                        TypeKind::Integer { width: condition_width, signed: condition_signed }
+                    ) if can_promote_int_unidirectional(condition_width, condition_signed, pre_width, pre_signed ))
+        {
             let [pre_type_name, condition_type_name] = input_type_ids.map(|id| {
                 let info = type_store.get_type_info(id);
                 interner.resolve_lexeme(info.name)
@@ -315,31 +334,65 @@ pub(super) fn analyze_if(
         let [then_value, else_value] =
             analyzer.values([merge_pair.then_value, merge_pair.else_value]);
         let Some(input_type_ids @ [then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
+        let then_type_info = type_store.get_type_info(then_type);
+        let else_type_info = type_store.get_type_info(else_type);
 
-        if then_type != else_type {
-            let [then_type_name, else_type_name] = input_type_ids.map(|id| {
-                let info = type_store.get_type_info(id);
-                interner.resolve_lexeme(info.name)
-            });
+        let final_type = match (then_type_info.kind, else_type_info.kind) {
+            (
+                TypeKind::Integer {
+                    width: then_width,
+                    signed: then_signed,
+                },
+                TypeKind::Integer {
+                    width: else_width,
+                    signed: else_signed,
+                },
+            ) if (can_promote_int_bidirectional(
+                then_width,
+                then_signed,
+                else_width,
+                else_signed,
+            )) =>
+            {
+                let kind = promote_int_type_bidirectional(
+                    then_width,
+                    then_signed,
+                    else_width,
+                    else_signed,
+                )
+                .unwrap();
 
-            *had_error = true;
-            diagnostics::emit_error(
-                then_value.creator_token.location,
-                "conditional body cannot change types on the stack",
-                [
-                    Label::new(then_value.creator_token.location)
-                        .with_color(Color::Red)
-                        .with_message(then_type_name),
-                    Label::new(else_value.creator_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message(else_type_name)
-                        .with_order(1),
-                ],
-                None,
-                source_store,
-            );
-        }
+                type_store.get_builtin(kind.into()).id
+            }
+            _ => {
+                if then_type != else_type {
+                    let [then_type_name, else_type_name] = input_type_ids.map(|id| {
+                        let info = type_store.get_type_info(id);
+                        interner.resolve_lexeme(info.name)
+                    });
 
-        analyzer.set_value_type(merge_pair.output_value, then_type);
+                    *had_error = true;
+                    diagnostics::emit_error(
+                        then_value.creator_token.location,
+                        "conditional body cannot change types on the stack",
+                        [
+                            Label::new(then_value.creator_token.location)
+                                .with_color(Color::Red)
+                                .with_message(then_type_name),
+                            Label::new(else_value.creator_token.location)
+                                .with_color(Color::Cyan)
+                                .with_message(else_type_name)
+                                .with_order(1),
+                        ],
+                        None,
+                        source_store,
+                    );
+                }
+
+                then_type
+            }
+        };
+
+        analyzer.set_value_type(merge_pair.output_value, final_type);
     }
 }

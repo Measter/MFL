@@ -1,4 +1,7 @@
-use std::{fmt::Write, ops::Not};
+use std::{
+    fmt::{Display, Write},
+    ops::Not,
+};
 
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
@@ -117,6 +120,14 @@ pub enum ConstVal {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ValueId(u16);
+
+impl Display for ValueId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("VId")?;
+        self.0.fmt(f)?;
+        f.write_char('_')
+    }
+}
 
 #[derive(Debug)]
 struct Value {

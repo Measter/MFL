@@ -3,10 +3,11 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{
-        can_promote_int, generate_type_mismatch_diag, promote_int_type, Analyzer,
+        can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
+        Analyzer,
     },
     source_file::SourceStorage,
-    type_store::{BuiltinTypes, IntWidth, Signedness, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, Signedness, TypeKind, TypeStore},
 };
 
 pub(super) fn add(
@@ -35,10 +36,10 @@ pub(super) fn add(
                 width: b_width,
                 signed: b_signed,
             },
-        )] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        )] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store
                 .get_builtin(
-                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
                         .into(),
                 )
@@ -48,15 +49,15 @@ pub(super) fn add(
         [(ptr_id, TypeKind::Pointer(_)), (
             _,
             TypeKind::Integer {
-                width: IntWidth::I64,
                 signed: Signedness::Unsigned,
+                ..
             },
         )]
         | [(
             _,
             TypeKind::Integer {
-                width: IntWidth::I64,
                 signed: Signedness::Unsigned,
+                ..
             },
         ), (ptr_id, TypeKind::Pointer(_))] => ptr_id,
 
@@ -102,10 +103,10 @@ pub(super) fn subtract(
         }, TypeKind::Integer {
             width: b_width,
             signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store
                 .get_builtin(
-                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
                         .into(),
                 )
@@ -116,8 +117,8 @@ pub(super) fn subtract(
             type_store.get_builtin(BuiltinTypes::U64).id
         }
         [TypeKind::Pointer(_), TypeKind::Integer {
-            width: IntWidth::I64,
             signed: Signedness::Unsigned,
+            ..
         }] => inputs[0],
 
         _ => {
@@ -200,10 +201,10 @@ pub(super) fn bitand_bitor(
         }, TypeKind::Integer {
             width: b_width,
             signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store
                 .get_builtin(
-                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
                         .into(),
                 )
@@ -253,10 +254,10 @@ pub(super) fn multiply_div_rem_shift(
         }, TypeKind::Integer {
             width: b_width,
             signed: b_signed,
-        }] if can_promote_int(a_width, a_signed, b_width, b_signed) => {
+        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
             type_store
                 .get_builtin(
-                    promote_int_type(a_width, a_signed, b_width, b_signed)
+                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
                         .into(),
                 )
