@@ -12,7 +12,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedType, While},
-    source_file::SourceStorage,
+    source_file::{SourceLocation, SourceStorage},
     type_store::{IntWidth, Signedness},
 };
 
@@ -290,8 +290,9 @@ fn parse_integer_op<'a>(
     is_known_negative: bool,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<OpCode, ()> {
+) -> Result<(OpCode, SourceLocation), ()> {
     let mut had_error = false;
+    let mut overall_location = token.location;
     let literal_value: u64 = match interner.resolve_literal(stripped_spur).parse() {
         Ok(lit) => lit,
         Err(_) => {
@@ -320,7 +321,7 @@ fn parse_integer_op<'a>(
 
     let (width, value) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
     {
-        let (_, ident_token, _) = parse_delimited_token_list(
+        let (_, ident_token, close_paren) = parse_delimited_token_list(
             token_iter,
             token,
             Some(1),
@@ -331,6 +332,7 @@ fn parse_integer_op<'a>(
             source_store,
         )?;
         let ident_token = ident_token[0];
+        overall_location = overall_location.merge(close_paren.location);
 
         let (width, is_signed_kind) = match interner.resolve_lexeme(ident_token.lexeme) {
             "u8" => (IntWidth::I8, Signedness::Unsigned),
@@ -445,7 +447,7 @@ fn parse_integer_op<'a>(
         return Err(());
     }
 
-    Ok(OpCode::PushInt { width, value })
+    Ok((OpCode::PushInt { width, value }, overall_location))
 }
 
 pub fn parse_item_body(
@@ -462,6 +464,7 @@ pub fn parse_item_body(
 
     let mut token_iter = tokens.iter().enumerate().peekable();
     while let Some((_, token)) = token_iter.next() {
+        let mut token = *token;
         let kind = match token.kind {
             TokenKind::Drop
             | TokenKind::Dup
@@ -470,9 +473,9 @@ pub fn parse_item_body(
             | TokenKind::SysCall => {
                 let (count, count_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
                 {
-                    let Ok((_, count_token, _)) = parse_delimited_token_list(
+                    let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
                         &mut token_iter,
-                        *token,
+                        token,
                         Some(1),
                         ("(", |t| t == TokenKind::ParenthesisOpen),
                         ("Integer", |t| matches!(t, TokenKind::Integer(_))),
@@ -484,11 +487,13 @@ pub fn parse_item_body(
                         continue;
                     };
 
+                    token.location = token.location.merge(close_paren.location);
+
                     let count_token = count_token[0];
                     let count = parse_integer_lexeme(count_token, interner, source_store)?;
                     (count, count_token)
                 } else {
-                    (1, *token)
+                    (1, token)
                 };
 
                 match token.kind {
@@ -508,8 +513,8 @@ pub fn parse_item_body(
                 }
             }
             TokenKind::Rot => {
-                let Ok((_, tokens, _)) = parse_delimited_token_list(&mut token_iter,
-                    *token,
+                let Ok((_, tokens, close_paren)) = parse_delimited_token_list(&mut token_iter,
+                    token,
                     Some(3),
                     ("(", |t| t == TokenKind::ParenthesisOpen),
                     ("", |_| true),
@@ -521,6 +526,7 @@ pub fn parse_item_body(
                     had_error = true;
                     continue;
                 };
+                token.location = token.location.merge(close_paren.location);
 
                 let mut local_error = false;
                 let [item_count_token, direction_token, shift_count_token] = &*tokens else { unreachable!() };
@@ -599,7 +605,7 @@ pub fn parse_item_body(
                 let paren_depth = Cell::new(0);
                 let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                     &mut token_iter,
-                    *token,
+                    token,
                     None,
                     ("(", |t| t == TokenKind::ParenthesisOpen),
                     ("Ident", |t| {
@@ -624,6 +630,8 @@ pub fn parse_item_body(
                     had_error = true;
                     continue;
                 };
+                token.location = token.location.merge(close_paren.location);
+
                 let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, open_paren, ident_tokens) else {
                     had_error = true;
                     continue;
@@ -684,9 +692,11 @@ pub fn parse_item_body(
                         continue;
                     };
 
-                    (Some(*token), item_id)
+                    token.location = token.location.merge(item_id.location);
+
+                    (Some(token), item_id)
                 } else {
-                    (None, *token)
+                    (None, token)
                 };
 
                 OpCode::UnresolvedIdent {
@@ -695,11 +705,12 @@ pub fn parse_item_body(
                 }
             }
             TokenKind::Integer(id) => {
-                let Ok(int) = parse_integer_op(&mut token_iter, *token, id, false, interner, source_store) else {
+                let Ok((int, location)) = parse_integer_op(&mut token_iter, token, id, false, interner, source_store) else {
                     had_error = true;
                     continue;
                 };
 
+                token.location = location;
                 int
             }
             TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
@@ -716,7 +727,7 @@ pub fn parse_item_body(
                     module_id,
                     &mut token_iter,
                     tokens,
-                    *token,
+                    token,
                     op_id_gen,
                     parent,
                     interner,
@@ -736,7 +747,7 @@ pub fn parse_item_body(
                     module_id,
                     &mut token_iter,
                     tokens,
-                    *token,
+                    token,
                     interner,
                     parent,
                     source_store,
@@ -769,7 +780,7 @@ pub fn parse_item_body(
                     module_id,
                     &mut token_iter,
                     tokens,
-                    *token,
+                    token,
                     op_id_gen,
                     parent,
                     interner,
@@ -792,11 +803,12 @@ pub fn parse_item_body(
                     let mut int_token = *int_token;
                     int_token.location = int_token.location.merge(token.location);
                     let TokenKind::Integer(id) = int_token.kind else { unreachable!() };
-                    let Ok(int) = parse_integer_op(&mut token_iter, int_token, id, true, interner, source_store) else {
+                    let Ok((int, location)) = parse_integer_op(&mut token_iter, int_token, id, true, interner, source_store) else {
                         had_error = true;
                         continue;
                     };
 
+                    token.location = token.location.merge(location);
                     int
                 }
                 _ => OpCode::Subtract,
@@ -843,7 +855,7 @@ pub fn parse_item_body(
             }
         };
 
-        ops.push(Op::new(op_id_gen(), kind, *token));
+        ops.push(Op::new(op_id_gen(), kind, token));
     }
 
     had_error.not().then_some(ops).ok_or(())
