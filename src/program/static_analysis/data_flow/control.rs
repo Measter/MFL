@@ -306,7 +306,8 @@ pub(super) fn analyze_while(
     }
 
     // Need to revert the stack to before the loop executed.
-    *stack = initial_stack;
+    stack.clear();
+    stack.extend_from_slice(&initial_stack);
 
     analyzer.set_while_merges(
         op,
