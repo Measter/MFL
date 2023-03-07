@@ -63,10 +63,6 @@ pub(super) fn analyze_block(
             OpCode::PushInt {  value, .. }=> stack_ops::push_int(analyzer, op,  value),
             OpCode::PushStr{ id, is_c_str } => stack_ops::push_str(analyzer, interner, op, id, is_c_str),
 
-            // OpCode::Cast{kind: PorthTypeKind::Int(width), ..} => stack_ops::cast_int(analyzer, op, width),
-            // // Nothing to do if we cast to a pointer.
-            // OpCode::Cast{kind: PorthTypeKind::Ptr, ..} => {},
-            // OpCode::Cast{kind: PorthTypeKind::Bool, ..} => unreachable!(),
             OpCode::ResolvedCast { id } => {
                 let type_info = type_store.get_type_info(id);
                 match type_info.kind {
