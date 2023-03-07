@@ -507,15 +507,18 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_dup_over(interner, type_store, analyzer, value_store, op)
                 }
 
-                OpCode::Epilogue | OpCode::Return => self.build_epilogue_return(
-                    program,
-                    interner,
-                    type_store,
-                    analyzer,
-                    value_store,
-                    id,
-                    op,
-                ),
+                OpCode::Epilogue | OpCode::Return => {
+                    self.build_epilogue_return(
+                        program,
+                        interner,
+                        type_store,
+                        analyzer,
+                        value_store,
+                        id,
+                        op,
+                    );
+                    break;
+                }
 
                 OpCode::If(if_op) => self.build_if(
                     program,

@@ -73,10 +73,13 @@ pub struct While {
 pub struct If {
     pub open_token: Token,
     pub condition: Vec<Op>,
+    pub is_condition_terminal: bool,
     pub do_token: Token,
     pub then_block: Vec<Op>,
+    pub is_then_terminal: bool,
     pub else_token: Token,
     pub else_block: Vec<Op>,
+    pub is_else_terminal: bool,
     pub end_token: Token,
 }
 

@@ -241,6 +241,10 @@ impl<'ctx> CodeGen<'ctx> {
             type_store,
         );
 
+        if if_op.is_condition_terminal {
+            return;
+        }
+
         trace!("Compiling jump for {:?}", op.id);
         // Make conditional jump.
         let op_io = analyzer.get_op_io(op.id);
@@ -266,7 +270,7 @@ impl<'ctx> CodeGen<'ctx> {
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
-        {
+        if !if_op.is_then_terminal {
             let Some(merges) = analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -297,9 +301,9 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, merge.output_value, data);
             }
-        }
 
-        self.builder.build_unconditional_branch(post_basic_block);
+            self.builder.build_unconditional_branch(post_basic_block);
+        }
 
         // Compile Else
         self.builder.position_at_end(else_basic_block);
@@ -315,7 +319,7 @@ impl<'ctx> CodeGen<'ctx> {
         );
 
         trace!("Transfering to merge vars for {:?}", op.id);
-        {
+        if !if_op.is_else_terminal {
             let Some(merges) = analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -346,8 +350,9 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, merge.output_value, data);
             }
+
+            self.builder.build_unconditional_branch(post_basic_block);
         }
-        self.builder.build_unconditional_branch(post_basic_block);
 
         // Build our jumps
         self.builder.position_at_end(post_basic_block);

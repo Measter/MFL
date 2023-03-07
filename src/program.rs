@@ -523,6 +523,8 @@ impl Program {
             .ok_or_else(|| eyre!("error during ident resolation"))
     }
 
+    // The self parameter is the source of this, but it makes more sense for it to be a method.
+    #[allow(clippy::only_used_in_recursion)]
     fn resolve_types_in_block(
         &self,
         mut body: Vec<Op>,
@@ -878,6 +880,51 @@ impl Program {
             .not()
             .then_some(())
             .ok_or_else(|| eyre!("failed const self-check"))
+    }
+
+    // The self parameter is the source of this, but it makes more sense for it to be a method.
+    #[allow(clippy::only_used_in_recursion)]
+    fn determine_terminal_blocks_in_block(&self, block: &mut [Op]) -> bool {
+        for op in block {
+            match &mut op.code {
+                OpCode::If(if_block) => {
+                    if_block.is_condition_terminal =
+                        self.determine_terminal_blocks_in_block(&mut if_block.condition);
+                    if_block.is_then_terminal =
+                        self.determine_terminal_blocks_in_block(&mut if_block.then_block);
+                    if_block.is_else_terminal =
+                        self.determine_terminal_blocks_in_block(&mut if_block.else_block);
+                }
+                OpCode::While(while_block) => {
+                    self.determine_terminal_blocks_in_block(&mut while_block.condition);
+                    self.determine_terminal_blocks_in_block(&mut while_block.body_block);
+                }
+                OpCode::Return => return true,
+                _ => {}
+            }
+        }
+
+        false
+    }
+
+    fn determine_terminal_blocks(&mut self, interner: &mut Interners) -> Result<()> {
+        let _span = debug_span!(stringify!(Program::determine_terminal_blocks)).entered();
+        let items: Vec<_> = self
+            .item_headers
+            .iter()
+            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .map(|(id, _)| *id)
+            .collect();
+
+        for item_id in items {
+            trace!(name = interner.get_symbol_name(self, item_id));
+
+            let mut body = self.item_bodies.remove(&item_id).unwrap();
+            self.determine_terminal_blocks_in_block(&mut body);
+            self.item_bodies.insert(item_id, body);
+        }
+
+        Ok(())
     }
 
     fn analyze_data_flow(
@@ -1322,6 +1369,8 @@ impl Program {
 
         self.check_invalid_cyclic_refs(interner, source_store)?;
         self.expand_macros(interner);
+
+        self.determine_terminal_blocks(interner)?;
 
         self.analyze_data_flow(interner, source_store, type_store)?;
         self.evaluate_const_items(interner, source_store)?;

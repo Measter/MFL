@@ -1067,10 +1067,13 @@ fn parse_if<'a>(
             OpCode::If(Box::new(If {
                 open_token,
                 condition,
+                is_condition_terminal: false,
                 do_token,
                 then_block,
+                is_then_terminal: false,
                 else_token,
                 else_block,
+                is_else_terminal: false,
                 end_token: close_token,
             })),
             open_token,
@@ -1082,10 +1085,13 @@ fn parse_if<'a>(
     Ok(OpCode::If(Box::new(If {
         open_token: keyword,
         condition,
+        is_condition_terminal: false,
         do_token,
         then_block,
+        is_then_terminal: false,
         else_token,
         else_block,
+        is_else_terminal: false,
         end_token: close_token,
     })))
 }
