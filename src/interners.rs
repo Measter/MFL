@@ -39,13 +39,28 @@ impl Interners {
             return self.lexemes.resolve(name);
         }
 
-        let item = program.get_item_header(id);
-        let module = program.get_module(item.module());
-        let item_name = self.lexemes.resolve(&item.name().lexeme);
-        let module_name = self.lexemes.resolve(&module.name());
+        let mut parts = Vec::new();
 
-        let name = format!("{module_name}${item_name}");
+        let item = program.get_item_header(id);
+        parts.push(self.lexemes.resolve(&item.name().lexeme));
+
+        let mut parent = item.parent();
+        while let Some(parent_id) = parent {
+            let item = program.get_item_header(parent_id);
+            parts.push(self.lexemes.resolve(&item.name().lexeme));
+            parent = item.parent();
+        }
+
+        let module_name_spur = program.get_module(item.module()).name();
+        let mut name = self.lexemes.resolve(&module_name_spur).to_owned();
+
+        while let Some(part) = parts.pop() {
+            name.push('$');
+            name.push_str(part);
+        }
+
         let spur = self.intern_lexeme(&name);
+        self.symbols.insert(id, spur);
 
         self.resolve_lexeme(spur)
     }
