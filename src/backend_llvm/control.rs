@@ -62,9 +62,9 @@ impl<'ctx> CodeGen<'ctx> {
         let callee_name = interner.get_symbol_name(program, callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
-        let result =
-            self.builder
-                .build_call(callee_value, &args, &format!("calling {callee_name}"));
+        let result = self
+            .builder
+            .build_call(callee_value, &args, &format!("call_{callee_name}"));
 
         self.enqueue_function(callee_id);
 
@@ -74,9 +74,11 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         for (&id, idx) in op_io.outputs().iter().zip(0..) {
+            let output_name = format!("{id}");
+
             let value = self
                 .builder
-                .build_extract_value(result, idx, "callproc_ret")
+                .build_extract_value(result, idx, &output_name)
                 .unwrap();
 
             value_store.store_value(self, id, value);
