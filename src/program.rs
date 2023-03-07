@@ -280,7 +280,7 @@ impl Program {
             }
 
             let mut filename = Path::new(interner.resolve_lexeme(token.lexeme)).to_owned();
-            filename.set_extension("porth");
+            filename.set_extension("mfl");
 
             let full_path = match search_includes(library_paths, &filename) {
                 Some(path) => path,

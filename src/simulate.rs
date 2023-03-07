@@ -175,7 +175,7 @@ fn simulate_execute_program_block(
             OpCode::PushStr { id, is_c_str } => {
                 let literal = interner.resolve_literal(*id);
                 if !is_c_str {
-                    // Strings are null-terminated during parsing, but the Porth-style strings shouldn't
+                    // Strings are null-terminated during parsing, but the MFL-style strings shouldn't
                     // include that character.
                     value_stack.push(SimulatorValue::Int {
                         width: IntWidth::I64,

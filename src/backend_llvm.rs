@@ -234,7 +234,7 @@ struct CodeGen<'ctx> {
 
 impl<'ctx> CodeGen<'ctx> {
     fn from_context(ctx: &'ctx Context, opt_level: OptimizationLevel) -> Self {
-        let module = ctx.create_module("porth_module");
+        let module = ctx.create_module("mfl_module");
         let builder = ctx.create_builder();
 
         let pm_builder = PassManagerBuilder::create();

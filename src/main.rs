@@ -154,7 +154,7 @@ fn main() -> Result<()> {
     // };
 
     let tracer = opentelemetry_jaeger::new_agent_pipeline()
-        .with_service_name("porth")
+        .with_service_name("mfl")
         .install_simple()?;
     let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(telemetry);
@@ -162,7 +162,7 @@ fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     {
-        let _span = debug_span!("porth main").entered();
+        let _span = debug_span!("main").entered();
         run_compile(args.file, args.opt_level, args.library_paths)?;
     }
 
