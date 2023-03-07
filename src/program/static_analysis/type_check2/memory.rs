@@ -5,7 +5,7 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::Analyzer,
+    program::static_analysis::{can_promote_int_unidirectional, Analyzer},
     source_file::SourceStorage,
     type_store::{TypeKind, TypeStore},
 };
@@ -89,7 +89,23 @@ pub(super) fn store(
         }
     };
 
-    if data_type != pointee_type {
+    let data_type_info = type_store.get_type_info(data_type);
+    let pointee_type_info = type_store.get_type_info(pointee_type);
+    let can_promote_int = matches!(
+    [data_type_info.kind, pointee_type_info.kind],
+    [
+        TypeKind::Integer {
+            width: from_width,
+            signed: from_signed,
+        }, TypeKind::Integer {
+            width: to_width,
+            signed: to_signed,
+        }
+    ]
+    if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+    );
+
+    if data_type != pointee_type && !can_promote_int {
         *had_error = true;
         let [data_value] = analyzer.values([data_id]);
         let data_type_info = type_store.get_type_info(data_type);

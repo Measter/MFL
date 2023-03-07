@@ -3,7 +3,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::{static_analysis::Analyzer, ItemId},
-    type_store::TypeStore,
+    type_store::{TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -51,8 +51,31 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
 
-        let [data, ptr] = *op_io.inputs().as_arr();
+        let input_ids @ [data, ptr] = *op_io.inputs().as_arr();
+        let input_type_ids = analyzer.value_types(input_ids).unwrap();
+        let [data_type_kind, ptr_type_kind] =
+            input_type_ids.map(|id| type_store.get_type_info(id).kind);
+        let TypeKind::Pointer(pointee_type_id) = ptr_type_kind else { unreachable!() };
+        let pointee_type_kind = type_store.get_type_info(pointee_type_id).kind;
+
         let data = value_store.load_value(self, data, analyzer, type_store, interner);
+
+        let data = match [data_type_kind, pointee_type_kind] {
+            [TypeKind::Integer {
+                signed: data_signed,
+                ..
+            }, TypeKind::Integer {
+                width: ptr_width,
+                signed: ptr_signed,
+            }] => {
+                let data = data.into_int_value();
+                let target_type = ptr_width.get_int_type(self.ctx);
+                self.cast_int(data, target_type, data_signed, ptr_signed)
+                    .into()
+            }
+            _ => data,
+        };
+
         let ptr = value_store
             .load_value(self, ptr, analyzer, type_store, interner)
             .into_pointer_value();
