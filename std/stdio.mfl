@@ -1,0 +1,78 @@
+// Standard stream descriptor IDs
+macro STDIN  is 0 end
+macro STDOUT is 1 end
+macro STDERR is 2 end
+
+macro WRITE is 1 end
+
+proc puts [u64 ptr(u8)] to [] is
+    swap 
+    // [ptr int]
+    WRITE STDOUT
+    // [ptr int int int]
+    rot(4>2)
+    // [int int ptr int]
+    syscall(4)
+    drop
+end
+
+proc eputs [u64 ptr(u8)] to [] is
+    swap 
+    WRITE STDERR rot(4>2)
+    syscall(4) drop
+end
+
+proc putud [u64] to [] is
+    const buf_len [u64] is 30(u64) end
+    memory buf [u8] is buf_len end
+    // [num]
+    buf buf_len+
+
+    // [num, ptr]
+    if over 0(u64) = do
+        1(u64) - swap // Decrement the pointer.
+        // [ptr, num]
+        '0'+ cast(u8)
+        // [ptr, char]
+        over !
+        // [ptr]
+    else 
+        // [num, ptr]
+        while over 0(u64) != do
+            1(u64) - swap // Decrement the pointer.
+            // [ptr, num]
+            dup 10(u64)/
+            swap 10(u64)% '0'+ cast(u8)
+            // [ptr, num/10, char]
+            rot(3<1)
+            // [num/10, char, ptr]
+            swap over
+            // [num/10, ptr, char, ptr]
+            !
+            // [num/10, ptr]
+        end swap drop
+    end
+    // [ptr.start]
+    dup
+    // [ptr.start, ptr.start]
+    buf_len buf+
+    // [ptr.start, ptr.start, ptr.end]
+    swap -
+    // [ptr.start, rendered_len]
+    swap puts
+end
+
+
+proc putd [s64] to [] is
+    // TODO: Properly handle min value.
+
+    // [num]
+    if dup 0(s64)>= do
+        cast(u64)
+    else
+        "-" puts
+        0 swap- cast(u64)
+    end
+
+    putud
+end
