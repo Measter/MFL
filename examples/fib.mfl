@@ -1,0 +1,37 @@
+include stdio
+
+proc fib [s32] to [s32] is
+    if dup 1> do
+        dup 1- fib
+        swap 2- fib
+        +
+    end
+end
+
+proc ord [s32] to [u64 ptr(u8)] is
+    100%
+    if dup 11= do "th"
+    elif dup 12= do "th"
+    elif dup 13= do "th"
+    else
+        10%
+        if dup 1= do "st"
+        elif dup 2= do "nd"
+        elif dup 3= do "rd"
+        else "th"
+        end
+    end
+    rot(3<1) drop
+end
+
+proc entry [] to [] is
+    0 while dup 10<= do
+        dup 1+ dup stdio::putd ord stdio::puts
+        ": " stdio::puts
+        
+        dup fib stdio::putd
+        "\n" stdio::puts
+
+        1+
+    end drop
+end

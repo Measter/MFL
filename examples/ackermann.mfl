@@ -1,0 +1,17 @@
+include stdio
+
+proc entry [] to [] is
+    3 8 ackermann stdio::putd
+    "\n" stdio::puts
+end
+
+proc ackermann [s32 s32] to [s32] is
+    if over 0= do
+        swap drop 1+
+    elif dup 0= do
+        drop 1- 1 ackermann
+    else
+        1- over swap ackermann
+        swap 1- swap ackermann
+    end
+end
