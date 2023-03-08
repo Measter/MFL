@@ -994,6 +994,7 @@ impl Program {
         &mut self,
         interner: &Interners,
         source_store: &SourceStorage,
+        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::evaluate_const_items)).entered();
         let mut had_error = false;
@@ -1014,7 +1015,21 @@ impl Program {
                         let const_vals = stack
                             .into_iter()
                             .zip(&item_sig.exit_stack)
-                            .map(|(val, ty)| (*ty, val))
+                            .map(|(val, ty)| {
+                                let expected_type = type_store.get_type_info(*ty);
+                                let val = match val {
+                                    SimulatorValue::Int { width, kind } => {
+                                        let TypeKind::Integer { width: to_width, signed: to_signed } = expected_type.kind else {
+                                            unreachable!()
+                                        };
+
+                                        SimulatorValue::Int { width: to_width, kind: kind.cast(to_width, to_signed) }
+                                    },
+                                    SimulatorValue::Bool(_) => val,
+                                };
+
+                                (*ty, val)
+                            })
                             .collect();
 
                         self.const_vals.insert(const_id, const_vals);
@@ -1048,7 +1063,6 @@ impl Program {
         had_error: &mut bool,
         interner: &Interners,
         source_store: &SourceStorage,
-        type_store: &mut TypeStore,
     ) -> Vec<Op> {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
         for op in block {
@@ -1062,7 +1076,6 @@ impl Program {
                                 had_error,
                                 interner,
                                 source_store,
-                                type_store,
                             ),
                             body_block: self.process_idents_in_block(
                                 own_item_id,
@@ -1070,7 +1083,6 @@ impl Program {
                                 had_error,
                                 interner,
                                 source_store,
-                                type_store,
                             ),
                             ..*while_op
                         })),
@@ -1086,7 +1098,6 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
-                        type_store,
                     );
                     let new_then_block = self.process_idents_in_block(
                         own_item_id,
@@ -1094,7 +1105,6 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
-                        type_store,
                     );
                     let new_else_block = self.process_idents_in_block(
                         own_item_id,
@@ -1102,7 +1112,6 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
-                        type_store,
                     );
 
                     new_ops.push(Op {
@@ -1128,34 +1137,17 @@ impl Program {
                                 let name = interner.resolve_lexeme(own_item.name.lexeme);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
-                            for (kind, val) in vals {
-                                let type_info = type_store.get_type_info(*kind);
-                                let (code, const_val) = match (type_info.kind, val) {
-                                    (
-                                        TypeKind::Integer {
-                                            width: type_width,
-                                            signed,
+                            for (_, val) in vals {
+                                let (code, const_val) = match val {
+                                    SimulatorValue::Int { kind, width } => (
+                                        OpCode::PushInt {
+                                            width: *width,
+                                            value: *kind,
                                         },
-                                        SimulatorValue::Int {
-                                            width: sim_width,
-                                            kind,
-                                        },
-                                    ) => {
-                                        assert_eq!(type_width, *sim_width);
-                                        assert_eq!(signed, kind.to_signedness());
-                                        (
-                                            OpCode::PushInt {
-                                                width: type_width,
-                                                value: *kind,
-                                            },
-                                            ConstVal::Int(*kind),
-                                        )
-                                    }
-                                    (TypeKind::Bool, SimulatorValue::Bool(val)) => {
+                                        ConstVal::Int(*kind),
+                                    ),
+                                    SimulatorValue::Bool(val) => {
                                         (OpCode::PushBool(*val), ConstVal::Bool(*val))
-                                    }
-                                    _ => {
-                                        panic!("ICE: Type mismatch in simulator and type-check");
                                     }
                                 };
                                 new_ops.push(Op {
@@ -1227,7 +1219,6 @@ impl Program {
         &mut self,
         interner: &mut Interners,
         source_store: &SourceStorage,
-        type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::process_idents)).entered();
         let mut had_error = false;
@@ -1250,7 +1241,6 @@ impl Program {
                 &mut had_error,
                 interner,
                 source_store,
-                type_store,
             );
             self.item_bodies.insert(own_item_id, new_body);
         }
@@ -1373,9 +1363,9 @@ impl Program {
         self.determine_terminal_blocks(interner)?;
 
         self.analyze_data_flow(interner, source_store, type_store)?;
-        self.evaluate_const_items(interner, source_store)?;
+        self.evaluate_const_items(interner, source_store, type_store)?;
 
-        self.process_idents(interner, source_store, type_store)?;
+        self.process_idents(interner, source_store)?;
         self.evaluate_allocation_sizes(interner, source_store)?;
         self.check_asserts(interner, source_store)?;
 
