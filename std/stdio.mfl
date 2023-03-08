@@ -1,9 +1,9 @@
 // Standard stream descriptor IDs
-macro STDIN  is 0 end
-macro STDOUT is 1 end
-macro STDERR is 2 end
+const STDIN  [u64] is 0 end
+const STDOUT [u64] is 1 end
+const STDERR [u64] is 2 end
 
-macro WRITE is 1 end
+const WRITE [u64] is 1 end
 
 proc puts [u64 ptr(u8)] to [] is
     swap 
