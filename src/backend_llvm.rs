@@ -127,7 +127,8 @@ impl<'ctx> ValueStore<'ctx> {
             Some(&ptr) => ptr,
             None => {
                 let string = interner.resolve_literal(id);
-                let global = cg.builder.build_global_string_ptr(string, string);
+                let name = format!("SId{}", id.into_inner());
+                let global = cg.builder.build_global_string_ptr(string, &name);
 
                 let ptr = global
                     .as_pointer_value()
