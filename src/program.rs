@@ -410,10 +410,7 @@ impl Program {
                         self.get_visible_symbol(item, item_token.lexeme)
                     };
                     if let Some(id) = visible_id {
-                        op.code = OpCode::ResolvedIdent {
-                            module: item.module,
-                            item_id: id,
-                        };
+                        op.code = OpCode::ResolvedIdent { item_id: id };
                     } else {
                         let module = &self.modules[&item.module];
                         let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
@@ -462,10 +459,7 @@ impl Program {
                     let module = &self.modules[&module_id];
                     match module.top_level_symbols.get(&item_token.lexeme) {
                         Some(item_id) => {
-                            op.code = OpCode::ResolvedIdent {
-                                module: module_id,
-                                item_id: *item_id,
-                            };
+                            op.code = OpCode::ResolvedIdent { item_id: *item_id };
                         }
                         None => {
                             let item_name = interner.resolve_lexeme(item_token.lexeme);
@@ -1127,7 +1121,7 @@ impl Program {
                     });
                 }
 
-                OpCode::ResolvedIdent { module, item_id } => {
+                OpCode::ResolvedIdent { item_id } => {
                     let found_item = self.item_headers[&item_id];
 
                     match found_item.kind() {
@@ -1166,9 +1160,7 @@ impl Program {
                         ItemKind::Memory => {
                             new_ops.push(Op {
                                 code: OpCode::Memory {
-                                    module_id: module,
                                     item_id,
-                                    offset: 0,
                                     global: found_item.parent().is_none(),
                                 },
                                 id: op.id,
@@ -1178,7 +1170,7 @@ impl Program {
                         }
                         ItemKind::Function => {
                             new_ops.push(Op {
-                                code: OpCode::CallFunction { module, item_id },
+                                code: OpCode::CallFunction { item_id },
                                 id: op.id,
                                 token: op.token,
                                 expansions: op.expansions,

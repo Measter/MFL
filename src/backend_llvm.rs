@@ -552,9 +552,7 @@ impl<'ctx> CodeGen<'ctx> {
                     ..
                 } => self.build_memory_local(analyzer, value_store, op, *item_id),
                 OpCode::Memory {
-                    module_id,
                     item_id,
-                    offset,
                     global: true,
                 } => todo!(),
                 OpCode::Prologue => self.build_prologue(analyzer, value_store, op, function),

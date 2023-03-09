@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use crate::{
     lexer::Token,
-    program::{ItemId, ModuleId},
+    program::ItemId,
     source_file::SourceLocation,
     type_store::{IntWidth, Signedness, TypeId},
 };
@@ -98,7 +98,6 @@ pub enum OpCode {
     BitNot,
     BitOr,
     CallFunction {
-        module: ModuleId,
         item_id: ItemId,
     },
     Div,
@@ -119,9 +118,7 @@ pub enum OpCode {
     GreaterEqual,
     Load,
     Memory {
-        module_id: ModuleId,
         item_id: ItemId,
-        offset: usize,
         global: bool,
     },
     Multiply,
@@ -144,7 +141,6 @@ pub enum OpCode {
         id: TypeId,
     },
     ResolvedIdent {
-        module: ModuleId,
         item_id: ItemId,
     },
     Rem,
