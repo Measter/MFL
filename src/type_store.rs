@@ -124,8 +124,6 @@ pub struct TypeInfo {
 #[derive(Debug, Clone)]
 struct PointerInfo {
     ptr_id: TypeId,
-    name: Spur,
-    pointee_id: TypeId,
 }
 
 #[derive(Debug)]
@@ -288,8 +286,6 @@ impl TypeStore {
                 pointee.id,
                 PointerInfo {
                     ptr_id: pointer_info,
-                    name,
-                    pointee_id: pointee.id,
                 },
             );
 
