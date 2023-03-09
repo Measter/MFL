@@ -39,7 +39,6 @@ impl ItemId {
 #[derive(Debug, Default)]
 pub struct FunctionData {
     pub allocs: HashMap<Spur, ItemId>,
-    pub alloc_sizes: HashMap<ItemId, usize>,
     pub consts: HashMap<Spur, ItemId>,
 }
 
@@ -154,7 +153,7 @@ pub struct Program {
     function_data: HashMap<ItemId, FunctionData>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
     analyzers: HashMap<ItemId, Analyzer>,
-    global_allocs: HashMap<ItemId, usize>,
+    alloc_sizes: HashMap<ItemId, usize>,
 }
 
 impl Program {
@@ -212,6 +211,11 @@ impl Program {
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
+
+    #[track_caller]
+    pub fn get_alloc_size(&self, id: ItemId) -> usize {
+        self.alloc_sizes[&id]
+    }
 }
 
 impl Program {
@@ -226,7 +230,7 @@ impl Program {
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
-            global_allocs: HashMap::new(),
+            alloc_sizes: HashMap::new(),
         }
     }
 
@@ -1255,10 +1259,10 @@ impl Program {
             .item_headers
             .iter()
             .filter(|(_, i)| i.kind() == ItemKind::Memory)
-            .map(|(id, item)| (*id, *item))
+            .map(|(id, _)| *id)
             .collect();
 
-        for (item_id, item) in all_mem_items {
+        for item_id in all_mem_items {
             let mut stack = match simulate_execute_program(self, item_id, interner, source_store) {
                 Ok(stack) => stack,
                 Err(_) => {
@@ -1272,20 +1276,7 @@ impl Program {
                 panic!("ICE: Allocation size returned a value that wasn't an unsigned integer");
             };
             let alloc_size = alloc_size.to_usize();
-
-            match item.parent {
-                // If we have a parent, it means it's a local allocation.
-                Some(parent_id) => {
-                    let function_data = self.function_data.get_mut(&parent_id).unwrap();
-                    function_data.alloc_sizes.insert(item_id, alloc_size);
-                }
-
-                // If not, this is global, and needs to be placed in the program.
-                // Less work needs doing here as global allocs are always referenced by name.
-                None => {
-                    self.global_allocs.insert(item_id, alloc_size);
-                }
-            }
+            self.alloc_sizes.insert(item_id, alloc_size);
         }
 
         had_error

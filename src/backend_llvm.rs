@@ -687,7 +687,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Defining local allocations");
         let function_data = program.get_function_data(id);
-        for (&item_id, alloc_size) in &function_data.alloc_sizes {
+        for &item_id in function_data.allocs.values() {
+            let alloc_size = program.get_alloc_size(item_id);
             let mem_type_id = program.get_item_signature_resolved(item_id).memory_type();
             let mem_type = self.get_type(type_store, mem_type_id);
             let name = interner.get_symbol_name(program, item_id).to_owned() + "_";
