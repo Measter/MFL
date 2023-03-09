@@ -39,7 +39,7 @@ impl<'ctx> CodeGen<'ctx> {
                     (
                         TypeKind::Integer {
                             width: expected_width,
-                            signed: expected_signed,
+                            ..
                         },
                         TypeKind::Integer {
                             signed: input_signed,
@@ -50,7 +50,6 @@ impl<'ctx> CodeGen<'ctx> {
                             value.into_int_value(),
                             expected_width.get_int_type(self.ctx),
                             input_signed,
-                            expected_signed,
                         )
                         .as_basic_value_enum(),
                     _ => value,
@@ -123,14 +122,13 @@ impl<'ctx> CodeGen<'ctx> {
                         },
                         TypeKind::Integer {
                             width: expected_width,
-                            signed: expected_signed,
+                            ..
                         },
                     ) => self
                         .cast_int(
                             value.into_int_value(),
                             expected_width.get_int_type(self.ctx),
                             value_signed,
-                            expected_signed,
                         )
                         .as_basic_value_enum(),
                     _ => value,
@@ -184,7 +182,7 @@ impl<'ctx> CodeGen<'ctx> {
                             type_store.get_type_info(type_id).kind else {
                                 unreachable!()
                             };
-                        self.cast_int(i, self.ctx.i64_type(), signed, signed)
+                        self.cast_int(i, self.ctx.i64_type(), signed)
                     }
                     t => panic!("ICE: Unexected type: {t:?}"),
                 },
@@ -288,12 +286,12 @@ impl<'ctx> CodeGen<'ctx> {
                     ..
                 }, TypeKind::Integer {
                     width: output_width,
-                    signed: output_signed,
+                    ..
                 }] = type_info_kinds
                 {
                     let int = data.into_int_value();
                     let target_type = output_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, then_signed, output_signed)
+                    self.cast_int(int, target_type, then_signed)
                         .as_basic_value_enum()
                 } else {
                     data
@@ -337,12 +335,12 @@ impl<'ctx> CodeGen<'ctx> {
                     ..
                 }, TypeKind::Integer {
                     width: output_width,
-                    signed: output_signed,
+                    ..
                 }] = type_info_kinds
                 {
                     let int = data.into_int_value();
                     let target_type = output_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, else_signed, output_signed)
+                    self.cast_int(int, target_type, else_signed)
                         .as_basic_value_enum()
                 } else {
                     data
@@ -419,13 +417,12 @@ impl<'ctx> CodeGen<'ctx> {
                     signed: condition_signed,
                     ..
                 }, TypeKind::Integer {
-                    width: pre_width,
-                    signed: pre_signed,
+                    width: pre_width, ..
                 }] = type_info_kinds
                 {
                     let int = data.into_int_value();
                     let target_type = pre_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_signed, pre_signed)
+                    self.cast_int(int, target_type, condition_signed)
                         .as_basic_value_enum()
                 } else {
                     data
@@ -482,13 +479,12 @@ impl<'ctx> CodeGen<'ctx> {
                     signed: condition_signed,
                     ..
                 }, TypeKind::Integer {
-                    width: pre_width,
-                    signed: pre_signed,
+                    width: pre_width, ..
                 }] = type_info_kinds
                 {
                     let int = data.into_int_value();
                     let target_type = pre_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_signed, pre_signed)
+                    self.cast_int(int, target_type, condition_signed)
                         .as_basic_value_enum()
                 } else {
                     data

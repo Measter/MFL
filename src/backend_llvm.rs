@@ -351,7 +351,6 @@ impl<'ctx> CodeGen<'ctx> {
         v: IntValue<'ctx>,
         target_type: IntType<'ctx>,
         from_signedness: Signedness,
-        to_signedness: Signedness,
     ) -> IntValue<'ctx> {
         use std::cmp::Ordering;
         let name = v.get_name().to_str().unwrap(); // Our name came from us, so should be valid.
@@ -377,12 +376,6 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         widened
-        // self.builder.build_int_cast_sign_flag(
-        //     widened,
-        //     target_type,
-        //     to_signedness == Signedness::Signed,
-        //     name,
-        // )
     }
 
     fn get_type(&mut self, type_store: &TypeStore, kind: TypeId) -> BasicTypeEnum<'ctx> {

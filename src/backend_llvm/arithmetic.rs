@@ -38,9 +38,9 @@ impl<'ctx> CodeGen<'ctx> {
                 let [output_type_id] = analyzer.value_types([op_io.outputs()[0]]).unwrap();
                 let output_type_info = type_store.get_type_info(output_type_id);
 
-                let TypeKind::Integer{ width: to_width, signed: to_signed } = output_type_info.kind else {
-                                panic!("ICE: Non-int output of int-int arithmetic");
-                            };
+                let TypeKind::Integer{ width: to_width, .. } = output_type_info.kind else {
+                    panic!("ICE: Non-int output of int-int arithmetic");
+                };
 
                 let a_val = value_store
                     .load_value(self, a, analyzer, type_store, interner)
@@ -50,8 +50,8 @@ impl<'ctx> CodeGen<'ctx> {
                     .into_int_value();
 
                 let target_type = to_width.get_int_type(self.ctx);
-                let a_val = self.cast_int(a_val, target_type, a_from_signed, to_signed);
-                let b_val = self.cast_int(b_val, target_type, b_from_signed, to_signed);
+                let a_val = self.cast_int(a_val, target_type, a_from_signed);
+                let b_val = self.cast_int(b_val, target_type, b_from_signed);
 
                 let func = op.code.get_arith_fn();
                 func(&self.builder, a_val, b_val, &output_name).into()
@@ -63,12 +63,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .load_value(self, a, analyzer, type_store, interner)
                     .into_int_value();
 
-                let offset = self.cast_int(
-                    offset,
-                    self.ctx.i64_type(),
-                    Signedness::Unsigned,
-                    Signedness::Unsigned,
-                );
+                let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned);
                 let ptr = value_store
                     .load_value(self, b, analyzer, type_store, interner)
                     .into_pointer_value();
@@ -81,12 +76,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .load_value(self, b, analyzer, type_store, interner)
                     .into_int_value();
 
-                let offset = self.cast_int(
-                    offset,
-                    self.ctx.i64_type(),
-                    Signedness::Unsigned,
-                    Signedness::Unsigned,
-                );
+                let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned);
                 let ptr = value_store
                     .load_value(self, a, analyzer, type_store, interner)
                     .into_pointer_value();
@@ -144,11 +134,7 @@ impl<'ctx> CodeGen<'ctx> {
             .load_value(self, b, analyzer, type_store, interner)
             .into_int_value();
 
-        let (a_val, b_val) = if let TypeKind::Integer {
-            width,
-            signed: to_signed,
-        } = output_type_info.kind
-        {
+        let (a_val, b_val) = if let TypeKind::Integer { width, .. } = output_type_info.kind {
             let [TypeKind::Integer {
                 signed: a_signed,..
             }, TypeKind::Integer {
@@ -158,8 +144,8 @@ impl<'ctx> CodeGen<'ctx> {
             };
 
             let target_type = width.get_int_type(self.ctx);
-            let a_val = self.cast_int(a_val, target_type, a_signed, to_signed);
-            let b_val = self.cast_int(b_val, target_type, b_signed, to_signed);
+            let a_val = self.cast_int(a_val, target_type, a_signed);
+            let b_val = self.cast_int(b_val, target_type, b_signed);
 
             (a_val, b_val)
         } else {
@@ -209,8 +195,8 @@ impl<'ctx> CodeGen<'ctx> {
             .into_int_value();
 
         let target_type = output_width.get_int_type(self.ctx);
-        let a_val = self.cast_int(a_val, target_type, a_signed, output_signed);
-        let b_val = self.cast_int(b_val, target_type, b_signed, output_signed);
+        let a_val = self.cast_int(a_val, target_type, a_signed);
+        let b_val = self.cast_int(b_val, target_type, b_signed);
 
         let func = op.code.get_div_rem_fn(output_signed);
         let res = func(&self.builder, a_val, b_val, &output_name);
@@ -257,8 +243,8 @@ impl<'ctx> CodeGen<'ctx> {
             .into_int_value();
 
         let target_type = output_width.get_int_type(self.ctx);
-        let a_val = self.cast_int(a_val, target_type, a_signed, output_signed);
-        let b_val = self.cast_int(b_val, target_type, b_signed, output_signed);
+        let a_val = self.cast_int(a_val, target_type, a_signed);
+        let b_val = self.cast_int(b_val, target_type, b_signed);
 
         let res = match &op.code {
             OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, &output_name),
@@ -326,8 +312,8 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = a_val.into_int_value();
                 let b_val = b_val.into_int_value();
 
-                let a_val = self.cast_int(a_val, target_type, a_signed, to_signed);
-                let b_val = self.cast_int(b_val, target_type, b_signed, to_signed);
+                let a_val = self.cast_int(a_val, target_type, a_signed);
+                let b_val = self.cast_int(b_val, target_type, b_signed);
 
                 (a_val, b_val, to_signed)
             }

@@ -65,13 +65,11 @@ impl<'ctx> CodeGen<'ctx> {
                 signed: data_signed,
                 ..
             }, TypeKind::Integer {
-                width: ptr_width,
-                signed: ptr_signed,
+                width: ptr_width, ..
             }] => {
                 let data = data.into_int_value();
                 let target_type = ptr_width.get_int_type(self.ctx);
-                self.cast_int(data, target_type, data_signed, ptr_signed)
-                    .into()
+                self.cast_int(data, target_type, data_signed).into()
             }
             _ => data,
         };

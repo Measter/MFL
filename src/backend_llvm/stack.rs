@@ -25,7 +25,7 @@ impl<'ctx> CodeGen<'ctx> {
         match to_type_info.kind {
             TypeKind::Integer {
                 width: output_width,
-                signed: output_signed,
+                ..
             } => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
@@ -41,13 +41,13 @@ impl<'ctx> CodeGen<'ctx> {
                     } => {
                         let val = input_data.into_int_value();
                         let target_type = output_width.get_int_type(self.ctx);
-                        self.cast_int(val, target_type, input_signed, output_signed)
+                        self.cast_int(val, target_type, input_signed)
                     }
                     TypeKind::Bool => {
                         let val = input_data.into_int_value();
                         let target_type = output_width.get_int_type(self.ctx);
 
-                        self.cast_int(val, target_type, Signedness::Unsigned, output_signed)
+                        self.cast_int(val, target_type, Signedness::Unsigned)
                     }
                     TypeKind::Pointer(_) => self.builder.build_ptr_to_int(
                         input_data.into_pointer_value(),
