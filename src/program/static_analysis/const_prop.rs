@@ -117,11 +117,18 @@ pub(super) fn analyze_block(
                 item_id,
             ),
 
+            OpCode::Epilogue | OpCode::Return => control::epilogue_return(
+                program,
+                analyzer,
+                source_store,
+                had_error,
+                op
+            ),
+
             // There's nothing to do with these, as they're always non-const.
             OpCode::ArgC |
             OpCode::ArgV |
             OpCode::SysCall{..} |
-            OpCode::Epilogue | OpCode::Return |
             OpCode::Prologue => {},
 
             OpCode::CallFunction { .. } // These haven't been generated yet.
