@@ -551,17 +551,14 @@ impl<'ctx> CodeGen<'ctx> {
                     global: false,
                     ..
                 } => self.build_memory_local(analyzer, value_store, op, *item_id),
-                OpCode::Memory {
-                    item_id,
-                    global: true,
-                } => todo!(),
+                OpCode::Memory { global: true, .. } => todo!(),
                 OpCode::Prologue => self.build_prologue(analyzer, value_store, op, function),
 
                 OpCode::PushBool(val) => self.build_push_bool(analyzer, value_store, op, *val),
                 OpCode::PushInt { width, value } => {
                     self.build_push_int(analyzer, value_store, op, *width, *value)
                 }
-                OpCode::PushStr { id, is_c_str } => {
+                OpCode::PushStr { .. } => {
                     todo!()
                 }
 

@@ -264,7 +264,7 @@ impl TypeStore {
                 }
                 ti
             }
-            UnresolvedType::Pointer(location, pt) => {
+            UnresolvedType::Pointer(_, pt) => {
                 let pointee = self.resolve_type(interner, source_store, pt)?;
                 Some(self.get_pointer(interner, pointee.id))
             }

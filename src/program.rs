@@ -1012,7 +1012,7 @@ impl Program {
                             .map(|(val, ty)| {
                                 let expected_type = type_store.get_type_info(*ty);
                                 let val = match val {
-                                    SimulatorValue::Int { width, kind } => {
+                                    SimulatorValue::Int { kind, .. } => {
                                         let TypeKind::Integer { width: to_width, signed: to_signed } = expected_type.kind else {
                                             unreachable!()
                                         };
