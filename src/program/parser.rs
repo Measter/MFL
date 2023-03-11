@@ -1,4 +1,4 @@
-use std::{cell::Cell, fmt::Display, iter::Peekable, ops::Not, str::FromStr};
+use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
@@ -95,6 +95,8 @@ fn parse_delimited_token_list<'a>(
     let mut tokens = Vec::new();
 
     let mut prev = open_token;
+    let mut depth = 0;
+
     loop {
         let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
                 diagnostics::emit_error(
@@ -110,8 +112,14 @@ fn parse_delimited_token_list<'a>(
                 return Err(());
             };
 
-        if close_delim_fn(next_token.kind) {
+        if depth == 0 && close_delim_fn(next_token.kind) {
             break; // The end of the list, so break the loop.
+        }
+
+        if next_token.kind.is_matched_open() {
+            depth += 1;
+        } else if next_token.kind.is_matched_close() {
+            depth -= 1;
         }
 
         let Ok((_, item_token)) = expect_token(
@@ -185,67 +193,94 @@ fn parse_unresolved_types(
             source_store,
         ) else {
             had_error = true;
+            token_iter.next(); // Consume the token so we can progress.
             continue;
         };
 
         let lexeme = interner.resolve_lexeme(ident.lexeme);
-        if lexeme != "ptr" {
-            types.push(UnresolvedType::NonPointer(ident));
-            continue;
-        }
-
-        let paren_depth = Cell::new(0);
-        let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
-            &mut token_iter,
-            ident,
-            None,
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("Ident", |t| {
-                if t == TokenKind::Ident {
-                    return true;
-                }
-                if t == TokenKind::ParenthesisOpen {
-                    paren_depth.set(paren_depth.get() + 1);
-                    return true;
-                }
-                if paren_depth.get() > 0 && t == TokenKind::ParenthesisClosed {
-                    paren_depth.set(paren_depth.get() - 1);
-                    return true;
-                }
-
-                false
-            }),
-            (")", |t| paren_depth.get() == 0 && t == TokenKind::ParenthesisClosed),
-            interner,
-            source_store,
-        ) else {
-            had_error = true;
-            continue;
-        };
-
-        let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, open_paren, ident_tokens) else {
-            had_error = true;
-            continue;
-        };
-
-        if unresolved_types.len() != 1 {
-            let span = open_paren.location.merge(close_paren.location);
-            diagnostics::emit_error(
-                span,
-                format!("expected 1 type, found {}", unresolved_types.len()),
-                [Label::new(span).with_color(Color::Red)],
+        
+        let base_type = if lexeme == "ptr" {
+            let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
+                &mut token_iter,
+                ident,
                 None,
+                ("(", |t| t == TokenKind::ParenthesisOpen),
+                ("Ident", |t| {
+                    matches!(
+                        t,
+                        TokenKind::Ident
+                            | TokenKind::Integer(_) 
+                            | TokenKind::ParenthesisOpen 
+                            | TokenKind::ParenthesisClosed
+                            | TokenKind::SquareBracketOpen
+                            | TokenKind::SquareBracketClosed
+                    )
+                }),
+                (")", |t| t == TokenKind::ParenthesisClosed),
+                interner,
                 source_store,
-            );
-            had_error = true;
-            continue;
-        }
+            ) else {
+                had_error = true;
+                continue;
+            };
 
-        let unresolved_type = unresolved_types.pop().unwrap();
-        types.push(UnresolvedType::Pointer(
-            ident.location.merge(close_paren.location),
-            Box::new(unresolved_type),
-        ));
+            let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, open_paren, ident_tokens) else {
+                had_error = true;
+                continue;
+            };
+
+            if unresolved_types.len() != 1 {
+                let span = open_paren.location.merge(close_paren.location);
+                diagnostics::emit_error(
+                    span,
+                    format!("expected 1 type, found {}", unresolved_types.len()),
+                    [Label::new(span).with_color(Color::Red)],
+                    None,
+                    source_store,
+                );
+                had_error = true;
+                continue;
+            }
+
+            let unresolved_type = unresolved_types.pop().unwrap();
+            UnresolvedType::Pointer(
+                ident.location.merge(close_paren.location),
+                Box::new(unresolved_type),
+            )
+        } else {
+            UnresolvedType::Simple(ident)
+        };
+        
+        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::SquareBracketOpen) {
+           // Parsing an array!
+            let Ok((_, ident_tokens, close_bracket)) = parse_delimited_token_list(
+                &mut token_iter,
+                ident,
+                Some(1),
+                ("[", |t| t == TokenKind::SquareBracketOpen),
+                ("integer", |t| matches!( t, TokenKind::Integer(_))),
+                ("]", |t| t == TokenKind::SquareBracketClosed),
+                interner,
+                source_store,
+            ) else {
+                had_error = true;
+                continue;
+            };
+
+            let len_token = ident_tokens[0];
+            let length_str = interner.resolve_lexeme(len_token.lexeme);
+            let length = length_str.parse().unwrap();
+
+            UnresolvedType::Array(
+                ident.location.merge(close_bracket.location),
+                Box::new(base_type),
+                length
+            )
+        } else {
+            base_type
+        };
+        
+        types.push(parsed_type);
     }
 
     had_error.not().then_some(types).ok_or(())
@@ -601,29 +636,15 @@ pub fn parse_item_body(
             }
 
             TokenKind::Cast => {
-                // God, it's hideous!
-                let paren_depth = Cell::new(0);
                 let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                     &mut token_iter,
                     token,
                     None,
                     ("(", |t| t == TokenKind::ParenthesisOpen),
                     ("Ident", |t| {
-                        if t == TokenKind::Ident {
-                            return true;
-                        }
-                        if t == TokenKind::ParenthesisOpen {
-                            paren_depth.set(paren_depth.get() + 1);
-                            return true;
-                        }
-                        if paren_depth.get() > 0 && t == TokenKind::ParenthesisClosed {
-                            paren_depth.set(paren_depth.get() - 1);
-                            return true;
-                        }
-
-                        false
+                        matches!(t, TokenKind::Ident | TokenKind::Integer(_) | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed | TokenKind::SquareBracketOpen | TokenKind::SquareBracketClosed)
                     }),
-                    (")", |t| paren_depth.get() == 0 && t == TokenKind::ParenthesisClosed),
+                    (")", |t| t == TokenKind::ParenthesisClosed),
                     interner,
                     source_store,
                 ) else {
@@ -741,7 +762,7 @@ pub fn parse_item_body(
                 }
             }
 
-            TokenKind::Assert | TokenKind::Const | TokenKind::Memory => {
+            TokenKind::Assert | TokenKind::Const => {
                 if parse_item(
                     program,
                     module_id,
@@ -754,6 +775,20 @@ pub fn parse_item_body(
                 )
                 .is_err()
                 {
+                    had_error = true;
+                }
+                continue;
+            }
+            TokenKind::Memory => {
+                if parse_memory(
+                    program, 
+                    module_id, 
+                    &mut token_iter, 
+                    token, 
+                    parent, 
+                    interner, 
+                    source_store
+                ).is_err() {
                     had_error = true;
                 }
                 continue;
@@ -1153,6 +1188,106 @@ fn parse_while<'a>(
     })))
 }
 
+fn parse_memory<'a>(
+    program: &mut Program,
+    module_id: ModuleId,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    keyword: Token,
+    parent: Option<ItemId>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(Token, ItemId), ()> {
+    let mut had_error = false;
+    let name_token = expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, keyword);
+
+    let (_, is_token) = expect_token(
+        token_iter, 
+        "is", 
+        |t| t == TokenKind::Is, 
+        name_token, 
+        interner, 
+        source_store
+    )
+    .recover(&mut had_error, (0, name_token));
+
+    let (store_type_start, store_type_tokens, store_type_end) = parse_delimited_token_list(
+        token_iter,
+        name_token,
+        None,
+        ("[", |t| t == TokenKind::SquareBracketOpen),
+        ("type name", |t| {
+            matches!(
+                t,
+                TokenKind::Ident
+                    | TokenKind::Integer(_)
+                    | TokenKind::ParenthesisOpen
+                    | TokenKind::ParenthesisClosed
+                    | TokenKind::SquareBracketOpen
+                    | TokenKind::SquareBracketClosed
+            )
+        }),
+        ("]", |t| t == TokenKind::SquareBracketClosed),
+        interner,
+        source_store,
+    )
+    .recover(&mut had_error, (is_token, Vec::new(), is_token));
+
+    let _ = expect_token(
+        token_iter, 
+        "end", 
+        |t| t == TokenKind::End, 
+        name_token, 
+        interner, 
+        source_store
+    )
+    .recover(&mut had_error, (0, store_type_end));
+
+    let store_type_location = store_type_start.location.merge(store_type_end.location);
+    let mut unresolved_store_type =
+        parse_unresolved_types(interner, source_store, store_type_start, store_type_tokens)
+            .recover(&mut had_error, Vec::new());
+
+    if unresolved_store_type.len() != 1 {
+        diagnostics::emit_error(
+            store_type_location,
+            format!("expected 1 type, found {}", unresolved_store_type.len()),
+            [Label::new(store_type_location).with_color(Color::Red)],
+            None,
+            source_store,
+        );
+        had_error = true;
+    }
+
+    let sig = ItemSignatureUnresolved {
+        exit_stack: Vec::new(),
+        exit_stack_location: name_token.location,
+        entry_stack: Vec::new(),
+        entry_stack_location: name_token.location,
+        memory_type: unresolved_store_type.pop(),
+        memory_type_location: store_type_location,
+    };
+
+    let item_id = program.new_item(name_token, module_id, ItemKind::Memory, parent, sig);
+
+    if let Some(parent_id) = parent {
+        let pd = program.get_function_data_mut(parent_id);
+        pd.allocs.insert(name_token.lexeme, item_id);
+    }
+
+    had_error.not().then_some((name_token, item_id)).ok_or(())
+}
+
+
+
 fn parse_function_header<'a>(
     program: &mut Program,
     module_id: ModuleId,
@@ -1171,7 +1306,12 @@ fn parse_function_header<'a>(
         ("Ident", |t| {
             matches!(
                 t,
-                TokenKind::Ident | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed
+                TokenKind::Ident
+                    | TokenKind::Integer(_)
+                    | TokenKind::ParenthesisOpen
+                    | TokenKind::ParenthesisClosed
+                    | TokenKind::SquareBracketOpen
+                    | TokenKind::SquareBracketClosed
             )
         }),
         ("]", |t| t == TokenKind::SquareBracketClosed),
@@ -1202,7 +1342,12 @@ fn parse_function_header<'a>(
         ("Ident", |t| {
             matches!(
                 t,
-                TokenKind::Ident | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed
+                TokenKind::Ident
+                    | TokenKind::Integer(_)
+                    | TokenKind::ParenthesisOpen
+                    | TokenKind::ParenthesisClosed
+                    | TokenKind::SquareBracketOpen
+                    | TokenKind::SquareBracketClosed
             )
         }),
         ("]", |t| t == TokenKind::SquareBracketClosed),
@@ -1225,72 +1370,6 @@ fn parse_function_header<'a>(
     };
 
     let new_item = program.new_item(name, module_id, ItemKind::Function, parent, sig);
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    had_error.not().then_some((is_token, new_item)).ok_or(())
-}
-
-fn parse_memory_header<'a>(
-    program: &mut Program,
-    module_id: ModuleId,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    interner: &Interners,
-    name: Token,
-    parent: Option<ItemId>,
-    source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
-    let mut had_error = false;
-    let (store_type_start, store_type_tokens, store_type_end) = parse_delimited_token_list(
-        token_iter,
-        name,
-        None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", |t| {
-            matches!(
-                t,
-                TokenKind::Ident | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed
-            )
-        }),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (name, Vec::new(), name));
-    let store_type_location = store_type_start.location.merge(store_type_end.location);
-    let mut unresolved_store_type =
-        parse_unresolved_types(interner, source_store, store_type_start, store_type_tokens)
-            .recover(&mut had_error, Vec::new());
-
-    if unresolved_store_type.len() != 1 {
-        diagnostics::emit_error(
-            store_type_location,
-            format!("expected 1 type, found {}", unresolved_store_type.len()),
-            [Label::new(store_type_location).with_color(Color::Red)],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
-    let sig = ItemSignatureUnresolved {
-        exit_stack: Vec::new(),
-        exit_stack_location: name.location,
-        entry_stack: Vec::new(),
-        entry_stack_location: name.location,
-        memory_type: unresolved_store_type.pop(),
-        memory_type_location: store_type_location,
-    };
-
-    let new_item = program.new_item(name, module_id, ItemKind::Memory, parent, sig);
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -1357,7 +1436,12 @@ fn parse_const_header<'a>(
         ("Ident", |t| {
             matches!(
                 t,
-                TokenKind::Ident | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed
+                TokenKind::Ident
+                    | TokenKind::Integer(_)
+                    | TokenKind::ParenthesisOpen
+                    | TokenKind::ParenthesisClosed
+                    | TokenKind::SquareBracketOpen
+                    | TokenKind::SquareBracketClosed
             )
         }),
         ("]", |t| t == TokenKind::SquareBracketClosed),
@@ -1404,7 +1488,7 @@ fn parse_assert_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![UnresolvedType::NonPointer(name)],
+        exit_stack: vec![UnresolvedType::Simple(name)],
         exit_stack_location: name.location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,
@@ -1452,7 +1536,6 @@ fn parse_item<'a>(
 
     let header_func = match keyword.kind {
         TokenKind::Proc => parse_function_header,
-        TokenKind::Memory => parse_memory_header,
         TokenKind::Macro => parse_macro_header,
         TokenKind::Const => parse_const_header,
         TokenKind::Assert => parse_assert_header,
@@ -1470,6 +1553,13 @@ fn parse_item<'a>(
     )
     .recover(&mut had_error, (name_token, ItemId::dud()));
 
+    let mut op_id = 0;
+    let mut op_id_gen = || {
+        let id = op_id;
+        op_id += 1;
+        OpId(id)
+    };
+
     let (body, end_token) = get_item_body(
         &mut *token_iter,
         tokens,
@@ -1480,12 +1570,6 @@ fn parse_item<'a>(
     )
     .recover(&mut had_error, (&[], is_token));
 
-    let mut op_id = 0;
-    let mut op_id_gen = || {
-        let id = op_id;
-        op_id += 1;
-        OpId(id)
-    };
 
     let mut body = parse_item_body(
         program,
@@ -1596,7 +1680,6 @@ pub(super) fn parse_module(
             TokenKind::Assert
             | TokenKind::Const
             | TokenKind::Macro
-            | TokenKind::Memory
             | TokenKind::Proc => {
                 if parse_item(
                     program,
@@ -1610,6 +1693,21 @@ pub(super) fn parse_module(
                 )
                 .is_err()
                 {
+                    had_error = true;
+                }
+            }
+
+            TokenKind::Memory => {
+                if parse_memory(
+                    program,
+                    module_id,
+                    &mut token_iter,
+                    *token,
+                    None,
+                    interner,
+                    source_store
+                )
+                .is_err(){
                     had_error = true;
                 }
             }

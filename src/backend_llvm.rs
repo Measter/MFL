@@ -295,6 +295,10 @@ impl<'ctx> CodeGen<'ctx> {
                             .ptr_type(AddressSpace::default())
                             .into(),
                         TypeKind::Bool => self.ctx.bool_type().into(),
+                        TypeKind::Array { type_id, length } => self
+                            .get_type(type_store, type_id)
+                            .array_type(length.to_u32().unwrap())
+                            .into(),
                     }
                 })
                 .collect();
@@ -316,6 +320,10 @@ impl<'ctx> CodeGen<'ctx> {
                                 .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             TypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
+                            TypeKind::Array { type_id, length } => self
+                                .get_type(type_store, type_id)
+                                .array_type(length.to_u32().unwrap())
+                                .into(),
                         }
                     })
                     .collect();
@@ -394,6 +402,10 @@ impl<'ctx> CodeGen<'ctx> {
             TypeKind::Pointer(sub_to_kind) => self
                 .get_type(type_store, sub_to_kind)
                 .ptr_type(AddressSpace::default())
+                .into(),
+            TypeKind::Array { type_id, length } => self
+                .get_type(type_store, type_id)
+                .array_type(length.to_u32().unwrap())
                 .into(),
         };
 
@@ -602,6 +614,10 @@ impl<'ctx> CodeGen<'ctx> {
                     .get_type(type_store, to_kind)
                     .ptr_type(AddressSpace::default())
                     .as_basic_type_enum(),
+                TypeKind::Array { type_id, length } => cg
+                    .get_type(type_store, type_id)
+                    .array_type(length.to_u32().unwrap())
+                    .into(),
             };
             let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
@@ -688,18 +704,32 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining local allocations");
         let function_data = program.get_function_data(id);
         for &item_id in function_data.allocs.values() {
-            let alloc_size = program.get_alloc_size(item_id);
-            let mem_type_id = program.get_item_signature_resolved(item_id).memory_type();
-            let mem_type = self.get_type(type_store, mem_type_id);
+            let alloc_type_id = program.get_item_signature_resolved(item_id).memory_type();
+            let (store_type_id, alloc_size, is_array) = match type_store
+                .get_type_info(alloc_type_id)
+                .kind
+            {
+                TypeKind::Array { type_id, length } => (type_id, length.to_u32().unwrap(), true),
+                TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {
+                    (alloc_type_id, 1, false)
+                }
+            };
+
+            let mem_type = self.get_type(type_store, store_type_id);
             let name = interner.get_symbol_name(program, item_id).to_owned() + "_";
             let variable = self
                 .builder
-                .build_alloca(mem_type.array_type(alloc_size.to_u32().unwrap()), &name);
-            let variable = self.builder.build_pointer_cast(
-                variable,
-                mem_type.ptr_type(AddressSpace::default()),
-                &name,
-            );
+                .build_alloca(mem_type.array_type(alloc_size), &name);
+
+            let variable = if !is_array {
+                self.builder.build_pointer_cast(
+                    variable,
+                    mem_type.ptr_type(AddressSpace::default()),
+                    &name,
+                )
+            } else {
+                variable
+            };
 
             value_store.variable_map.insert(item_id, variable);
         }

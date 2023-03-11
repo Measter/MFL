@@ -16,7 +16,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{If, IntKind, Op, OpCode, OpId, UnresolvedType, While},
+    opcode::{If, Op, OpCode, OpId, UnresolvedType, While},
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
@@ -153,7 +153,6 @@ pub struct Program {
     function_data: HashMap<ItemId, FunctionData>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
     analyzers: HashMap<ItemId, Analyzer>,
-    alloc_sizes: HashMap<ItemId, usize>,
 }
 
 impl Program {
@@ -182,6 +181,7 @@ impl Program {
         &self.item_signatures_resolved[&id]
     }
 
+    #[track_caller]
     pub fn get_item_body(&self, id: ItemId) -> &[Op] {
         &self.item_bodies[&id]
     }
@@ -211,11 +211,6 @@ impl Program {
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
-
-    #[track_caller]
-    pub fn get_alloc_size(&self, id: ItemId) -> usize {
-        self.alloc_sizes[&id]
-    }
 }
 
 impl Program {
@@ -230,7 +225,6 @@ impl Program {
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
-            alloc_sizes: HashMap::new(),
         }
     }
 
@@ -502,6 +496,7 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
+            .filter(|(_, item)| item.kind() != ItemKind::Memory)
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -647,17 +642,19 @@ impl Program {
                 },
             );
 
-            let body = self.item_bodies.remove(&item_id).unwrap();
-            self.item_bodies.insert(
-                item_id,
-                self.resolve_types_in_block(
-                    body,
-                    &mut had_error,
-                    interner,
-                    source_store,
-                    type_store,
-                ),
-            );
+            if item.kind != ItemKind::Memory {
+                let body = self.item_bodies.remove(&item_id).unwrap();
+                self.item_bodies.insert(
+                    item_id,
+                    self.resolve_types_in_block(
+                        body,
+                        &mut had_error,
+                        interner,
+                        source_store,
+                        type_store,
+                    ),
+                );
+            }
         }
 
         had_error
@@ -716,7 +713,7 @@ impl Program {
         let non_macro_items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -910,7 +907,7 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
             .map(|(id, _)| *id)
             .collect();
 
@@ -936,7 +933,7 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
             .map(|(id, _)| *id)
             .collect();
 
@@ -1223,7 +1220,7 @@ impl Program {
         let all_item_ids: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro)
+            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
             .map(|(id, _)| *id)
             .collect();
 
@@ -1245,44 +1242,6 @@ impl Program {
             .not()
             .then_some(())
             .ok_or_else(|| eyre!("error processing idents"))
-    }
-
-    fn evaluate_allocation_sizes(
-        &mut self,
-        interner: &Interners,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
-        let _span = debug_span!(stringify!(Program::evaluate_allocation_sizes)).entered();
-        let mut had_error = false;
-
-        let all_mem_items: Vec<_> = self
-            .item_headers
-            .iter()
-            .filter(|(_, i)| i.kind() == ItemKind::Memory)
-            .map(|(id, _)| *id)
-            .collect();
-
-        for item_id in all_mem_items {
-            let mut stack = match simulate_execute_program(self, item_id, interner, source_store) {
-                Ok(stack) => stack,
-                Err(_) => {
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            // The type checker ensures a single stack item.
-            let Some(SimulatorValue::Int { kind: IntKind::Unsigned(alloc_size), .. }) = stack.pop() else {
-                panic!("ICE: Allocation size returned a value that wasn't an unsigned integer");
-            };
-            let alloc_size = alloc_size.to_usize();
-            self.alloc_sizes.insert(item_id, alloc_size);
-        }
-
-        had_error
-            .not()
-            .then_some(())
-            .ok_or_else(|| eyre!("allocation size evaluation failed"))
     }
 
     fn check_asserts(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
@@ -1349,7 +1308,6 @@ impl Program {
         self.evaluate_const_items(interner, source_store, type_store)?;
 
         self.process_idents(interner, source_store)?;
-        self.evaluate_allocation_sizes(interner, source_store)?;
         self.check_asserts(interner, source_store)?;
 
         Ok(())

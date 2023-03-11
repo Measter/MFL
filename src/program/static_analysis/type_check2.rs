@@ -144,10 +144,10 @@ pub(super) fn analyze_block(
                         op, 
                         kind
                     ),
-                    TypeKind::Bool => {
+                    TypeKind::Bool | TypeKind::Array {..} => {
                         diagnostics::emit_error(
                             op.token.location,
-                            "cannot cast to bool",
+                            format!("cannot cast to {}", interner.resolve_lexeme(info.name)),
                             [Label::new(op.token.location).with_color(Color::Red)],
                             None,
                             source_store,

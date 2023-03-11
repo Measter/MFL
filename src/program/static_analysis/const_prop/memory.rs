@@ -120,6 +120,7 @@ pub(super) fn load(
 
                 // Don't support const loading non-bytes.
                 TypeKind::Integer { .. } => return,
+                TypeKind::Array { .. } => return,
             }
         }
         _ => return,

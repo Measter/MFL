@@ -86,10 +86,9 @@ pub(super) fn resolved_ident(
 
     match referenced_item.kind() {
         ItemKind::Memory => {
-            let pointer_type = referenced_item_sig.memory_type();
-
             let output_id = op_data.outputs[0];
-            analyzer.set_value_type(output_id, type_store.get_pointer(interner, pointer_type).id);
+            let ptr_type = type_store.get_pointer(interner, referenced_item_sig.memory_type());
+            analyzer.set_value_type(output_id, ptr_type.id);
         }
         _ => {
             for (&expected, actual_id) in referenced_item_sig

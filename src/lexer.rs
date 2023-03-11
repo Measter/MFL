@@ -130,6 +130,20 @@ impl TokenKind {
             TokenKind::If | TokenKind::Is | TokenKind::While => true,
         }
     }
+
+    pub fn is_matched_open(self) -> bool {
+        matches!(
+            self,
+            TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen
+        )
+    }
+
+    pub fn is_matched_close(self) -> bool {
+        matches!(
+            self,
+            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,7 +185,7 @@ fn is_ident_continue(c: char) -> bool {
 fn is_valid_post_number(c: char) -> bool {
     matches!(
         c,
-        '+' | '-' | '*' | '=' | '<' | '>' | '/' | '(' | ')' | '!' | '@' | '%'
+        '+' | '-' | '*' | '=' | '<' | '>' | '/' | '(' | ')' | ']' | '!' | '@' | '%'
     ) || c.is_whitespace()
 }
 

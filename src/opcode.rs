@@ -85,7 +85,8 @@ pub struct If {
 
 #[derive(Debug, Clone)]
 pub enum UnresolvedType {
-    NonPointer(Token),
+    Simple(Token),
+    Array(SourceLocation, Box<UnresolvedType>, usize),
     Pointer(SourceLocation, Box<UnresolvedType>),
 }
 

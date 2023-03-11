@@ -23,10 +23,10 @@ proc eputs [u64 ptr(u8)] to [] is
 end
 
 proc putud [u64] to [] is
-    const buf_len [u64] is 30(u64) end
-    memory buf [u8] is buf_len end
+    const buf_len [u64] is 30 end
+    memory buf is [u8[30]] end
     // [num]
-    buf buf_len+
+    buf cast(ptr(u8)) buf_len+
 
     // [num, ptr]
     if over 0(u64) = do
@@ -55,7 +55,7 @@ proc putud [u64] to [] is
     // [ptr.start]
     dup
     // [ptr.start, ptr.start]
-    buf_len buf+
+    buf_len buf cast(ptr(u8)) +
     // [ptr.start, ptr.start, ptr.end]
     swap -
     // [ptr.start, rendered_len]

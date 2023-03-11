@@ -54,6 +54,7 @@ impl<'ctx> CodeGen<'ctx> {
                         self.ctx.i64_type(),
                         "cast_ptr",
                     ),
+                    TypeKind::Array { .. } => unreachable!(),
                 };
 
                 value_store.store_value(self, op_io.outputs()[0], output.into());
@@ -79,9 +80,9 @@ impl<'ctx> CodeGen<'ctx> {
                             "cast_int",
                         )
                     }
-                    TypeKind::Pointer(to_kind) => {
+                    TypeKind::Pointer(_) => {
                         let to_ptr_type = self
-                            .get_type(type_store, to_kind)
+                            .get_type(type_store, to_ptr_type)
                             .ptr_type(AddressSpace::default());
                         self.builder.build_pointer_cast(
                             input_data.into_pointer_value(),
@@ -90,7 +91,7 @@ impl<'ctx> CodeGen<'ctx> {
                         )
                     }
 
-                    TypeKind::Integer { .. } | TypeKind::Bool => {
+                    TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
                         unreachable!()
                     }
                 };
@@ -98,6 +99,7 @@ impl<'ctx> CodeGen<'ctx> {
                 value_store.store_value(self, op_io.outputs()[0], output.into());
             }
             TypeKind::Bool => unreachable!(),
+            TypeKind::Array { .. } => unreachable!(),
         }
     }
 

@@ -68,7 +68,7 @@ pub(super) fn analyze_block(
                 match type_info.kind {
                     TypeKind::Integer{ width, signed } => stack_ops::cast_to_int(analyzer, op, width, signed),
                     TypeKind::Pointer(kind) => stack_ops::cast_to_ptr(analyzer, op, kind),
-                    TypeKind::Bool => {},
+                    TypeKind::Bool | TypeKind::Array {..}=> {},
                 }
             }
             OpCode::Load => memory::load(analyzer,

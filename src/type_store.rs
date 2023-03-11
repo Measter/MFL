@@ -80,6 +80,7 @@ pub enum Signedness {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
+    Array { type_id: TypeId, length: usize },
     Integer { width: IntWidth, signed: Signedness },
     Pointer(TypeId),
     Bool,
@@ -118,7 +119,7 @@ pub struct TypeInfo {
     pub id: TypeId,
     pub name: Spur,
     pub kind: TypeKind,
-    pub width: u8,
+    pub width: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +132,7 @@ pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
     name_map: HashMap<Spur, TypeId>,
     pointer_map: HashMap<TypeId, PointerInfo>,
+    array_map: HashMap<(TypeId, usize), TypeId>,
     builtins: [TypeId; 9],
 }
 
@@ -140,6 +142,7 @@ impl TypeStore {
             kinds: HashMap::new(),
             name_map: HashMap::new(),
             pointer_map: HashMap::new(),
+            array_map: HashMap::new(),
             builtins: [TypeId(0); 9],
         };
         s.init_builtins(interner);
@@ -233,7 +236,7 @@ impl TypeStore {
         }
     }
 
-    fn add_type(&mut self, name: Spur, kind: TypeKind, width: u8) -> TypeId {
+    fn add_type(&mut self, name: Spur, kind: TypeKind, width: usize) -> TypeId {
         let id = self.kinds.len().to_u16().map(TypeId).unwrap();
 
         self.name_map.insert(name, id);
@@ -257,12 +260,16 @@ impl TypeStore {
         tp: &UnresolvedType,
     ) -> Option<TypeInfo> {
         match tp {
-            UnresolvedType::NonPointer(st) => {
+            UnresolvedType::Simple(st) => {
                 let ti = self.name_map.get(&st.lexeme).map(|id| self.kinds[id]);
                 if ti.is_none() {
                     emit_type_error_diag(*st, interner, source_store);
                 }
                 ti
+            }
+            UnresolvedType::Array(_, at, length) => {
+                let inner = self.resolve_type(interner, source_store, at)?;
+                Some(self.get_array(interner, inner.id, *length))
             }
             UnresolvedType::Pointer(_, pt) => {
                 let pointee = self.resolve_type(interner, source_store, pt)?;
@@ -290,6 +297,35 @@ impl TypeStore {
             );
 
             self.kinds[&pointer_info]
+        }
+    }
+
+    pub fn get_array(
+        &mut self,
+        interner: &mut Interners,
+        content_type_id: TypeId,
+        length: usize,
+    ) -> TypeInfo {
+        let kind_info = self.get_type_info(content_type_id);
+
+        if let Some(&array_id) = self.array_map.get(&(kind_info.id, length)) {
+            self.kinds[&array_id]
+        } else {
+            let pointee_name = interner.resolve_lexeme(kind_info.name);
+            let name = format!("{pointee_name}[{length}]");
+            let name = interner.intern_lexeme(&name);
+
+            let array_info = self.add_type(
+                name,
+                TypeKind::Array {
+                    type_id: content_type_id,
+                    length,
+                },
+                kind_info.width.checked_mul(length).unwrap(),
+            );
+            self.array_map.insert((content_type_id, length), array_info);
+
+            self.kinds[&array_info]
         }
     }
 
