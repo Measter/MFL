@@ -547,6 +547,34 @@ pub fn parse_item_body(
                     _ => unreachable!(),
                 }
             }
+
+            TokenKind::Pack | TokenKind::Unpack => {
+                let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
+                    &mut token_iter,
+                    token,
+                    Some(1),
+                    ("(", |t| t == TokenKind::ParenthesisOpen),
+                    ("Integer", |t| matches!(t, TokenKind::Integer(_))),
+                    (")", |t| t == TokenKind::ParenthesisClosed),
+                    interner,
+                    source_store,
+                ) else {
+                    had_error = true;
+                    continue;
+                };
+
+                token.location = token.location.merge(close_paren.location);
+
+                let count_token = count_token[0];
+                let count = parse_integer_lexeme(count_token, interner, source_store)?;
+
+                match token.kind {
+                    TokenKind::Pack => OpCode::Pack{ count },
+                    TokenKind::Unpack => OpCode::Unpack { count },
+                    _ => unreachable!()
+                }
+            }
+
             TokenKind::Rot => {
                 let Ok((_, tokens, close_paren)) = parse_delimited_token_list(&mut token_iter,
                     token,

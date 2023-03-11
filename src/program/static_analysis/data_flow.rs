@@ -220,6 +220,22 @@ pub(super) fn analyze_block(
                 had_error,
                 op
             ),
+            OpCode::Pack { count } => memory::pack(
+                analyzer,
+                stack,
+                source_store,
+                had_error,
+                op,
+                count
+            ),
+            OpCode::Unpack{count} => memory::unpack(
+                analyzer,
+                stack,
+                source_store,
+                had_error,
+                op,
+                count
+            ),
             OpCode::ResolvedIdent{item_id, ..} => control::resolved_ident(
                 program,
                 analyzer,

@@ -54,6 +54,7 @@ pub enum TokenKind {
     Minus,
     NotEqual,
     Over,
+    Pack,
     ParenthesisClosed,
     ParenthesisOpen,
     Plus,
@@ -70,6 +71,7 @@ pub enum TokenKind {
     Store,
     Swap,
     SysCall,
+    Unpack,
     While,
 }
 
@@ -110,6 +112,7 @@ impl TokenKind {
             | TokenKind::Minus
             | TokenKind::NotEqual
             | TokenKind::Over
+            | TokenKind::Pack
             | TokenKind::ParenthesisClosed
             | TokenKind::ParenthesisOpen
             | TokenKind::Plus
@@ -125,7 +128,8 @@ impl TokenKind {
             | TokenKind::String { .. }
             | TokenKind::Store
             | TokenKind::Swap
-            | TokenKind::SysCall => false,
+            | TokenKind::SysCall
+            | TokenKind::Unpack => false,
 
             TokenKind::If | TokenKind::Is | TokenKind::While => true,
         }
@@ -490,6 +494,7 @@ impl<'source> Scanner<'source> {
                     "not" => TokenKind::BitNot,
                     "or" => TokenKind::BitOr,
                     "over" => TokenKind::Over,
+                    "pack" => TokenKind::Pack,
                     "proc" => TokenKind::Proc,
                     "return" => TokenKind::Return,
                     "rot" => TokenKind::Rot,
@@ -497,6 +502,7 @@ impl<'source> Scanner<'source> {
                     "shr" => TokenKind::ShiftRight,
                     "swap" => TokenKind::Swap,
                     "syscall" => TokenKind::SysCall,
+                    "unpack" => TokenKind::Unpack,
                     "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
                     "while" => TokenKind::While,

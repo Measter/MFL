@@ -128,6 +128,9 @@ pub enum OpCode {
         depth: u8,
         depth_token: Token,
     },
+    Pack {
+        count: u8,
+    },
     Prologue,
     PushBool(bool),
     PushInt {
@@ -164,6 +167,9 @@ pub enum OpCode {
     SysCall {
         arg_count: u8,
         arg_count_token: Token,
+    },
+    Unpack {
+        count: u8,
     },
     UnresolvedCast {
         unresolved_type: UnresolvedType,

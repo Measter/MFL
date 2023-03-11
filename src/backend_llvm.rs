@@ -551,6 +551,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Load => self.build_load(interner, analyzer, value_store, type_store, op),
                 OpCode::Store => self.build_store(interner, analyzer, value_store, type_store, op),
+                OpCode::Pack { .. } => {
+                    self.build_pack(interner, analyzer, value_store, type_store, op)
+                }
+                OpCode::Unpack { .. } => {
+                    self.build_unpack(interner, analyzer, value_store, type_store, op)
+                }
                 OpCode::Memory {
                     item_id,
                     global: false,

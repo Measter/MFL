@@ -315,6 +315,8 @@ fn simulate_execute_program_block(
             | OpCode::CallFunction { .. }
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
+            | OpCode::Pack { .. }
+            | OpCode::Unpack { .. }
             | OpCode::Load
             | OpCode::Store
             | OpCode::SysCall { .. } => {

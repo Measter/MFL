@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -9,6 +10,144 @@ use crate::{
     source_file::SourceStorage,
     type_store::{TypeKind, TypeStore},
 };
+
+pub(super) fn pack(
+    analyzer: &mut Analyzer,
+    interner: &mut Interners,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    count: u8,
+) {
+    if count == 0 {
+        diagnostics::emit_error(
+            op.token.location,
+            "cannot pack array of length 0",
+            [Label::new(op.token.location).with_color(Color::Red)],
+            None,
+            source_store,
+        );
+        *had_error = true;
+        return;
+    }
+
+    let op_data = analyzer.get_op_io(op.id);
+    let [first, rest @ ..] = op_data.inputs() else { unreachable!() };
+    let Some([first_value_id]) = analyzer.value_types([*first]) else { return };
+    let expected_store_type = type_store.get_type_info(first_value_id);
+
+    for (&other_id, id) in rest.iter().zip(1..) {
+        let Some([value_type_id]) = analyzer.value_types([other_id]) else { continue };
+        if value_type_id != expected_store_type.id {
+            let mut labels = Vec::new();
+            let type_info = type_store.get_type_info(value_type_id);
+            let other_value_name = interner.resolve_lexeme(type_info.name);
+            let expected_value_name = interner.resolve_lexeme(expected_store_type.name);
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                other_id,
+                id,
+                other_value_name,
+            );
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                *first,
+                0,
+                expected_value_name,
+            );
+
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                "unable to pack array: mismatched input types",
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+        }
+    }
+
+    let array_type = type_store.get_array(interner, expected_store_type.id, count.to_usize());
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, array_type.id);
+}
+
+pub(super) fn unpack(
+    analyzer: &mut Analyzer,
+    interner: &mut Interners,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    count: u8,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let outputs = op_data.outputs().to_owned();
+    let array_id = op_data.inputs()[0];
+    let Some([array_type_id]) = analyzer.value_types([array_id]) else { return };
+    let array_info = type_store.get_type_info(array_type_id);
+
+    let (kind, length) = match array_info.kind {
+        TypeKind::Array { type_id, length } => (type_id, length),
+        _ => {
+            let input_type_name = interner.resolve_lexeme(array_info.name);
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                array_id,
+                0,
+                input_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                format!("expected array, found {input_type_name}"),
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+            return;
+        }
+    };
+
+    if length != count.to_usize() {
+        let expected_type_info = type_store.get_array(interner, kind, count.to_usize());
+        let input_type_name = interner.resolve_lexeme(array_info.name);
+        let expected_type_name = interner.resolve_lexeme(expected_type_info.name);
+
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 0, input_type_name);
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!(
+                "expected `{}`, found `{}`",
+                expected_type_name, input_type_name
+            ),
+            labels,
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+    }
+
+    for output_id in outputs {
+        analyzer.set_value_type(output_id, kind);
+    }
+}
 
 pub(super) fn load(
     analyzer: &mut Analyzer,

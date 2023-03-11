@@ -79,6 +79,8 @@ pub(super) fn analyze_block(
                 op,
             ),
             OpCode::Store => {} // Nothing to do for store.
+            OpCode::Pack { .. } => {} // No const prop for packing/unpacking
+            OpCode::Unpack { .. } => {}
 
             OpCode::Dup { .. } => stack_ops::dup(analyzer, op),
             OpCode::Over { .. } => stack_ops::over(analyzer, op),

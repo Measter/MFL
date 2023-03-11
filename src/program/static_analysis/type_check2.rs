@@ -171,6 +171,24 @@ pub(super) fn analyze_block(
                 had_error,
                 op,
             ),
+            OpCode::Pack { count } => memory::pack(
+                analyzer,
+                interner,
+                source_store,
+                type_store,
+                had_error,
+                op,
+                count,
+            ),
+            OpCode::Unpack { count } => memory::unpack(
+                analyzer,
+                interner,
+                source_store,
+                type_store,
+                had_error,
+                op,
+                count,
+            ),
 
             OpCode::While(ref while_op) => control::analyze_while(
                 program,
