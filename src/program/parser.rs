@@ -1209,21 +1209,11 @@ fn parse_memory<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let (_, is_token) = expect_token(
-        token_iter, 
-        "is", 
-        |t| t == TokenKind::Is, 
-        name_token, 
-        interner, 
-        source_store
-    )
-    .recover(&mut had_error, (0, name_token));
-
     let (store_type_start, store_type_tokens, store_type_end) = parse_delimited_token_list(
         token_iter,
         name_token,
         None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
+        ("is", |t| t == TokenKind::Is),
         ("type name", |t| {
             matches!(
                 t,
@@ -1235,21 +1225,11 @@ fn parse_memory<'a>(
                     | TokenKind::SquareBracketClosed
             )
         }),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
+        ("end", |t| t == TokenKind::End),
         interner,
         source_store,
     )
-    .recover(&mut had_error, (is_token, Vec::new(), is_token));
-
-    let _ = expect_token(
-        token_iter, 
-        "end", 
-        |t| t == TokenKind::End, 
-        name_token, 
-        interner, 
-        source_store
-    )
-    .recover(&mut had_error, (0, store_type_end));
+    .recover(&mut had_error, (name_token, Vec::new(), name_token));
 
     let store_type_location = store_type_start.location.merge(store_type_end.location);
     let mut unresolved_store_type =

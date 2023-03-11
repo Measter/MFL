@@ -24,7 +24,7 @@ end
 
 proc putud [u64] to [] is
     const buf_len [u64] is 30 end
-    memory buf is [u8[30]] end
+    memory buf is u8[30] end
     // [num]
     buf cast(ptr(u8)) buf_len+
 
