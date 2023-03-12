@@ -5,7 +5,7 @@ use tracing::error;
 use crate::{
     diagnostics,
     interners::Interners,
-    n_ops::VecNOps,
+    n_ops::{SliceNOps, VecNOps},
     opcode::{Direction, IntKind, Op, OpCode},
     program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
     source_file::SourceStorage,
@@ -287,6 +287,9 @@ fn simulate_execute_program_block(
                 let (_, b_slice) = rest.split_at_mut(rest.len() - count.to_usize());
 
                 a_slice.swap_with_slice(b_slice);
+            }
+            OpCode::Reverse { count, .. } => {
+                value_stack.lastn_mut(count.to_usize()).unwrap().reverse();
             }
 
             // These are no-ops for the simulator, only there to help the compiler.

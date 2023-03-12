@@ -149,6 +149,10 @@ pub enum OpCode {
     },
     Rem,
     Return,
+    Reverse {
+        count: u8,
+        count_token: Token,
+    },
     Rot {
         item_count: u8,
         direction: Direction,

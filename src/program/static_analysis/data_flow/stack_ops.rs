@@ -4,6 +4,7 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     lexer::Token,
+    n_ops::SliceNOps,
     opcode::{Direction, Op},
     source_file::SourceStorage,
 };
@@ -128,6 +129,45 @@ pub fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c
         stack.push(ptr_id);
         analyzer.set_op_io(op, &[], &[len_id, ptr_id]);
     };
+}
+
+pub fn reverse(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op: &Op,
+    count: u8,
+    count_token: Token,
+) {
+    let count = count.to_usize();
+
+    if count == 0 {
+        diagnostics::emit_warning(
+            op.token.location,
+            "invalid reverse count",
+            [Label::new(count_token.location)
+                .with_color(Color::Yellow)
+                .with_message("cannot reverse 0 items")],
+            None,
+            source_store,
+        );
+    }
+
+    if count == 2 {
+        diagnostics::emit_warning(
+            op.token.location,
+            "unclear stack op",
+            [Label::new(count_token.location)
+                .with_color(Color::Yellow)
+                .with_message("using `swap` wolud make intent clearer")],
+            None,
+            source_store,
+        );
+    }
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, count);
+
+    stack.lastn_mut(count).unwrap().reverse();
 }
 
 pub fn rot(

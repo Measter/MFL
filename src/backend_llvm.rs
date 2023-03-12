@@ -434,6 +434,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Dup { count, .. } => trace!(?op.id, count, "Dup" ),
                 OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
                 OpCode::Over { depth, .. } => trace!(?op.id, depth, "Over"),
+                OpCode::Reverse { count, .. } => trace!(?op.id, count, "Rev"),
                 OpCode::Memory {
                     item_id, global, ..
                 } => trace!(?op.id, ?item_id, global, "Memory"),
@@ -447,7 +448,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
 
             // These do nothing in codegen
-            if let OpCode::Swap { .. } | OpCode::Rot { .. } = &op.code {
+            if let OpCode::Reverse { .. } | OpCode::Swap { .. } | OpCode::Rot { .. } = &op.code {
                 continue;
             }
 
@@ -578,7 +579,10 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 // These are no-ops as far as codegen is concerned.
-                OpCode::Drop { .. } | OpCode::Rot { .. } | OpCode::Swap { .. } => continue,
+                OpCode::Drop { .. }
+                | OpCode::Reverse { .. }
+                | OpCode::Rot { .. }
+                | OpCode::Swap { .. } => continue,
 
                 OpCode::ResolvedIdent { .. } => {
                     panic!("ICE: Encountered resolved ident during codegen")

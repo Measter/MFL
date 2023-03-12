@@ -504,6 +504,7 @@ pub fn parse_item_body(
             TokenKind::Drop
             | TokenKind::Dup
             | TokenKind::Over
+            | TokenKind::Reverse
             | TokenKind::Swap
             | TokenKind::SysCall => {
                 let (count, count_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
@@ -528,7 +529,12 @@ pub fn parse_item_body(
                     let count = parse_integer_lexeme(count_token, interner, source_store)?;
                     (count, count_token)
                 } else {
-                    (1, token)
+                    let default_amount = if token.kind == TokenKind::Reverse {
+                        2
+                    } else {
+                        1
+                    };
+                    (default_amount, token)
                 };
 
                 match token.kind {
@@ -538,6 +544,7 @@ pub fn parse_item_body(
                         depth: count,
                         depth_token: count_token,
                     },
+                    TokenKind::Reverse => OpCode::Reverse { count, count_token },
                     TokenKind::Swap => OpCode::Swap { count, count_token },
                     TokenKind::SysCall => OpCode::SysCall {
                         arg_count: count,

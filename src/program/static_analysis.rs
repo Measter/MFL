@@ -737,6 +737,17 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
+            OpCode::Reverse { count, count_token } => {
+                data_flow::stack_ops::reverse(
+                    analyzer,
+                    stack,
+                    source_store,
+                    had_error,
+                    op,
+                    *count,
+                    *count_token,
+                );
+            }
             OpCode::Rot {
                 item_count,
                 direction,

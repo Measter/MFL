@@ -42,6 +42,7 @@ impl<T> VecNOps<T> for Vec<T> {
 pub trait SliceNOps<T> {
     fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)>;
     fn lastn(&self, n: usize) -> Option<&Self>;
+    fn lastn_mut(&mut self, n: usize) -> Option<&mut Self>;
     fn as_arr<const N: usize>(&self) -> &[T; N];
 }
 
@@ -61,6 +62,14 @@ impl<T> SliceNOps<T> for [T] {
             return None;
         }
         Some(&self[self.len() - n..])
+    }
+
+    fn lastn_mut(&mut self, n: usize) -> Option<&mut Self> {
+        if self.len() < n {
+            return None;
+        }
+        let len = self.len();
+        Some(&mut self[len - n..])
     }
 
     #[track_caller]

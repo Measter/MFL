@@ -61,6 +61,7 @@ pub enum TokenKind {
     Proc,
     Rem,
     Return,
+    Reverse,
     Rot,
     ShiftLeft,
     ShiftRight,
@@ -119,6 +120,7 @@ impl TokenKind {
             | TokenKind::Proc
             | TokenKind::Rem
             | TokenKind::Return
+            | TokenKind::Reverse
             | TokenKind::Rot
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
@@ -497,6 +499,7 @@ impl<'source> Scanner<'source> {
                     "pack" => TokenKind::Pack,
                     "proc" => TokenKind::Proc,
                     "return" => TokenKind::Return,
+                    "rev" => TokenKind::Reverse,
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
