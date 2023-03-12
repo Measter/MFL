@@ -21,10 +21,10 @@ use crate::{
     type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
-use self::data_flow::{eat_one_make_one, eat_two_make_one, make_one};
+use self::stack_check::{eat_one_make_one, eat_two_make_one, make_one};
 
 mod const_prop;
-mod data_flow;
+mod stack_check;
 mod type_check2;
 
 fn can_promote_int_unidirectional(
@@ -668,7 +668,7 @@ fn analyze_block(
             }
 
             OpCode::Drop { count, count_token } => {
-                data_flow::stack_ops::drop(
+                stack_check::stack_ops::drop(
                     analyzer,
                     stack,
                     source_store,
@@ -680,7 +680,7 @@ fn analyze_block(
             }
             OpCode::Dup { count, count_token } => {
                 let mut local_had_error = false;
-                data_flow::stack_ops::dup(
+                stack_check::stack_ops::dup(
                     analyzer,
                     stack,
                     source_store,
@@ -698,7 +698,7 @@ fn analyze_block(
             }
             OpCode::Over { depth, .. } => {
                 let mut local_had_error = false;
-                data_flow::stack_ops::over(
+                stack_check::stack_ops::over(
                     analyzer,
                     stack,
                     source_store,
@@ -715,7 +715,7 @@ fn analyze_block(
             }
             OpCode::Pack { count } => {
                 let mut local_had_error = false;
-                data_flow::memory::pack(
+                stack_check::memory::pack(
                     analyzer,
                     stack,
                     source_store,
@@ -738,7 +738,7 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
             OpCode::Reverse { count, count_token } => {
-                data_flow::stack_ops::reverse(
+                stack_check::stack_ops::reverse(
                     analyzer,
                     stack,
                     source_store,
@@ -755,7 +755,7 @@ fn analyze_block(
                 item_count_token,
                 shift_count_token,
             } => {
-                data_flow::stack_ops::rot(
+                stack_check::stack_ops::rot(
                     analyzer,
                     stack,
                     source_store,
@@ -769,7 +769,7 @@ fn analyze_block(
                 );
             }
             OpCode::Swap { count, count_token } => {
-                data_flow::stack_ops::swap(
+                stack_check::stack_ops::swap(
                     analyzer,
                     stack,
                     source_store,
@@ -781,7 +781,7 @@ fn analyze_block(
             }
             OpCode::Unpack { count } => {
                 let mut local_had_error = false;
-                data_flow::memory::unpack(
+                stack_check::memory::unpack(
                     analyzer,
                     stack,
                     source_store,
@@ -835,7 +835,7 @@ fn analyze_block(
                 const_prop::stack_ops::push_int(analyzer, op, *value);
             }
             OpCode::PushStr { id, is_c_str } => {
-                data_flow::stack_ops::push_str(analyzer, stack, op, *is_c_str);
+                stack_check::stack_ops::push_str(analyzer, stack, op, *is_c_str);
                 type_check2::stack_ops::push_str(analyzer, type_store, op, *is_c_str);
                 const_prop::stack_ops::push_str(analyzer, interner, op, *id, *is_c_str);
             }
@@ -869,7 +869,7 @@ fn analyze_block(
             OpCode::Memory { .. } => todo!(),
             OpCode::Store => {
                 let mut local_had_error = false;
-                data_flow::memory::store(analyzer, stack, source_store, &mut local_had_error, op);
+                stack_check::memory::store(analyzer, stack, source_store, &mut local_had_error, op);
                 if !local_had_error {
                     type_check2::memory::store(
                         analyzer,
@@ -887,7 +887,7 @@ fn analyze_block(
             OpCode::CallFunction { .. } => todo!(),
             OpCode::Epilogue | OpCode::Return => {
                 let mut local_had_error = false;
-                data_flow::control::epilogue_return(
+                stack_check::control::epilogue_return(
                     program,
                     analyzer,
                     stack,
@@ -923,7 +923,7 @@ fn analyze_block(
             }
             OpCode::Prologue => {
                 let item_sig = program.get_item_signature_resolved(item_id);
-                data_flow::control::prologue(analyzer, stack, op, item_sig);
+                stack_check::control::prologue(analyzer, stack, op, item_sig);
                 type_check2::control::prologue(analyzer, op, item_sig);
             }
             OpCode::SysCall {
@@ -931,7 +931,7 @@ fn analyze_block(
                 arg_count_token,
             } => {
                 let mut local_had_error = false;
-                data_flow::control::syscall(
+                stack_check::control::syscall(
                     analyzer,
                     stack,
                     source_store,
@@ -949,7 +949,7 @@ fn analyze_block(
 
             OpCode::If(if_op) => {
                 let mut local_had_error = false;
-                data_flow::control::analyze_if(
+                stack_check::control::analyze_if(
                     program,
                     item_id,
                     analyzer,
@@ -982,7 +982,7 @@ fn analyze_block(
                 // the while...
                 let mut initial_analyzer = analyzer.clone();
 
-                data_flow::control::analyze_while(
+                stack_check::control::analyze_while(
                     program,
                     item_id,
                     analyzer,
@@ -1002,7 +1002,7 @@ fn analyze_block(
 
                 *analyzer = initial_analyzer;
                 // Now we can run it again with the values properly inhibited.
-                data_flow::control::analyze_while(
+                stack_check::control::analyze_while(
                     program,
                     item_id,
                     analyzer,
@@ -1087,7 +1087,7 @@ fn analyze_block(
             }
             OpCode::ResolvedIdent { item_id } => {
                 let mut local_had_error = false;
-                data_flow::control::resolved_ident(
+                stack_check::control::resolved_ident(
                     program,
                     analyzer,
                     stack,
