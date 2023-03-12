@@ -9,7 +9,7 @@ use crate::{
     type_store::{BuiltinTypes, TypeKind, TypeStore},
 };
 
-pub(super) fn compare(
+pub fn compare(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -58,7 +58,7 @@ pub(super) fn compare(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub(super) fn equal(
+pub fn equal(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,

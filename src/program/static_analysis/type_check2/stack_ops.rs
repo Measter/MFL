@@ -10,7 +10,7 @@ use crate::{
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
-pub(super) fn cast_to_int(
+pub fn cast_to_int(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -93,7 +93,7 @@ pub(super) fn cast_to_int(
     analyzer.set_value_type(op_data.outputs[0], output_type_id);
 }
 
-pub(super) fn cast_to_ptr(
+pub fn cast_to_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &mut Interners,
@@ -173,7 +173,7 @@ pub(super) fn cast_to_ptr(
     );
 }
 
-pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
+pub fn dup(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs = op_data.inputs().to_owned();
     let outputs = op_data.outputs().to_owned();
@@ -184,7 +184,7 @@ pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     }
 }
 
-pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
+pub fn over(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input = op_data.inputs()[0];
     let output = op_data.outputs()[0];
@@ -193,7 +193,7 @@ pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_type(output, input_type);
 }
 
-pub(super) fn push_bool(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn push_bool(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     analyzer.set_value_type(
         op_data.outputs[0],
@@ -201,7 +201,7 @@ pub(super) fn push_bool(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op
     );
 }
 
-pub(super) fn push_int(
+pub fn push_int(
     analyzer: &mut Analyzer,
     type_store: &TypeStore,
     op: &Op,
@@ -213,7 +213,7 @@ pub(super) fn push_int(
     analyzer.set_value_type(op_data.outputs[0], type_store.get_builtin(builtin).id);
 }
 
-pub(super) fn push_str(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, is_c_str: bool) {
+pub fn push_str(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, is_c_str: bool) {
     let op_data = analyzer.get_op_io(op.id);
 
     if is_c_str {

@@ -9,12 +9,7 @@ use crate::{
     type_store::{Signedness, TypeId},
 };
 
-pub(super) fn cast_to_int(
-    analyzer: &mut Analyzer,
-    op: &Op,
-    to_width: IntWidth,
-    to_signed: Signedness,
-) {
+pub fn cast_to_int(analyzer: &mut Analyzer, op: &Op, to_width: IntWidth, to_signed: Signedness) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([input_const_val]) = analyzer.value_consts(input_ids) else { return };
@@ -28,7 +23,7 @@ pub(super) fn cast_to_int(
     analyzer.set_value_const(op_data.outputs[0], new_const_val);
 }
 
-pub(super) fn cast_to_ptr(analyzer: &mut Analyzer, op: &Op, to_kind: TypeId) {
+pub fn cast_to_ptr(analyzer: &mut Analyzer, op: &Op, to_kind: TypeId) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs()[0];
     let Some([input_const_val]) = analyzer.value_consts([input_id]) else { return };
@@ -39,7 +34,7 @@ pub(super) fn cast_to_ptr(analyzer: &mut Analyzer, op: &Op, to_kind: TypeId) {
     }
 }
 
-pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
+pub fn dup(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs = op_data.inputs().to_owned();
     let outputs = op_data.outputs().to_owned();
@@ -50,7 +45,7 @@ pub(super) fn dup(analyzer: &mut Analyzer, op: &Op) {
     }
 }
 
-pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
+pub fn over(analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input = op_data.inputs()[0];
     let output = op_data.outputs()[0];
@@ -59,23 +54,17 @@ pub(super) fn over(analyzer: &mut Analyzer, op: &Op) {
     analyzer.set_value_const(output, input_const);
 }
 
-pub(super) fn push_bool(analyzer: &mut Analyzer, op: &Op, value: bool) {
+pub fn push_bool(analyzer: &mut Analyzer, op: &Op, value: bool) {
     let op_data = analyzer.get_op_io(op.id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
-pub(super) fn push_int(analyzer: &mut Analyzer, op: &Op, value: IntKind) {
+pub fn push_int(analyzer: &mut Analyzer, op: &Op, value: IntKind) {
     let op_data = analyzer.get_op_io(op.id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(value));
 }
 
-pub(super) fn push_str(
-    analyzer: &mut Analyzer,
-    interner: &Interners,
-    op: &Op,
-    id: Spur,
-    is_c_str: bool,
-) {
+pub fn push_str(analyzer: &mut Analyzer, interner: &Interners, op: &Op, id: Spur, is_c_str: bool) {
     let op_data = analyzer.get_op_io(op.id);
 
     if is_c_str {

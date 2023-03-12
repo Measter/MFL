@@ -16,6 +16,7 @@ use crate::{
         ItemId, ItemKind, ItemSignatureResolved, Program,
     },
     source_file::SourceStorage,
+    type_store::TypeStore,
 };
 
 use super::{
@@ -23,7 +24,7 @@ use super::{
     ensure_stack_depth,
 };
 
-pub(super) fn epilogue_return(
+pub fn epilogue_return(
     program: &Program,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -93,7 +94,7 @@ pub(super) fn epilogue_return(
     analyzer.set_op_io(op, inputs, &[]);
 }
 
-pub(super) fn prologue(
+pub fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op: &Op,
@@ -109,7 +110,7 @@ pub(super) fn prologue(
     analyzer.set_op_io(op, &[], &outputs);
 }
 
-pub(super) fn resolved_ident(
+pub fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
@@ -155,7 +156,7 @@ pub(super) fn resolved_ident(
     }
 }
 
-pub(super) fn syscall(
+pub fn syscall(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -192,29 +193,31 @@ pub(super) fn syscall(
     stack.push(new_id);
 }
 
-pub(super) fn analyze_while(
+pub fn analyze_while(
     program: &Program,
     item_id: ItemId,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
 ) {
     let initial_stack = stack.clone();
 
     // Evaluate the condition.
-    super::analyze_block(
+    super::super::analyze_block(
         program,
         item_id,
         &while_op.condition,
-        analyzer,
         stack,
         had_error,
+        analyzer,
         interner,
         source_store,
+        type_store,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
@@ -249,6 +252,7 @@ pub(super) fn analyze_while(
             ?pre_value,
             "defining merge for WHILE-condition"
         );
+
         condition_merges.push(WhileMerge {
             pre_value,
             condition_value,
@@ -260,15 +264,16 @@ pub(super) fn analyze_while(
     stack.extend_from_slice(&initial_stack);
 
     // Now we do the same thing as above, but with the body.
-    super::analyze_block(
+    super::super::analyze_block(
         program,
         item_id,
         &while_op.body_block,
-        analyzer,
         stack,
         had_error,
+        analyzer,
         interner,
         source_store,
+        type_store,
     );
 
     // Again, the body cannot change the depth of the stack.
@@ -320,29 +325,31 @@ pub(super) fn analyze_while(
     analyzer.consume_value(condition_value, op.id);
 }
 
-pub(super) fn analyze_if(
+pub fn analyze_if(
     program: &Program,
     item_id: ItemId,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     had_error: &mut bool,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
     op: &Op,
     if_op: &If,
 ) {
     let mut condition_values = Vec::new();
 
     // Evaluate condition.
-    super::analyze_block(
+    super::super::analyze_block(
         program,
         item_id,
         &if_op.condition,
-        analyzer,
         stack,
         had_error,
+        analyzer,
         interner,
         source_store,
+        type_store,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
@@ -364,15 +371,16 @@ pub(super) fn analyze_if(
     let initial_stack = stack.clone();
 
     // Now we can do the then-block.
-    super::analyze_block(
+    super::super::analyze_block(
         program,
         item_id,
         &if_op.then_block,
-        analyzer,
         stack,
         had_error,
+        analyzer,
         interner,
         source_store,
+        type_store,
     );
 
     // We always have an else block, so save our current stack state for comparison.
@@ -384,15 +392,16 @@ pub(super) fn analyze_if(
     stack.extend_from_slice(&initial_stack);
 
     // Now analyze the else block.
-    super::analyze_block(
+    super::super::analyze_block(
         program,
         item_id,
         &if_op.else_block,
-        analyzer,
         stack,
         had_error,
+        analyzer,
         interner,
         source_store,
+        type_store,
     );
 
     if stack.len() != then_block_stack.len() {

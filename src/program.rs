@@ -941,42 +941,17 @@ impl Program {
             let _span =
                 trace_span!("Analyzing item", name = interner.get_symbol_name(self, id)).entered();
             let mut analyzer = Analyzer::default();
-            let mut local_error = false;
-            local_error |= static_analysis::data_flow_analysis(
+            had_error |= static_analysis::analyze_item(
                 self,
                 id,
                 &mut analyzer,
                 interner,
                 source_store,
+                type_store,
             )
             .is_err();
 
-            if !local_error {
-                local_error |= static_analysis::type_check(
-                    self,
-                    id,
-                    &mut analyzer,
-                    interner,
-                    source_store,
-                    type_store,
-                )
-                .is_err();
-            }
-
-            if !local_error {
-                local_error |= static_analysis::const_propagation(
-                    self,
-                    id,
-                    &mut analyzer,
-                    interner,
-                    source_store,
-                    type_store,
-                )
-                .is_err();
-            }
-
             self.analyzers.insert(id, analyzer);
-            had_error |= local_error;
         }
 
         had_error

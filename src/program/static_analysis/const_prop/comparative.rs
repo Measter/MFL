@@ -9,7 +9,7 @@ use crate::{
     type_store::{TypeKind, TypeStore},
 };
 
-pub(super) fn compare(
+pub fn compare(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     type_store: &TypeStore,
@@ -99,7 +99,7 @@ pub(super) fn compare(
     analyzer.set_value_const(output_id, ConstVal::Bool(new_const_val));
 }
 
-pub(super) fn equal(
+pub fn equal(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     type_store: &TypeStore,
@@ -108,7 +108,7 @@ pub(super) fn equal(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let input_type_ids = analyzer.value_types(input_ids).unwrap();
+    let Some(input_type_ids) = analyzer.value_types(input_ids) else { return };
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
 
     let new_const_val = match input_const_vals {

@@ -14,12 +14,14 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     n_ops::HashMapNOps,
-    opcode::{IntKind, Op, OpId},
+    opcode::{IntKind, Op, OpCode, OpId},
     option::OptionExt,
     program::{ItemId, Program},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{IntWidth, Signedness, TypeId, TypeStore},
+    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
+
+use self::data_flow::{eat_one_make_one, eat_two_make_one, make_one};
 
 mod const_prop;
 mod data_flow;
@@ -129,15 +131,17 @@ impl Display for ValueId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Value {
     creator_token: Token,
     creator_id: OpId,
     consumer: SmallVec<[OpId; 4]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OpData {
+    #[allow(unused)] // We need this for a debug print in a panic.
+    creator_token: Token,
     inputs: SmallVec<[ValueId; 8]>,
     outputs: SmallVec<[ValueId; 8]>,
 }
@@ -171,7 +175,7 @@ pub struct WhileMerges {
     pub body: SmallVec<[WhileMerge; 4]>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Analyzer {
     value_lifetime: HashMap<ValueId, Value>,
     value_types: HashMap<ValueId, TypeId>,
@@ -260,19 +264,17 @@ impl Analyzer {
         self.op_while_merges.get(&op_id)
     }
 
+    #[track_caller]
     fn set_op_io(&mut self, op: &Op, inputs: &[ValueId], outputs: &[ValueId]) {
-        let prev = self.op_io_data.insert(
-            op.id,
-            OpData {
-                inputs: inputs.into(),
-                outputs: outputs.into(),
-            },
-        );
-
-        assert!(
-            prev.is_none(),
-            "Set operands twice - cur_token: {op:#?}, prev_token: {prev:#?}"
-        );
+        let new_data = OpData {
+            creator_token: op.token,
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        };
+        if let Some(prev) = self.op_io_data.get(&op.id) {
+            panic!("Set operands twice - cur_token: {op:#?}, new_data: {new_data:#?}, prev_data: {prev:#?}");
+        }
+        self.op_io_data.insert(op.id, new_data);
     }
 
     pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
@@ -488,32 +490,628 @@ fn generate_stack_length_mismatch_diag(
     diagnostics::emit_error(sample_location, message, labels, None, source_store);
 }
 
-pub fn data_flow_analysis(
+fn analyze_block(
     program: &Program,
     item_id: ItemId,
+    block: &[Op],
+    stack: &mut Vec<ValueId>,
+    had_error: &mut bool,
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
-) -> Result<(), ()> {
-    let mut stack = Vec::new();
-    let mut had_error = false;
+    type_store: &mut TypeStore,
+) {
+    for op in block {
+        match &op.code {
+            OpCode::Add => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::arithmetic::add(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::arithmetic::add(analyzer, type_store, op);
+                }
 
-    data_flow::analyze_block(
-        program,
-        item_id,
-        program.get_item_body(item_id),
-        analyzer,
-        &mut stack,
-        &mut had_error,
-        interner,
-        source_store,
-    );
+                *had_error |= local_had_error;
+            }
+            OpCode::Div
+            | OpCode::Multiply
+            | OpCode::Rem
+            | OpCode::ShiftLeft
+            | OpCode::ShiftRight => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::arithmetic::multiply_div_rem_shift(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::arithmetic::multiply_div_rem_shift(
+                        analyzer,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
 
-    // dbg!(&analyzer);
-    had_error.not().then_some(()).ok_or(())
+                *had_error |= local_had_error;
+            }
+            OpCode::Subtract => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::arithmetic::subtract(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::arithmetic::subtract(
+                        analyzer,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::BitAnd | OpCode::BitOr => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::arithmetic::bitand_bitor(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::arithmetic::bitand_bitor(analyzer, type_store, op);
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::BitNot => {
+                let mut local_had_error = false;
+                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::arithmetic::bitnot(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::arithmetic::bitnot(analyzer, type_store, op);
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::Equal | OpCode::NotEq => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::comparative::equal(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::comparative::equal(
+                        analyzer,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
+                let mut local_had_error = false;
+                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::comparative::compare(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::comparative::compare(
+                        analyzer,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::Drop { count, count_token } => {
+                data_flow::stack_ops::drop(
+                    analyzer,
+                    stack,
+                    source_store,
+                    had_error,
+                    op,
+                    *count,
+                    *count_token,
+                );
+            }
+            OpCode::Dup { count, count_token } => {
+                let mut local_had_error = false;
+                data_flow::stack_ops::dup(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *count,
+                    *count_token,
+                );
+                if !local_had_error {
+                    type_check2::stack_ops::dup(analyzer, op);
+                    const_prop::stack_ops::dup(analyzer, op);
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Over { depth, .. } => {
+                let mut local_had_error = false;
+                data_flow::stack_ops::over(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *depth,
+                );
+                if !local_had_error {
+                    type_check2::stack_ops::over(analyzer, op);
+                    const_prop::stack_ops::over(analyzer, op);
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Pack { count } => {
+                let mut local_had_error = false;
+                data_flow::memory::pack(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *count,
+                );
+                if !local_had_error {
+                    type_check2::memory::pack(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                        *count,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Rot {
+                item_count,
+                direction,
+                shift_count,
+                item_count_token,
+                shift_count_token,
+            } => {
+                data_flow::stack_ops::rot(
+                    analyzer,
+                    stack,
+                    source_store,
+                    had_error,
+                    op,
+                    *item_count,
+                    *direction,
+                    *shift_count,
+                    *item_count_token,
+                    *shift_count_token,
+                );
+            }
+            OpCode::Swap { count, count_token } => {
+                data_flow::stack_ops::swap(
+                    analyzer,
+                    stack,
+                    source_store,
+                    had_error,
+                    op,
+                    *count,
+                    *count_token,
+                );
+            }
+            OpCode::Unpack { count } => {
+                let mut local_had_error = false;
+                data_flow::memory::unpack(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *count,
+                );
+                if !local_had_error {
+                    type_check2::memory::unpack(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                        *count,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::ArgC => {
+                make_one(analyzer, stack, op);
+                type_check2::stack_ops::push_int(
+                    analyzer,
+                    type_store,
+                    op,
+                    IntWidth::I64,
+                    Signedness::Unsigned,
+                );
+            }
+            OpCode::ArgV => {
+                make_one(analyzer, stack, op);
+                type_check2::stack_ops::push_str(analyzer, type_store, op, true);
+            }
+            OpCode::PushBool(v) => {
+                make_one(analyzer, stack, op);
+                type_check2::stack_ops::push_bool(analyzer, type_store, op);
+                const_prop::stack_ops::push_bool(analyzer, op, *v);
+            }
+            OpCode::PushInt { width, value } => {
+                make_one(analyzer, stack, op);
+                type_check2::stack_ops::push_int(
+                    analyzer,
+                    type_store,
+                    op,
+                    *width,
+                    value.to_signedness(),
+                );
+                const_prop::stack_ops::push_int(analyzer, op, *value);
+            }
+            OpCode::PushStr { id, is_c_str } => {
+                data_flow::stack_ops::push_str(analyzer, stack, op, *is_c_str);
+                type_check2::stack_ops::push_str(analyzer, type_store, op, *is_c_str);
+                const_prop::stack_ops::push_str(analyzer, interner, op, *id, *is_c_str);
+            }
+
+            OpCode::Load => {
+                let mut local_had_error = false;
+                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::memory::load(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::memory::load(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Memory { .. } => todo!(),
+            OpCode::Store => {
+                let mut local_had_error = false;
+                data_flow::memory::store(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::memory::store(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::CallFunction { .. } => todo!(),
+            OpCode::Epilogue | OpCode::Return => {
+                let mut local_had_error = false;
+                data_flow::control::epilogue_return(
+                    program,
+                    analyzer,
+                    stack,
+                    source_store,
+                    interner,
+                    &mut local_had_error,
+                    op,
+                    item_id,
+                );
+                if !local_had_error {
+                    type_check2::control::epilogue_return(
+                        program,
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                        item_id,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::control::epilogue_return(
+                        program,
+                        analyzer,
+                        source_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Prologue => {
+                let item_sig = program.get_item_signature_resolved(item_id);
+                data_flow::control::prologue(analyzer, stack, op, item_sig);
+                type_check2::control::prologue(analyzer, op, item_sig);
+            }
+            OpCode::SysCall {
+                arg_count,
+                arg_count_token,
+            } => {
+                let mut local_had_error = false;
+                data_flow::control::syscall(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *arg_count,
+                    *arg_count_token,
+                );
+                if !local_had_error {
+                    type_check2::control::syscall(analyzer, type_store, op);
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::If(if_op) => {
+                let mut local_had_error = false;
+                data_flow::control::analyze_if(
+                    program,
+                    item_id,
+                    analyzer,
+                    stack,
+                    &mut local_had_error,
+                    interner,
+                    source_store,
+                    type_store,
+                    op,
+                    if_op,
+                );
+                if !local_had_error {
+                    type_check2::control::analyze_if(
+                        &mut local_had_error,
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        op,
+                        if_op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::While(while_op) => {
+                let mut local_had_error = false;
+                // This feels a bit hacky, but we need to inhibit the const-vals of previous values before
+                // analyzing the while, but in order to find out which values to inhibit we need to analyze
+                // the while...
+                let mut initial_analyzer = analyzer.clone();
+
+                data_flow::control::analyze_while(
+                    program,
+                    item_id,
+                    analyzer,
+                    stack,
+                    &mut local_had_error,
+                    interner,
+                    source_store,
+                    type_store,
+                    op,
+                    while_op,
+                );
+
+                let merges = analyzer.get_while_merges(op.id).unwrap();
+                for merge in merges.condition.iter().chain(&merges.body) {
+                    initial_analyzer.clear_value_const(merge.pre_value);
+                }
+
+                *analyzer = initial_analyzer;
+                // Now we can run it again with the values properly inhibited.
+                data_flow::control::analyze_while(
+                    program,
+                    item_id,
+                    analyzer,
+                    stack,
+                    &mut local_had_error,
+                    interner,
+                    source_store,
+                    type_store,
+                    op,
+                    while_op,
+                );
+
+                if !local_had_error {
+                    type_check2::control::analyze_while(
+                        &mut local_had_error,
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        op,
+                        while_op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::ResolvedCast { id } => {
+                let mut local_had_error = false;
+                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                let type_info = type_store.get_type_info(*id);
+                if !local_had_error {
+                    match type_info.kind {
+                        TypeKind::Integer { width, signed } => type_check2::stack_ops::cast_to_int(
+                            analyzer,
+                            source_store,
+                            interner,
+                            type_store,
+                            &mut local_had_error,
+                            op,
+                            width,
+                            signed,
+                        ),
+                        TypeKind::Pointer(kind) => type_check2::stack_ops::cast_to_ptr(
+                            analyzer,
+                            source_store,
+                            interner,
+                            type_store,
+                            &mut local_had_error,
+                            op,
+                            kind,
+                        ),
+                        TypeKind::Bool | TypeKind::Array { .. } => {
+                            diagnostics::emit_error(
+                                op.token.location,
+                                format!(
+                                    "cannot cast to {}",
+                                    interner.resolve_lexeme(type_info.name)
+                                ),
+                                [Label::new(op.token.location).with_color(Color::Red)],
+                                None,
+                                source_store,
+                            );
+                            local_had_error = true;
+                        }
+                    }
+                }
+
+                if !local_had_error {
+                    match type_info.kind {
+                        TypeKind::Integer { width, signed } => {
+                            const_prop::stack_ops::cast_to_int(analyzer, op, width, signed)
+                        }
+                        TypeKind::Pointer(kind) => {
+                            const_prop::stack_ops::cast_to_ptr(analyzer, op, kind)
+                        }
+                        TypeKind::Bool | TypeKind::Array { .. } => {}
+                    }
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::ResolvedIdent { item_id } => {
+                let mut local_had_error = false;
+                data_flow::control::resolved_ident(
+                    program,
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                    *item_id,
+                );
+                if !local_had_error {
+                    type_check2::control::resolved_ident(
+                        program,
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                        *item_id,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::control::resolved_ident(program, analyzer, op, *item_id);
+                }
+
+                *had_error |= local_had_error;
+            }
+
+            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent { .. } => {
+                panic!("ICE: Encountered {:?}", op.code);
+            }
+        }
+    }
 }
 
-pub fn type_check(
+pub fn analyze_item(
     program: &Program,
     item_id: ItemId,
     analyzer: &mut Analyzer,
@@ -521,44 +1119,20 @@ pub fn type_check(
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
 ) -> Result<(), ()> {
+    let mut stack = Vec::new();
     let mut had_error = false;
 
-    type_check2::analyze_block(
+    analyze_block(
         program,
         item_id,
         program.get_item_body(item_id),
-        analyzer,
+        &mut stack,
         &mut had_error,
+        analyzer,
         interner,
         source_store,
         type_store,
     );
-
-    had_error.not().then_some(()).ok_or(())
-}
-
-pub fn const_propagation(
-    program: &Program,
-    item_id: ItemId,
-    analyzer: &mut Analyzer,
-    interner: &Interners,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
-) -> Result<(), ()> {
-    let mut had_error = false;
-
-    const_prop::analyze_block(
-        program,
-        item_id,
-        program.get_item_body(item_id),
-        analyzer,
-        &mut had_error,
-        interner,
-        source_store,
-        type_store,
-    );
-
-    // dbg!(&analyzer);
 
     had_error.not().then_some(()).ok_or(())
 }

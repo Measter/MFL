@@ -63,7 +63,7 @@ fn check_memory_bounds(
     true
 }
 
-pub(super) fn load(
+pub fn load(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,

@@ -16,7 +16,7 @@ use crate::{
     type_store::{BuiltinTypes, TypeKind, TypeStore},
 };
 
-pub(super) fn epilogue_return(
+pub fn epilogue_return(
     program: &Program,
     analyzer: &mut Analyzer,
     interner: &Interners,
@@ -60,7 +60,7 @@ pub(super) fn epilogue_return(
     }
 }
 
-pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatureResolved) {
+pub fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatureResolved) {
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs.clone();
 
@@ -69,7 +69,7 @@ pub(super) fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatur
     }
 }
 
-pub(super) fn resolved_ident(
+pub fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
     interner: &mut Interners,
@@ -136,7 +136,7 @@ pub(super) fn resolved_ident(
     }
 }
 
-pub(super) fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
 
     // All syscall inputs are untyped.
@@ -148,11 +148,9 @@ pub(super) fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) 
     );
 }
 
-pub(super) fn analyze_while(
-    program: &Program,
-    item_id: ItemId,
-    analyzer: &mut Analyzer,
+pub fn analyze_while(
     had_error: &mut bool,
+    analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
@@ -163,29 +161,8 @@ pub(super) fn analyze_while(
         panic!("ICE: While block should have merge info");
     };
 
-    // We don't need to worry about the order of evaluation here as they don't effect eachother.
-    // Evaluate the condition.
-    super::analyze_block(
-        program,
-        item_id,
-        &while_op.condition,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-        type_store,
-    );
-    // Evaluate the body.
-    super::analyze_block(
-        program,
-        item_id,
-        &while_op.body_block,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-        type_store,
-    );
+    // The data-flow analysis has already analyzed the sub-blocks. We only need to concern
+    // ourselves with our merges.
 
     // We expect a boolean to be the result of evaluating the condition.
     let op_data = analyzer.get_op_io(op.id);
@@ -252,49 +229,16 @@ pub(super) fn analyze_while(
     }
 }
 
-pub(super) fn analyze_if(
-    program: &Program,
-    item_id: ItemId,
-    analyzer: &mut Analyzer,
+pub fn analyze_if(
     had_error: &mut bool,
+    analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     op: &Op,
     if_op: &If,
 ) {
-    // Evaluate all the blocks.
-    // Thankfully the order is unimportant here.
-    super::analyze_block(
-        program,
-        item_id,
-        &if_op.condition,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-        type_store,
-    );
-    super::analyze_block(
-        program,
-        item_id,
-        &if_op.then_block,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-        type_store,
-    );
-    super::analyze_block(
-        program,
-        item_id,
-        &if_op.else_block,
-        analyzer,
-        had_error,
-        interner,
-        source_store,
-        type_store,
-    );
+    // The data-flow analysis has already done the full check on each block, so we don't have to do it here.
 
     // All the conditions are stored in the op inputs.
     let op_data = analyzer.get_op_io(op.id);

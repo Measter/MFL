@@ -9,7 +9,7 @@ use crate::{
     type_store::{TypeKind, TypeStore},
 };
 
-pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
@@ -64,7 +64,7 @@ pub(super) fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn subtract(
+pub fn subtract(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     type_store: &TypeStore,
@@ -193,7 +193,7 @@ pub(super) fn subtract(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else { return };
@@ -216,7 +216,7 @@ pub(super) fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
@@ -251,10 +251,11 @@ pub(super) fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: 
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub(super) fn multiply_div_rem_shift(
+pub fn multiply_div_rem_shift(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     type_store: &TypeStore,
+    had_error: &mut bool,
     op: &Op,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -329,6 +330,7 @@ pub(super) fn multiply_div_rem_shift(
                 None,
                 source_store,
             );
+            *had_error = true;
             return;
         }
     }

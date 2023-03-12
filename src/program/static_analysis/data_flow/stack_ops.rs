@@ -13,7 +13,7 @@ use super::{
     ensure_stack_depth,
 };
 
-pub(super) fn drop(
+pub fn drop(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -49,7 +49,7 @@ pub(super) fn drop(
     analyzer.set_op_io(op, &inputs, &[]);
 }
 
-pub(super) fn dup(
+pub fn dup(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -85,7 +85,7 @@ pub(super) fn dup(
     analyzer.set_op_io(op, &stack[input_range], &stack[output_range_start..]);
 }
 
-pub(super) fn over(
+pub fn over(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -116,7 +116,7 @@ pub(super) fn over(
     analyzer.set_op_io(op, &[src_id], &[new_id]);
 }
 
-pub(super) fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c_str: bool) {
+pub fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c_str: bool) {
     let ptr_id = analyzer.new_value(op);
 
     if is_c_str {
@@ -130,7 +130,7 @@ pub(super) fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &O
     };
 }
 
-pub(super) fn rot(
+pub fn rot(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -194,7 +194,7 @@ pub(super) fn rot(
     }
 }
 
-pub(super) fn swap(
+pub fn swap(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,

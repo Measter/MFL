@@ -11,7 +11,7 @@ use crate::{
     type_store::{TypeKind, TypeStore},
 };
 
-pub(super) fn pack(
+pub fn pack(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
@@ -78,7 +78,7 @@ pub(super) fn pack(
     analyzer.set_value_type(output_id, array_type.id);
 }
 
-pub(super) fn unpack(
+pub fn unpack(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
@@ -149,7 +149,7 @@ pub(super) fn unpack(
     }
 }
 
-pub(super) fn load(
+pub fn load(
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -189,7 +189,7 @@ pub(super) fn load(
     analyzer.set_value_type(op_data.outputs[0], kind);
 }
 
-pub(super) fn store(
+pub fn store(
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,

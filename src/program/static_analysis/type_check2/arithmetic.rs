@@ -10,7 +10,7 @@ use crate::{
     type_store::{BuiltinTypes, Signedness, TypeKind, TypeStore},
 };
 
-pub(super) fn add(
+pub fn add(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -83,7 +83,7 @@ pub(super) fn add(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub(super) fn subtract(
+pub fn subtract(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -143,7 +143,7 @@ pub(super) fn subtract(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub(super) fn bitnot(
+pub fn bitnot(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -181,7 +181,7 @@ pub(super) fn bitnot(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub(super) fn bitand_bitor(
+pub fn bitand_bitor(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
@@ -234,7 +234,7 @@ pub(super) fn bitand_bitor(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub(super) fn multiply_div_rem_shift(
+pub fn multiply_div_rem_shift(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,
