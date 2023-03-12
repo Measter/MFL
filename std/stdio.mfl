@@ -16,10 +16,19 @@ proc puts [u64 ptr(u8)] to [] is
     drop
 end
 
+proc putsln[u64 ptr(u8)] to [] is
+    puts "\n" puts
+end
+
 proc eputs [u64 ptr(u8)] to [] is
     swap 
     WRITE STDERR rot(4>2)
     syscall(4) drop
+end
+
+
+proc eputsln[u64 ptr(u8)] to [] is
+    eputs "\n" eputs
 end
 
 proc putud [u64] to [] is
@@ -62,6 +71,9 @@ proc putud [u64] to [] is
     swap puts
 end
 
+proc putudln [u64] to [] is
+    putud "\n" puts
+end
 
 proc putd [s64] to [] is
     // TODO: Properly handle min value.
@@ -75,4 +87,8 @@ proc putd [s64] to [] is
     end
 
     putud
+end
+
+proc putdln [s64] to [] is
+    putd "\n" puts
 end
