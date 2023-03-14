@@ -138,6 +138,7 @@ fn simulate_execute_program_block(
             | OpCode::Rem
             | OpCode::BitOr
             | OpCode::BitAnd
+            | OpCode::BitXor
             | OpCode::ShiftLeft
             | OpCode::ShiftRight => {
                 let [a, b] = value_stack.popn().unwrap();

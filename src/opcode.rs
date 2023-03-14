@@ -98,6 +98,7 @@ pub enum OpCode {
     BitAnd,
     BitNot,
     BitOr,
+    BitXor,
     CallFunction {
         item_id: ItemId,
     },
@@ -190,6 +191,7 @@ impl OpCode {
             Add => |a, b| a + b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
+            BitXor => |a, b| a ^ b,
             Div => |a, b| a / b,
             Equal => |a, b| (a == b) as u64,
             Greater => |a, b| (a > b) as u64,
@@ -215,6 +217,7 @@ impl OpCode {
             Add => |a, b| a + b,
             BitOr => |a, b| a | b,
             BitAnd => |a, b| a & b,
+            BitXor => |a, b| a ^ b,
             Div => |a, b| a / b,
             Equal => |a, b| (a == b) as i64,
             Greater => |a, b| (a > b) as i64,
@@ -238,6 +241,9 @@ impl OpCode {
         use OpCode::*;
         #[allow(clippy::bool_comparison)]
         match self {
+            BitOr => |a, b| a | b,
+            BitAnd => |a, b| a & b,
+            BitXor => |a, b| a ^ b,
             Equal => |a, b| a == b,
             NotEq => |a, b| a != b,
             Greater => |a, b| a > b,

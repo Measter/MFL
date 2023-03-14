@@ -181,7 +181,7 @@ pub fn bitnot(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub fn bitand_bitor(
+pub fn bitand_bitor_bitxor(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
     interner: &Interners,

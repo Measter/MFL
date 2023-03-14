@@ -216,7 +216,7 @@ pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub fn bitand_bitor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };

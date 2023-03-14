@@ -888,6 +888,7 @@ pub fn parse_item_body(
             TokenKind::BitAnd => OpCode::BitAnd,
             TokenKind::BitNot => OpCode::BitNot,
             TokenKind::BitOr => OpCode::BitOr,
+            TokenKind::BitXor => OpCode::BitXor,
             TokenKind::ShiftLeft => OpCode::ShiftLeft,
             TokenKind::ShiftRight => OpCode::ShiftRight,
 

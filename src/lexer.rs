@@ -24,6 +24,7 @@ pub enum TokenKind {
     BitAnd,
     BitNot,
     BitOr,
+    BitXor,
     Boolean(bool),
     Cast,
     Char(char),
@@ -85,6 +86,7 @@ impl TokenKind {
             | TokenKind::BitAnd
             | TokenKind::BitNot
             | TokenKind::BitOr
+            | TokenKind::BitXor
             | TokenKind::Boolean(_)
             | TokenKind::Cast
             | TokenKind::Char(_)
@@ -509,6 +511,7 @@ impl<'source> Scanner<'source> {
                     "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
                     "while" => TokenKind::While,
+                    "xor" => TokenKind::BitXor,
                     _ => TokenKind::Ident,
                 };
 

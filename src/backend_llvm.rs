@@ -56,6 +56,7 @@ impl OpCode {
             OpCode::Add => Builder::build_int_add,
             OpCode::BitAnd => Builder::build_and,
             OpCode::BitOr => Builder::build_or,
+            OpCode::BitXor => Builder::build_xor,
             OpCode::Multiply => Builder::build_int_mul,
             OpCode::Subtract => Builder::build_int_sub,
             _ => panic!("ICE: Called get_arid_fn on non-arith opcode"),
@@ -469,8 +470,8 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Add | OpCode::Subtract => {
                     self.build_add_sub(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr => {
-                    self.build_multiply_and_or(interner, analyzer, value_store, type_store, op)
+                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
+                    self.build_multiply_and_or_xor(interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::Div | OpCode::Rem => {
                     self.build_div_rem(interner, analyzer, value_store, type_store, op)

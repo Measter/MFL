@@ -577,11 +577,11 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::BitAnd | OpCode::BitOr => {
+            OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
                 let mut local_had_error = false;
                 eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
                 if !local_had_error {
-                    type_check2::arithmetic::bitand_bitor(
+                    type_check2::arithmetic::bitand_bitor_bitxor(
                         analyzer,
                         source_store,
                         interner,
@@ -591,7 +591,7 @@ fn analyze_block(
                     );
                 }
                 if !local_had_error {
-                    const_prop::arithmetic::bitand_bitor(analyzer, type_store, op);
+                    const_prop::arithmetic::bitand_bitor_bitxor(analyzer, type_store, op);
                 }
 
                 *had_error |= local_had_error;

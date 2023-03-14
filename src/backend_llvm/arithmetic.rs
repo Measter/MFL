@@ -110,7 +110,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store.store_value(self, op_io.outputs()[0], res);
     }
 
-    pub(super) fn build_multiply_and_or(
+    pub(super) fn build_multiply_and_or_xor(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,
