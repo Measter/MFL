@@ -555,7 +555,7 @@ pub fn parse_item_body(
                 }
             }
 
-            TokenKind::Pack | TokenKind::Unpack => {
+            TokenKind::Pack => {
                 let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
                     &mut token_iter,
                     token,
@@ -575,12 +575,9 @@ pub fn parse_item_body(
                 let count_token = count_token[0];
                 let count = parse_integer_lexeme(count_token, interner, source_store)?;
 
-                match token.kind {
-                    TokenKind::Pack => OpCode::Pack{ count },
-                    TokenKind::Unpack => OpCode::Unpack { count },
-                    _ => unreachable!()
-                }
+                OpCode::Pack{ count }
             }
+            TokenKind::Unpack => OpCode::Unpack,
 
             TokenKind::Rot => {
                 let Ok((_, tokens, close_paren)) = parse_delimited_token_list(&mut token_iter,

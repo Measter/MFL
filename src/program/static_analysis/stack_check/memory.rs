@@ -1,9 +1,12 @@
 use intcast::IntCast;
 
 use crate::{
+    diagnostics,
+    interners::Interners,
     n_ops::{SliceNOps, VecNOps},
     opcode::Op,
     source_file::SourceStorage,
+    type_store::{TypeKind, TypeStore},
 };
 
 use super::{
@@ -45,17 +48,50 @@ pub fn pack(
 pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
+    interner: &mut Interners,
     source_store: &SourceStorage,
+    type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
     let input_id = stack.pop().unwrap();
 
+    // To find out how many values we create, we need to look up the type of our input.
+    let Some([input_type_id]) = analyzer.value_types([input_id]) else {
+        analyzer.set_op_io(op, &[input_id], &[]);
+        return;
+    };
+
+    let input_type_info = type_store.get_type_info(input_type_id);
+
+    let len = match input_type_info.kind {
+        TypeKind::Array { length, .. } => length,
+        _ => {
+            *had_error = true;
+            let mut labels = Vec::new();
+            let value_type_name = interner.resolve_lexeme(input_type_info.name);
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_id,
+                0,
+                value_type_name,
+            );
+            diagnostics::emit_error(
+                op.token.location,
+                format!("unable to unpack a `{value_type_name}`",),
+                labels,
+                "value must be an array".to_owned(),
+                source_store,
+            );
+            0
+        }
+    };
+
     let mut outputs = Vec::new();
 
-    for _ in 0..count {
+    for _ in 0..len {
         let id = analyzer.new_value(op);
         stack.push(id);
         outputs.push(id);

@@ -779,15 +779,16 @@ fn analyze_block(
                     *count_token,
                 );
             }
-            OpCode::Unpack { count } => {
+            OpCode::Unpack => {
                 let mut local_had_error = false;
                 stack_check::memory::unpack(
                     analyzer,
                     stack,
+                    interner,
                     source_store,
+                    type_store,
                     &mut local_had_error,
                     op,
-                    *count,
                 );
                 if !local_had_error {
                     type_check2::memory::unpack(
@@ -797,7 +798,6 @@ fn analyze_block(
                         type_store,
                         &mut local_had_error,
                         op,
-                        *count,
                     );
                 }
 

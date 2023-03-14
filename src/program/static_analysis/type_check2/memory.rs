@@ -85,7 +85,6 @@ pub fn unpack(
     type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs().to_owned();
@@ -93,8 +92,8 @@ pub fn unpack(
     let Some([array_type_id]) = analyzer.value_types([array_id]) else { return };
     let array_info = type_store.get_type_info(array_type_id);
 
-    let (kind, length) = match array_info.kind {
-        TypeKind::Array { type_id, length } => (type_id, length),
+    let kind = match array_info.kind {
+        TypeKind::Array { type_id, .. } => type_id,
         _ => {
             let input_type_name = interner.resolve_lexeme(array_info.name);
 
@@ -120,29 +119,6 @@ pub fn unpack(
             return;
         }
     };
-
-    if length != count.to_usize() {
-        let expected_type_info = type_store.get_array(interner, kind, count.to_usize());
-        let input_type_name = interner.resolve_lexeme(array_info.name);
-        let expected_type_name = interner.resolve_lexeme(expected_type_info.name);
-
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 0, input_type_name);
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            op.token.location,
-            format!(
-                "expected `{}`, found `{}`",
-                expected_type_name, input_type_name
-            ),
-            labels,
-            None,
-            source_store,
-        );
-
-        *had_error = true;
-    }
 
     for output_id in outputs {
         analyzer.set_value_type(output_id, kind);

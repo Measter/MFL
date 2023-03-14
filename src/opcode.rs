@@ -172,9 +172,7 @@ pub enum OpCode {
         arg_count: u8,
         arg_count_token: Token,
     },
-    Unpack {
-        count: u8,
-    },
+    Unpack,
     UnresolvedCast {
         unresolved_type: UnresolvedType,
     },
