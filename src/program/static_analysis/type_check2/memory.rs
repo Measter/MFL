@@ -8,7 +8,7 @@ use crate::{
     opcode::Op,
     program::static_analysis::{can_promote_int_unidirectional, Analyzer},
     source_file::SourceStorage,
-    type_store::{TypeKind, TypeStore},
+    type_store::{Signedness, TypeKind, TypeStore},
 };
 
 pub fn pack(
@@ -122,6 +122,246 @@ pub fn unpack(
 
     for output_id in outputs {
         analyzer.set_value_type(output_id, kind);
+    }
+}
+
+pub fn extract_array(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs @ [array_value_id, idx_value_id] = *op_data.inputs().as_arr();
+    let Some(type_ids) = analyzer.value_types(inputs) else { return };
+    let [array_type_info, idx_type_info] = type_ids.map(|id| type_store.get_type_info(id));
+
+    let store_type = match array_type_info.kind {
+        TypeKind::Array { type_id, .. } => type_id,
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = type_store.get_type_info(sub_type);
+            if let TypeKind::Array { type_id, .. } = ptr_type_info.kind {
+                type_id
+            } else {
+                let value_type_name = interner.resolve_lexeme(array_type_info.name);
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    array_value_id,
+                    0,
+                    value_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot extract a `{value_type_name}`"),
+                    labels,
+                    None,
+                    source_store,
+                );
+
+                *had_error = true;
+                return;
+            }
+        }
+
+        TypeKind::Integer { .. } | TypeKind::Bool => {
+            let value_type_name = interner.resolve_lexeme(array_type_info.name);
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                array_value_id,
+                0,
+                value_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                format!("cannot extract a `{value_type_name}`"),
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+            return;
+        }
+    };
+
+    if !matches!(
+        idx_type_info.kind,
+        TypeKind::Integer {
+            signed: Signedness::Unsigned,
+            ..
+        }
+    ) {
+        let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            idx_value_id,
+            1,
+            idx_type_name,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("cannot index an array with `{idx_type_name}`"),
+            labels,
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+        return;
+    }
+
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, store_type);
+}
+
+pub fn insert_array(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs().as_arr();
+    let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else { return };
+    let [data_type_info, array_type_info, idx_type_info] =
+        type_ids.map(|id| type_store.get_type_info(id));
+
+    let store_type_id = match array_type_info.kind {
+        TypeKind::Array { type_id, .. } => type_id,
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = type_store.get_type_info(sub_type);
+            if let TypeKind::Array { type_id, .. } = ptr_type_info.kind {
+                type_id
+            } else {
+                let value_type_name = interner.resolve_lexeme(array_type_info.name);
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    array_value_id,
+                    1,
+                    value_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot extract a `{value_type_name}`"),
+                    labels,
+                    None,
+                    source_store,
+                );
+
+                *had_error = true;
+                return;
+            }
+        }
+
+        TypeKind::Integer { .. } | TypeKind::Bool => {
+            let value_type_name = interner.resolve_lexeme(array_type_info.name);
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                array_value_id,
+                0,
+                value_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                format!("cannot extract a `{value_type_name}`"),
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+            return;
+        }
+    };
+
+    if !matches!(
+        idx_type_info.kind,
+        TypeKind::Integer {
+            signed: Signedness::Unsigned,
+            ..
+        }
+    ) {
+        let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            idx_value_id,
+            2,
+            idx_type_name,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("cannot index an array with `{idx_type_name}`"),
+            labels,
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+    }
+
+    if data_type_id != store_type_id {
+        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            data_value_id,
+            0,
+            data_type_name,
+        );
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            array_value_id,
+            1,
+            array_type_name,
+        );
+
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("cannot store a value of type `{data_type_name}` in an array of type `{array_type_name}`"),
+            labels,
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+    }
+
+    if matches!(array_type_info.kind, TypeKind::Array { .. }) {
+        let output_id = op_data.outputs()[0];
+        analyzer.set_value_type(output_id, array_type_id);
     }
 }
 

@@ -1,3 +1,5 @@
+use inkwell::{types::BasicType, AddressSpace};
+
 use crate::{
     interners::Interners,
     n_ops::SliceNOps,
@@ -77,6 +79,121 @@ impl<'ctx> CodeGen<'ctx> {
                 .unwrap();
 
             value_store.store_value(self, *output_value_id, output_value);
+        }
+    }
+
+    pub(super) fn build_extract_array(
+        &mut self,
+        interner: &mut Interners,
+        analyzer: &Analyzer,
+        value_store: &mut ValueStore<'ctx>,
+        type_store: &TypeStore,
+        op: &Op,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let inputs @ [array_value_id, _] = *op_io.inputs().as_arr();
+        let [array_val, idx_val] =
+            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+
+        let [array_type_id] = analyzer.value_types([array_value_id]).unwrap();
+        let array_type_info = type_store.get_type_info(array_type_id);
+
+        let arr_ptr = match array_type_info.kind {
+            TypeKind::Array { type_id, .. } => {
+                // Ugh, this sucks!
+                let array_type = self.get_type(type_store, array_type_id);
+                let store_type = self.get_type(type_store, type_id);
+                let store_location = self.builder.build_alloca(array_type, "");
+                self.builder.build_store(store_location, array_val);
+                self.builder.build_pointer_cast(
+                    store_location,
+                    store_type.ptr_type(AddressSpace::default()),
+                    "",
+                )
+            }
+            TypeKind::Pointer(ptr_type) => {
+                let ptr_type_info = type_store.get_type_info(ptr_type);
+                let TypeKind::Array { type_id, .. } = ptr_type_info.kind else {unreachable!()};
+
+                let store_type = self.get_type(type_store, type_id);
+                self.builder.build_pointer_cast(
+                    array_val.into_pointer_value(),
+                    store_type.ptr_type(AddressSpace::default()),
+                    "",
+                )
+            }
+            _ => unreachable!(),
+        };
+
+        let offset_ptr = unsafe {
+            self.builder
+                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
+        };
+
+        let output_id = op_io.outputs()[0];
+        let output_name = format!("{output_id}");
+        let loaded_value = self.builder.build_load(offset_ptr, &output_name);
+        value_store.store_value(self, output_id, loaded_value);
+    }
+
+    pub(super) fn build_insert_array(
+        &mut self,
+        interner: &mut Interners,
+        analyzer: &Analyzer,
+        value_store: &mut ValueStore<'ctx>,
+        type_store: &TypeStore,
+        op: &Op,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let inputs @ [data_value_id, array_value_id, _] = *op_io.inputs().as_arr();
+        let [data_val, array_val, idx_val] =
+            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+
+        let [data_type_id, array_type_id] = analyzer
+            .value_types([data_value_id, array_value_id])
+            .unwrap();
+        let array_type_info = type_store.get_type_info(array_type_id);
+
+        let arr_ptr = match array_type_info.kind {
+            TypeKind::Array { .. } => {
+                // Ugh, this sucks!
+                let array_type = self.get_type(type_store, array_type_id);
+                let store_type = self.get_type(type_store, data_type_id);
+                let store_location = self.builder.build_alloca(array_type, "");
+                self.builder.build_store(store_location, array_val);
+                self.builder.build_pointer_cast(
+                    store_location,
+                    store_type.ptr_type(AddressSpace::default()),
+                    "",
+                )
+            }
+            TypeKind::Pointer(_) => {
+                let store_type = self.get_type(type_store, data_type_id);
+                self.builder.build_pointer_cast(
+                    array_val.into_pointer_value(),
+                    store_type.ptr_type(AddressSpace::default()),
+                    "",
+                )
+            }
+            _ => unreachable!(),
+        };
+
+        let offset_ptr = unsafe {
+            self.builder
+                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
+        };
+
+        self.builder.build_store(offset_ptr, data_val);
+
+        if let TypeKind::Array { .. } = array_type_info.kind {
+            let array_type = self.get_type(type_store, array_type_id);
+            let cast_ptr = self.builder.build_pointer_cast(
+                arr_ptr,
+                array_type.ptr_type(AddressSpace::default()),
+                "",
+            );
+            let array_value = self.builder.build_load(cast_ptr, "");
+            value_store.store_value(self, op_io.outputs()[0], array_value);
         }
     }
 

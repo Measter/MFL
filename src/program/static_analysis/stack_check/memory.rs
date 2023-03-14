@@ -45,6 +45,56 @@ pub fn pack(
     analyzer.set_op_io(op, &inputs, &[output]);
 }
 
+pub fn extract_array(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+
+    let [array_id, idx] = stack.popn().unwrap();
+    analyzer.consume_value(array_id, op.id);
+    analyzer.consume_value(idx, op.id);
+
+    let output = analyzer.new_value(op);
+    stack.push(output);
+
+    analyzer.set_op_io(op, &[array_id, idx], &[output]);
+}
+
+pub fn insert_array(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+
+    let inputs = stack.popn::<3>().unwrap();
+    for id in inputs {
+        analyzer.consume_value(id, op.id);
+    }
+
+    // If our array type is an array value, then we want to leave the array on the stack
+    // so the user can continue filling it.
+    if let Some([array_type_id]) = analyzer.value_types([inputs[1]]) {
+        let type_info = type_store.get_type_info(array_type_id);
+        if matches!(type_info.kind, TypeKind::Array { .. }) {
+            let output = analyzer.new_value(op);
+            stack.push(output);
+
+            analyzer.set_op_io(op, &inputs, &[output]);
+            return;
+        }
+    }
+
+    analyzer.set_op_io(op, &inputs, &[]);
+}
+
 pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,

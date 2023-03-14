@@ -578,6 +578,8 @@ pub fn parse_item_body(
                 OpCode::Pack{ count }
             }
             TokenKind::Unpack => OpCode::Unpack,
+            TokenKind::Extract => OpCode::Extract,
+            TokenKind::Insert => OpCode::Insert,
 
             TokenKind::Rot => {
                 let Ok((_, tokens, close_paren)) = parse_delimited_token_list(&mut token_iter,

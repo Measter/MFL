@@ -696,6 +696,51 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
+            OpCode::Extract => {
+                let mut local_had_error = false;
+                stack_check::memory::extract_array(
+                    analyzer,
+                    stack,
+                    source_store,
+                    &mut local_had_error,
+                    op,
+                );
+                if !local_had_error {
+                    type_check2::memory::extract_array(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
+            OpCode::Insert => {
+                let mut local_had_error = false;
+                stack_check::memory::insert_array(
+                    analyzer,
+                    stack,
+                    source_store,
+                    type_store,
+                    &mut local_had_error,
+                    op,
+                );
+                if !local_had_error {
+                    type_check2::memory::insert_array(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
             OpCode::Over { depth, .. } => {
                 let mut local_had_error = false;
                 stack_check::stack_ops::over(

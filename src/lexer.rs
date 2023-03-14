@@ -38,6 +38,7 @@ pub enum TokenKind {
     Else,
     End,
     Equal,
+    Extract,
     GoesTo,
     Greater,
     GreaterEqual,
@@ -45,6 +46,7 @@ pub enum TokenKind {
     Ident,
     If,
     Include,
+    Insert,
     Integer(Spur),
     Is,
     Less,
@@ -100,12 +102,14 @@ impl TokenKind {
             | TokenKind::Else
             | TokenKind::End
             | TokenKind::Equal
+            | TokenKind::Extract
             | TokenKind::GoesTo
             | TokenKind::Greater
             | TokenKind::GreaterEqual
             | TokenKind::Here(_)
             | TokenKind::Ident
             | TokenKind::Include
+            | TokenKind::Insert
             | TokenKind::Integer(_)
             | TokenKind::Less
             | TokenKind::LessEqual
@@ -474,6 +478,7 @@ impl<'source> Scanner<'source> {
                     "elif" => TokenKind::Elif,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
+                    "xtr" => TokenKind::Extract,
                     "false" => TokenKind::Boolean(false),
                     "here" => {
                         // These should never fail; we get the file ID from the source store, and the store
@@ -492,6 +497,7 @@ impl<'source> Scanner<'source> {
                     }
                     "if" => TokenKind::If,
                     "include" => TokenKind::Include,
+                    "ins" => TokenKind::Insert,
                     "is" => TokenKind::Is,
                     "macro" => TokenKind::Macro,
                     "memory" => TokenKind::Memory,

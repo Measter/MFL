@@ -321,6 +321,8 @@ fn simulate_execute_program_block(
             | OpCode::ResolvedCast { .. }
             | OpCode::Pack { .. }
             | OpCode::Unpack { .. }
+            | OpCode::Insert { .. }
+            | OpCode::Extract { .. }
             | OpCode::Load
             | OpCode::Store
             | OpCode::SysCall { .. } => {

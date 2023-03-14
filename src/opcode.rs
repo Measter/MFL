@@ -113,11 +113,13 @@ pub enum OpCode {
     },
     Epilogue,
     Equal,
+    Extract,
     If(Box<If>),
     Less,
     LessEqual,
     Greater,
     GreaterEqual,
+    Insert,
     Load,
     Memory {
         item_id: ItemId,
