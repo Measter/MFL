@@ -142,29 +142,32 @@ pub fn reverse(
 ) {
     let count = count.to_usize();
 
-    if count == 0 {
-        diagnostics::emit_warning(
-            op.token.location,
-            "invalid reverse count",
-            [Label::new(count_token.location)
-                .with_color(Color::Yellow)
-                .with_message("cannot reverse 0 items")],
-            None,
-            source_store,
-        );
+    match count {
+        0 | 1 => {
+            diagnostics::emit_warning(
+                op.token.location,
+                "invalid reverse count",
+                [Label::new(count_token.location)
+                    .with_color(Color::Yellow)
+                    .with_message(format!("cannot reverse {count} items"))],
+                None,
+                source_store,
+            );
+        }
+        2 => {
+            diagnostics::emit_warning(
+                op.token.location,
+                "unclear stack op",
+                [Label::new(count_token.location)
+                    .with_color(Color::Yellow)
+                    .with_message("using `swap` wolud make intent clearer")],
+                None,
+                source_store,
+            );
+        }
+        _ => {}
     }
 
-    if count == 2 {
-        diagnostics::emit_warning(
-            op.token.location,
-            "unclear stack op",
-            [Label::new(count_token.location)
-                .with_color(Color::Yellow)
-                .with_message("using `swap` wolud make intent clearer")],
-            None,
-            source_store,
-        );
-    }
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, count);
 
     stack.lastn_mut(count).unwrap().reverse();
