@@ -130,10 +130,13 @@ impl<'ctx> CodeGen<'ctx> {
                 .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
         };
 
-        let output_id = op_io.outputs()[0];
-        let output_name = format!("{output_id}");
-        let loaded_value = self.builder.build_load(offset_ptr, &output_name);
-        value_store.store_value(self, output_id, loaded_value);
+        let output_array_id = op_io.outputs()[0];
+        value_store.store_value(self, output_array_id, array_val);
+
+        let output_value_id = op_io.outputs()[1];
+        let output_value_name = format!("{output_value_id}");
+        let loaded_value = self.builder.build_load(offset_ptr, &output_value_name);
+        value_store.store_value(self, output_value_id, loaded_value);
     }
 
     pub(super) fn build_insert_array(
@@ -194,6 +197,10 @@ impl<'ctx> CodeGen<'ctx> {
             );
             let array_value = self.builder.build_load(cast_ptr, "");
             value_store.store_value(self, op_io.outputs()[0], array_value);
+        } else {
+            // We know our array input was a pointer. Because it was a pointer, we can just shove
+            // the pointer back in.
+            value_store.store_value(self, op_io.outputs()[0], array_val);
         }
     }
 

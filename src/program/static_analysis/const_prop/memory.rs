@@ -4,6 +4,7 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     interners::Interners,
+    n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
     source_file::{SourceLocation, SourceStorage},
@@ -61,6 +62,100 @@ fn check_memory_bounds(
     }
 
     true
+}
+
+pub fn extract_array(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    let op_io = analyzer.get_op_io(op.id);
+    let [array_id, idx_id] = *op_io.inputs().as_arr();
+
+    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else { return };
+
+    let [array_type_id] = analyzer.value_types([array_id]).unwrap();
+    let array_type_info = type_store.get_type_info(array_type_id);
+
+    let array_length = match array_type_info.kind {
+        TypeKind::Array { length, .. } => length,
+        TypeKind::Pointer(id) => {
+            let info = type_store.get_type_info(id);
+            let TypeKind::Array {  length, .. } = info.kind else { unreachable!() };
+            length
+        }
+        _ => unreachable!(),
+    };
+
+    if idx.to_usize() >= array_length {
+        *had_error = true;
+        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+
+        let idx_value = format!("{idx}");
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 1, array_type_name);
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, idx_id, 2, &idx_value);
+
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            "index out of bounds",
+            labels,
+            None,
+            source_store,
+        );
+    }
+}
+
+pub fn insert_array(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    let op_io = analyzer.get_op_io(op.id);
+    let [_, array_id, idx_id] = *op_io.inputs().as_arr();
+
+    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else { return };
+
+    let [array_type_id] = analyzer.value_types([array_id]).unwrap();
+    let array_type_info = type_store.get_type_info(array_type_id);
+
+    let array_length = match array_type_info.kind {
+        TypeKind::Array { length, .. } => length,
+        TypeKind::Pointer(id) => {
+            let info = type_store.get_type_info(id);
+            let TypeKind::Array {  length, .. } = info.kind else { unreachable!() };
+            length
+        }
+        _ => unreachable!(),
+    };
+
+    if idx.to_usize() >= array_length {
+        *had_error = true;
+        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+
+        let idx_value = format!("{idx}");
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 1, array_type_name);
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, idx_id, 2, &idx_value);
+
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            "index out of bounds",
+            labels,
+            None,
+            source_store,
+        );
+    }
 }
 
 pub fn load(

@@ -559,10 +559,10 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Unpack { .. } => {
                     self.build_unpack(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::Extract => {
+                OpCode::ExtractArray => {
                     self.build_extract_array(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::Insert => {
+                OpCode::InsertArray => {
                     self.build_insert_array(interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::Memory {

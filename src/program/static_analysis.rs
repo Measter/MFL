@@ -696,7 +696,7 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::Extract => {
+            OpCode::ExtractArray => {
                 let mut local_had_error = false;
                 stack_check::memory::extract_array(
                     analyzer,
@@ -715,16 +715,25 @@ fn analyze_block(
                         op,
                     );
                 }
+                if !local_had_error {
+                    const_prop::memory::extract_array(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
 
                 *had_error |= local_had_error;
             }
-            OpCode::Insert => {
+            OpCode::InsertArray => {
                 let mut local_had_error = false;
                 stack_check::memory::insert_array(
                     analyzer,
                     stack,
                     source_store,
-                    type_store,
                     &mut local_had_error,
                     op,
                 );
@@ -737,6 +746,16 @@ fn analyze_block(
                         &mut local_had_error,
                         op,
                     );
+                }
+                if !local_had_error {
+                    const_prop::memory::insert_array(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    )
                 }
 
                 *had_error |= local_had_error;

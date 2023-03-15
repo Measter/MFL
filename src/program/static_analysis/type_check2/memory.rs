@@ -224,8 +224,10 @@ pub fn extract_array(
         return;
     }
 
-    let output_id = op_data.outputs()[0];
-    analyzer.set_value_type(output_id, store_type);
+    let output_array_id = op_data.outputs()[0];
+    let output_value_id = op_data.outputs()[1];
+    analyzer.set_value_type(output_array_id, array_type_info.id);
+    analyzer.set_value_type(output_value_id, store_type);
 }
 
 pub fn insert_array(
@@ -359,10 +361,8 @@ pub fn insert_array(
         *had_error = true;
     }
 
-    if matches!(array_type_info.kind, TypeKind::Array { .. }) {
-        let output_id = op_data.outputs()[0];
-        analyzer.set_value_type(output_id, array_type_id);
-    }
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, array_type_id);
 }
 
 pub fn load(
