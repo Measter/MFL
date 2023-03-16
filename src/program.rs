@@ -16,11 +16,11 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{self, Token},
-    opcode::{If, Op, OpCode, OpId, UnresolvedType, While},
+    opcode::{If, Op, OpCode, OpId, While},
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{BuiltinTypes, TypeId, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, TypeId, TypeKind, TypeStore, UnresolvedType},
 };
 
 mod parser;

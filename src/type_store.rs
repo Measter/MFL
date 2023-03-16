@@ -6,8 +6,10 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    diagnostics, interners::Interners, lexer::Token, opcode::UnresolvedType,
-    source_file::SourceStorage,
+    diagnostics,
+    interners::Interners,
+    lexer::Token,
+    source_file::{SourceLocation, SourceStorage},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -112,6 +114,25 @@ impl From<(Signedness, IntWidth)> for BuiltinTypes {
             (Signedness::Unsigned, IntWidth::I64) => BuiltinTypes::U64,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnresolvedStruct {
+    pub name: Token,
+    pub fields: Vec<UnresolvedField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnresolvedField {
+    pub name: Token,
+    pub kind: UnresolvedType,
+}
+
+#[derive(Debug, Clone)]
+pub enum UnresolvedType {
+    Simple(Token),
+    Array(SourceLocation, Box<UnresolvedType>, usize),
+    Pointer(SourceLocation, Box<UnresolvedType>),
 }
 
 #[derive(Debug, Clone, Copy)]

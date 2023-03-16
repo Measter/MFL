@@ -39,6 +39,7 @@ pub enum TokenKind {
     End,
     Equal,
     Extract,
+    Field,
     GoesTo,
     Greater,
     GreaterEqual,
@@ -73,6 +74,7 @@ pub enum TokenKind {
     Star,
     String { id: Spur, is_c_str: bool },
     Store,
+    Struct,
     Swap,
     SysCall,
     Unpack,
@@ -103,6 +105,7 @@ impl TokenKind {
             | TokenKind::End
             | TokenKind::Equal
             | TokenKind::Extract
+            | TokenKind::Field
             | TokenKind::GoesTo
             | TokenKind::Greater
             | TokenKind::GreaterEqual
@@ -135,6 +138,7 @@ impl TokenKind {
             | TokenKind::Star
             | TokenKind::String { .. }
             | TokenKind::Store
+            | TokenKind::Struct
             | TokenKind::Swap
             | TokenKind::SysCall
             | TokenKind::Unpack => false,
@@ -480,6 +484,7 @@ impl<'source> Scanner<'source> {
                     "end" => TokenKind::End,
                     "xtr" => TokenKind::Extract,
                     "false" => TokenKind::Boolean(false),
+                    "field" => TokenKind::Field,
                     "here" => {
                         // These should never fail; we get the file ID from the source store, and the store
                         // has a full copy of the contents.
@@ -511,6 +516,7 @@ impl<'source> Scanner<'source> {
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
+                    "struct" => TokenKind::Struct,
                     "swap" => TokenKind::Swap,
                     "syscall" => TokenKind::SysCall,
                     "unpack" => TokenKind::Unpack,

@@ -11,9 +11,9 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedType, While},
+    opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{IntWidth, Signedness},
+    type_store::{IntWidth, Signedness, UnresolvedType, UnresolvedField, UnresolvedStruct},
 };
 
 use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleId, Program};
@@ -827,7 +827,7 @@ pub fn parse_item_body(
                 }
                 continue;
             }
-            TokenKind::Include | TokenKind::Macro | TokenKind::Proc => {
+            TokenKind::Include | TokenKind::Macro | TokenKind::Proc | TokenKind::Field | TokenKind::Struct => {
                 diagnostics::emit_error(
                     token.location,
                     format!("cannot use `{:?}` inside a procedure", token.kind),
@@ -1677,6 +1677,113 @@ fn parse_item<'a>(
     }
 }
 
+fn parse_struct<'a>(
+    program: &mut Program,
+    module_id: ModuleId,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    keyword: Token,
+    interner: &Interners,
+    source_store: &SourceStorage
+) -> Result<(),()> {
+    let mut had_error = false;
+    let name_token = expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, keyword);
+
+    let is_token = expect_token(
+        token_iter,
+        "is",
+        |k| k == TokenKind::Is,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, name_token);
+
+    let mut fields = Vec::new();
+    let mut prev_token = expect_token(
+        token_iter,
+        "field",
+        |k| k == TokenKind::Field,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, is_token);
+
+    loop {
+        let (field_name_token, type_tokens, end_token) = parse_delimited_token_list(
+            token_iter,
+            prev_token,
+            None,
+            ("ident", |t| t == TokenKind::Ident),
+            ("type name", |t| {
+                matches!(
+                    t,
+                    TokenKind::Ident
+                        | TokenKind::Integer(_)
+                        | TokenKind::ParenthesisOpen
+                        | TokenKind::ParenthesisClosed
+                        | TokenKind::SquareBracketOpen
+                        | TokenKind::SquareBracketClosed
+                )
+            }),
+            ("end or field", |t| t == TokenKind::End || t == TokenKind::Field),
+            interner,
+            source_store,
+        )
+        .recover(&mut had_error, (name_token, Vec::new(), name_token));
+
+        let last_type_token = type_tokens.last().copied().unwrap_or(end_token);
+        let store_type_location = field_name_token.location.merge(last_type_token.location);
+        let mut unresolved_store_type =
+            parse_unresolved_types(interner, source_store, field_name_token, type_tokens)
+                .recover(&mut had_error, Vec::new());
+
+        if unresolved_store_type.len() != 1 {
+            diagnostics::emit_error(
+                store_type_location,
+                format!("expected 1 type, found {}", unresolved_store_type.len()),
+                [Label::new(store_type_location).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            had_error = true;
+        }
+
+        fields.push(UnresolvedField {
+            name: field_name_token,
+            kind: unresolved_store_type.pop().unwrap(),
+        });
+        prev_token = end_token;
+
+        if end_token.kind == TokenKind::End {
+            break;
+        }
+    }
+
+    let struct_def = UnresolvedStruct {
+        name: name_token,
+        fields,
+    };
+    dbg!(&struct_def);
+
+    if !had_error {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
 pub(super) fn parse_module(
     program: &mut Program,
     module_id: ModuleId,
@@ -1744,6 +1851,20 @@ pub(super) fn parse_module(
                 };
 
                 include_queue.push(module_ident);
+            }
+
+            TokenKind::Struct => {
+                if parse_struct(
+                    program,
+                    module_id,
+                    &mut token_iter,
+                    *token,
+                    interner,
+                    source_store
+                )
+                .is_err() {
+                    had_error = true;
+                }
             }
 
             _ => {

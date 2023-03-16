@@ -7,7 +7,7 @@ use crate::{
     lexer::Token,
     program::ItemId,
     source_file::SourceLocation,
-    type_store::{IntWidth, Signedness, TypeId},
+    type_store::{IntWidth, Signedness, TypeId, UnresolvedType},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -81,13 +81,6 @@ pub struct If {
     pub else_block: Vec<Op>,
     pub is_else_terminal: bool,
     pub end_token: Token,
-}
-
-#[derive(Debug, Clone)]
-pub enum UnresolvedType {
-    Simple(Token),
-    Array(SourceLocation, Box<UnresolvedType>, usize),
-    Pointer(SourceLocation, Box<UnresolvedType>),
 }
 
 #[derive(Debug, Clone)]
