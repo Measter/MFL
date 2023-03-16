@@ -733,10 +733,11 @@ impl<'ctx> CodeGen<'ctx> {
             };
 
             let mem_type = self.get_type(type_store, store_type_id);
+            let array_type = mem_type.array_type(alloc_size);
             let name = interner.get_symbol_name(program, item_id).to_owned() + "_";
-            let variable = self
-                .builder
-                .build_alloca(mem_type.array_type(alloc_size), &name);
+            let variable = self.builder.build_alloca(array_type, &name);
+
+            self.builder.build_store(variable, array_type.const_zero());
 
             let variable = if !is_array {
                 self.builder.build_pointer_cast(
