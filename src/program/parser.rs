@@ -13,7 +13,7 @@ use crate::{
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{IntWidth, Signedness, UnresolvedType, UnresolvedField, UnresolvedStruct},
+    type_store::{IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
 
 use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleId, Program};
@@ -198,7 +198,7 @@ fn parse_unresolved_types(
         };
 
         let lexeme = interner.resolve_lexeme(ident.lexeme);
-        
+
         let base_type = if lexeme == "ptr" {
             let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                 &mut token_iter,
@@ -209,8 +209,8 @@ fn parse_unresolved_types(
                     matches!(
                         t,
                         TokenKind::Ident
-                            | TokenKind::Integer(_) 
-                            | TokenKind::ParenthesisOpen 
+                            | TokenKind::Integer(_)
+                            | TokenKind::ParenthesisOpen
                             | TokenKind::ParenthesisClosed
                             | TokenKind::SquareBracketOpen
                             | TokenKind::SquareBracketClosed
@@ -250,9 +250,10 @@ fn parse_unresolved_types(
         } else {
             UnresolvedType::Simple(ident)
         };
-        
-        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::SquareBracketOpen) {
-           // Parsing an array!
+
+        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::SquareBracketOpen)
+        {
+            // Parsing an array!
             let Ok((_, ident_tokens, close_bracket)) = parse_delimited_token_list(
                 &mut token_iter,
                 ident,
@@ -274,12 +275,12 @@ fn parse_unresolved_types(
             UnresolvedType::Array(
                 ident.location.merge(close_bracket.location),
                 Box::new(base_type),
-                length
+                length,
             )
         } else {
             base_type
         };
-        
+
         types.push(parsed_type);
     }
 
@@ -575,7 +576,7 @@ pub fn parse_item_body(
                 let count_token = count_token[0];
                 let count = parse_integer_lexeme(count_token, interner, source_store)?;
 
-                OpCode::Pack{ count }
+                OpCode::Pack { count }
             }
             TokenKind::Unpack => OpCode::Unpack,
             TokenKind::Extract => OpCode::ExtractArray,
@@ -815,19 +816,25 @@ pub fn parse_item_body(
             }
             TokenKind::Memory => {
                 if parse_memory(
-                    program, 
-                    module_id, 
-                    &mut token_iter, 
-                    token, 
-                    parent, 
-                    interner, 
-                    source_store
-                ).is_err() {
+                    program,
+                    module_id,
+                    &mut token_iter,
+                    token,
+                    parent,
+                    interner,
+                    source_store,
+                )
+                .is_err()
+                {
                     had_error = true;
                 }
                 continue;
             }
-            TokenKind::Include | TokenKind::Macro | TokenKind::Proc | TokenKind::Field | TokenKind::Struct => {
+            TokenKind::Include
+            | TokenKind::Macro
+            | TokenKind::Proc
+            | TokenKind::Field
+            | TokenKind::Struct => {
                 diagnostics::emit_error(
                     token.location,
                     format!("cannot use `{:?}` inside a procedure", token.kind),
@@ -1301,8 +1308,6 @@ fn parse_memory<'a>(
     had_error.not().then_some((name_token, item_id)).ok_or(())
 }
 
-
-
 fn parse_function_header<'a>(
     program: &mut Program,
     module_id: ModuleId,
@@ -1585,7 +1590,6 @@ fn parse_item<'a>(
     )
     .recover(&mut had_error, (&[], is_token));
 
-
     let mut body = parse_item_body(
         program,
         module_id,
@@ -1683,8 +1687,8 @@ fn parse_struct<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     keyword: Token,
     interner: &Interners,
-    source_store: &SourceStorage
-) -> Result<(),()> {
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
     let mut had_error = false;
     let name_token = expect_token(
         token_iter,
@@ -1737,7 +1741,9 @@ fn parse_struct<'a>(
                         | TokenKind::SquareBracketClosed
                 )
             }),
-            ("end or field", |t| t == TokenKind::End || t == TokenKind::Field),
+            ("end or field", |t| {
+                t == TokenKind::End || t == TokenKind::Field
+            }),
             interner,
             source_store,
         )
@@ -1799,10 +1805,7 @@ pub(super) fn parse_module(
 
     while let Some((_, token)) = token_iter.next() {
         match token.kind {
-            TokenKind::Assert
-            | TokenKind::Const
-            | TokenKind::Macro
-            | TokenKind::Proc => {
+            TokenKind::Assert | TokenKind::Const | TokenKind::Macro | TokenKind::Proc => {
                 if parse_item(
                     program,
                     module_id,
@@ -1827,9 +1830,10 @@ pub(super) fn parse_module(
                     *token,
                     None,
                     interner,
-                    source_store
+                    source_store,
                 )
-                .is_err(){
+                .is_err()
+                {
                     had_error = true;
                 }
             }
@@ -1860,9 +1864,10 @@ pub(super) fn parse_module(
                     &mut token_iter,
                     *token,
                     interner,
-                    source_store
+                    source_store,
                 )
-                .is_err() {
+                .is_err()
+                {
                     had_error = true;
                 }
             }
