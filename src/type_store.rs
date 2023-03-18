@@ -117,6 +117,18 @@ impl From<(Signedness, IntWidth)> for BuiltinTypes {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResolvedStruct {
+    pub name: Token,
+    pub fields: Vec<ResolvedField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedField {
+    pub name: Token,
+    pub kind: TypeId,
+}
+
+#[derive(Debug, Clone)]
 pub struct UnresolvedStruct {
     pub name: Token,
     pub fields: Vec<UnresolvedField>,

@@ -20,7 +20,7 @@ use crate::{
     program::static_analysis::ConstVal,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{BuiltinTypes, TypeId, TypeKind, TypeStore, UnresolvedType},
+    type_store::{BuiltinTypes, TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
 };
 
 mod parser;
@@ -50,6 +50,7 @@ pub enum ItemKind {
     Macro,
     Memory,
     Function,
+    StructDef,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -153,6 +154,8 @@ pub struct Program {
     function_data: HashMap<ItemId, FunctionData>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
     analyzers: HashMap<ItemId, Analyzer>,
+
+    structs_unresolved: HashMap<ItemId, UnresolvedStruct>,
 }
 
 impl Program {
@@ -225,6 +228,7 @@ impl Program {
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
+            structs_unresolved: HashMap::new(),
         }
     }
 
@@ -502,12 +506,23 @@ impl Program {
 
         for (item_id, item) in items {
             trace!(name = interner.get_symbol_name(self, item_id));
-            let body = self.item_bodies.remove(&item_id).unwrap();
 
-            self.item_bodies.insert(
-                item_id,
-                self.resolve_idents_in_block(item, body, &mut had_error, interner, source_store),
-            );
+            if item.kind() == ItemKind::StructDef {
+                //
+            } else {
+                let body = self.item_bodies.remove(&item_id).unwrap();
+
+                self.item_bodies.insert(
+                    item_id,
+                    self.resolve_idents_in_block(
+                        item,
+                        body,
+                        &mut had_error,
+                        interner,
+                        source_store,
+                    ),
+                );
+            }
         }
 
         had_error
@@ -599,7 +614,13 @@ impl Program {
         let _span = debug_span!(stringify!(Program::resolve_types)).entered();
         let mut had_error = false;
 
-        for (item_id, item) in self.item_headers.iter().map(|(id, item)| (*id, *item)) {
+        let items = self
+            .item_headers
+            .iter()
+            .filter(|(_, item)| item.kind != ItemKind::StructDef)
+            .map(|(id, item)| (*id, *item));
+
+        for (item_id, item) in items {
             trace!(name = interner.get_symbol_name(self, item_id));
 
             let unresolved_sig = &self.item_signatures_unresolved[&item_id];
@@ -713,7 +734,11 @@ impl Program {
         let non_macro_items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
+            .filter(|(_, i)| {
+                i.kind() != ItemKind::Macro
+                    && i.kind() != ItemKind::Memory
+                    && i.kind() != ItemKind::StructDef
+            })
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -850,7 +875,7 @@ impl Program {
                 ItemKind::Const => "const",
                 ItemKind::Macro => "macro",
                 ItemKind::Assert => "assert",
-                ItemKind::Memory | ItemKind::Function => continue,
+                ItemKind::Memory | ItemKind::Function | ItemKind::StructDef => continue,
             };
 
             check_queue.clear();
@@ -907,7 +932,11 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
+            .filter(|(_, i)| {
+                i.kind() != ItemKind::Macro
+                    && i.kind() != ItemKind::Memory
+                    && i.kind() != ItemKind::StructDef
+            })
             .map(|(id, _)| *id)
             .collect();
 
@@ -933,7 +962,11 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
+            .filter(|(_, i)| {
+                i.kind() != ItemKind::Macro
+                    && i.kind() != ItemKind::Memory
+                    && i.kind() != ItemKind::StructDef
+            })
             .map(|(id, _)| *id)
             .collect();
 
@@ -1160,11 +1193,11 @@ impl Program {
                             );
                         }
 
-                        ItemKind::Assert => {
+                        ItemKind::Assert | ItemKind::StructDef => {
                             *had_error = true;
                             diagnostics::emit_error(
                                 op.token.location,
-                                "asserts cannot be used in operations",
+                                format!("{:?} cannot be used in operations", found_item.kind()),
                                 Some(
                                     Label::new(op.token.location)
                                         .with_color(Color::Red)
@@ -1195,7 +1228,11 @@ impl Program {
         let all_item_ids: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() != ItemKind::Macro && i.kind() != ItemKind::Memory)
+            .filter(|(_, i)| {
+                i.kind() != ItemKind::Macro
+                    && i.kind() != ItemKind::Memory
+                    && i.kind() != ItemKind::StructDef
+            })
             .map(|(id, _)| *id)
             .collect();
 
@@ -1321,6 +1358,27 @@ impl Program {
         }
 
         id
+    }
+
+    pub fn new_struct(&mut self, module: ModuleId, def: UnresolvedStruct) {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
+        let name = def.name;
+
+        let item = ItemHeader {
+            name,
+            module,
+            id,
+            kind: ItemKind::StructDef,
+            parent: None,
+            new_op_id: 0,
+        };
+
+        self.item_headers.insert(id, item);
+        self.structs_unresolved.insert(id, def);
+
+        let module = self.modules.get_mut(&module).unwrap();
+        module.top_level_symbols.insert(name.lexeme, id);
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {

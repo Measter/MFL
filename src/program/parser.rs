@@ -1781,7 +1781,8 @@ fn parse_struct<'a>(
         name: name_token,
         fields,
     };
-    dbg!(&struct_def);
+
+    program.new_struct(module_id, struct_def);
 
     if !had_error {
         Ok(())
