@@ -54,7 +54,7 @@ impl<'ctx> CodeGen<'ctx> {
                         self.ctx.i64_type(),
                         "cast_ptr",
                     ),
-                    TypeKind::Array { .. } => unreachable!(),
+                    TypeKind::Array { .. } | TypeKind::Struct => unreachable!(),
                 };
 
                 value_store.store_value(self, op_io.outputs()[0], output.into());
@@ -91,7 +91,10 @@ impl<'ctx> CodeGen<'ctx> {
                         )
                     }
 
-                    TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
+                    TypeKind::Integer { .. }
+                    | TypeKind::Bool
+                    | TypeKind::Array { .. }
+                    | TypeKind::Struct => {
                         unreachable!()
                     }
                 };
@@ -100,6 +103,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Bool => unreachable!(),
             TypeKind::Array { .. } => unreachable!(),
+            TypeKind::Struct => unreachable!(),
         }
     }
 

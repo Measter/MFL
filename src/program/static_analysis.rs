@@ -922,7 +922,6 @@ fn analyze_block(
                         analyzer,
                         source_store,
                         interner,
-                        type_store,
                         &mut local_had_error,
                         op,
                     );
@@ -1119,7 +1118,7 @@ fn analyze_block(
                             op,
                             kind,
                         ),
-                        TypeKind::Bool | TypeKind::Array { .. } => {
+                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct => {
                             diagnostics::emit_error(
                                 op.token.location,
                                 format!(
@@ -1143,7 +1142,7 @@ fn analyze_block(
                         TypeKind::Pointer(kind) => {
                             const_prop::stack_ops::cast_to_ptr(analyzer, op, kind)
                         }
-                        TypeKind::Bool | TypeKind::Array { .. } => {}
+                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct => {}
                     }
                 }
 

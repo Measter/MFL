@@ -1,18 +1,122 @@
 use std::ops::Not;
 
+use ariadne::{Color, Label};
 use color_eyre::{eyre::eyre, Result};
 use smallvec::SmallVec;
 use tracing::{debug_span, trace};
 
 use crate::{
+    diagnostics,
     interners::Interners,
     opcode::{Op, OpCode},
     program::{ItemKind, ItemSignatureResolved, Program},
     source_file::SourceStorage,
-    type_store::{BuiltinTypes, TypeStore},
+    type_store::{emit_type_error_diag, BuiltinTypes, TypeKind, TypeStore, UnresolvedType},
 };
 
 impl Program {
+    pub fn resolve_struct_defs(
+        &self,
+        interner: &mut Interners,
+        source_store: &SourceStorage,
+        type_store: &mut TypeStore,
+    ) -> Result<()> {
+        let _span = debug_span!(stringify!(Program::check_self_referring_structs)).entered();
+        let mut had_error = false;
+
+        let struct_item_ids: Vec<_> = self
+            .item_headers
+            .iter()
+            .filter(|(_, hdr)| hdr.kind() == ItemKind::StructDef)
+            .map(|(id, _)| *id)
+            .collect();
+
+        // First pass, we just declare the existance of all the structs.
+        for &id in &struct_item_ids {
+            let def = self.structs_unresolved.get(&id).unwrap();
+            // We check if the name already exists by trying to resolve it.
+            if let Ok(existing_info) =
+                type_store.resolve_type(interner, &UnresolvedType::Simple(def.name))
+            {
+                if let Some(loc) = existing_info.location {
+                    // The user defined the type.
+                    diagnostics::emit_error(
+                        def.name.location,
+                        "type with this name already exists",
+                        [
+                            Label::new(def.name.location).with_color(Color::Red),
+                            Label::new(loc)
+                                .with_color(Color::Cyan)
+                                .with_message("already defined here"),
+                        ],
+                        None,
+                        source_store,
+                    );
+                } else {
+                    // It's a built-in type.
+                    diagnostics::emit_error(
+                        def.name.location,
+                        "cannot define struct with the name of a primative",
+                        [Label::new(def.name.location).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                }
+
+                had_error = true;
+            };
+
+            type_store.add_type(def.name.lexeme, def.name.location, TypeKind::Struct);
+        }
+
+        if had_error {
+            return Err(eyre!("error defining structs"));
+        }
+
+        // Now we try to resolve the struct definition.
+        for id in struct_item_ids {
+            let def = self.structs_unresolved.get(&id).unwrap();
+            let type_id = match type_store.resolve_struct(interner, def) {
+                Ok(type_id) => type_id,
+                Err(missing_token) => {
+                    // The type that failed to resolve is us.
+                    diagnostics::emit_error(
+                        missing_token.location,
+                        "undefined type",
+                        [
+                            Label::new(missing_token.location).with_color(Color::Red),
+                            Label::new(def.name.location)
+                                .with_color(Color::Cyan)
+                                .with_message("In this struct"),
+                        ],
+                        None,
+                        source_store,
+                    );
+                    had_error = true;
+                    continue;
+                }
+            };
+
+            let type_info = type_store.get_type_info(type_id);
+            let struct_info = type_store.get_struct_def(type_id);
+
+            let name = interner.resolve_lexeme(type_info.name);
+            eprintln!("Struct {name}");
+            for field in &struct_info.fields {
+                let field_name = interner.resolve_lexeme(field.name.lexeme);
+                let field_type_info = type_store.get_type_info(field.kind);
+                let type_name = interner.resolve_lexeme(field_type_info.name);
+
+                eprintln!("  {field_name}: {type_name}");
+            }
+        }
+
+        had_error
+            .not()
+            .then_some(())
+            .ok_or_else(|| eyre!("self-referential struct check failed"))
+    }
+
     // The self parameter is the source of this, but it makes more sense for it to be a method.
     #[allow(clippy::only_used_in_recursion)]
     pub fn resolve_types_in_block(
@@ -72,9 +176,14 @@ impl Program {
                 }
 
                 OpCode::UnresolvedCast { unresolved_type } => {
-                    let Some(type_info) = type_store.resolve_type(interner, source_store, unresolved_type) else {
-                        *had_error = true;
-                        continue;
+                    let type_info = match type_store.resolve_type(interner, unresolved_type) {
+                        Ok(info) => info,
+                        Err(err_token) => {
+                            emit_type_error_diag(err_token, interner, source_store);
+
+                            *had_error = true;
+                            continue;
+                        }
                     };
 
                     op.code = OpCode::ResolvedCast { id: type_info.id };
@@ -113,24 +222,36 @@ impl Program {
 
             if item.kind == ItemKind::Memory {
                 resolved_exit.push(type_store.get_builtin(BuiltinTypes::U64).id);
-                let Some(info) = type_store.resolve_type(interner, source_store, unresolved_sig.memory_type()) else {
-                    had_error = true;
-                    continue;
+                let info = match type_store.resolve_type(interner, unresolved_sig.memory_type()) {
+                    Ok(info) => info,
+                    Err(tk) => {
+                        had_error = true;
+                        emit_type_error_diag(tk, interner, source_store);
+                        continue;
+                    }
                 };
                 resolved_memory_type = Some(info.id);
             } else {
                 for input_sig in unresolved_sig.entry_stack() {
-                    let Some(info) = type_store.resolve_type(interner, source_store, input_sig) else {
-                        had_error = true;
-                        continue;
+                    let info = match type_store.resolve_type(interner, input_sig) {
+                        Ok(info) => info,
+                        Err(tk) => {
+                            had_error = true;
+                            emit_type_error_diag(tk, interner, source_store);
+                            continue;
+                        }
                     };
                     resolved_entry.push(info.id);
                 }
 
                 for input_sig in unresolved_sig.exit_stack() {
-                    let Some(info) = type_store.resolve_type(interner, source_store, input_sig) else {
-                        had_error = true;
-                        continue;
+                    let info = match type_store.resolve_type(interner, input_sig) {
+                        Ok(info) => info,
+                        Err(tk) => {
+                            had_error = true;
+                            emit_type_error_diag(tk, interner, source_store);
+                            continue;
+                        }
                     };
                     resolved_exit.push(info.id);
                 }

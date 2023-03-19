@@ -169,7 +169,7 @@ pub fn extract_array(
             }
         }
 
-        TypeKind::Integer { .. } | TypeKind::Bool => {
+        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
             let mut labels = Vec::new();
             diagnostics::build_creator_label_chain(
@@ -275,7 +275,7 @@ pub fn insert_array(
             }
         }
 
-        TypeKind::Integer { .. } | TypeKind::Bool => {
+        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
             let mut labels = Vec::new();
             diagnostics::build_creator_label_chain(

@@ -628,6 +628,7 @@ impl Program {
         type_store: &mut TypeStore,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
+        self.resolve_struct_defs(interner, source_store, type_store)?;
         self.resolve_idents(interner, source_store)?;
         self.resolve_types(interner, source_store, type_store)?;
 

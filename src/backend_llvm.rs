@@ -378,6 +378,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
                 .into(),
+            TypeKind::Struct => todo!(),
         };
 
         self.type_map.insert(kind, tp);
@@ -688,6 +689,7 @@ impl<'ctx> CodeGen<'ctx> {
                 TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {
                     (alloc_type_id, 1, false)
                 }
+                TypeKind::Struct => todo!(),
             };
 
             let mem_type = self.get_type(type_store, store_type_id);
