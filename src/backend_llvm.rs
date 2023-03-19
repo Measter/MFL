@@ -287,21 +287,7 @@ impl<'ctx> CodeGen<'ctx> {
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
                 .entry_stack()
                 .iter()
-                .map(|t| {
-                    let type_info = type_store.get_type_info(*t);
-                    match type_info.kind {
-                        TypeKind::Integer { width, .. } => width.get_int_type(self.ctx).into(),
-                        TypeKind::Pointer(to_kind) => self
-                            .get_type(type_store, to_kind)
-                            .ptr_type(AddressSpace::default())
-                            .into(),
-                        TypeKind::Bool => self.ctx.bool_type().into(),
-                        TypeKind::Array { type_id, length } => self
-                            .get_type(type_store, type_id)
-                            .array_type(length.to_u32().unwrap())
-                            .into(),
-                    }
-                })
+                .map(|t| self.get_type(type_store, *t).into())
                 .collect();
 
             let function_type = if item_sig.exit_stack().is_empty() {
@@ -310,23 +296,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let exit_stack: Vec<_> = item_sig
                     .exit_stack()
                     .iter()
-                    .map(|t| {
-                        let type_info = type_store.get_type_info(*t);
-                        match type_info.kind {
-                            TypeKind::Integer { width, .. } => {
-                                width.get_int_type(self.ctx).as_basic_type_enum()
-                            }
-                            TypeKind::Pointer(to_kind) => self
-                                .get_type(type_store, to_kind)
-                                .ptr_type(AddressSpace::default())
-                                .as_basic_type_enum(),
-                            TypeKind::Bool => self.ctx.bool_type().as_basic_type_enum(),
-                            TypeKind::Array { type_id, length } => self
-                                .get_type(type_store, type_id)
-                                .array_type(length.to_u32().unwrap())
-                                .into(),
-                        }
-                    })
+                    .map(|t| self.get_type(type_store, *t))
                     .collect();
                 self.ctx
                     .struct_type(&exit_stack, false)
@@ -623,19 +593,7 @@ impl<'ctx> CodeGen<'ctx> {
                 return;
             }
             let type_id = analyzer.value_types([value_id]).unwrap()[0];
-            let type_info = type_store.get_type_info(type_id);
-            let typ = match type_info.kind {
-                TypeKind::Integer { width, .. } => width.get_int_type(cg.ctx).as_basic_type_enum(),
-                TypeKind::Bool => cg.ctx.bool_type().as_basic_type_enum(),
-                TypeKind::Pointer(to_kind) => cg
-                    .get_type(type_store, to_kind)
-                    .ptr_type(AddressSpace::default())
-                    .as_basic_type_enum(),
-                TypeKind::Array { type_id, length } => cg
-                    .get_type(type_store, type_id)
-                    .array_type(length.to_u32().unwrap())
-                    .into(),
-            };
+            let typ = cg.get_type(type_store, type_id);
             let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
 
