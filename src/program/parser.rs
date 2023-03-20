@@ -34,6 +34,18 @@ impl<T, E> Recover<T, E> for Result<T, E> {
     }
 }
 
+fn valid_type_token(t: TokenKind) -> bool {
+    matches!(
+        t,
+        TokenKind::Ident
+            | TokenKind::Integer(_)
+            | TokenKind::ParenthesisOpen
+            | TokenKind::ParenthesisClosed
+            | TokenKind::SquareBracketOpen
+            | TokenKind::SquareBracketClosed
+    )
+}
+
 fn expect_token<'a>(
     tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     kind_str: &str,
@@ -205,17 +217,7 @@ fn parse_unresolved_types(
                 ident,
                 None,
                 ("(", |t| t == TokenKind::ParenthesisOpen),
-                ("Ident", |t| {
-                    matches!(
-                        t,
-                        TokenKind::Ident
-                            | TokenKind::Integer(_)
-                            | TokenKind::ParenthesisOpen
-                            | TokenKind::ParenthesisClosed
-                            | TokenKind::SquareBracketOpen
-                            | TokenKind::SquareBracketClosed
-                    )
-                }),
+                ("Type", valid_type_token),
                 (")", |t| t == TokenKind::ParenthesisClosed),
                 interner,
                 source_store,
@@ -676,9 +678,7 @@ pub fn parse_item_body(
                     token,
                     None,
                     ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("Ident", |t| {
-                        matches!(t, TokenKind::Ident | TokenKind::Integer(_) | TokenKind::ParenthesisOpen | TokenKind::ParenthesisClosed | TokenKind::SquareBracketOpen | TokenKind::SquareBracketClosed)
-                    }),
+                    ("Ident", valid_type_token),
                     (")", |t| t == TokenKind::ParenthesisClosed),
                     interner,
                     source_store,
@@ -1256,17 +1256,7 @@ fn parse_memory<'a>(
         name_token,
         None,
         ("is", |t| t == TokenKind::Is),
-        ("type name", |t| {
-            matches!(
-                t,
-                TokenKind::Ident
-                    | TokenKind::Integer(_)
-                    | TokenKind::ParenthesisOpen
-                    | TokenKind::ParenthesisClosed
-                    | TokenKind::SquareBracketOpen
-                    | TokenKind::SquareBracketClosed
-            )
-        }),
+        ("type name", valid_type_token),
         ("end", |t| t == TokenKind::End),
         interner,
         source_store,
@@ -1323,17 +1313,7 @@ fn parse_function_header<'a>(
         name,
         None,
         ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", |t| {
-            matches!(
-                t,
-                TokenKind::Ident
-                    | TokenKind::Integer(_)
-                    | TokenKind::ParenthesisOpen
-                    | TokenKind::ParenthesisClosed
-                    | TokenKind::SquareBracketOpen
-                    | TokenKind::SquareBracketClosed
-            )
-        }),
+        ("Ident", valid_type_token),
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
@@ -1359,17 +1339,7 @@ fn parse_function_header<'a>(
         name,
         None,
         ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", |t| {
-            matches!(
-                t,
-                TokenKind::Ident
-                    | TokenKind::Integer(_)
-                    | TokenKind::ParenthesisOpen
-                    | TokenKind::ParenthesisClosed
-                    | TokenKind::SquareBracketOpen
-                    | TokenKind::SquareBracketClosed
-            )
-        }),
+        ("Ident", valid_type_token),
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
@@ -1453,17 +1423,7 @@ fn parse_const_header<'a>(
         name,
         None,
         ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", |t| {
-            matches!(
-                t,
-                TokenKind::Ident
-                    | TokenKind::Integer(_)
-                    | TokenKind::ParenthesisOpen
-                    | TokenKind::ParenthesisClosed
-                    | TokenKind::SquareBracketOpen
-                    | TokenKind::SquareBracketClosed
-            )
-        }),
+        ("Ident", valid_type_token),
         ("]", |t| t == TokenKind::SquareBracketClosed),
         interner,
         source_store,
@@ -1730,17 +1690,7 @@ fn parse_struct<'a>(
             prev_token,
             None,
             ("ident", |t| t == TokenKind::Ident),
-            ("type name", |t| {
-                matches!(
-                    t,
-                    TokenKind::Ident
-                        | TokenKind::Integer(_)
-                        | TokenKind::ParenthesisOpen
-                        | TokenKind::ParenthesisClosed
-                        | TokenKind::SquareBracketOpen
-                        | TokenKind::SquareBracketClosed
-                )
-            }),
+            ("type name", valid_type_token),
             ("end or field", |t| {
                 t == TokenKind::End || t == TokenKind::Field
             }),
