@@ -133,6 +133,9 @@ pub enum OpCode {
     PackArray {
         count: u8,
     },
+    PackStruct {
+        id: TypeId,
+    },
     Prologue,
     PushBool(bool),
     PushInt {
@@ -179,6 +182,9 @@ pub enum OpCode {
         unresolved_type: UnresolvedType,
     },
     UnresolvedIdent(UnresolvedIdent),
+    UnresolvedPackStruct {
+        unresolved_type: UnresolvedType,
+    },
     While(Box<While>),
 }
 

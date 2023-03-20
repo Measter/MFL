@@ -567,12 +567,12 @@ pub fn parse_item_body(
             }
 
             TokenKind::Pack => {
-                let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
+                let Ok((open_paren, count_token, close_paren)) = parse_delimited_token_list(
                     &mut token_iter,
                     token,
-                    Some(1),
+                    None,
                     ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("Integer", |t| matches!(t, TokenKind::Integer(_))),
+                    ("integer or type", valid_type_token),
                     (")", |t| t == TokenKind::ParenthesisClosed),
                     interner,
                     source_store,
@@ -583,10 +583,33 @@ pub fn parse_item_body(
 
                 token.location = token.location.merge(close_paren.location);
 
-                let count_token = count_token[0];
-                let count = parse_integer_lexeme(count_token, interner, source_store)?;
+                if count_token.len() == 1 && matches!(count_token[0].kind, TokenKind::Integer(_)) {
+                    let count_token = count_token[0];
+                    let count = parse_integer_lexeme(count_token, interner, source_store)?;
 
-                OpCode::PackArray { count }
+                    OpCode::PackArray { count }
+                } else {
+                    let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, open_paren, count_token) else {
+                    had_error = true;
+                    continue;
+                };
+
+                    if unresolved_types.len() != 1 {
+                        let span = open_paren.location.merge(close_paren.location);
+                        diagnostics::emit_error(
+                            span,
+                            format!("expected 1 type, found {}", unresolved_types.len()),
+                            [Label::new(span).with_color(Color::Red)],
+                            None,
+                            source_store,
+                        );
+                        had_error = true;
+                        continue;
+                    }
+
+                    let unresolved_type = unresolved_types.pop().unwrap();
+                    OpCode::UnresolvedPackStruct { unresolved_type }
+                }
             }
             TokenKind::Unpack => OpCode::Unpack,
             TokenKind::Extract => OpCode::ExtractArray,

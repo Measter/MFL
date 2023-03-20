@@ -8,7 +8,7 @@ use crate::{
     opcode::Op,
     program::static_analysis::{can_promote_int_unidirectional, Analyzer},
     source_file::SourceStorage,
-    type_store::{Signedness, TypeKind, TypeStore},
+    type_store::{Signedness, TypeId, TypeKind, TypeStore},
 };
 
 pub fn pack_array(
@@ -78,7 +78,63 @@ pub fn pack_array(
     analyzer.set_value_type(output_id, array_type.id);
 }
 
-pub fn unpack_array(
+pub fn pack_struct(
+    analyzer: &mut Analyzer,
+    interner: &mut Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    type_id: TypeId,
+) {
+    let struct_info = type_store.get_struct_def(type_id);
+
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs = op_data.inputs();
+
+    for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
+        let Some([input_type_id]) = analyzer.value_types([input_id]) else { continue };
+        if input_type_id != field_def.kind {
+            let mut labels = Vec::new();
+            let type_info = type_store.get_type_info(input_type_id);
+            let other_value_name = interner.resolve_lexeme(type_info.name);
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_id,
+                val_id,
+                other_value_name,
+            );
+            labels.push(
+                Label::new(field_def.name.location)
+                    .with_color(Color::Cyan)
+                    .with_message("Expected type defined here..."),
+            );
+            labels.push(
+                Label::new(struct_info.name.location)
+                    .with_color(Color::Cyan)
+                    .with_message("... in this struct"),
+            );
+
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                "unable to pack struct: mismatched input types",
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+        }
+    }
+
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, type_id);
+}
+
+pub fn unpack(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
@@ -88,20 +144,30 @@ pub fn unpack_array(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs().to_owned();
-    let array_id = op_data.inputs()[0];
-    let Some([array_type_id]) = analyzer.value_types([array_id]) else { return };
-    let array_info = type_store.get_type_info(array_type_id);
+    let aggr_id = op_data.inputs()[0];
+    let Some([aggr_type_id]) = analyzer.value_types([aggr_id]) else { return };
+    let aggr_info = type_store.get_type_info(aggr_type_id);
 
-    let kind = match array_info.kind {
-        TypeKind::Array { type_id, .. } => type_id,
+    match aggr_info.kind {
+        TypeKind::Array { type_id, .. } => {
+            for output_id in outputs {
+                analyzer.set_value_type(output_id, type_id);
+            }
+        }
+        TypeKind::Struct(_) => {
+            let fields = type_store.get_struct_def(aggr_type_id);
+            for (output_id, field_info) in outputs.iter().zip(&fields.fields) {
+                analyzer.set_value_type(*output_id, field_info.kind);
+            }
+        }
         _ => {
-            let input_type_name = interner.resolve_lexeme(array_info.name);
+            let input_type_name = interner.resolve_lexeme(aggr_info.name);
 
             let mut labels = Vec::new();
             diagnostics::build_creator_label_chain(
                 &mut labels,
                 analyzer,
-                array_id,
+                aggr_id,
                 0,
                 input_type_name,
             );
@@ -109,20 +175,15 @@ pub fn unpack_array(
 
             diagnostics::emit_error(
                 op.token.location,
-                format!("expected array, found {input_type_name}"),
+                format!("expected array or struct, found {input_type_name}"),
                 labels,
                 None,
                 source_store,
             );
 
             *had_error = true;
-            return;
         }
     };
-
-    for output_id in outputs {
-        analyzer.set_value_type(output_id, kind);
-    }
 }
 
 pub fn extract_array(

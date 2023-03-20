@@ -1,3 +1,4 @@
+use ariadne::{Color, Label};
 use intcast::IntCast;
 
 use crate::{
@@ -6,7 +7,7 @@ use crate::{
     n_ops::{SliceNOps, VecNOps},
     opcode::Op,
     source_file::SourceStorage,
-    type_store::{TypeKind, TypeStore},
+    type_store::{TypeId, TypeKind, TypeStore},
 };
 
 use super::{
@@ -33,6 +34,52 @@ pub fn pack_array(
 
     let mut inputs = Vec::new();
     let input_ids = stack.lastn(count.to_usize()).unwrap();
+    for &id in input_ids {
+        inputs.push(id);
+        analyzer.consume_value(id, op.id);
+    }
+
+    stack.truncate(stack.len() - input_ids.len());
+
+    let output = analyzer.new_value(op);
+    stack.push(output);
+    analyzer.set_op_io(op, &inputs, &[output]);
+}
+
+pub fn pack_struct(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    type_store: &mut TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    type_id: TypeId,
+) {
+    let type_info = type_store.get_type_info(type_id);
+    if !matches!(type_info.kind, TypeKind::Struct(_)) {
+        diagnostics::emit_error(
+            op.token.location,
+            "cannot unpack that type",
+            [Label::new(op.token.location).with_color(Color::Red)],
+            None,
+            source_store,
+        );
+        *had_error = true;
+        return;
+    }
+    let struct_info = type_store.get_struct_def(type_id);
+
+    ensure_stack_depth(
+        analyzer,
+        stack,
+        source_store,
+        had_error,
+        op,
+        struct_info.fields.len(),
+    );
+
+    let mut inputs = Vec::new();
+    let input_ids = stack.lastn(struct_info.fields.len()).unwrap();
     for &id in input_ids {
         inputs.push(id);
         analyzer.consume_value(id, op.id);
@@ -88,7 +135,7 @@ pub fn insert_array(
     analyzer.set_op_io(op, &inputs, &[output]);
 }
 
-pub fn unpack_array(
+pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     interner: &mut Interners,
@@ -108,8 +155,12 @@ pub fn unpack_array(
 
     let input_type_info = type_store.get_type_info(input_type_id);
 
-    let len = match input_type_info.kind {
+    let length = match input_type_info.kind {
         TypeKind::Array { length, .. } => length,
+        TypeKind::Struct(_) => {
+            let struct_info = type_store.get_struct_def(input_type_id);
+            struct_info.fields.len()
+        }
         _ => {
             *had_error = true;
             let mut labels = Vec::new();
@@ -125,7 +176,7 @@ pub fn unpack_array(
                 op.token.location,
                 format!("unable to unpack a `{value_type_name}`",),
                 labels,
-                "value must be an array".to_owned(),
+                "value must be an array or struct".to_owned(),
                 source_store,
             );
             0
@@ -134,7 +185,7 @@ pub fn unpack_array(
 
     let mut outputs = Vec::new();
 
-    for _ in 0..len {
+    for _ in 0..length {
         let id = analyzer.new_value(op);
         stack.push(id);
         outputs.push(id);

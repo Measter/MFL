@@ -228,7 +228,8 @@ impl Program {
 
                     op.code = OpCode::ResolvedIdent { item_id };
                 }
-                OpCode::UnresolvedCast { unresolved_type } => {
+                OpCode::UnresolvedCast { unresolved_type }
+                | OpCode::UnresolvedPackStruct { unresolved_type } => {
                     self.resolve_idents_in_type(
                         item,
                         interner,

@@ -378,7 +378,16 @@ impl<'ctx> CodeGen<'ctx> {
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
                 .into(),
-            TypeKind::Struct(_) => todo!(),
+            TypeKind::Struct(_) => {
+                let struct_def = type_store.get_struct_def(kind);
+                let fields: Vec<BasicTypeEnum> = struct_def
+                    .fields
+                    .iter()
+                    .map(|f| self.get_type(type_store, f.kind))
+                    .collect();
+
+                self.ctx.struct_type(&fields, false).into()
+            }
         };
 
         self.type_map.insert(kind, tp);
@@ -524,12 +533,11 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Load => self.build_load(interner, analyzer, value_store, type_store, op),
                 OpCode::Store => self.build_store(interner, analyzer, value_store, type_store, op),
-                OpCode::PackArray { .. } => {
-                    self.build_pack_array(interner, analyzer, value_store, type_store, op)
+                OpCode::PackArray { .. } | OpCode::PackStruct { .. } => {
+                    self.build_pack(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::PackStruct { .. } => todo!(),
                 OpCode::Unpack { .. } => {
-                    self.build_unpack_array(interner, analyzer, value_store, type_store, op)
+                    self.build_unpack(interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::ExtractArray => {
                     self.build_extract_array(interner, analyzer, value_store, type_store, op)
@@ -571,6 +579,9 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::UnresolvedIdent(_) => {
                     panic!("ICE: Encountered unresolved ident during codegen")
+                }
+                OpCode::UnresolvedPackStruct { .. } => {
+                    panic!("ICE: Encountered unresolved pack during codegen")
                 }
             }
         }

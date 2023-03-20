@@ -80,38 +80,22 @@ impl Program {
         // Now we try to resolve the struct definition.
         for id in struct_item_ids {
             let def = self.structs_unresolved.get(&id).unwrap();
-            let type_id = match type_store.define_struct(interner, id, def) {
-                Ok(type_id) => type_id,
-                Err(missing_token) => {
-                    // The type that failed to resolve is us.
-                    diagnostics::emit_error(
-                        missing_token.location,
-                        "undefined field type",
-                        [
-                            Label::new(missing_token.location).with_color(Color::Red),
-                            Label::new(def.name.location)
-                                .with_color(Color::Cyan)
-                                .with_message("In this struct"),
-                        ],
-                        None,
-                        source_store,
-                    );
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            let type_info = type_store.get_type_info(type_id);
-            let struct_info = type_store.get_struct_def(type_id);
-
-            let name = interner.resolve_lexeme(type_info.name);
-            eprintln!("Struct {name}");
-            for field in &struct_info.fields {
-                let field_name = interner.resolve_lexeme(field.name.lexeme);
-                let field_type_info = type_store.get_type_info(field.kind);
-                let type_name = interner.resolve_lexeme(field_type_info.name);
-
-                eprintln!("  {field_name}: {type_name}");
+            if let Err(missing_token) = type_store.define_struct(interner, id, def) {
+                // The type that failed to resolve is us.
+                diagnostics::emit_error(
+                    missing_token.location,
+                    "undefined field type",
+                    [
+                        Label::new(missing_token.location).with_color(Color::Red),
+                        Label::new(def.name.location)
+                            .with_color(Color::Cyan)
+                            .with_message("In this struct"),
+                    ],
+                    None,
+                    source_store,
+                );
+                had_error = true;
+                continue;
             }
         }
 
@@ -191,6 +175,19 @@ impl Program {
                     };
 
                     op.code = OpCode::ResolvedCast { id: type_info.id };
+                }
+                OpCode::UnresolvedPackStruct { unresolved_type } => {
+                    let type_info = match type_store.resolve_type(interner, unresolved_type) {
+                        Ok(info) => info,
+                        Err(err_token) => {
+                            emit_type_error_diag(err_token, interner, source_store);
+
+                            *had_error = true;
+                            continue;
+                        }
+                    };
+
+                    op.code = OpCode::PackStruct { id: type_info.id };
                 }
 
                 _ => {}

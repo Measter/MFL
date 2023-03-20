@@ -801,6 +801,31 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
+            OpCode::PackStruct { id } => {
+                let mut local_had_error = false;
+                stack_check::memory::pack_struct(
+                    analyzer,
+                    stack,
+                    source_store,
+                    type_store,
+                    &mut local_had_error,
+                    op,
+                    *id,
+                );
+                if !local_had_error {
+                    type_check2::memory::pack_struct(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                        *id,
+                    );
+                }
+
+                *had_error |= local_had_error;
+            }
             OpCode::Reverse { count, count_token } => {
                 stack_check::stack_ops::reverse(
                     analyzer,
@@ -845,7 +870,7 @@ fn analyze_block(
             }
             OpCode::Unpack => {
                 let mut local_had_error = false;
-                stack_check::memory::unpack_array(
+                stack_check::memory::unpack(
                     analyzer,
                     stack,
                     interner,
@@ -855,7 +880,7 @@ fn analyze_block(
                     op,
                 );
                 if !local_had_error {
-                    type_check2::memory::unpack_array(
+                    type_check2::memory::unpack(
                         analyzer,
                         interner,
                         source_store,
@@ -1178,7 +1203,9 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent(_) => {
+            OpCode::UnresolvedCast { .. }
+            | OpCode::UnresolvedIdent(_)
+            | OpCode::UnresolvedPackStruct { .. } => {
                 panic!("ICE: Encountered {:?}", op.code);
             }
         }

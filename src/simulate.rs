@@ -320,6 +320,7 @@ fn simulate_execute_program_block(
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
             | OpCode::PackArray { .. }
+            | OpCode::PackStruct { .. }
             | OpCode::Unpack { .. }
             | OpCode::InsertArray { .. }
             | OpCode::ExtractArray { .. }
@@ -334,7 +335,9 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent(_) => {
+            OpCode::UnresolvedCast { .. }
+            | OpCode::UnresolvedIdent(_)
+            | OpCode::UnresolvedPackStruct { .. } => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

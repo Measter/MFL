@@ -1,4 +1,8 @@
-use inkwell::{types::BasicType, AddressSpace};
+use inkwell::{
+    types::BasicType,
+    values::{AggregateValue, BasicValue},
+    AddressSpace,
+};
 
 use crate::{
     interners::Interners,
@@ -24,7 +28,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store.store_value(self, op_io.outputs()[0], ptr.into());
     }
 
-    pub(super) fn build_pack_array(
+    pub(super) fn build_pack(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,
@@ -35,29 +39,31 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = analyzer.get_op_io(op.id);
         let output_id = op_io.outputs()[0];
         let [output_type_id] = analyzer.value_types([output_id]).unwrap();
+        let output_type_info = type_store.get_type_info(output_type_id);
 
-        let llvm_array_type = self.get_type(type_store, output_type_id).into_array_type();
+        let llvm_aggr_type = self.get_type(type_store, output_type_id);
         let output_name = format!("{output_id}");
 
-        let array_ptr = self.builder.build_alloca(llvm_array_type, &output_name);
-        let mut array_value = self
-            .builder
-            .build_load(array_ptr, &output_name)
-            .into_array_value();
+        let aggr_ptr = self.builder.build_alloca(llvm_aggr_type, &output_name);
+        let aggr_value = self.builder.build_load(aggr_ptr, &output_name);
+        let mut aggr_value = match output_type_info.kind {
+            TypeKind::Array { .. } => aggr_value.into_array_value().as_aggregate_value_enum(),
+            TypeKind::Struct(_) => aggr_value.into_struct_value().as_aggregate_value_enum(),
+            _ => unreachable!(),
+        };
 
         for (value_id, idx) in op_io.inputs().iter().zip(0..) {
             let value = value_store.load_value(self, *value_id, analyzer, type_store, interner);
-            array_value = self
+            aggr_value = self
                 .builder
-                .build_insert_value(array_value, value, idx, "insert")
-                .unwrap()
-                .into_array_value();
+                .build_insert_value(aggr_value, value, idx, "insert")
+                .unwrap();
         }
 
-        value_store.store_value(self, output_id, array_value.into());
+        value_store.store_value(self, output_id, aggr_value.as_basic_value_enum());
     }
 
-    pub(super) fn build_unpack_array(
+    pub(super) fn build_unpack(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,
@@ -67,15 +73,21 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let input_value_id = op_io.inputs()[0];
+        let [input_type_id] = analyzer.value_types([input_value_id]).unwrap();
+        let input_type_info = type_store.get_type_info(input_type_id);
 
-        let array = value_store
-            .load_value(self, input_value_id, analyzer, type_store, interner)
-            .into_array_value();
+        let aggr = value_store.load_value(self, input_value_id, analyzer, type_store, interner);
+
+        let aggr = match input_type_info.kind {
+            TypeKind::Array { .. } => aggr.into_array_value().as_aggregate_value_enum(),
+            TypeKind::Struct(_) => aggr.into_struct_value().as_aggregate_value_enum(),
+            _ => unreachable!(),
+        };
 
         for (output_value_id, idx) in op_io.outputs().iter().zip(0..) {
             let output_value = self
                 .builder
-                .build_extract_value(array, idx, &format!("{output_value_id}"))
+                .build_extract_value(aggr, idx, &format!("{output_value_id}"))
                 .unwrap();
 
             value_store.store_value(self, *output_value_id, output_value);
