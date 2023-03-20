@@ -1118,7 +1118,7 @@ fn analyze_block(
                             op,
                             kind,
                         ),
-                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct => {
+                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct(_) => {
                             diagnostics::emit_error(
                                 op.token.location,
                                 format!(
@@ -1142,7 +1142,7 @@ fn analyze_block(
                         TypeKind::Pointer(kind) => {
                             const_prop::stack_ops::cast_to_ptr(analyzer, op, kind)
                         }
-                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct => {}
+                        TypeKind::Bool | TypeKind::Array { .. } | TypeKind::Struct(_) => {}
                     }
                 }
 
@@ -1178,7 +1178,7 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent { .. } => {
+            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent(_) => {
                 panic!("ICE: Encountered {:?}", op.code);
             }
         }

@@ -11,7 +11,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
+    opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedIdent, While},
     source_file::{SourceLocation, SourceStorage},
     type_store::{IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
@@ -39,6 +39,7 @@ fn valid_type_token(t: TokenKind) -> bool {
         t,
         TokenKind::Ident
             | TokenKind::Integer(_)
+            | TokenKind::ColonColon
             | TokenKind::ParenthesisOpen
             | TokenKind::ParenthesisClosed
             | TokenKind::SquareBracketOpen
@@ -250,6 +251,13 @@ fn parse_unresolved_types(
                 Box::new(unresolved_type),
             )
         } else {
+            let ident = parse_ident(&mut token_iter, interner, source_store, ident).recover(
+                &mut had_error,
+                UnresolvedIdent {
+                    module: None,
+                    item: ident,
+                },
+            );
             UnresolvedType::Simple(ident)
         };
 
@@ -727,38 +735,12 @@ pub fn parse_item_body(
                 value: IntKind::Unsigned((ch as u8).to_u64()),
             },
             TokenKind::Ident => {
-                let (module, item_token) = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon)
-                {
-                    let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
-                    let expected = expect_token(
-                        &mut token_iter,
-                        "ident",
-                        |k| k == TokenKind::Ident,
-                        *colons,
-                        interner,
-                        source_store,
-                    )
-                    .ok()
-                    .map(|(_, t)| t);
-
-                    let item_id = if let Some(t) = expected {
-                        t
-                    } else {
-                        had_error = true;
-                        continue;
-                    };
-
-                    token.location = token.location.merge(item_id.location);
-
-                    (Some(token), item_id)
-                } else {
-                    (None, token)
+                let Ok(ident) = parse_ident(&mut token_iter, interner, source_store, token) else {
+                    had_error = true;
+                    continue;
                 };
 
-                OpCode::UnresolvedIdent {
-                    module,
-                    item: item_token,
-                }
+                OpCode::UnresolvedIdent(ident)
             }
             TokenKind::Integer(id) => {
                 let Ok((int, location)) = parse_integer_op(&mut token_iter, token, id, false, interner, source_store) else {
@@ -936,6 +918,37 @@ pub fn parse_item_body(
     }
 
     had_error.not().then_some(ops).ok_or(())
+}
+
+fn parse_ident<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    mut token: Token,
+) -> Result<UnresolvedIdent, ()> {
+    if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon) {
+        let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
+        let (_, item_id) = expect_token(
+            token_iter,
+            "ident",
+            |k| k == TokenKind::Ident,
+            *colons,
+            interner,
+            source_store,
+        )?;
+
+        token.location = token.location.merge(item_id.location);
+
+        Ok(UnresolvedIdent {
+            module: Some(token),
+            item: item_id,
+        })
+    } else {
+        Ok(UnresolvedIdent {
+            module: None,
+            item: token,
+        })
+    }
 }
 
 fn get_item_body<'a>(
@@ -1468,7 +1481,10 @@ fn parse_assert_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![UnresolvedType::Simple(name)],
+        exit_stack: vec![UnresolvedType::Simple(UnresolvedIdent {
+            module: None,
+            item: name,
+        })],
         exit_stack_location: name.location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,

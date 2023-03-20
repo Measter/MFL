@@ -8,13 +8,163 @@ use tracing::{debug_span, trace};
 use crate::{
     diagnostics,
     interners::Interners,
-    opcode::{If, Op, OpCode, While},
+    opcode::{If, Op, OpCode, UnresolvedIdent, While},
     program::{static_analysis::ConstVal, ItemHeader, ItemId, ItemKind, Program},
     simulate::SimulatorValue,
     source_file::SourceStorage,
+    type_store::{BuiltinTypes, UnresolvedStruct, UnresolvedType},
 };
 
 impl Program {
+    fn resolve_single_ident(
+        &self,
+        item_header: ItemHeader,
+        interner: &Interners,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        ident: UnresolvedIdent,
+    ) -> Result<ItemId, ()> {
+        match ident {
+            // Symbol in current module.
+            UnresolvedIdent {
+                module: None,
+                item: item_token,
+            } => {
+                let visible_id = if item_token.lexeme == item_header.name.lexeme {
+                    // Obviously a symbol is visible to itself.
+                    Some(item_header.id())
+                } else {
+                    self.get_visible_symbol(item_header, item_token.lexeme)
+                };
+
+                if let Some(id) = visible_id {
+                    Ok(id)
+                } else {
+                    let module = &self.modules[&item_header.module];
+                    let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
+                    let module_lexeme = interner.resolve_lexeme(module.name);
+                    *had_error = true;
+                    diagnostics::emit_error(
+                        item_token.location,
+                        format!("symbol `{token_lexeme}` not found in module `{module_lexeme}`"),
+                        Some(
+                            Label::new(item_token.location)
+                                .with_color(Color::Red)
+                                .with_message("not found"),
+                        ),
+                        None,
+                        source_store,
+                    );
+
+                    Err(())
+                }
+            }
+
+            // Symbol in named module.
+            UnresolvedIdent {
+                module: Some(module_token),
+                item: item_token,
+            } => {
+                let module_id = match self.module_ident_map.get(&module_token.lexeme) {
+                    Some(id) => *id,
+                    None => {
+                        let module_name = interner.resolve_lexeme(module_token.lexeme);
+                        diagnostics::emit_error(
+                            item_token.location,
+                            format!("module `{module_name}` not found"),
+                            Some(
+                                Label::new(item_token.location)
+                                    .with_color(Color::Red)
+                                    .with_message("not found"),
+                            ),
+                            None,
+                            source_store,
+                        );
+                        *had_error = true;
+                        return Err(());
+                    }
+                };
+
+                let module = &self.modules[&module_id];
+                match module.top_level_symbols.get(&item_token.lexeme) {
+                    Some(item_id) => Ok(*item_id),
+                    None => {
+                        let item_name = interner.resolve_lexeme(item_token.lexeme);
+                        let module_name = interner.resolve_lexeme(module_token.lexeme);
+                        diagnostics::emit_error(
+                            item_token.location,
+                            format!("symbol `{item_name}` not found in module `{module_name}`"),
+                            Some(
+                                Label::new(item_token.location)
+                                    .with_color(Color::Red)
+                                    .with_message("not found"),
+                            ),
+                            None,
+                            source_store,
+                        );
+                        *had_error = true;
+                        Err(())
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve_idents_in_type(
+        &self,
+        item_header: ItemHeader,
+        interner: &Interners,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        unresolved_type: &mut UnresolvedType,
+    ) {
+        match unresolved_type {
+            UnresolvedType::Simple(unresolved_ident) => {
+                let name = interner.resolve_lexeme(unresolved_ident.item.lexeme);
+                let builtin_name = BuiltinTypes::from_name(name);
+
+                if unresolved_ident.module.is_some() && builtin_name.is_some() {
+                    // Emit error
+                    let location = unresolved_ident
+                        .module
+                        .unwrap()
+                        .location
+                        .merge(unresolved_ident.item.location);
+                    diagnostics::emit_error(
+                        location,
+                        "cannot name builtin with a module",
+                        [Label::new(location).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    *had_error = true;
+                } else if let Some(builtin) = builtin_name {
+                    *unresolved_type = UnresolvedType::SimpleBuiltin(builtin);
+                } else {
+                    let Ok(ident) = self.resolve_single_ident(
+                        item_header,
+                        interner,
+                        source_store,
+                        had_error,
+                        *unresolved_ident,
+                    ) else {
+                        return;
+                    };
+
+                    *unresolved_type = UnresolvedType::SimpleCustom {
+                        id: ident,
+                        token: unresolved_ident.item,
+                    };
+                };
+            }
+            UnresolvedType::Array(_, sub_type, _) | UnresolvedType::Pointer(_, sub_type) => self
+                .resolve_idents_in_type(item_header, interner, source_store, had_error, sub_type),
+
+            // Nothing to do here.
+            UnresolvedType::SimpleBuiltin(_) | UnresolvedType::SimpleCustom { .. } => {}
+        }
+    }
+
     pub fn resolve_idents_in_block(
         &self,
         item: ItemHeader,
@@ -70,94 +220,43 @@ impl Program {
                         source_store,
                     );
                 }
-                // Symbol in own module.
-                OpCode::UnresolvedIdent {
-                    item: item_token,
-                    module: None,
-                } => {
-                    // Obviously a symbol is visible to itself.
-                    let visible_id = if item_token.lexeme == item.name.lexeme {
-                        Some(item.id())
-                    } else {
-                        self.get_visible_symbol(item, item_token.lexeme)
-                    };
-                    if let Some(id) = visible_id {
-                        op.code = OpCode::ResolvedIdent { item_id: id };
-                    } else {
-                        let module = &self.modules[&item.module];
-                        let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
-                        let module_lexeme = interner.resolve_lexeme(module.name);
-                        *had_error = true;
-                        diagnostics::emit_error(
-                            item_token.location,
-                            format!(
-                                "symbol `{token_lexeme}` not found in module `{module_lexeme}`"
-                            ),
-                            Some(
-                                Label::new(item_token.location)
-                                    .with_color(Color::Red)
-                                    .with_message("not found"),
-                            ),
-                            None,
-                            source_store,
-                        );
-                    }
-                }
-                // Symbol in other module.
-                OpCode::UnresolvedIdent {
-                    item: item_token,
-                    module: Some(module_token),
-                } => {
-                    let module_id = match self.module_ident_map.get(&module_token.lexeme) {
-                        Some(id) => *id,
-                        None => {
-                            let module_name = interner.resolve_lexeme(module_token.lexeme);
-                            diagnostics::emit_error(
-                                item_token.location,
-                                format!("module `{module_name}` not found"),
-                                Some(
-                                    Label::new(item_token.location)
-                                        .with_color(Color::Red)
-                                        .with_message("not found"),
-                                ),
-                                None,
-                                source_store,
-                            );
-                            *had_error = true;
-                            continue;
-                        }
+
+                OpCode::UnresolvedIdent(ident) => {
+                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, *ident) else {
+                        continue;
                     };
 
-                    let module = &self.modules[&module_id];
-                    match module.top_level_symbols.get(&item_token.lexeme) {
-                        Some(item_id) => {
-                            op.code = OpCode::ResolvedIdent { item_id: *item_id };
-                        }
-                        None => {
-                            let item_name = interner.resolve_lexeme(item_token.lexeme);
-                            let module_name = interner.resolve_lexeme(module_token.lexeme);
-                            diagnostics::emit_error(
-                                item_token.location,
-                                format!("symbol `{item_name}` not found in module `{module_name}`"),
-                                Some(
-                                    Label::new(item_token.location)
-                                        .with_color(Color::Red)
-                                        .with_message("not found"),
-                                ),
-                                None,
-                                source_store,
-                            );
-                            *had_error = true;
-                            continue;
-                        }
-                    }
+                    op.code = OpCode::ResolvedIdent { item_id };
                 }
-
+                OpCode::UnresolvedCast { unresolved_type } => {
+                    self.resolve_idents_in_type(
+                        item,
+                        interner,
+                        source_store,
+                        had_error,
+                        unresolved_type,
+                    );
+                }
                 _ => {}
             }
         }
 
         body
+    }
+
+    fn resolve_idents_in_struct_def(
+        &self,
+        item: ItemHeader,
+        mut def: UnresolvedStruct,
+        had_error: &mut bool,
+        interner: &Interners,
+        source_store: &SourceStorage,
+    ) -> UnresolvedStruct {
+        for field in &mut def.fields {
+            self.resolve_idents_in_type(item, interner, source_store, had_error, &mut field.kind);
+        }
+
+        def
     }
 
     pub fn resolve_idents(
@@ -170,7 +269,6 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, item)| item.kind() != ItemKind::Memory)
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -178,8 +276,36 @@ impl Program {
             trace!(name = interner.get_symbol_name(self, item_id));
 
             if item.kind() == ItemKind::StructDef {
-                //
+                let def = self.structs_unresolved.remove(&item_id).unwrap();
+                self.structs_unresolved.insert(
+                    item_id,
+                    self.resolve_idents_in_struct_def(
+                        item,
+                        def,
+                        &mut had_error,
+                        interner,
+                        source_store,
+                    ),
+                );
+            } else if item.kind() == ItemKind::Memory {
+                let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
+                let memory_type = sig.memory_type.as_mut().unwrap();
+                self.resolve_idents_in_type(
+                    item,
+                    interner,
+                    source_store,
+                    &mut had_error,
+                    memory_type,
+                );
+
+                self.item_signatures_unresolved.insert(item_id, sig);
             } else {
+                let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
+                for kind in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
+                    self.resolve_idents_in_type(item, interner, source_store, &mut had_error, kind);
+                }
+
+                self.item_signatures_unresolved.insert(item_id, sig);
                 let body = self.item_bodies.remove(&item_id).unwrap();
 
                 self.item_bodies.insert(

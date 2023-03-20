@@ -35,9 +35,13 @@ impl Program {
         for &id in &struct_item_ids {
             let def = self.structs_unresolved.get(&id).unwrap();
             // We check if the name already exists by trying to resolve it.
-            if let Ok(existing_info) =
-                type_store.resolve_type(interner, &UnresolvedType::Simple(def.name))
-            {
+            if let Ok(existing_info) = type_store.resolve_type(
+                interner,
+                &UnresolvedType::SimpleCustom {
+                    id,
+                    token: def.name,
+                },
+            ) {
                 if let Some(loc) = existing_info.location {
                     // The user defined the type.
                     diagnostics::emit_error(
@@ -66,7 +70,7 @@ impl Program {
                 had_error = true;
             };
 
-            type_store.add_type(def.name.lexeme, def.name.location, TypeKind::Struct);
+            type_store.add_type(def.name.lexeme, def.name.location, TypeKind::Struct(id));
         }
 
         if had_error {
@@ -76,13 +80,13 @@ impl Program {
         // Now we try to resolve the struct definition.
         for id in struct_item_ids {
             let def = self.structs_unresolved.get(&id).unwrap();
-            let type_id = match type_store.resolve_struct(interner, def) {
+            let type_id = match type_store.define_struct(interner, id, def) {
                 Ok(type_id) => type_id,
                 Err(missing_token) => {
                     // The type that failed to resolve is us.
                     diagnostics::emit_error(
                         missing_token.location,
-                        "undefined type",
+                        "undefined field type",
                         [
                             Label::new(missing_token.location).with_color(Color::Red),
                             Label::new(def.name.location)

@@ -378,7 +378,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
                 .into(),
-            TypeKind::Struct => todo!(),
+            TypeKind::Struct(_) => todo!(),
         };
 
         self.type_map.insert(kind, tp);
@@ -568,7 +568,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::UnresolvedCast { .. } => {
                     panic!("ICE: Encountered unresolved cast during codegen")
                 }
-                OpCode::UnresolvedIdent { .. } => {
+                OpCode::UnresolvedIdent(_) => {
                     panic!("ICE: Encountered unresolved ident during codegen")
                 }
             }
@@ -686,10 +686,10 @@ impl<'ctx> CodeGen<'ctx> {
                 .kind
             {
                 TypeKind::Array { type_id, length } => (type_id, length.to_u32().unwrap(), true),
-                TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {
-                    (alloc_type_id, 1, false)
-                }
-                TypeKind::Struct => todo!(),
+                TypeKind::Integer { .. }
+                | TypeKind::Pointer(_)
+                | TypeKind::Bool
+                | TypeKind::Struct(_) => (alloc_type_id, 1, false),
             };
 
             let mem_type = self.get_type(type_store, store_type_id);

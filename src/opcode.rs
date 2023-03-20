@@ -83,6 +83,12 @@ pub struct If {
     pub end_token: Token,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UnresolvedIdent {
+    pub module: Option<Token>,
+    pub item: Token,
+}
+
 #[derive(Debug, Clone)]
 pub enum OpCode {
     Add,
@@ -172,10 +178,7 @@ pub enum OpCode {
     UnresolvedCast {
         unresolved_type: UnresolvedType,
     },
-    UnresolvedIdent {
-        module: Option<Token>,
-        item: Token,
-    },
+    UnresolvedIdent(UnresolvedIdent),
     While(Box<While>),
 }
 

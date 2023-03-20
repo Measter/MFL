@@ -334,7 +334,7 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent { .. } => {
+            OpCode::UnresolvedCast { .. } | OpCode::UnresolvedIdent(_) => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }

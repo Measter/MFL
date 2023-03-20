@@ -9,6 +9,8 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::Token,
+    opcode::UnresolvedIdent,
+    program::ItemId,
     source_file::{SourceLocation, SourceStorage},
 };
 
@@ -86,7 +88,7 @@ pub enum TypeKind {
     Integer { width: IntWidth, signed: Signedness },
     Pointer(TypeId),
     Bool,
-    Struct,
+    Struct(ItemId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,6 +102,24 @@ pub enum BuiltinTypes {
     S32,
     S64,
     Bool,
+}
+
+impl BuiltinTypes {
+    pub fn from_name(name: &str) -> Option<Self> {
+        let builtin = match name {
+            "u8" => BuiltinTypes::U8,
+            "s8" => BuiltinTypes::S8,
+            "u16" => BuiltinTypes::U16,
+            "s16" => BuiltinTypes::S16,
+            "u32" => BuiltinTypes::U32,
+            "s32" => BuiltinTypes::S32,
+            "u64" => BuiltinTypes::U64,
+            "s64" => BuiltinTypes::S64,
+            "bool" => BuiltinTypes::Bool,
+            _ => return None,
+        };
+        Some(builtin)
+    }
 }
 
 impl From<(Signedness, IntWidth)> for BuiltinTypes {
@@ -143,7 +163,9 @@ pub struct UnresolvedField {
 
 #[derive(Debug, Clone)]
 pub enum UnresolvedType {
-    Simple(Token),
+    Simple(UnresolvedIdent),
+    SimpleBuiltin(BuiltinTypes),
+    SimpleCustom { id: ItemId, token: Token },
     Array(SourceLocation, Box<UnresolvedType>, usize),
     Pointer(SourceLocation, Box<UnresolvedType>),
 }
@@ -164,10 +186,11 @@ struct PointerInfo {
 #[derive(Debug)]
 pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
-    name_map: HashMap<Spur, TypeId>,
     pointer_map: HashMap<TypeId, PointerInfo>,
     array_map: HashMap<(TypeId, usize), TypeId>,
     builtins: [TypeId; 9],
+
+    struct_id_map: HashMap<ItemId, TypeId>,
     struct_defs: HashMap<TypeId, ResolvedStruct>,
 }
 
@@ -175,10 +198,10 @@ impl TypeStore {
     pub fn new(interner: &mut Interners) -> Self {
         let mut s = Self {
             kinds: HashMap::new(),
-            name_map: HashMap::new(),
             pointer_map: HashMap::new(),
             array_map: HashMap::new(),
             builtins: [TypeId(0); 9],
+            struct_id_map: HashMap::new(),
             struct_defs: HashMap::new(),
         };
         s.init_builtins(interner);
@@ -272,7 +295,6 @@ impl TypeStore {
     ) -> TypeId {
         let id = self.kinds.len().to_u16().map(TypeId).unwrap();
 
-        self.name_map.insert(name, id);
         self.kinds.insert(
             id,
             TypeInfo {
@@ -283,6 +305,10 @@ impl TypeStore {
             },
         );
 
+        if let TypeKind::Struct(struct_id) = kind {
+            self.struct_id_map.insert(struct_id, id);
+        }
+
         id
     }
 
@@ -292,11 +318,13 @@ impl TypeStore {
         tp: &UnresolvedType,
     ) -> Result<TypeInfo, Token> {
         match tp {
-            UnresolvedType::Simple(st) => self
-                .name_map
-                .get(&st.lexeme)
+            UnresolvedType::Simple(_) => panic!("ICE: All idents should be resolved"),
+            UnresolvedType::SimpleCustom { id, token } => self
+                .struct_id_map
+                .get(id)
                 .map(|id| self.kinds[id])
-                .ok_or(*st),
+                .ok_or(*token),
+            UnresolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
             UnresolvedType::Array(_, at, length) => {
                 let inner = self.resolve_type(interner, at)?;
                 Ok(self.get_array(interner, inner.id, *length))
@@ -372,15 +400,18 @@ impl TypeStore {
         self.kinds[&id.ptr_id]
     }
 
-    pub fn resolve_struct(
+    pub fn define_struct(
         &mut self,
         interner: &mut Interners,
+        struct_id: ItemId,
         def: &UnresolvedStruct,
     ) -> Result<TypeId, Token> {
         let mut resolved_fields = Vec::new();
 
         for field in &def.fields {
-            let kind = self.resolve_type(interner, &field.kind)?;
+            let kind = self
+                .resolve_type(interner, &field.kind)
+                .map_err(|_| field.name)?;
             resolved_fields.push(ResolvedField {
                 name: field.name,
                 kind: kind.id,
@@ -392,13 +423,9 @@ impl TypeStore {
             fields: resolved_fields,
         };
 
-        let type_info = self
-            .resolve_type(interner, &UnresolvedType::Simple(def.name))
-            .unwrap();
-
-        self.struct_defs.insert(type_info.id, def);
-
-        Ok(type_info.id)
+        let type_id = self.struct_id_map[&struct_id];
+        self.struct_defs.insert(type_id, def);
+        Ok(type_id)
     }
 
     #[track_caller]
