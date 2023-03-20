@@ -11,7 +11,7 @@ use crate::{
     type_store::{Signedness, TypeKind, TypeStore},
 };
 
-pub fn pack(
+pub fn pack_array(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
@@ -78,7 +78,7 @@ pub fn pack(
     analyzer.set_value_type(output_id, array_type.id);
 }
 
-pub fn unpack(
+pub fn unpack_array(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,

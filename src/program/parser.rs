@@ -586,7 +586,7 @@ pub fn parse_item_body(
                 let count_token = count_token[0];
                 let count = parse_integer_lexeme(count_token, interner, source_store)?;
 
-                OpCode::Pack { count }
+                OpCode::PackArray { count }
             }
             TokenKind::Unpack => OpCode::Unpack,
             TokenKind::Extract => OpCode::ExtractArray,

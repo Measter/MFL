@@ -777,9 +777,9 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::Pack { count } => {
+            OpCode::PackArray { count } => {
                 let mut local_had_error = false;
-                stack_check::memory::pack(
+                stack_check::memory::pack_array(
                     analyzer,
                     stack,
                     source_store,
@@ -788,7 +788,7 @@ fn analyze_block(
                     *count,
                 );
                 if !local_had_error {
-                    type_check2::memory::pack(
+                    type_check2::memory::pack_array(
                         analyzer,
                         interner,
                         source_store,
@@ -845,7 +845,7 @@ fn analyze_block(
             }
             OpCode::Unpack => {
                 let mut local_had_error = false;
-                stack_check::memory::unpack(
+                stack_check::memory::unpack_array(
                     analyzer,
                     stack,
                     interner,
@@ -855,7 +855,7 @@ fn analyze_block(
                     op,
                 );
                 if !local_had_error {
-                    type_check2::memory::unpack(
+                    type_check2::memory::unpack_array(
                         analyzer,
                         interner,
                         source_store,

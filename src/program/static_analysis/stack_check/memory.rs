@@ -14,7 +14,7 @@ use super::{
     ensure_stack_depth,
 };
 
-pub fn pack(
+pub fn pack_array(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
@@ -88,7 +88,7 @@ pub fn insert_array(
     analyzer.set_op_io(op, &inputs, &[output]);
 }
 
-pub fn unpack(
+pub fn unpack_array(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     interner: &mut Interners,

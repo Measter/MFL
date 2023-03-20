@@ -24,7 +24,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store.store_value(self, op_io.outputs()[0], ptr.into());
     }
 
-    pub(super) fn build_pack(
+    pub(super) fn build_pack_array(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,
@@ -57,7 +57,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store.store_value(self, output_id, array_value.into());
     }
 
-    pub(super) fn build_unpack(
+    pub(super) fn build_unpack_array(
         &mut self,
         interner: &mut Interners,
         analyzer: &Analyzer,

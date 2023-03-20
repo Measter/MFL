@@ -524,11 +524,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Load => self.build_load(interner, analyzer, value_store, type_store, op),
                 OpCode::Store => self.build_store(interner, analyzer, value_store, type_store, op),
-                OpCode::Pack { .. } => {
-                    self.build_pack(interner, analyzer, value_store, type_store, op)
+                OpCode::PackArray { .. } => {
+                    self.build_pack_array(interner, analyzer, value_store, type_store, op)
                 }
+                OpCode::PackStruct { .. } => todo!(),
                 OpCode::Unpack { .. } => {
-                    self.build_unpack(interner, analyzer, value_store, type_store, op)
+                    self.build_unpack_array(interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::ExtractArray => {
                     self.build_extract_array(interner, analyzer, value_store, type_store, op)

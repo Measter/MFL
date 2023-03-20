@@ -130,7 +130,7 @@ pub enum OpCode {
         depth: u8,
         depth_token: Token,
     },
-    Pack {
+    PackArray {
         count: u8,
     },
     Prologue,

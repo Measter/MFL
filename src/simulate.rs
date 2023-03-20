@@ -319,7 +319,7 @@ fn simulate_execute_program_block(
             | OpCode::CallFunction { .. }
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
-            | OpCode::Pack { .. }
+            | OpCode::PackArray { .. }
             | OpCode::Unpack { .. }
             | OpCode::InsertArray { .. }
             | OpCode::ExtractArray { .. }
