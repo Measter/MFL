@@ -464,7 +464,7 @@ fn parse_integer_op<'a>(
     } else if is_known_negative {
         let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
         let mut width = IntWidth::I64;
-        let literal_value = literal_value.to_i64().unwrap();
+        let literal_value = -literal_value.to_i64().unwrap();
 
         for size in sizes {
             if size.bounds_signed().contains(&literal_value) {
