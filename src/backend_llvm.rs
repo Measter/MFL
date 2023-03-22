@@ -508,17 +508,23 @@ impl<'ctx> CodeGen<'ctx> {
                     break;
                 }
 
-                OpCode::If(if_op) => self.build_if(
-                    program,
-                    interner,
-                    type_store,
-                    analyzer,
-                    value_store,
-                    function,
-                    id,
-                    op,
-                    if_op,
-                ),
+                OpCode::If(if_op) => {
+                    self.build_if(
+                        program,
+                        interner,
+                        type_store,
+                        analyzer,
+                        value_store,
+                        function,
+                        id,
+                        op,
+                        if_op,
+                    );
+                    if if_op.is_else_terminal && if_op.is_then_terminal {
+                        // Nothing else to codegen here.
+                        break;
+                    }
+                }
                 OpCode::While(while_op) => self.build_while(
                     program,
                     interner,

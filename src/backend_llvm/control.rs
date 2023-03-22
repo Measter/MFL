@@ -222,9 +222,15 @@ impl<'ctx> CodeGen<'ctx> {
         let else_basic_block = self
             .ctx
             .append_basic_block(function, &format!("if_{}_else", op.id));
-        let post_basic_block = self
-            .ctx
-            .append_basic_block(function, &format!("if_{}_post", op.id));
+
+        let post_basic_block = if !if_op.is_then_terminal && !if_op.is_else_terminal {
+            Some(
+                self.ctx
+                    .append_basic_block(function, &format!("if_{}_post", op.id)),
+            )
+        } else {
+            None
+        };
 
         self.builder.position_at_end(current_block);
         // Compile condition
@@ -300,7 +306,9 @@ impl<'ctx> CodeGen<'ctx> {
                 value_store.store_value(self, merge.output_value, data);
             }
 
-            self.builder.build_unconditional_branch(post_basic_block);
+            if let Some(post_block) = post_basic_block {
+                self.builder.build_unconditional_branch(post_block);
+            }
         }
 
         // Compile Else
@@ -349,11 +357,15 @@ impl<'ctx> CodeGen<'ctx> {
                 value_store.store_value(self, merge.output_value, data);
             }
 
-            self.builder.build_unconditional_branch(post_basic_block);
+            if let Some(post_block) = post_basic_block {
+                self.builder.build_unconditional_branch(post_block);
+            }
         }
 
         // Build our jumps
-        self.builder.position_at_end(post_basic_block);
+        if let Some(post_block) = post_basic_block {
+            self.builder.position_at_end(post_block);
+        }
     }
 
     pub(super) fn build_while(

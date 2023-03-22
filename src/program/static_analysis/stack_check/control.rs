@@ -92,6 +92,9 @@ pub fn epilogue_return(
     }
 
     analyzer.set_op_io(op, inputs, &[]);
+
+    let len = inputs.len();
+    stack.truncate(stack.len() - len);
 }
 
 pub fn prologue(
@@ -404,33 +407,49 @@ pub fn analyze_if(
         type_store,
     );
 
-    if stack.len() != then_block_stack.len() {
-        generate_stack_length_mismatch_diag(
-            source_store,
-            then_block_sample_location,
-            if_op.end_token.location,
-            stack.len(),
-            then_block_stack.len(),
-        );
-        *had_error = true;
-    }
-
     let mut body_merges = Vec::new();
-    for (&then_value, else_value) in then_block_stack.iter().zip(stack).filter(|(a, b)| a != b) {
-        let output_value = analyzer.new_value(op);
-        trace!(
-            ?then_value,
-            ?else_value,
-            ?output_value,
-            "defining merge for IF"
-        );
 
-        body_merges.push(IfMerge {
-            then_value,
-            else_value: *else_value,
-            output_value,
-        });
-        *else_value = output_value;
+    if if_op.is_then_terminal && if_op.is_else_terminal {
+        // Both are terminal, nothing to do here.
+        trace!("both branches terminate");
+    } else if if_op.is_then_terminal {
+        // We only need to "merge" for the else block. Which I think means we don't need to define
+        // any merges at all. I think we can just leave our stack as whatever the else-block left it at.
+        trace!("then-branch terminates, leaving stack as else-branch resulted");
+    } else if if_op.is_else_terminal {
+        // And in this case, we restore the stack to what the then-branch left it as.
+        stack.clear();
+        stack.extend_from_slice(&then_block_stack);
+    } else {
+        // Neither diverge, so we need to do some checking.
+        if stack.len() != then_block_stack.len() {
+            generate_stack_length_mismatch_diag(
+                source_store,
+                then_block_sample_location,
+                if_op.end_token.location,
+                stack.len(),
+                then_block_stack.len(),
+            );
+            *had_error = true;
+        }
+
+        for (&then_value, else_value) in then_block_stack.iter().zip(stack).filter(|(a, b)| a != b)
+        {
+            let output_value = analyzer.new_value(op);
+            trace!(
+                ?then_value,
+                ?else_value,
+                ?output_value,
+                "defining merge for IF"
+            );
+
+            body_merges.push(IfMerge {
+                then_value,
+                else_value: *else_value,
+                output_value,
+            });
+            *else_value = output_value;
+        }
     }
 
     analyzer.set_op_io(op, &condition_values, &[]);

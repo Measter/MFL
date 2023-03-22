@@ -277,6 +277,7 @@ impl Analyzer {
         self.op_io_data.insert(op.id, new_data);
     }
 
+    #[track_caller]
     pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
         &self.op_io_data[&op_idx]
     }
@@ -501,7 +502,9 @@ fn analyze_block(
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
 ) {
-    for op in block {
+    let mut op_iter = block.iter();
+
+    for op in op_iter.by_ref() {
         match &op.code {
             OpCode::Add => {
                 let mut local_had_error = false;
@@ -1008,6 +1011,7 @@ fn analyze_block(
                 }
 
                 *had_error |= local_had_error;
+                break;
             }
             OpCode::Prologue => {
                 let item_sig = program.get_item_signature_resolved(item_id);
@@ -1062,6 +1066,11 @@ fn analyze_block(
                 }
 
                 *had_error |= local_had_error;
+
+                if if_op.is_else_terminal && if_op.is_then_terminal {
+                    // Clearly our block diverges if both branches do.
+                    break;
+                }
             }
             OpCode::While(while_op) => {
                 let mut local_had_error = false;
@@ -1209,6 +1218,20 @@ fn analyze_block(
                 panic!("ICE: Encountered {:?}", op.code);
             }
         }
+    }
+
+    for op in op_iter {
+        if matches!(&op.code, OpCode::Epilogue) {
+            // Implicitly added to procs, we don't want to diagnose these.
+            continue;
+        }
+        diagnostics::emit_warning(
+            op.token.location,
+            "unreachable op",
+            [Label::new(op.token.location).with_color(Color::Yellow)],
+            None,
+            source_store,
+        );
     }
 }
 
