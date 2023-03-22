@@ -3,6 +3,7 @@ use inkwell::{
     values::{AggregateValue, BasicValue},
     AddressSpace,
 };
+use intcast::IntCast;
 
 use crate::{
     interners::Interners,
@@ -53,10 +54,42 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         for (value_id, idx) in op_io.inputs().iter().zip(0..) {
+            let [input_type_id] = analyzer.value_types([*value_id]).unwrap();
+            let input_type_info = type_store.get_type_info(input_type_id);
+
+            let field_store_type_info = match output_type_info.kind {
+                TypeKind::Array { type_id, .. } => type_store.get_type_info(type_id),
+                TypeKind::Struct(_) => {
+                    let struct_info = type_store.get_struct_def(output_type_id);
+                    type_store.get_type_info(struct_info.fields[idx].kind)
+                }
+                _ => unreachable!(),
+            };
+
             let value = value_store.load_value(self, *value_id, analyzer, type_store, interner);
+            let value = if let (
+                TypeKind::Integer {
+                    width: to_width, ..
+                },
+                TypeKind::Integer {
+                    signed: from_signed,
+                    ..
+                },
+            ) = (field_store_type_info.kind, input_type_info.kind)
+            {
+                self.cast_int(
+                    value.into_int_value(),
+                    to_width.get_int_type(self.ctx),
+                    from_signed,
+                )
+                .as_basic_value_enum()
+            } else {
+                value
+            };
+
             aggr_value = self
                 .builder
-                .build_insert_value(aggr_value, value, idx, "insert")
+                .build_insert_value(aggr_value, value, idx.to_u32().unwrap(), "insert")
                 .unwrap();
         }
 
@@ -168,34 +201,52 @@ impl<'ctx> CodeGen<'ctx> {
             .value_types([data_value_id, array_value_id])
             .unwrap();
         let array_type_info = type_store.get_type_info(array_type_id);
+        let data_type_info = type_store.get_type_info(data_type_id);
 
-        let arr_ptr = match array_type_info.kind {
-            TypeKind::Array { .. } => {
+        let (arr_ptr, store_type_info) = match array_type_info.kind {
+            TypeKind::Array { type_id, .. } => {
                 // Ugh, this sucks!
                 let array_type = self.get_type(type_store, array_type_id);
-                let store_type = self.get_type(type_store, data_type_id);
                 let store_location = self.builder.build_alloca(array_type, "");
                 self.builder.build_store(store_location, array_val);
-                self.builder.build_pointer_cast(
-                    store_location,
-                    store_type.ptr_type(AddressSpace::default()),
-                    "",
-                )
+                let store_type_info = type_store.get_type_info(type_id);
+
+                (store_location, store_type_info)
             }
-            TypeKind::Pointer(_) => {
-                let store_type = self.get_type(type_store, data_type_id);
-                self.builder.build_pointer_cast(
-                    array_val.into_pointer_value(),
-                    store_type.ptr_type(AddressSpace::default()),
-                    "",
-                )
+            TypeKind::Pointer(sub_type_id) => {
+                let sub_type_info = type_store.get_type_info(sub_type_id);
+                let TypeKind::Array{type_id, ..} = sub_type_info.kind else { unreachable!() };
+                let store_type_info = type_store.get_type_info(type_id);
+
+                (array_val.into_pointer_value(), store_type_info)
             }
             _ => unreachable!(),
         };
 
         let offset_ptr = unsafe {
+            let zero = self.ctx.i64_type().const_int(0, false);
             self.builder
-                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
+                .build_gep(arr_ptr, &[zero, idx_val.into_int_value()], "")
+        };
+
+        let data_val = if let (
+            TypeKind::Integer {
+                width: to_width, ..
+            },
+            TypeKind::Integer {
+                signed: from_signed,
+                ..
+            },
+        ) = (store_type_info.kind, data_type_info.kind)
+        {
+            self.cast_int(
+                data_val.into_int_value(),
+                to_width.get_int_type(self.ctx),
+                from_signed,
+            )
+            .as_basic_value_enum()
+        } else {
+            data_val
         };
 
         self.builder.build_store(offset_ptr, data_val);

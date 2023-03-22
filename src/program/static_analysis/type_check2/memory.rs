@@ -39,7 +39,16 @@ pub fn pack_array(
 
     for (&other_id, id) in rest.iter().zip(1..) {
         let Some([value_type_id]) = analyzer.value_types([other_id]) else { continue };
-        if value_type_id != expected_store_type.id {
+        let value_type_info = type_store.get_type_info(value_type_id);
+        if value_type_id != expected_store_type.id
+            && !matches!(
+                (expected_store_type.kind, value_type_info.kind),
+                (
+                    TypeKind::Integer { width: to_width, signed: to_signed },
+                    TypeKind::Integer { width: from_width, signed: from_signed }
+                ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+            )
+        {
             let mut labels = Vec::new();
             let type_info = type_store.get_type_info(value_type_id);
             let other_value_name = interner.resolve_lexeme(type_info.name);
@@ -94,7 +103,18 @@ pub fn pack_struct(
 
     for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
         let Some([input_type_id]) = analyzer.value_types([input_id]) else { continue };
-        if input_type_id != field_def.kind {
+        let expected_store_type = type_store.get_type_info(field_def.kind);
+        let value_type_info = type_store.get_type_info(input_type_id);
+
+        if input_type_id != field_def.kind
+            && !matches!(
+                (expected_store_type.kind, value_type_info.kind),
+                (
+                    TypeKind::Integer { width: to_width, signed: to_signed },
+                    TypeKind::Integer { width: from_width, signed: from_signed }
+                ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+            )
+        {
             let mut labels = Vec::new();
             let type_info = type_store.get_type_info(input_type_id);
             let other_value_name = interner.resolve_lexeme(type_info.name);
@@ -361,6 +381,8 @@ pub fn insert_array(
         }
     };
 
+    let store_type_info = type_store.get_type_info(store_type_id);
+
     if !matches!(
         idx_type_info.kind,
         TypeKind::Integer {
@@ -390,9 +412,24 @@ pub fn insert_array(
         *had_error = true;
     }
 
-    if data_type_id != store_type_id {
+    if data_type_id != store_type_id
+        && !matches!(
+            (store_type_info.kind, data_type_info.kind),
+            (
+                TypeKind::Integer { width: to_width, signed: to_signed },
+                TypeKind::Integer { width: from_width, signed: from_signed }
+            ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+        )
+    {
         let data_type_name = interner.resolve_lexeme(data_type_info.name);
-        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+        let array_type_name = match array_type_info.kind {
+            TypeKind::Array { .. } => interner.resolve_lexeme(array_type_info.name),
+            TypeKind::Pointer(subtype_id) => {
+                let sub_type_info = type_store.get_type_info(subtype_id);
+                interner.resolve_lexeme(sub_type_info.name)
+            }
+            _ => unreachable!(),
+        };
         let mut labels = Vec::new();
         diagnostics::build_creator_label_chain(
             &mut labels,
