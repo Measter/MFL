@@ -357,6 +357,59 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    pub(super) fn build_extract_struct(
+        &mut self,
+        interner: &mut Interners,
+        analyzer: &Analyzer,
+        value_store: &mut ValueStore<'ctx>,
+        type_store: &TypeStore,
+        op: &Op,
+        field_name: Token,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let [input_struct_value_id] = *op_io.inputs().as_arr();
+        let input_struct_val =
+            value_store.load_value(self, input_struct_value_id, analyzer, type_store, interner);
+
+        let [input_struct_type_id] = analyzer.value_types([input_struct_value_id]).unwrap();
+        let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
+
+        let (struct_value, struct_def) = match input_struct_type_info.kind {
+            TypeKind::Struct(_) => {
+                let struct_def = type_store.get_struct_def(input_struct_type_id);
+                (input_struct_val.into_struct_value(), struct_def)
+            }
+            TypeKind::Pointer(sub_type_id) => {
+                let struct_def = type_store.get_struct_def(sub_type_id);
+                let struct_value = self
+                    .builder
+                    .build_load(input_struct_val.into_pointer_value(), "")
+                    .into_struct_value();
+
+                (struct_value, struct_def)
+            }
+            _ => unreachable!(),
+        };
+
+        let field_idx = struct_def
+            .fields
+            .iter()
+            .position(|fi| fi.name.lexeme == field_name.lexeme)
+            .unwrap();
+
+        let data_value = self
+            .builder
+            .build_extract_value(
+                struct_value,
+                field_idx.to_u32().unwrap(),
+                &format!("{}", op_io.outputs()[1]),
+            )
+            .unwrap();
+
+        value_store.store_value(self, op_io.outputs()[0], input_struct_val);
+        value_store.store_value(self, op_io.outputs()[1], data_value);
+    }
+
     pub(super) fn build_load(
         &mut self,
         interner: &mut Interners,

@@ -613,6 +613,103 @@ pub fn insert_struct(
     }
 }
 
+pub fn extract_struct(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    field_name: Token,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let [input_struct_value_id] = *op_data.inputs().as_arr();
+    let Some([ input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else { return };
+    let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
+
+    let [output_struct_id, output_data_id] = *op_data.outputs().as_arr();
+    analyzer.set_value_type(output_struct_id, input_struct_type_id);
+
+    let actual_struct_type_id = match input_struct_type_info.kind {
+        TypeKind::Struct(_) => input_struct_type_id,
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = type_store.get_type_info(sub_type);
+            if let TypeKind::Struct(_) = ptr_type_info.kind {
+                sub_type
+            } else {
+                let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    input_struct_value_id,
+                    1,
+                    value_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot extract field from a `{value_type_name}`"),
+                    labels,
+                    None,
+                    source_store,
+                );
+
+                *had_error = true;
+                return;
+            }
+        }
+
+        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
+            let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_struct_value_id,
+                0,
+                value_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                format!("cannot extract field from a `{value_type_name}`"),
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+            return;
+        }
+    };
+
+    let struct_def = type_store.get_struct_def(actual_struct_type_id);
+    let Some(field_info) = struct_def
+        .fields
+        .iter()
+        .find(|fi| fi.name.lexeme == field_name.lexeme) else {
+        *had_error = true;
+        let unknown_field_name = interner.resolve_lexeme(field_name.lexeme);
+        let struct_name = interner.resolve_lexeme(struct_def.name.lexeme);
+        diagnostics::emit_error(
+            field_name.location,
+            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
+            [
+                Label::new(field_name.location).with_color(Color::Red),
+                Label::new(struct_def.name.location).with_color(Color::Cyan).with_message("in this struct"),
+            ],
+            None,
+            source_store,
+        );
+        return;
+    };
+
+    analyzer.set_value_type(output_data_id, field_info.kind);
+}
+
 pub fn load(
     analyzer: &mut Analyzer,
     interner: &Interners,

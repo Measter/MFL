@@ -156,6 +156,27 @@ pub fn insert_struct(
     analyzer.set_op_io(op, &inputs, &[output]);
 }
 
+pub fn extract_struct(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
+
+    let [struct_id] = stack.popn().unwrap();
+    analyzer.consume_value(struct_id, op.id);
+
+    let output_struct = analyzer.new_value(op);
+    stack.push(output_struct);
+
+    let output_value = analyzer.new_value(op);
+    stack.push(output_value);
+
+    analyzer.set_op_io(op, &[struct_id], &[output_struct, output_value]);
+}
+
 pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,

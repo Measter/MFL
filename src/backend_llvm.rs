@@ -551,7 +551,14 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::InsertArray => {
                     self.build_insert_array(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::ExtractStruct(_) => todo!(),
+                OpCode::ExtractStruct(field_name) => self.build_extract_struct(
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                    *field_name,
+                ),
                 OpCode::InsertStruct(field_name) => self.build_insert_struct(
                     interner,
                     analyzer,
