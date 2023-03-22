@@ -612,8 +612,39 @@ pub fn parse_item_body(
                 }
             }
             TokenKind::Unpack => OpCode::Unpack,
-            TokenKind::Extract => OpCode::ExtractArray,
-            TokenKind::Insert => OpCode::InsertArray,
+            TokenKind::Extract | TokenKind::Insert => {
+                if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                {
+                    let Ok((_, ident_token, close_paren)) = parse_delimited_token_list(
+                        &mut token_iter,
+                        token,
+                        Some(1),
+                        ("(", |t| t == TokenKind::ParenthesisOpen),
+                        ("ident", |t| t == TokenKind::Ident),
+                        (")", |t| t == TokenKind::ParenthesisClosed),
+                        interner,
+                        source_store,
+                    ) else {
+                        had_error = true;
+                        continue;
+                    };
+
+                    token.location = token.location.merge(close_paren.location);
+
+                    let ident_token = ident_token[0];
+                    match token.kind {
+                        TokenKind::Extract => OpCode::ExtractStruct(ident_token),
+                        TokenKind::Insert => OpCode::InsertStruct(ident_token),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match token.kind {
+                        TokenKind::Extract => OpCode::ExtractArray,
+                        TokenKind::Insert => OpCode::InsertArray,
+                        _ => unreachable!(),
+                    }
+                }
+            }
 
             TokenKind::Rot => {
                 let Ok((_, tokens, close_paren)) = parse_delimited_token_list(&mut token_iter,

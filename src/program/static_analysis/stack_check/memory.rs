@@ -135,6 +135,27 @@ pub fn insert_array(
     analyzer.set_op_io(op, &inputs, &[output]);
 }
 
+pub fn insert_struct(
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+
+    let inputs = stack.popn::<2>().unwrap();
+    for id in inputs {
+        analyzer.consume_value(id, op.id);
+    }
+
+    // Leave the struct on the stack so the user can continue using it.
+    let output = analyzer.new_value(op);
+    stack.push(output);
+
+    analyzer.set_op_io(op, &inputs, &[output]);
+}
+
 pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,

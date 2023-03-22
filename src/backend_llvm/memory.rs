@@ -7,6 +7,7 @@ use intcast::IntCast;
 
 use crate::{
     interners::Interners,
+    lexer::Token,
     n_ops::SliceNOps,
     opcode::Op,
     program::{static_analysis::Analyzer, ItemId},
@@ -264,6 +265,95 @@ impl<'ctx> CodeGen<'ctx> {
             // We know our array input was a pointer. Because it was a pointer, we can just shove
             // the pointer back in.
             value_store.store_value(self, op_io.outputs()[0], array_val);
+        }
+    }
+
+    pub(super) fn build_insert_struct(
+        &mut self,
+        interner: &mut Interners,
+        analyzer: &Analyzer,
+        value_store: &mut ValueStore<'ctx>,
+        type_store: &TypeStore,
+        op: &Op,
+        field_name: Token,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let inputs @ [data_value_id, input_struct_value_id] = *op_io.inputs().as_arr();
+        let [data_val, input_struct_val] =
+            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+
+        let [data_type_id, input_struct_type_id] = analyzer
+            .value_types([data_value_id, input_struct_value_id])
+            .unwrap();
+        let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
+        let data_type_info = type_store.get_type_info(data_type_id);
+
+        let (struct_value, struct_def) = match input_struct_type_info.kind {
+            TypeKind::Struct(_) => {
+                let struct_def = type_store.get_struct_def(input_struct_type_id);
+                (input_struct_val.into_struct_value(), struct_def)
+            }
+            TypeKind::Pointer(sub_type_id) => {
+                let struct_def = type_store.get_struct_def(sub_type_id);
+                let struct_value = self
+                    .builder
+                    .build_load(input_struct_val.into_pointer_value(), "")
+                    .into_struct_value();
+
+                (struct_value, struct_def)
+            }
+            _ => unreachable!(),
+        };
+
+        let field_idx = struct_def
+            .fields
+            .iter()
+            .position(|fi| fi.name.lexeme == field_name.lexeme)
+            .unwrap();
+        let field_info = &struct_def.fields[field_idx];
+        let field_type_info = type_store.get_type_info(field_info.kind);
+
+        let data_val = if let (
+            TypeKind::Integer {
+                width: to_width, ..
+            },
+            TypeKind::Integer {
+                signed: from_signed,
+                ..
+            },
+        ) = (field_type_info.kind, data_type_info.kind)
+        {
+            self.cast_int(
+                data_val.into_int_value(),
+                to_width.get_int_type(self.ctx),
+                from_signed,
+            )
+            .as_basic_value_enum()
+        } else {
+            data_val
+        };
+
+        let new_struct_val = self
+            .builder
+            .build_insert_value(
+                struct_value,
+                data_val,
+                field_idx.to_u32().unwrap(),
+                &format!("{}", op_io.outputs()[0]),
+            )
+            .unwrap();
+
+        if let TypeKind::Struct(_) = input_struct_type_info.kind {
+            // In this case we just store the struct directly.
+            value_store.store_value(
+                self,
+                op_io.outputs()[0],
+                new_struct_val.as_basic_value_enum(),
+            );
+        } else {
+            self.builder
+                .build_store(input_struct_val.into_pointer_value(), new_struct_val);
+            value_store.store_value(self, op_io.outputs()[0], input_struct_val);
         }
     }
 

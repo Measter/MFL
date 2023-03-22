@@ -4,6 +4,7 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     interners::Interners,
+    lexer::Token,
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{can_promote_int_unidirectional, Analyzer},
@@ -461,6 +462,155 @@ pub fn insert_array(
 
     let output_id = op_data.outputs()[0];
     analyzer.set_value_type(output_id, array_type_id);
+}
+
+pub fn insert_struct(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+    field_name: Token,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs().as_arr();
+    let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else { return };
+    let [data_type_info, input_struct_type_info] = type_ids.map(|id| type_store.get_type_info(id));
+
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, input_struct_type_id);
+
+    let actual_struct_type_id = match input_struct_type_info.kind {
+        TypeKind::Struct(_) => input_struct_type_id,
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = type_store.get_type_info(sub_type);
+            if let TypeKind::Struct(_) = ptr_type_info.kind {
+                sub_type
+            } else {
+                let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    input_struct_value_id,
+                    1,
+                    value_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot insert field into a `{value_type_name}`"),
+                    labels,
+                    None,
+                    source_store,
+                );
+
+                *had_error = true;
+                return;
+            }
+        }
+
+        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
+            let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_struct_value_id,
+                0,
+                value_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                op.token.location,
+                format!("cannot insert field into a `{value_type_name}`"),
+                labels,
+                None,
+                source_store,
+            );
+
+            *had_error = true;
+            return;
+        }
+    };
+
+    let struct_type_info = type_store.get_struct_def(actual_struct_type_id);
+    let Some(field_info) = struct_type_info
+        .fields
+        .iter()
+        .find(|fi| fi.name.lexeme == field_name.lexeme) else {
+        *had_error = true;
+        let unknown_field_name = interner.resolve_lexeme(field_name.lexeme);
+        let struct_name = interner.resolve_lexeme(struct_type_info.name.lexeme);
+        diagnostics::emit_error(
+            field_name.location,
+            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
+            [
+                Label::new(field_name.location).with_color(Color::Red),
+                Label::new(struct_type_info.name.location).with_color(Color::Cyan).with_message("in this struct"),
+            ],
+            None,
+            source_store,
+        );
+        return;
+    };
+
+    let field_type_info = type_store.get_type_info(field_info.kind);
+
+    if data_type_id != field_info.kind
+        && !matches!(
+            (field_type_info.kind, data_type_info.kind),
+            (
+                TypeKind::Integer { width: to_width, signed: to_signed },
+                TypeKind::Integer { width: from_width, signed: from_signed }
+            ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+        )
+    {
+        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let struct_type_name = match input_struct_type_info.kind {
+            TypeKind::Struct(_) => interner.resolve_lexeme(input_struct_type_info.name),
+            TypeKind::Pointer(subtype_id) => {
+                let sub_type_info = type_store.get_type_info(subtype_id);
+                interner.resolve_lexeme(sub_type_info.name)
+            }
+            _ => unreachable!(),
+        };
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            data_value_id,
+            0,
+            data_type_name,
+        );
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            input_struct_value_id,
+            1,
+            struct_type_name,
+        );
+
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(
+            Label::new(field_info.name.location)
+                .with_color(Color::Cyan)
+                .with_message("field defined here"),
+        );
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("cannot store a value of type `{data_type_name}` into `{struct_type_name}`"),
+            labels,
+            None,
+            source_store,
+        );
+
+        *had_error = true;
+    }
 }
 
 pub fn load(
