@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, ops::Not, path::Path};
+use std::{collections::BTreeMap, ffi::OsStr, ops::Not, path::Path};
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
@@ -23,7 +23,7 @@ mod passes;
 pub mod static_analysis;
 use static_analysis::Analyzer;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
 impl ItemId {
     // This is only used during parse failure, so it shouldn't cause problems?
@@ -143,7 +143,7 @@ pub struct Program {
     modules: HashMap<ModuleId, Module>,
     module_ident_map: HashMap<Spur, ModuleId>,
 
-    item_headers: HashMap<ItemId, ItemHeader>,
+    item_headers: BTreeMap<ItemId, ItemHeader>,
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
     item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
     item_bodies: HashMap<ItemId, Vec<Op>>,
@@ -217,7 +217,7 @@ impl Program {
         Program {
             modules: Default::default(),
             module_ident_map: Default::default(),
-            item_headers: HashMap::new(),
+            item_headers: BTreeMap::new(),
             item_signatures_unresolved: HashMap::new(),
             item_signatures_resolved: HashMap::new(),
             item_bodies: HashMap::new(),
