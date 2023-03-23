@@ -5,10 +5,38 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{generate_type_mismatch_diag, Analyzer},
+    program::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
     source_file::SourceStorage,
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
+
+pub fn emit_type(
+    stack: &[ValueId],
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    op: &Op,
+) {
+    let Some(&top_id) = stack.last() else { return };
+    let Some([type_id]) = analyzer.value_types([top_id]) else { return };
+    let type_info = type_store.get_type_info(type_id);
+
+    let name = interner.resolve_lexeme(type_info.name);
+
+    let mut labels = Vec::new();
+    diagnostics::build_creator_label_chain(&mut labels, analyzer, top_id, 0, name);
+    labels.push(Label::new(op.token.location).with_color(Color::Cyan));
+
+    diagnostics::emit(
+        ariadne::ReportKind::Advice,
+        op.token.location,
+        format!("type of value is `{name}`",),
+        labels,
+        None,
+        source_store,
+    );
+}
 
 pub fn cast_to_int(
     analyzer: &mut Analyzer,

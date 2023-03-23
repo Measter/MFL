@@ -327,3 +327,7 @@ Stack: `[a, b, c]` to `[b, c, a]`
 Swaps the top `N` values with the `N` values below them. Defaults to 1.
 
 Stack: `[a, b, c, d]` to `[c, d, a, b]`
+
+### `typeof`
+
+Causes the compiler to emit a diagnostic during codegen with the type of the top value.

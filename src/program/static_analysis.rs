@@ -1265,6 +1265,15 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
+            OpCode::EmitType => type_check2::stack_ops::emit_type(
+                stack,
+                analyzer,
+                interner,
+                source_store,
+                type_store,
+                op,
+            ),
+
             OpCode::UnresolvedCast { .. }
             | OpCode::UnresolvedIdent(_)
             | OpCode::UnresolvedPackStruct { .. } => {

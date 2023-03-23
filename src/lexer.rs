@@ -77,6 +77,7 @@ pub enum TokenKind {
     Struct,
     Swap,
     SysCall,
+    EmitType,
     Unpack,
     While,
 }
@@ -102,6 +103,7 @@ impl TokenKind {
             | TokenKind::Dup
             | TokenKind::Elif
             | TokenKind::Else
+            | TokenKind::EmitType
             | TokenKind::End
             | TokenKind::Equal
             | TokenKind::Extract { .. }
@@ -523,6 +525,7 @@ impl<'source> Scanner<'source> {
                     "unpack" => TokenKind::Unpack,
                     "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
+                    "typeof" => TokenKind::EmitType,
                     "while" => TokenKind::While,
                     "xor" => TokenKind::BitXor,
                     _ => TokenKind::Ident,

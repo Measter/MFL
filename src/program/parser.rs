@@ -815,6 +815,7 @@ pub fn parse_item_body(
                 id,
                 is_c_str: false,
             },
+            TokenKind::EmitType => OpCode::EmitType,
             TokenKind::ArgC => OpCode::ArgC,
             TokenKind::ArgV => OpCode::ArgV,
 
