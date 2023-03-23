@@ -5,7 +5,7 @@ const STDERR [u64] is 2 end
 
 const WRITE [u64] is 1 end
 
-proc puts [string] to [] is
+proc puts [String] to [] is
     // [string]
     WRITE STDOUT
     // [string sysid fd]
@@ -16,11 +16,11 @@ proc puts [string] to [] is
     drop
 end
 
-proc putsln [string] to [] is
+proc putsln [String] to [] is
     puts "\n" puts
 end
 
-proc eputs [string] to [] is
+proc eputs [String] to [] is
     // [string]
     WRITE STDERR
     // [string sysid fd]
@@ -32,7 +32,7 @@ proc eputs [string] to [] is
 end
 
 
-proc eputsln[string] to [] is
+proc eputsln[String] to [] is
     eputs "\n" eputs
 end
 
@@ -65,7 +65,7 @@ proc putud [u64] to [] is
 
     swap buf cast(ptr(u8)) +
     
-    pack(string) puts
+    pack(String) puts
 end
 
 proc putudln [u64] to [] is

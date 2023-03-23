@@ -8,7 +8,7 @@ proc fib [s32] to [s32] is
     end
 end
 
-proc ord [s32] to [string] is
+proc ord [s32] to [String] is
     100%
     if dup 11= do "th"
     elif dup 12= do "th"

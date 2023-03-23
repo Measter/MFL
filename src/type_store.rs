@@ -117,7 +117,7 @@ impl BuiltinTypes {
             "u64" => BuiltinTypes::U64,
             "s64" => BuiltinTypes::S64,
             "bool" => BuiltinTypes::Bool,
-            "string" => BuiltinTypes::String,
+            "String" => BuiltinTypes::String,
             _ => return None,
         };
         Some(builtin)
@@ -288,7 +288,7 @@ impl TypeStore {
             self.get_pointer(interner, id);
         }
 
-        let struct_name = interner.intern_lexeme("string");
+        let struct_name = interner.intern_lexeme("String");
         let field_len_name = interner.intern_lexeme("len");
         let field_ptr_name = interner.intern_lexeme("ptr");
         // Using a dud is such a hack...
