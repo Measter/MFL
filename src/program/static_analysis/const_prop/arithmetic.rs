@@ -220,12 +220,13 @@ pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: 
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
+            let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
+
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_signed);
             let b_kind = b.cast(output_width, output_signed);
@@ -261,7 +262,7 @@ pub fn multiply_div_rem_shift(
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
 
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
     let output_type_info = type_store.get_type_info(output_type_id);
     let TypeKind::Integer{ width: output_width, signed: output_sign } = output_type_info.kind else { unreachable!() };
 
