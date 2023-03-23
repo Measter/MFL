@@ -545,19 +545,28 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Unpack { .. } => {
                     self.build_unpack(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::ExtractArray => {
-                    self.build_extract_array(interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::ExtractArray { emit_array } => self.build_extract_array(
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                    *emit_array,
+                ),
                 OpCode::InsertArray => {
                     self.build_insert_array(interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::ExtractStruct(field_name) => self.build_extract_struct(
+                OpCode::ExtractStruct {
+                    emit_struct,
+                    field_name,
+                } => self.build_extract_struct(
                     interner,
                     analyzer,
                     value_store,
                     type_store,
                     op,
                     *field_name,
+                    *emit_struct,
                 ),
                 OpCode::InsertStruct(field_name) => self.build_insert_struct(
                     interner,

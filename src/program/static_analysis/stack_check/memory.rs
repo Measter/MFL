@@ -1,5 +1,6 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
@@ -98,6 +99,7 @@ pub fn extract_array(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
+    emit_array: bool,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
 
@@ -105,13 +107,19 @@ pub fn extract_array(
     analyzer.consume_value(array_id, op.id);
     analyzer.consume_value(idx, op.id);
 
-    let output_array = analyzer.new_value(op);
-    stack.push(output_array);
+    let mut outputs = SmallVec::<[_; 2]>::new();
+
+    if emit_array {
+        let output_array = analyzer.new_value(op);
+        outputs.push(output_array);
+        stack.push(output_array);
+    }
 
     let output_value = analyzer.new_value(op);
+    outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op, &[array_id, idx], &[output_array, output_value]);
+    analyzer.set_op_io(op, &[array_id, idx], &outputs);
 }
 
 pub fn insert_array(
@@ -162,19 +170,26 @@ pub fn extract_struct(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
+    emit_struct: bool,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
 
     let [struct_id] = stack.popn().unwrap();
     analyzer.consume_value(struct_id, op.id);
 
-    let output_struct = analyzer.new_value(op);
-    stack.push(output_struct);
+    let mut outputs = SmallVec::<[_; 2]>::new();
+
+    if emit_struct {
+        let output_struct = analyzer.new_value(op);
+        outputs.push(output_struct);
+        stack.push(output_struct);
+    }
 
     let output_value = analyzer.new_value(op);
+    outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op, &[struct_id], &[output_struct, output_value]);
+    analyzer.set_op_io(op, &[struct_id], &outputs);
 }
 
 pub fn unpack(

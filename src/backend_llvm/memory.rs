@@ -135,6 +135,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
         op: &Op,
+        emit_array: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [array_value_id, _] = *op_io.inputs().as_arr();
@@ -176,10 +177,14 @@ impl<'ctx> CodeGen<'ctx> {
                 .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
         };
 
-        let output_array_id = op_io.outputs()[0];
-        value_store.store_value(self, output_array_id, array_val);
+        let output_value_id = if emit_array {
+            let output_array_id = op_io.outputs()[0];
+            value_store.store_value(self, output_array_id, array_val);
+            op_io.outputs()[1]
+        } else {
+            op_io.outputs()[0]
+        };
 
-        let output_value_id = op_io.outputs()[1];
         let output_value_name = format!("{output_value_id}");
         let loaded_value = self.builder.build_load(offset_ptr, &output_value_name);
         value_store.store_value(self, output_value_id, loaded_value);
@@ -365,6 +370,7 @@ impl<'ctx> CodeGen<'ctx> {
         type_store: &TypeStore,
         op: &Op,
         field_name: Token,
+        emit_struct: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let [input_struct_value_id] = *op_io.inputs().as_arr();
@@ -397,17 +403,23 @@ impl<'ctx> CodeGen<'ctx> {
             .position(|fi| fi.name.lexeme == field_name.lexeme)
             .unwrap();
 
+        let data_value_id = if emit_struct {
+            value_store.store_value(self, op_io.outputs()[0], input_struct_val);
+            op_io.outputs()[1]
+        } else {
+            op_io.outputs()[0]
+        };
+
         let data_value = self
             .builder
             .build_extract_value(
                 struct_value,
                 field_idx.to_u32().unwrap(),
-                &format!("{}", op_io.outputs()[1]),
+                &format!("{data_value_id}"),
             )
             .unwrap();
 
-        value_store.store_value(self, op_io.outputs()[0], input_struct_val);
-        value_store.store_value(self, op_io.outputs()[1], data_value);
+        value_store.store_value(self, data_value_id, data_value);
     }
 
     pub(super) fn build_load(

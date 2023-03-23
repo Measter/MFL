@@ -699,7 +699,7 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::ExtractArray => {
+            OpCode::ExtractArray { emit_array } => {
                 let mut local_had_error = false;
                 stack_check::memory::extract_array(
                     analyzer,
@@ -707,6 +707,7 @@ fn analyze_block(
                     source_store,
                     &mut local_had_error,
                     op,
+                    *emit_array,
                 );
                 if !local_had_error {
                     type_check2::memory::extract_array(
@@ -716,6 +717,7 @@ fn analyze_block(
                         type_store,
                         &mut local_had_error,
                         op,
+                        *emit_array,
                     );
                 }
                 if !local_had_error {
@@ -763,7 +765,10 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::ExtractStruct(field_name) => {
+            OpCode::ExtractStruct {
+                emit_struct,
+                field_name,
+            } => {
                 let mut local_had_error = false;
                 stack_check::memory::extract_struct(
                     analyzer,
@@ -771,6 +776,7 @@ fn analyze_block(
                     source_store,
                     &mut local_had_error,
                     op,
+                    *emit_struct,
                 );
                 if !local_had_error {
                     type_check2::memory::extract_struct(
@@ -781,6 +787,7 @@ fn analyze_block(
                         &mut local_had_error,
                         op,
                         *field_name,
+                        *emit_struct,
                     );
                 }
 

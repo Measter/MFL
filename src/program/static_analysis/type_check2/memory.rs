@@ -214,11 +214,20 @@ pub fn extract_array(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
+    emit_array: bool,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op.id).clone();
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs().as_arr();
     let Some(type_ids) = analyzer.value_types(inputs) else { return };
     let [array_type_info, idx_type_info] = type_ids.map(|id| type_store.get_type_info(id));
+
+    let output_value_id = if emit_array {
+        let output_array_id = op_data.outputs()[0];
+        analyzer.set_value_type(output_array_id, array_type_info.id);
+        op_data.outputs()[1]
+    } else {
+        op_data.outputs()[0]
+    };
 
     let store_type = match array_type_info.kind {
         TypeKind::Array { type_id, .. } => type_id,
@@ -306,9 +315,6 @@ pub fn extract_array(
         return;
     }
 
-    let output_array_id = op_data.outputs()[0];
-    let output_value_id = op_data.outputs()[1];
-    analyzer.set_value_type(output_array_id, array_type_info.id);
     analyzer.set_value_type(output_value_id, store_type);
 }
 
@@ -621,14 +627,20 @@ pub fn extract_struct(
     had_error: &mut bool,
     op: &Op,
     field_name: Token,
+    emit_struct: bool,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let [input_struct_value_id] = *op_data.inputs().as_arr();
     let Some([ input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else { return };
     let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
 
-    let [output_struct_id, output_data_id] = *op_data.outputs().as_arr();
-    analyzer.set_value_type(output_struct_id, input_struct_type_id);
+    let output_data_id = if emit_struct {
+        let [output_struct_id, output_data_id] = *op_data.outputs().as_arr();
+        analyzer.set_value_type(output_struct_id, input_struct_type_id);
+        output_data_id
+    } else {
+        op_data.outputs()[0]
+    };
 
     let actual_struct_type_id = match input_struct_type_info.kind {
         TypeKind::Struct(_) => input_struct_type_id,

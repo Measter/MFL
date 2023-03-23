@@ -112,8 +112,13 @@ pub enum OpCode {
     },
     Epilogue,
     Equal,
-    ExtractArray,
-    ExtractStruct(Token),
+    ExtractArray {
+        emit_array: bool,
+    },
+    ExtractStruct {
+        emit_struct: bool,
+        field_name: Token,
+    },
     If(Box<If>),
     Less,
     LessEqual,
