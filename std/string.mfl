@@ -61,3 +61,56 @@ proc split_front [
         end
     end
 end
+
+proc is_whitespace [u8] to [bool] is
+    dup 32=         // Space
+    over 9= or      // Tab
+    over 10= or     // Line Feed
+    over 12= or     // Form Feed
+    over 13= or     // Carriage return
+    swap drop
+end
+
+proc trim_start [String] to [String] is
+    memory str is String end
+    str!
+    
+    0 while dup str xtrd(len) < do
+        if str xtrd(data)@ is_whitespace do
+            str@ unpack
+            1+ str ins(data) drop
+            1- str ins(len) drop
+        else
+            // Can't break loops at the moment, so this will do.
+            drop
+            str@ return
+        end
+        1+
+    end drop
+
+    str@
+end
+
+
+proc trim_end [String] to [String] is
+    memory str is String end
+    str!
+
+    if str xtrd(len) 0= do str@ return end
+
+    str xtrd(len) 1- while dup 0> do
+        if dup str xtrd(data) +@ is_whitespace do
+            str xtr(len) 1- swap ins(len) drop
+        else
+            // Cant break loops at the moment.
+            drop str@ return
+        end
+        1-
+    end drop
+
+    str@
+end
+
+proc trim [String] to [String] is 
+    trim_start trim_end
+end
