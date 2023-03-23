@@ -223,13 +223,13 @@ impl<'ctx> CodeGen<'ctx> {
             .ctx
             .append_basic_block(function, &format!("if_{}_else", op.id));
 
-        let post_basic_block = if !if_op.is_then_terminal && !if_op.is_else_terminal {
+        let post_basic_block = if if_op.is_then_terminal && if_op.is_else_terminal {
+            None
+        } else {
             Some(
                 self.ctx
                     .append_basic_block(function, &format!("if_{}_post", op.id)),
             )
-        } else {
-            None
         };
 
         self.builder.position_at_end(current_block);
