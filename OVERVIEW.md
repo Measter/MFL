@@ -28,6 +28,17 @@ Pointers notation is `ptr(T)`, where `T` is some type.
 
 Arrays are `T[N]`, where `T` is some type, and `N` is a positive integer.
 
+## Strings
+
+C-like strings are just a `ptr(u8)`, MFL-strings are the following struct:
+
+```
+struct String is
+    field len u64
+    field data ptr(u8)
+end
+```
+
 ## Structs
 
 Structs are defined with the syntax
