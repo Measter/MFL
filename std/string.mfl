@@ -1,0 +1,63 @@
+struct SplitResult is
+    field split bool
+    field remainder String
+    field prefix String
+end
+
+// Splits the given string at the first instance of the given
+// character. Remaining string does not include the split char.
+proc split_front [
+    String
+    u8  // Char to split on
+] to [
+    SplitResult
+] is
+    memory str is String end
+    memory char is u8 end
+
+    // [string, char]
+    if over xtrd(len) 0= do
+        drop
+
+        false swap dup pack(SplitResult)
+    else
+        char!
+        str!
+
+        0(u64) while 
+            dup str xtrd(len) <
+            if dup do over str xtrd(data)+ @ char@ != and end
+        do
+            // [counter]
+            1+
+        end
+        // We're either at the end of the string, or found our character.
+
+        // [idx]
+        if dup str xtrd(len) = do
+            // Reached the end of the string
+            drop
+            false str@ "" pack(SplitResult)
+        else
+            // We found the split character!
+
+            // Construct the prefix
+            str@ unpack
+            // [idx, len, ptr]
+            swap over(2) -
+            swap pack(String) swap
+
+            // [prefix, idx]
+            // Construct the remander.
+            str@ unpack
+            // [prefix, idx, len, ptr]
+            over(2)+ 1+
+            rev(3) - 1-
+            swap pack(String)
+            
+            swap true rot(3>1)
+            // [flag, remainder, prefix]
+            pack(SplitResult)
+        end
+    end
+end
