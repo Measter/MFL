@@ -352,7 +352,7 @@ pub fn insert_array(
 
                 diagnostics::emit_error(
                     op.token.location,
-                    format!("cannot extract a `{value_type_name}`"),
+                    format!("cannot insert into a `{value_type_name}`"),
                     labels,
                     None,
                     source_store,
@@ -377,7 +377,7 @@ pub fn insert_array(
 
             diagnostics::emit_error(
                 op.token.location,
-                format!("cannot extract a `{value_type_name}`"),
+                format!("cannot insert into a `{value_type_name}`"),
                 labels,
                 None,
                 source_store,
