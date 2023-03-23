@@ -216,15 +216,11 @@ pub fn push_int(
 pub fn push_str(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op, is_c_str: bool) {
     let op_data = analyzer.get_op_io(op.id);
 
-    if is_c_str {
-        analyzer.set_value_type(
-            op_data.outputs[0],
-            type_store.get_builtin_ptr(BuiltinTypes::U8).id,
-        );
+    let kind = if is_c_str {
+        type_store.get_builtin_ptr(BuiltinTypes::U8).id
     } else {
-        let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        let builtin = (Signedness::Unsigned, IntWidth::I64).into();
-        analyzer.set_value_type(len, type_store.get_builtin(builtin).id);
-        analyzer.set_value_type(ptr, type_store.get_builtin_ptr(BuiltinTypes::U8).id);
-    }
+        type_store.get_builtin(BuiltinTypes::String).id
+    };
+
+    analyzer.set_value_type(op_data.outputs[0], kind);
 }

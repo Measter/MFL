@@ -117,18 +117,10 @@ pub fn over(
     analyzer.set_op_io(op, &[src_id], &[new_id]);
 }
 
-pub fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op, is_c_str: bool) {
-    let ptr_id = analyzer.new_value(op);
-
-    if is_c_str {
-        stack.push(ptr_id);
-        analyzer.set_op_io(op, &[], &[ptr_id]);
-    } else {
-        let len_id = analyzer.new_value(op);
-        stack.push(len_id);
-        stack.push(ptr_id);
-        analyzer.set_op_io(op, &[], &[len_id, ptr_id]);
-    };
+pub fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op) {
+    let str_id = analyzer.new_value(op);
+    stack.push(str_id);
+    analyzer.set_op_io(op, &[], &[str_id]);
 }
 
 pub fn reverse(

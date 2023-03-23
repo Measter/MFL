@@ -579,9 +579,15 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::PushInt { width, value } => {
                     self.build_push_int(analyzer, value_store, op, *width, *value)
                 }
-                OpCode::PushStr { .. } => {
-                    todo!()
-                }
+                OpCode::PushStr { id, is_c_str } => self.build_push_str(
+                    analyzer,
+                    interner,
+                    type_store,
+                    value_store,
+                    op,
+                    *id,
+                    *is_c_str,
+                ),
 
                 OpCode::SysCall { arg_count, .. } => {
                     self.build_syscall(interner, analyzer, value_store, type_store, op, *arg_count)

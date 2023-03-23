@@ -12,7 +12,7 @@ use crate::{
 pub fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
     let output_type_info = type_store.get_type_info(output_type_id);
     let Some(input_const_vals) = analyzer.value_consts(val_ids) else { return };
 

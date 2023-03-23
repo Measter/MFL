@@ -5,29 +5,34 @@ const STDERR [u64] is 2 end
 
 const WRITE [u64] is 1 end
 
-proc puts [u64 ptr(u8)] to [] is
-    swap 
-    // [ptr int]
+proc puts [string] to [] is
+    // [string]
     WRITE STDOUT
-    // [ptr int int int]
-    rot(4>2)
-    // [int int ptr int]
+    // [string sysid fd]
+    rot(3<1)
+    // [sysid fd string]
+    unpack swap
     syscall(4)
     drop
 end
 
-proc putsln[u64 ptr(u8)] to [] is
+proc putsln [string] to [] is
     puts "\n" puts
 end
 
-proc eputs [u64 ptr(u8)] to [] is
-    swap 
-    WRITE STDERR rot(4>2)
-    syscall(4) drop
+proc eputs [string] to [] is
+    // [string]
+    WRITE STDERR
+    // [string sysid fd]
+    rot(3<1)
+    // [sysid fd string]
+    unpack swap
+    syscall(4)
+    drop
 end
 
 
-proc eputsln[u64 ptr(u8)] to [] is
+proc eputsln[string] to [] is
     eputs "\n" eputs
 end
 
@@ -58,10 +63,9 @@ proc putud [u64] to [] is
     30 over -
     // [idx.start, length]
 
-    swap buf cast(ptr(u8)) + swap
-    // [ptr.start, length]
-
-    swap puts
+    swap buf cast(ptr(u8)) +
+    
+    pack(string) puts
 end
 
 proc putudln [u64] to [] is

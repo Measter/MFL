@@ -8,6 +8,11 @@ use intcast::IntCast;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u16);
+impl FileId {
+    pub fn dud() -> Self {
+        Self(u16::MAX)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {

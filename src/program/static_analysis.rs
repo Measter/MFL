@@ -973,9 +973,9 @@ fn analyze_block(
                 const_prop::stack_ops::push_int(analyzer, op, *value);
             }
             OpCode::PushStr { id, is_c_str } => {
-                stack_check::stack_ops::push_str(analyzer, stack, op, *is_c_str);
+                stack_check::stack_ops::push_str(analyzer, stack, op);
                 type_check2::stack_ops::push_str(analyzer, type_store, op, *is_c_str);
-                const_prop::stack_ops::push_str(analyzer, interner, op, *id, *is_c_str);
+                const_prop::stack_ops::push_str(analyzer, op, *id, *is_c_str);
             }
 
             OpCode::Load => {

@@ -1,8 +1,6 @@
-use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    interners::Interners,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
@@ -64,7 +62,7 @@ pub fn push_int(analyzer: &mut Analyzer, op: &Op, value: IntKind) {
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(value));
 }
 
-pub fn push_str(analyzer: &mut Analyzer, interner: &Interners, op: &Op, id: Spur, is_c_str: bool) {
+pub fn push_str(analyzer: &mut Analyzer, op: &Op, id: Spur, is_c_str: bool) {
     let op_data = analyzer.get_op_io(op.id);
 
     if is_c_str {
@@ -76,17 +74,5 @@ pub fn push_str(analyzer: &mut Analyzer, interner: &Interners, op: &Op, id: Spur
                 offset: Some(0),
             },
         );
-    } else {
-        let str_len = interner.resolve_literal(id).len() - 1; // All strings are null-terminated.
-        let [len, ptr] = *op_data.outputs.as_arr::<2>();
-        analyzer.set_value_const(len, ConstVal::Int(IntKind::Unsigned(str_len.to_u64())));
-        analyzer.set_value_const(
-            ptr,
-            ConstVal::Ptr {
-                id: PtrId::Str(id),
-                src_op_loc: op.token.location,
-                offset: Some(0),
-            },
-        );
-    };
+    }
 }

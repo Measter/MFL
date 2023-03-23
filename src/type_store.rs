@@ -8,10 +8,10 @@ use lasso::Spur;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
+    lexer::{Token, TokenKind},
     opcode::UnresolvedIdent,
     program::ItemId,
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,6 +102,7 @@ pub enum BuiltinTypes {
     S32,
     S64,
     Bool,
+    String,
 }
 
 impl BuiltinTypes {
@@ -116,6 +117,7 @@ impl BuiltinTypes {
             "u64" => BuiltinTypes::U64,
             "s64" => BuiltinTypes::S64,
             "bool" => BuiltinTypes::Bool,
+            "string" => BuiltinTypes::String,
             _ => return None,
         };
         Some(builtin)
@@ -188,7 +190,7 @@ pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
     pointer_map: HashMap<TypeId, PointerInfo>,
     array_map: HashMap<(TypeId, usize), TypeId>,
-    builtins: [TypeId; 9],
+    builtins: [TypeId; 10],
 
     struct_id_map: HashMap<ItemId, TypeId>,
     struct_defs: HashMap<TypeId, ResolvedStruct>,
@@ -200,7 +202,7 @@ impl TypeStore {
             kinds: HashMap::new(),
             pointer_map: HashMap::new(),
             array_map: HashMap::new(),
-            builtins: [TypeId(0); 9],
+            builtins: [TypeId(0); 10],
             struct_id_map: HashMap::new(),
             struct_defs: HashMap::new(),
         };
@@ -285,6 +287,41 @@ impl TypeStore {
             // A couple parts of the compiler need to construct pointers to basic types.
             self.get_pointer(interner, id);
         }
+
+        let struct_name = interner.intern_lexeme("string");
+        let field_len_name = interner.intern_lexeme("len");
+        let field_ptr_name = interner.intern_lexeme("ptr");
+        // Using a dud is such a hack...
+        let id = self.add_type(struct_name, None, TypeKind::Struct(ItemId::dud()));
+        self.builtins[BuiltinTypes::String as usize] = id;
+
+        let def = ResolvedStruct {
+            name: Token {
+                kind: TokenKind::Ident,
+                lexeme: struct_name,
+                location: SourceLocation::new(FileId::dud(), 0..0),
+            },
+            fields: vec![
+                ResolvedField {
+                    name: Token {
+                        kind: TokenKind::Ident,
+                        lexeme: field_len_name,
+                        location: SourceLocation::new(FileId::dud(), 0..0),
+                    },
+                    kind: self.get_builtin(BuiltinTypes::U64).id,
+                },
+                ResolvedField {
+                    name: Token {
+                        kind: TokenKind::Ident,
+                        lexeme: field_ptr_name,
+                        location: SourceLocation::new(FileId::dud(), 0..0),
+                    },
+                    kind: self.get_builtin_ptr(BuiltinTypes::U8).id,
+                },
+            ],
+        };
+
+        self.struct_defs.insert(id, def);
     }
 
     pub fn add_type(

@@ -1,10 +1,12 @@
-use inkwell::{types::BasicType, AddressSpace};
+use inkwell::{types::BasicType, values::BasicValue, AddressSpace};
+use intcast::IntCast;
+use lasso::Spur;
 
 use crate::{
     interners::Interners,
     opcode::{IntKind, Op},
     program::static_analysis::Analyzer,
-    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -158,5 +160,50 @@ impl<'ctx> CodeGen<'ctx> {
 
         let value = self.ctx.bool_type().const_int(value as _, false).into();
         value_store.store_value(self, op_io.outputs()[0], value);
+    }
+
+    pub(super) fn build_push_str(
+        &mut self,
+        analyzer: &Analyzer,
+        interner: &mut Interners,
+        type_store: &TypeStore,
+        value_store: &mut ValueStore<'ctx>,
+        op: &Op,
+        str_id: Spur,
+        is_c_str: bool,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let str_ptr = value_store.get_string_literal(self, interner, str_id);
+
+        let store_value = if is_c_str {
+            str_ptr.as_basic_value_enum()
+        } else {
+            let string = interner.resolve_literal(str_id);
+            let len = string.len() - 1; // It's null-terminated.
+            let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
+
+            let name = format!("{}", op_io.outputs()[0]);
+
+            let struct_type =
+                self.get_type(type_store, type_store.get_builtin(BuiltinTypes::String).id);
+            let struct_ptr = self.builder.build_alloca(struct_type, &name);
+            let struct_value = self
+                .builder
+                .build_load(struct_ptr, &name)
+                .into_struct_value();
+
+            let struct_value = self
+                .builder
+                .build_insert_value(struct_value, len_value, 0, &name)
+                .unwrap();
+            let struct_value = self
+                .builder
+                .build_insert_value(struct_value, str_ptr, 1, &name)
+                .unwrap();
+
+            struct_value.as_basic_value_enum()
+        };
+
+        value_store.store_value(self, op_io.outputs()[0], store_value);
     }
 }
