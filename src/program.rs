@@ -1,12 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ffi::OsStr,
-    ops::Not,
-    path::Path,
-};
+use std::{ffi::OsStr, ops::Not, path::Path};
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
+use hashbrown::{HashMap, HashSet};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
@@ -256,12 +252,25 @@ impl Program {
     ) -> Result<ModuleId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
 
-        let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
-        let module_name = interner.intern_lexeme(module_name);
-
         let mut loaded_modules = HashSet::new();
         let mut include_queue = Vec::new();
 
+        let builtin_structs_module_name = interner.intern_lexeme("builtins");
+        let builtin_module = self.new_module(builtin_structs_module_name);
+        Module::load(
+            self,
+            builtin_module,
+            source_store,
+            interner,
+            ModuleSource::Builtin(crate::type_store::STRING_DEF),
+            &mut include_queue,
+        )?;
+        loaded_modules.insert(builtin_structs_module_name);
+
+        type_store.update_builtins(&self.structs_unresolved);
+
+        let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
+        let module_name = interner.intern_lexeme(module_name);
         let entry_module_id = self.new_module(module_name);
 
         Module::load(
@@ -269,7 +278,7 @@ impl Program {
             entry_module_id,
             source_store,
             interner,
-            file,
+            ModuleSource::File(file),
             &mut include_queue,
         )?;
 
@@ -311,7 +320,7 @@ impl Program {
                 new_module_id,
                 source_store,
                 interner,
-                &full_path,
+                ModuleSource::File(&full_path),
                 &mut include_queue,
             ) {
                 Ok(module) => module,
@@ -743,19 +752,32 @@ pub struct Module {
     top_level_symbols: HashMap<Spur, ItemId>,
 }
 
+#[derive(Debug)]
+pub enum ModuleSource<'a> {
+    File(&'a str),
+    Builtin(&'static str),
+}
+
 impl Module {
     pub fn load(
         program: &mut Program,
         module_id: ModuleId,
         source_store: &mut SourceStorage,
         interner: &mut Interners,
-        file: &str,
+        file: ModuleSource,
         include_queue: &mut Vec<Token>,
     ) -> Result<()> {
-        let _span = debug_span!(stringify!(Module::load), file).entered();
+        let file_type = format!("{file:?}");
+        let _span = debug_span!(stringify!(Module::load), file_type).entered();
 
-        let contents =
-            std::fs::read_to_string(file).with_context(|| eyre!("Failed to open file {}", file))?;
+        let (file, contents) = match file {
+            ModuleSource::File(file) => (
+                file,
+                std::fs::read_to_string(file)
+                    .with_context(|| eyre!("Failed to open file {}", file))?,
+            ),
+            ModuleSource::Builtin(contents) => ("builtin", contents.to_owned()),
+        };
 
         let file_id = source_store.add(file, &contents);
 

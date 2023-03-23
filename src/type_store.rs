@@ -1,18 +1,25 @@
 use std::ops::RangeInclusive;
 
 use ariadne::{Color, Label};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::{Token, TokenKind},
+    lexer::Token,
     opcode::UnresolvedIdent,
     program::ItemId,
-    source_file::{FileId, SourceLocation, SourceStorage},
+    source_file::{SourceLocation, SourceStorage},
 };
+
+pub const STRING_DEF: &str = "
+struct String is
+    field len u64
+    field data ptr(u8)
+end
+";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);
@@ -194,6 +201,7 @@ pub struct TypeStore {
 
     struct_id_map: HashMap<ItemId, TypeId>,
     struct_defs: HashMap<TypeId, ResolvedStruct>,
+    builtin_struct_item_ids: HashSet<ItemId>,
 }
 
 impl TypeStore {
@@ -205,6 +213,7 @@ impl TypeStore {
             builtins: [TypeId(0); 10],
             struct_id_map: HashMap::new(),
             struct_defs: HashMap::new(),
+            builtin_struct_item_ids: HashSet::new(),
         };
         s.init_builtins(interner);
         s
@@ -287,41 +296,12 @@ impl TypeStore {
             // A couple parts of the compiler need to construct pointers to basic types.
             self.get_pointer(interner, id);
         }
+    }
 
-        let struct_name = interner.intern_lexeme("String");
-        let field_len_name = interner.intern_lexeme("len");
-        let field_ptr_name = interner.intern_lexeme("ptr");
-        // Using a dud is such a hack...
-        let id = self.add_type(struct_name, None, TypeKind::Struct(ItemId::dud()));
-        self.builtins[BuiltinTypes::String as usize] = id;
-
-        let def = ResolvedStruct {
-            name: Token {
-                kind: TokenKind::Ident,
-                lexeme: struct_name,
-                location: SourceLocation::new(FileId::dud(), 0..0),
-            },
-            fields: vec![
-                ResolvedField {
-                    name: Token {
-                        kind: TokenKind::Ident,
-                        lexeme: field_len_name,
-                        location: SourceLocation::new(FileId::dud(), 0..0),
-                    },
-                    kind: self.get_builtin(BuiltinTypes::U64).id,
-                },
-                ResolvedField {
-                    name: Token {
-                        kind: TokenKind::Ident,
-                        lexeme: field_ptr_name,
-                        location: SourceLocation::new(FileId::dud(), 0..0),
-                    },
-                    kind: self.get_builtin_ptr(BuiltinTypes::U8).id,
-                },
-            ],
-        };
-
-        self.struct_defs.insert(id, def);
+    pub fn update_builtins(&mut self, struct_map: &HashMap<ItemId, UnresolvedStruct>) {
+        for id in struct_map.keys() {
+            self.builtin_struct_item_ids.insert(*id);
+        }
     }
 
     pub fn add_type(
@@ -461,7 +441,15 @@ impl TypeStore {
         };
 
         let type_id = self.struct_id_map[&struct_id];
+
+        if interner.resolve_lexeme(def.name.lexeme) == "String"
+            && self.builtin_struct_item_ids.contains(&struct_id)
+        {
+            self.builtins[BuiltinTypes::String as usize] = type_id;
+        }
+
         self.struct_defs.insert(type_id, def);
+
         Ok(type_id)
     }
 
