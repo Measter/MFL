@@ -42,9 +42,10 @@ proc split_front [
             // We found the split character!
 
             // Construct the prefix
-            str@ unpack
-            // [idx, len, ptr]
-            swap over(2) -
+            str xtrd(data)
+            // [idx, ptr]
+            over
+            // [idx, ptr, len]
             swap pack(String) swap
 
             // [prefix, idx]
