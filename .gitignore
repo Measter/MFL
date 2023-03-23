@@ -1,9 +1,9 @@
 /target
 /tests
-/examples
+/examples/*
+!/examples/*.mfl
 /vendor
 
 Cargo.lock
 *.asm
-*.porth
 *.o
