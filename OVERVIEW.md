@@ -263,6 +263,26 @@ Supported Types:
 |`T`|`T[N]`|`uN`|`T[N]`|
 |`T`|`ptr(T[N])`|`uN`|`ptr(T[N])`|
 
+### `xtr`, `xtrd` (Extract from Array)
+
+Retrieves a value from an array at the given runtime index.
+
+Stack(`xtr`): `[a b]` to `[c d]`
+
+Stack(`xtrd`): `[a b]` to `[d]`
+
+Operation:
+
+* `d` = `a[b]`
+* `c` = `a`
+
+Supported Types:
+
+|a|b|c|d|
+|---|---|---|---|
+|`T[N]`|`uN`|`T[N]`|`T`|
+|`ptr(T[N])`|`uN`|`ptr(T[N])`|`T`|
+
 ### `ins(Field)`, `insd(Field)` (Insert into Struct)
 
 Stores a value to field `Field` in a value of struct `T`
@@ -283,11 +303,13 @@ Supported Types:
 |`F`|`T`|`T`|
 |`F`|`ptr(T)`|`ptr(T)`|
 
-### `xtr(Field)` (Extract from Struct)
+### `xtr(Field)`, `xtrd(Field)` (Extract from Struct)
 
 Retrieves a value from a struct at the given field.
 
-Stack: `[a]` to `[b c]`
+Stack(`xtr`): `[a]` to `[b c]`
+
+Stack(`xtrd`): `[a]` to `[c]`
 
 Operation:
 
