@@ -501,6 +501,7 @@ fn analyze_block(
     interner: &mut Interners,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
+    emit_traces: bool,
 ) {
     let mut op_iter = block.iter();
 
@@ -1105,6 +1106,7 @@ fn analyze_block(
                     type_store,
                     op,
                     if_op,
+                    emit_traces,
                 );
                 if !local_had_error {
                     type_check2::control::analyze_if(
@@ -1143,6 +1145,7 @@ fn analyze_block(
                     type_store,
                     op,
                     while_op,
+                    false,
                 );
 
                 let merges = analyzer.get_while_merges(op.id).unwrap();
@@ -1163,6 +1166,7 @@ fn analyze_block(
                     type_store,
                     op,
                     while_op,
+                    emit_traces,
                 );
 
                 if !local_had_error {
@@ -1265,14 +1269,19 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::EmitType => type_check2::stack_ops::emit_type(
-                stack,
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                op,
-            ),
+            OpCode::EmitStack(emit_labels) => {
+                if emit_traces {
+                    type_check2::stack_ops::emit_stack(
+                        stack,
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        op,
+                        *emit_labels,
+                    );
+                }
+            }
 
             OpCode::UnresolvedCast { .. }
             | OpCode::UnresolvedIdent(_)
@@ -1318,6 +1327,7 @@ pub fn analyze_item(
         interner,
         source_store,
         type_store,
+        true,
     );
 
     had_error.not().then_some(()).ok_or(())

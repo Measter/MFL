@@ -815,7 +815,34 @@ pub fn parse_item_body(
                 id,
                 is_c_str: false,
             },
-            TokenKind::EmitType => OpCode::EmitType,
+            TokenKind::EmitStack => {
+                let emit_labels = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                {
+                    let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
+                        &mut token_iter,
+                        token,
+                        Some(1),
+                        ("(", |t| t == TokenKind::ParenthesisOpen),
+                        ("bool", |t| matches!(t, TokenKind::Boolean(_))),
+                        (")", |t| t == TokenKind::ParenthesisClosed),
+                        interner,
+                        source_store,
+                    ) else {
+                        had_error = true;
+                        continue;
+                    };
+
+                    token.location = token.location.merge(close_paren.location);
+
+                    let emit_token = count_token[0];
+                    let TokenKind::Boolean(emit_labels) = emit_token.kind else { unreachable!() };
+                    emit_labels
+                } else {
+                    false
+                };
+
+                OpCode::EmitStack(emit_labels)
+            }
             TokenKind::ArgC => OpCode::ArgC,
             TokenKind::ArgV => OpCode::ArgV,
 

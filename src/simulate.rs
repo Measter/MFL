@@ -294,7 +294,7 @@ fn simulate_execute_program_block(
             }
 
             // These are no-ops for the simulator, only there to help the compiler.
-            OpCode::Epilogue | OpCode::Prologue | OpCode::EmitType => {}
+            OpCode::Epilogue | OpCode::Prologue | OpCode::EmitStack(_) => {}
             OpCode::Return { .. } => break,
 
             OpCode::ResolvedIdent { item_id, .. } => {

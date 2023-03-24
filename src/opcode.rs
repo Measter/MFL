@@ -110,7 +110,7 @@ pub enum OpCode {
         count: u8,
         count_token: Token,
     },
-    EmitType,
+    EmitStack(bool),
     Epilogue,
     Equal,
     ExtractArray {

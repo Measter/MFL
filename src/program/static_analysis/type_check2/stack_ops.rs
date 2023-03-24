@@ -1,4 +1,7 @@
+use std::fmt::Write;
+
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -10,30 +13,50 @@ use crate::{
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
-pub fn emit_type(
+pub fn emit_stack(
     stack: &[ValueId],
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     op: &Op,
+    emit_labels: bool,
 ) {
-    let Some(&top_id) = stack.last() else { return };
-    let Some([type_id]) = analyzer.value_types([top_id]) else { return };
-    let type_info = type_store.get_type_info(type_id);
-
-    let name = interner.resolve_lexeme(type_info.name);
+    let mut note = "\n\t\tID    |     Type\n\
+        \t\t______|__________"
+        .to_owned();
 
     let mut labels = Vec::new();
-    diagnostics::build_creator_label_chain(&mut labels, analyzer, top_id, 0, name);
+
+    for (idx, value_id) in stack.iter().enumerate().rev() {
+        let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
+            let type_info = type_store.get_type_info(v);
+            interner.resolve_lexeme(type_info.name)
+        });
+
+        let value_idx = stack.len() - idx - 1;
+
+        if emit_labels {
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                *value_id,
+                value_idx.to_u64(),
+                value_type,
+            );
+        }
+
+        write!(&mut note, "\n\t\t{:<5} | {:>8}", value_idx, value_type,).unwrap();
+    }
+
     labels.push(Label::new(op.token.location).with_color(Color::Cyan));
 
     diagnostics::emit(
         ariadne::ReportKind::Advice,
         op.token.location,
-        format!("type of value is `{name}`",),
+        "printing stack trace",
         labels,
-        None,
+        note,
         source_store,
     );
 }

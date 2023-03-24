@@ -339,6 +339,7 @@ Swaps the top `N` values with the `N` values below them. Defaults to 1.
 
 Stack: `[a, b, c, d]` to `[c, d, a, b]`
 
-### `typeof`
+### `stktrc(bool)`
 
-Causes the compiler to emit a diagnostic during codegen with the type of the top value.
+Causes the compiler to print the current values and types on the stack. The boolean controls whether
+labels for each value are emitted. Defaults to false.

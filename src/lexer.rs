@@ -38,6 +38,7 @@ pub enum TokenKind {
     Else,
     End,
     Equal,
+    EmitStack,
     Extract { emit_struct: bool },
     Field,
     GoesTo,
@@ -77,7 +78,6 @@ pub enum TokenKind {
     Struct,
     Swap,
     SysCall,
-    EmitType,
     Unpack,
     While,
 }
@@ -103,7 +103,7 @@ impl TokenKind {
             | TokenKind::Dup
             | TokenKind::Elif
             | TokenKind::Else
-            | TokenKind::EmitType
+            | TokenKind::EmitStack
             | TokenKind::End
             | TokenKind::Equal
             | TokenKind::Extract { .. }
@@ -519,13 +519,13 @@ impl<'source> Scanner<'source> {
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
+                    "stktrc" => TokenKind::EmitStack,
                     "struct" => TokenKind::Struct,
                     "swap" => TokenKind::Swap,
                     "syscall" => TokenKind::SysCall,
                     "unpack" => TokenKind::Unpack,
                     "to" => TokenKind::GoesTo,
                     "true" => TokenKind::Boolean(true),
-                    "typeof" => TokenKind::EmitType,
                     "while" => TokenKind::While,
                     "xor" => TokenKind::BitXor,
                     _ => TokenKind::Ident,

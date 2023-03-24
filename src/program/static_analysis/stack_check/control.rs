@@ -207,6 +207,7 @@ pub fn analyze_while(
     type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
+    emit_traces: bool,
 ) {
     let initial_stack = stack.clone();
 
@@ -221,6 +222,7 @@ pub fn analyze_while(
         interner,
         source_store,
         type_store,
+        emit_traces,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
@@ -277,6 +279,7 @@ pub fn analyze_while(
         interner,
         source_store,
         type_store,
+        emit_traces,
     );
 
     // Again, the body cannot change the depth of the stack.
@@ -339,6 +342,7 @@ pub fn analyze_if(
     type_store: &mut TypeStore,
     op: &Op,
     if_op: &If,
+    emit_traces: bool,
 ) {
     let mut condition_values = Vec::new();
 
@@ -353,6 +357,7 @@ pub fn analyze_if(
         interner,
         source_store,
         type_store,
+        emit_traces,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
@@ -384,6 +389,7 @@ pub fn analyze_if(
         interner,
         source_store,
         type_store,
+        emit_traces,
     );
 
     // We always have an else block, so save our current stack state for comparison.
@@ -405,6 +411,7 @@ pub fn analyze_if(
         interner,
         source_store,
         type_store,
+        emit_traces,
     );
 
     let mut body_merges = Vec::new();

@@ -432,7 +432,7 @@ impl<'ctx> CodeGen<'ctx> {
             if let OpCode::Reverse { .. }
             | OpCode::Swap { .. }
             | OpCode::Rot { .. }
-            | OpCode::EmitType = &op.code
+            | OpCode::EmitStack(_) = &op.code
             {
                 continue;
             }
@@ -608,7 +608,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop { .. }
-                | OpCode::EmitType
+                | OpCode::EmitStack(_)
                 | OpCode::Reverse { .. }
                 | OpCode::Rot { .. }
                 | OpCode::Swap { .. } => continue,
