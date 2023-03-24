@@ -243,11 +243,13 @@ Supported Types:
 |---|---|
 |`T[N]`|`T`|
 
-### `ins` (Insert into Array)
+### `ins`, `insd` (Insert into Array)
 
 Stores a value into an array at the given runtime index.
 
-Stack: `[a b c]` to `[d]`
+Stack(`ins`): `[a b c]` to `[d]`
+
+Stack(`insd`): `[a b c]` to `[]`
 
 Operation:
 
@@ -261,11 +263,13 @@ Supported Types:
 |`T`|`T[N]`|`uN`|`T[N]`|
 |`T`|`ptr(T[N])`|`uN`|`ptr(T[N])`|
 
-### `ins(Field)` (Insert into Struct)
+### `ins(Field)`, `insd(Field)` (Insert into Struct)
 
 Stores a value to field `Field` in a value of struct `T`
 
-Stack: `[a b]` to `[c]`
+Stack(`ins`): `[a b]` to `[c]`
+
+Stack(`insd`): `[a b]` to `[]`
 
 Operation:
 

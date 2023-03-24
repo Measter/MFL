@@ -612,7 +612,7 @@ pub fn parse_item_body(
                 }
             }
             TokenKind::Unpack => OpCode::Unpack,
-            TokenKind::Extract { .. } | TokenKind::Insert => {
+            TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                 if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok((_, ident_token, close_paren)) = parse_delimited_token_list(
@@ -637,7 +637,10 @@ pub fn parse_item_body(
                             emit_struct,
                             field_name: ident_token,
                         },
-                        TokenKind::Insert => OpCode::InsertStruct(ident_token),
+                        TokenKind::Insert { emit_struct } => OpCode::InsertStruct {
+                            emit_struct,
+                            field_name: ident_token,
+                        },
                         _ => unreachable!(),
                     }
                 } else {
@@ -645,7 +648,9 @@ pub fn parse_item_body(
                         TokenKind::Extract { emit_struct } => OpCode::ExtractArray {
                             emit_array: emit_struct,
                         },
-                        TokenKind::Insert => OpCode::InsertArray,
+                        TokenKind::Insert { emit_struct } => OpCode::InsertArray {
+                            emit_array: emit_struct,
+                        },
                         _ => unreachable!(),
                     }
                 }

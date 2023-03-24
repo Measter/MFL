@@ -557,9 +557,14 @@ impl<'ctx> CodeGen<'ctx> {
                     op,
                     *emit_array,
                 ),
-                OpCode::InsertArray => {
-                    self.build_insert_array(interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::InsertArray { emit_array } => self.build_insert_array(
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                    *emit_array,
+                ),
                 OpCode::ExtractStruct {
                     emit_struct,
                     field_name,
@@ -572,13 +577,17 @@ impl<'ctx> CodeGen<'ctx> {
                     *field_name,
                     *emit_struct,
                 ),
-                OpCode::InsertStruct(field_name) => self.build_insert_struct(
+                OpCode::InsertStruct {
+                    emit_struct,
+                    field_name,
+                } => self.build_insert_struct(
                     interner,
                     analyzer,
                     value_store,
                     type_store,
                     op,
                     *field_name,
+                    *emit_struct,
                 ),
                 OpCode::Memory {
                     item_id,

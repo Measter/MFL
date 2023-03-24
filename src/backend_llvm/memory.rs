@@ -197,6 +197,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
         op: &Op,
+        emit_array: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [data_value_id, array_value_id, _] = *op_io.inputs().as_arr();
@@ -257,19 +258,21 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.build_store(offset_ptr, data_val);
 
-        if let TypeKind::Array { .. } = array_type_info.kind {
-            let array_type = self.get_type(type_store, array_type_id);
-            let cast_ptr = self.builder.build_pointer_cast(
-                arr_ptr,
-                array_type.ptr_type(AddressSpace::default()),
-                "",
-            );
-            let array_value = self.builder.build_load(cast_ptr, "");
-            value_store.store_value(self, op_io.outputs()[0], array_value);
-        } else {
-            // We know our array input was a pointer. Because it was a pointer, we can just shove
-            // the pointer back in.
-            value_store.store_value(self, op_io.outputs()[0], array_val);
+        if emit_array {
+            if let TypeKind::Array { .. } = array_type_info.kind {
+                let array_type = self.get_type(type_store, array_type_id);
+                let cast_ptr = self.builder.build_pointer_cast(
+                    arr_ptr,
+                    array_type.ptr_type(AddressSpace::default()),
+                    "",
+                );
+                let array_value = self.builder.build_load(cast_ptr, "");
+                value_store.store_value(self, op_io.outputs()[0], array_value);
+            } else {
+                // We know our array input was a pointer. Because it was a pointer, we can just shove
+                // the pointer back in.
+                value_store.store_value(self, op_io.outputs()[0], array_val);
+            }
         }
     }
 
@@ -281,6 +284,7 @@ impl<'ctx> CodeGen<'ctx> {
         type_store: &TypeStore,
         op: &Op,
         field_name: Token,
+        emit_struct: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [data_value_id, input_struct_value_id] = *op_io.inputs().as_arr();
@@ -338,27 +342,36 @@ impl<'ctx> CodeGen<'ctx> {
             data_val
         };
 
+        let new_value_name = if emit_struct {
+            format!("{}", op_io.outputs()[0])
+        } else {
+            struct_value.get_name().to_str().unwrap().to_owned()
+        };
         let new_struct_val = self
             .builder
             .build_insert_value(
                 struct_value,
                 data_val,
                 field_idx.to_u32().unwrap(),
-                &format!("{}", op_io.outputs()[0]),
+                &new_value_name,
             )
             .unwrap();
 
         if let TypeKind::Struct(_) = input_struct_type_info.kind {
             // In this case we just store the struct directly.
-            value_store.store_value(
-                self,
-                op_io.outputs()[0],
-                new_struct_val.as_basic_value_enum(),
-            );
+            if emit_struct {
+                value_store.store_value(
+                    self,
+                    op_io.outputs()[0],
+                    new_struct_val.as_basic_value_enum(),
+                );
+            }
         } else {
             self.builder
                 .build_store(input_struct_val.into_pointer_value(), new_struct_val);
-            value_store.store_value(self, op_io.outputs()[0], input_struct_val);
+            if emit_struct {
+                value_store.store_value(self, op_io.outputs()[0], input_struct_val);
+            }
         }
     }
 

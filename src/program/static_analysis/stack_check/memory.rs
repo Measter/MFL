@@ -128,6 +128,7 @@ pub fn insert_array(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
+    emit_array: bool,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
 
@@ -136,11 +137,16 @@ pub fn insert_array(
         analyzer.consume_value(id, op.id);
     }
 
-    // Leave the array on the stack so the user can continue using it.
-    let output = analyzer.new_value(op);
-    stack.push(output);
+    let mut outputs = SmallVec::<[_; 1]>::new();
 
-    analyzer.set_op_io(op, &inputs, &[output]);
+    if emit_array {
+        // Leave the array on the stack so the user can continue using it.
+        let output = analyzer.new_value(op);
+        outputs.push(output);
+        stack.push(output);
+    }
+
+    analyzer.set_op_io(op, &inputs, &outputs);
 }
 
 pub fn insert_struct(
@@ -149,6 +155,7 @@ pub fn insert_struct(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
+    emit_struct: bool,
 ) {
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
 
@@ -157,11 +164,15 @@ pub fn insert_struct(
         analyzer.consume_value(id, op.id);
     }
 
-    // Leave the struct on the stack so the user can continue using it.
-    let output = analyzer.new_value(op);
-    stack.push(output);
+    let mut outputs = SmallVec::<[_; 1]>::new();
+    if emit_struct {
+        // Leave the struct on the stack so the user can continue using it.
+        let output = analyzer.new_value(op);
+        outputs.push(output);
+        stack.push(output);
+    }
 
-    analyzer.set_op_io(op, &inputs, &[output]);
+    analyzer.set_op_io(op, &inputs, &outputs);
 }
 
 pub fn extract_struct(

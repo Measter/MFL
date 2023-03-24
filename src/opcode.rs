@@ -125,8 +125,13 @@ pub enum OpCode {
     LessEqual,
     Greater,
     GreaterEqual,
-    InsertArray,
-    InsertStruct(Token),
+    InsertArray {
+        emit_array: bool,
+    },
+    InsertStruct {
+        emit_struct: bool,
+        field_name: Token,
+    },
     Load,
     Memory {
         item_id: ItemId,

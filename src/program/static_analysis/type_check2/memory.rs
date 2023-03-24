@@ -325,12 +325,18 @@ pub fn insert_array(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
+    emit_array: bool,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs().as_arr();
     let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else { return };
     let [data_type_info, array_type_info, idx_type_info] =
         type_ids.map(|id| type_store.get_type_info(id));
+
+    if emit_array {
+        let output_id = op_data.outputs()[0];
+        analyzer.set_value_type(output_id, array_type_id);
+    }
 
     let store_type_id = match array_type_info.kind {
         TypeKind::Array { type_id, .. } => type_id,
@@ -465,9 +471,6 @@ pub fn insert_array(
 
         *had_error = true;
     }
-
-    let output_id = op_data.outputs()[0];
-    analyzer.set_value_type(output_id, array_type_id);
 }
 
 pub fn insert_struct(
@@ -478,14 +481,17 @@ pub fn insert_struct(
     had_error: &mut bool,
     op: &Op,
     field_name: Token,
+    emit_struct: bool,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs().as_arr();
     let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else { return };
     let [data_type_info, input_struct_type_info] = type_ids.map(|id| type_store.get_type_info(id));
 
-    let output_id = op_data.outputs()[0];
-    analyzer.set_value_type(output_id, input_struct_type_id);
+    if emit_struct {
+        let output_id = op_data.outputs()[0];
+        analyzer.set_value_type(output_id, input_struct_type_id);
+    }
 
     let actual_struct_type_id = match input_struct_type_info.kind {
         TypeKind::Struct(_) => input_struct_type_id,

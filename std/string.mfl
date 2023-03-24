@@ -79,8 +79,8 @@ proc trim_start [String] to [String] is
     0 while dup str xtrd(len) < do
         if str xtrd(data)@ is_whitespace do
             str@ unpack
-            1+ str ins(data) drop
-            1- str ins(len) drop
+            1+ str insd(data)
+            1- str insd(len)
         else
             // Can't break loops at the moment, so this will do.
             drop
@@ -101,7 +101,7 @@ proc trim_end [String] to [String] is
 
     str xtrd(len) 1- while dup 0> do
         if dup str xtrd(data) +@ is_whitespace do
-            str xtr(len) 1- swap ins(len) drop
+            str xtr(len) 1- swap insd(len)
         else
             // Cant break loops at the moment.
             drop str@ return
