@@ -37,9 +37,9 @@ struct Args {
 
     file: String,
 
-    /// Set optimization level
-    #[arg(short, action = clap::ArgAction::Count)]
-    opt_level: u8,
+    /// Enable optimizations.
+    #[arg(short = 'O')]
+    optimize: bool,
 }
 
 fn load_program(
@@ -111,7 +111,7 @@ fn load_program(
     ))
 }
 
-fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Result<()> {
+fn run_compile(file: String, optimize: bool, include_paths: Vec<String>) -> Result<()> {
     let mut output_binary = Path::new(&file).to_path_buf();
     output_binary.set_extension("");
 
@@ -124,7 +124,7 @@ fn run_compile(file: String, opt_level: u8, include_paths: Vec<String>) -> Resul
         &mut interner,
         &mut type_store,
         &file,
-        opt_level,
+        optimize,
     )?;
 
     println!("Linking... into {}", output_binary.display());
@@ -163,7 +163,7 @@ fn main() -> Result<()> {
 
     {
         let _span = debug_span!("main").entered();
-        run_compile(args.file, args.opt_level, args.library_paths)?;
+        run_compile(args.file, args.optimize, args.library_paths)?;
     }
 
     opentelemetry::global::shutdown_tracer_provider();

@@ -838,7 +838,7 @@ pub(crate) fn compile(
     interner: &mut Interners,
     type_store: &mut TypeStore,
     file: &str,
-    opt_level: u8,
+    optimize: bool,
 ) -> Result<Vec<PathBuf>> {
     let _span = debug_span!(stringify!(backend_llvm::compile)).entered();
 
@@ -853,11 +853,10 @@ pub(crate) fn compile(
     debug!("Compiling with LLVM codegen to {}", output_obj.display());
 
     trace!("Creating LLVM machinary");
-    let opt_level = match opt_level {
-        0 => OptimizationLevel::None,
-        1 => OptimizationLevel::Less,
-        2 => OptimizationLevel::Default,
-        3.. => OptimizationLevel::Aggressive,
+    let opt_level = if !optimize {
+        OptimizationLevel::None
+    } else {
+        OptimizationLevel::Aggressive
     };
 
     Target::initialize_x86(&InitializationConfig::default());
