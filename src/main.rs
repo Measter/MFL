@@ -1,6 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{path::Path, process::Command};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use ariadne::{Color, Label};
 use clap::Parser;
@@ -33,9 +36,15 @@ struct Args {
 
     /// Comma-separated list of paths to search includes.
     #[arg(short = 'I', value_delimiter = ',')]
-    library_paths: Vec<String>,
+    library_paths: Vec<PathBuf>,
 
-    file: String,
+    file: PathBuf,
+
+    #[arg(long = "obj", default_value = "./obj")]
+    obj_dir: PathBuf,
+
+    #[arg(short = 'o')]
+    output: Option<PathBuf>,
 
     /// Enable optimizations.
     #[arg(short = 'O')]
@@ -43,8 +52,8 @@ struct Args {
 }
 
 fn load_program(
-    file: &str,
-    include_paths: Vec<String>,
+    file: &Path,
+    include_paths: Vec<PathBuf>,
 ) -> Result<(Program, SourceStorage, Interners, TypeStore, ItemId)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
@@ -111,10 +120,13 @@ fn load_program(
     ))
 }
 
-fn run_compile(file: String, optimize: bool, include_paths: Vec<String>) -> Result<()> {
-    let mut output_binary = Path::new(&file).to_path_buf();
-    output_binary.set_extension("");
-
+fn run_compile(
+    file: PathBuf,
+    obj_dir: PathBuf,
+    output_path: PathBuf,
+    optimize: bool,
+    include_paths: Vec<PathBuf>,
+) -> Result<()> {
     let (program, _source_storage, mut interner, mut type_store, entry_function) =
         load_program(&file, include_paths)?;
 
@@ -124,13 +136,14 @@ fn run_compile(file: String, optimize: bool, include_paths: Vec<String>) -> Resu
         &mut interner,
         &mut type_store,
         &file,
+        &obj_dir,
         optimize,
     )?;
 
-    println!("Linking... into {}", output_binary.display());
+    println!("Linking... into {}", output_path.display());
     let ld = Command::new("ld")
         .arg("-o")
-        .arg(&output_binary)
+        .arg(&output_path)
         .args(&objects)
         .status()
         .with_context(|| eyre!("Failed to execude ld"))?;
@@ -163,7 +176,19 @@ fn main() -> Result<()> {
 
     {
         let _span = debug_span!("main").entered();
-        run_compile(args.file, args.optimize, args.library_paths)?;
+
+        let output_path = args.output.unwrap_or_else(|| {
+            let mut output_binary = Path::new(&args.file).to_path_buf();
+            output_binary.set_extension("");
+            output_binary
+        });
+        run_compile(
+            args.file,
+            args.obj_dir,
+            output_path,
+            args.optimize,
+            args.library_paths,
+        )?;
     }
 
     opentelemetry::global::shutdown_tracer_provider();

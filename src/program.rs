@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, ffi::OsStr, ops::Not, path::Path};
+use std::{
+    collections::BTreeMap,
+    ffi::OsStr,
+    ops::Not,
+    path::{Path, PathBuf},
+};
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
@@ -244,11 +249,11 @@ impl Program {
 
     pub fn load_program(
         &mut self,
-        file: &str,
+        file: &Path,
         interner: &mut Interners,
         source_store: &mut SourceStorage,
         type_store: &mut TypeStore,
-        library_paths: &[String],
+        library_paths: &[PathBuf],
     ) -> Result<ModuleId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
 
@@ -754,7 +759,7 @@ pub struct Module {
 
 #[derive(Debug)]
 pub enum ModuleSource<'a> {
-    File(&'a str),
+    File(&'a Path),
     Builtin(&'static str),
 }
 
@@ -774,15 +779,15 @@ impl Module {
             ModuleSource::File(file) => (
                 file,
                 std::fs::read_to_string(file)
-                    .with_context(|| eyre!("Failed to open file {}", file))?,
+                    .with_context(|| eyre!("Failed to open file {}", file.display()))?,
             ),
-            ModuleSource::Builtin(contents) => ("builtin", contents.to_owned()),
+            ModuleSource::Builtin(contents) => (Path::new("builtin"), contents.to_owned()),
         };
 
         let file_id = source_store.add(file, &contents);
 
         let tokens = lexer::lex_file(&contents, file_id, interner, source_store)
-            .map_err(|_| eyre!("error lexing file: {}", file))?;
+            .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
 
         let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
         interner.intern_lexeme(file_stem);
@@ -795,7 +800,7 @@ impl Module {
             include_queue,
             source_store,
         )
-        .map_err(|_| eyre!("error parsing file: {}", file))?;
+        .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
 
         Ok(())
     }
@@ -809,17 +814,13 @@ impl Module {
     }
 }
 
-fn search_includes(paths: &[String], file_name: &Path) -> Option<String> {
+fn search_includes(paths: &[PathBuf], file_name: &Path) -> Option<PathBuf> {
     // Stupidly innefficient, but whatever...
 
     for path in paths {
         let path = Path::new(path).join(file_name);
         if path.exists() {
-            return Some(
-                path.to_str()
-                    .map(ToOwned::to_owned)
-                    .expect("Mangled string"),
-            );
+            return Some(path);
         }
     }
 

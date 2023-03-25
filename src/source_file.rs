@@ -1,7 +1,7 @@
 // Basically a minor modification to codespan_reportings SimpleFiles because I wanted
 // a more strongly-typed file ID.
 
-use std::ops::Range;
+use std::{ops::Range, path::Path};
 
 use ariadne::{Cache, Source, Span};
 use intcast::IntCast;
@@ -82,10 +82,10 @@ impl SourceStorage {
         SourceStorage { files: Vec::new() }
     }
 
-    pub fn add(&mut self, name: &str, source: &str) -> FileId {
+    pub fn add(&mut self, name: &Path, source: &str) -> FileId {
         let id = self.files.len();
         self.files.push(LoadedSource {
-            name: name.to_owned(),
+            name: name.to_str().unwrap().to_owned(),
             contents: source.to_owned(),
             source: source.into(),
         });
