@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{path::PathBuf, process::Command};
 
 use color_eyre::{
     eyre::{eyre, Context as _},
@@ -30,6 +27,7 @@ use crate::{
         ItemId, ItemKind, Program,
     },
     type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    Args,
 };
 
 mod arithmetic;
@@ -837,34 +835,32 @@ pub(crate) fn compile(
     entry_function: ItemId,
     interner: &mut Interners,
     type_store: &mut TypeStore,
-    file_path: &Path,
-    obj_dir: &Path,
-    optimize: bool,
+    args: &Args,
 ) -> Result<Vec<PathBuf>> {
     let _span = debug_span!(stringify!(backend_llvm::compile)).entered();
 
-    if !obj_dir.exists() {
-        eprintln!("creating obj directory: {obj_dir:?}");
-        std::fs::create_dir_all(obj_dir)
-            .with_context(|| eyre!("failed to create directory `{obj_dir:?}`"))?;
-    } else if !obj_dir.is_dir() {
+    if !args.obj_dir.exists() {
+        eprintln!("creating obj directory: {:?}", args.obj_dir.display());
+        std::fs::create_dir_all(&args.obj_dir)
+            .with_context(|| eyre!("failed to create directory `{:?}`", args.obj_dir))?;
+    } else if !args.obj_dir.is_dir() {
         return Err(eyre!("obj path is not a directory"));
     }
 
-    let mut output_obj = obj_dir.to_owned();
-    output_obj.push(file_path.file_stem().unwrap());
+    let mut output_obj = args.obj_dir.to_owned();
+    output_obj.push(args.file.file_stem().unwrap());
     output_obj.set_extension("o");
-    let mut bootstrap_obj = obj_dir.to_owned();
+    let mut bootstrap_obj = args.obj_dir.to_owned();
     bootstrap_obj.set_file_name("bootstrap.o");
 
-    let mut output_asm = obj_dir.to_owned();
-    output_asm.push(file_path.file_stem().unwrap());
+    let mut output_asm = args.obj_dir.to_owned();
+    output_asm.push(args.file.file_stem().unwrap());
     output_asm.set_extension("s");
 
     debug!("Compiling with LLVM codegen to {}", output_obj.display());
 
     trace!("Creating LLVM machinary");
-    let opt_level = if !optimize {
+    let opt_level = if !args.optimize {
         OptimizationLevel::None
     } else {
         OptimizationLevel::Aggressive
@@ -901,7 +897,7 @@ pub(crate) fn compile(
             .map_err(|e| eyre!("Error writing object: {e}"))?;
     }
 
-    {
+    if args.emit_asm {
         let _span = trace_span!("Writing assembly file").entered();
         target_machine
             .write_to_file(codegen.module(), FileType::Assembly, &output_asm)

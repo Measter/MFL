@@ -21,6 +21,7 @@ use crate::{
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{SourceLocation, SourceStorage},
     type_store::{TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
+    Args,
 };
 
 mod parser;
@@ -249,11 +250,10 @@ impl Program {
 
     pub fn load_program(
         &mut self,
-        file: &Path,
         interner: &mut Interners,
         source_store: &mut SourceStorage,
         type_store: &mut TypeStore,
-        library_paths: &[PathBuf],
+        args: &Args,
     ) -> Result<ModuleId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
 
@@ -274,7 +274,7 @@ impl Program {
 
         type_store.update_builtins(&self.structs_unresolved);
 
-        let module_name = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
+        let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
         let module_name = interner.intern_lexeme(module_name);
         let entry_module_id = self.new_module(module_name);
 
@@ -283,7 +283,7 @@ impl Program {
             entry_module_id,
             source_store,
             interner,
-            ModuleSource::File(file),
+            ModuleSource::File(&args.file),
             &mut include_queue,
         )?;
 
@@ -298,7 +298,7 @@ impl Program {
             let mut filename = Path::new(interner.resolve_lexeme(token.lexeme)).to_owned();
             filename.set_extension("mfl");
 
-            let full_path = match search_includes(library_paths, &filename) {
+            let full_path = match search_includes(&args.library_paths, &filename) {
                 Some(path) => path,
                 None => {
                     diagnostics::emit_error(
@@ -354,7 +354,7 @@ impl Program {
             return Err(eyre!("failed to load program"));
         }
 
-        self.post_process_items(interner, source_store, type_store)?;
+        self.post_process_items(interner, source_store, type_store, args.print_stack_depths)?;
 
         Ok(entry_module_id)
     }
@@ -487,6 +487,7 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
+        print_stack_depths: bool,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
@@ -512,6 +513,7 @@ impl Program {
                 interner,
                 source_store,
                 type_store,
+                print_stack_depths,
             )
             .is_err();
 
@@ -640,6 +642,7 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
+        print_stack_depths: bool,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
         self.resolve_idents(interner, source_store)?;
@@ -651,7 +654,7 @@ impl Program {
 
         self.determine_terminal_blocks(interner)?;
 
-        self.analyze_data_flow(interner, source_store, type_store)?;
+        self.analyze_data_flow(interner, source_store, type_store, print_stack_depths)?;
         self.evaluate_const_items(interner, source_store, type_store)?;
 
         self.process_idents(interner, source_store)?;

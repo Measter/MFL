@@ -496,6 +496,7 @@ fn analyze_block(
     item_id: ItemId,
     block: &[Op],
     stack: &mut Vec<ValueId>,
+    max_stack_depth: &mut usize,
     had_error: &mut bool,
     analyzer: &mut Analyzer,
     interner: &mut Interners,
@@ -1107,6 +1108,7 @@ fn analyze_block(
                     item_id,
                     analyzer,
                     stack,
+                    max_stack_depth,
                     &mut local_had_error,
                     interner,
                     source_store,
@@ -1146,6 +1148,7 @@ fn analyze_block(
                     item_id,
                     analyzer,
                     stack,
+                    max_stack_depth,
                     &mut local_had_error,
                     interner,
                     source_store,
@@ -1167,6 +1170,7 @@ fn analyze_block(
                     item_id,
                     analyzer,
                     stack,
+                    max_stack_depth,
                     &mut local_had_error,
                     interner,
                     source_store,
@@ -1296,6 +1300,8 @@ fn analyze_block(
                 panic!("ICE: Encountered {:?}", op.code);
             }
         }
+
+        *max_stack_depth = std::cmp::max(*max_stack_depth, stack.len());
     }
 
     for op in op_iter {
@@ -1320,15 +1326,18 @@ pub fn analyze_item(
     interner: &mut Interners,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
+    print_stack_depth: bool,
 ) -> Result<(), ()> {
     let mut stack = Vec::new();
     let mut had_error = false;
+    let mut max_stack_depth = 0;
 
     analyze_block(
         program,
         item_id,
         program.get_item_body(item_id),
         &mut stack,
+        &mut max_stack_depth,
         &mut had_error,
         analyzer,
         interner,
@@ -1336,6 +1345,11 @@ pub fn analyze_item(
         type_store,
         true,
     );
+
+    if print_stack_depth {
+        let item_name = interner.get_symbol_name(program, item_id);
+        println!("{item_name}: {max_stack_depth}");
+    }
 
     had_error.not().then_some(()).ok_or(())
 }

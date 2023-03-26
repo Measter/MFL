@@ -29,10 +29,14 @@ mod source_file;
 mod type_store;
 
 #[derive(Debug, Parser)]
-struct Args {
+pub struct Args {
     /// Print more to the console
     #[arg(short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Print the maximum depth of the stack in each procedure.
+    #[arg(long = "stack-depth")]
+    print_stack_depths: bool,
 
     /// Comma-separated list of paths to search includes.
     #[arg(short = 'I', value_delimiter = ',')]
@@ -52,25 +56,21 @@ struct Args {
     /// Enable optimizations.
     #[arg(short = 'O')]
     optimize: bool,
+
+    /// Emit assembly
+    #[arg(long = "emit-asm")]
+    emit_asm: bool,
 }
 
-fn load_program(
-    file: &Path,
-    include_paths: Vec<PathBuf>,
-) -> Result<(Program, SourceStorage, Interners, TypeStore, ItemId)> {
+fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interners, TypeStore, ItemId)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
     let mut type_store = TypeStore::new(&mut interner);
 
     let mut program = Program::new();
-    let entry_module_id = program.load_program(
-        file,
-        &mut interner,
-        &mut source_storage,
-        &mut type_store,
-        &include_paths,
-    )?;
+    let entry_module_id =
+        program.load_program(&mut interner, &mut source_storage, &mut type_store, args)?;
 
     let entry_symbol = interner.intern_lexeme("entry");
     let entry_module = program.get_module(entry_module_id);
@@ -123,25 +123,19 @@ fn load_program(
     ))
 }
 
-fn run_compile(
-    file: PathBuf,
-    obj_dir: PathBuf,
-    output_path: PathBuf,
-    optimize: bool,
-    include_paths: Vec<PathBuf>,
-) -> Result<()> {
+fn run_compile(args: Args) -> Result<()> {
     let (program, _source_storage, mut interner, mut type_store, entry_function) =
-        load_program(&file, include_paths)?;
+        load_program(&args)?;
 
     let objects = backend_llvm::compile(
         &program,
         entry_function,
         &mut interner,
         &mut type_store,
-        &file,
-        &obj_dir,
-        optimize,
+        &args,
     )?;
+
+    let output_path = args.output.clone().unwrap();
 
     println!("Linking... into {}", output_path.display());
     let ld = Command::new("ld")
@@ -160,7 +154,7 @@ fn run_compile(
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     // let max_log_level = match args.verbose {
     //     0 => Level::WARN,
@@ -180,18 +174,12 @@ fn main() -> Result<()> {
     {
         let _span = debug_span!("main").entered();
 
-        let output_path = args.output.unwrap_or_else(|| {
+        args.output = args.output.or_else(|| {
             let mut output_binary = Path::new(&args.file).to_path_buf();
             output_binary.set_extension("");
-            output_binary
+            Some(output_binary)
         });
-        run_compile(
-            args.file,
-            args.obj_dir,
-            output_path,
-            args.optimize,
-            args.library_paths,
-        )?;
+        run_compile(args)?;
     }
 
     opentelemetry::global::shutdown_tracer_provider();
