@@ -43,11 +43,8 @@ impl<'ctx> CodeGen<'ctx> {
         let [output_type_id] = analyzer.value_types([output_id]).unwrap();
         let output_type_info = type_store.get_type_info(output_type_id);
 
-        let llvm_aggr_type = self.get_type(type_store, output_type_id);
-        let output_name = format!("{output_id}");
-
-        let aggr_ptr = self.builder.build_alloca(llvm_aggr_type, &output_name);
-        let aggr_value = self.builder.build_load(aggr_ptr, &output_name);
+        let aggr_llvm_type = self.get_type(type_store, output_type_id);
+        let aggr_value = aggr_llvm_type.const_zero();
         let mut aggr_value = match output_type_info.kind {
             TypeKind::Array { .. } => aggr_value.into_array_value().as_aggregate_value_enum(),
             TypeKind::Struct(_) => aggr_value.into_struct_value().as_aggregate_value_enum(),
@@ -146,35 +143,20 @@ impl<'ctx> CodeGen<'ctx> {
         let array_type_info = type_store.get_type_info(array_type_id);
 
         let arr_ptr = match array_type_info.kind {
-            TypeKind::Array { type_id, .. } => {
+            TypeKind::Array { .. } => {
                 // Ugh, this sucks!
-                let array_type = self.get_type(type_store, array_type_id);
-                let store_type = self.get_type(type_store, type_id);
-                let store_location = self.builder.build_alloca(array_type, "");
+                let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
                 self.builder.build_store(store_location, array_val);
-                self.builder.build_pointer_cast(
-                    store_location,
-                    store_type.ptr_type(AddressSpace::default()),
-                    "",
-                )
+                store_location
             }
-            TypeKind::Pointer(ptr_type) => {
-                let ptr_type_info = type_store.get_type_info(ptr_type);
-                let TypeKind::Array { type_id, .. } = ptr_type_info.kind else {unreachable!()};
-
-                let store_type = self.get_type(type_store, type_id);
-                self.builder.build_pointer_cast(
-                    array_val.into_pointer_value(),
-                    store_type.ptr_type(AddressSpace::default()),
-                    "",
-                )
-            }
+            TypeKind::Pointer(_) => array_val.into_pointer_value(),
             _ => unreachable!(),
         };
 
         let offset_ptr = unsafe {
+            let zero = self.ctx.i64_type().const_int(0, false);
             self.builder
-                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
+                .build_gep(arr_ptr, &[zero, idx_val.into_int_value()], "")
         };
 
         let output_value_id = if emit_array {
@@ -188,6 +170,10 @@ impl<'ctx> CodeGen<'ctx> {
         let output_value_name = format!("{output_value_id}");
         let loaded_value = self.builder.build_load(offset_ptr, &output_value_name);
         value_store.store_value(self, output_value_id, loaded_value);
+
+        if let TypeKind::Array { .. } = array_type_info.kind {
+            value_store.release_temp_alloca(array_type_id, arr_ptr);
+        }
     }
 
     pub(super) fn build_insert_array(
@@ -213,8 +199,7 @@ impl<'ctx> CodeGen<'ctx> {
         let (arr_ptr, store_type_info) = match array_type_info.kind {
             TypeKind::Array { type_id, .. } => {
                 // Ugh, this sucks!
-                let array_type = self.get_type(type_store, array_type_id);
-                let store_location = self.builder.build_alloca(array_type, "");
+                let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
                 self.builder.build_store(store_location, array_val);
                 let store_type_info = type_store.get_type_info(type_id);
 
@@ -267,6 +252,7 @@ impl<'ctx> CodeGen<'ctx> {
                     "",
                 );
                 let array_value = self.builder.build_load(cast_ptr, "");
+                value_store.release_temp_alloca(array_type_id, arr_ptr);
                 value_store.store_value(self, op_io.outputs()[0], array_value);
             } else {
                 // We know our array input was a pointer. Because it was a pointer, we can just shove

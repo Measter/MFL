@@ -6,6 +6,7 @@ use color_eyre::{
 };
 use hashbrown::{HashMap, HashSet};
 use inkwell::{
+    basic_block::BasicBlock,
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
@@ -107,15 +108,55 @@ fn is_fully_const(id: ValueId, analyzer: &Analyzer) -> bool {
     )
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ValueStore<'ctx> {
     value_map: HashMap<ValueId, BasicValueEnum<'ctx>>,
     variable_map: HashMap<ItemId, PointerValue<'ctx>>,
     string_map: HashMap<Spur, PointerValue<'ctx>>,
     merge_pair_map: HashMap<ValueId, PointerValue<'ctx>>,
+    alloca_temp_store: HashMap<TypeId, Vec<PointerValue<'ctx>>>,
+    alloca_prelude_block: BasicBlock<'ctx>,
 }
 
 impl<'ctx> ValueStore<'ctx> {
+    fn new(prelude_block: BasicBlock<'ctx>) -> Self {
+        Self {
+            value_map: Default::default(),
+            variable_map: Default::default(),
+            string_map: Default::default(),
+            merge_pair_map: Default::default(),
+            alloca_temp_store: Default::default(),
+            alloca_prelude_block: prelude_block,
+        }
+    }
+
+    fn get_temp_alloca(
+        &mut self,
+        cg: &mut CodeGen<'ctx>,
+        type_store: &TypeStore,
+        type_id: TypeId,
+    ) -> PointerValue<'ctx> {
+        let slot = self
+            .alloca_temp_store
+            .get_mut(&type_id)
+            .and_then(|v| v.pop());
+
+        if let Some(s) = slot {
+            s
+        } else {
+            let cur_block = cg.builder.get_insert_block().unwrap();
+            cg.builder.position_at_end(self.alloca_prelude_block);
+            let llvm_type = cg.get_type(type_store, type_id);
+            let alloc = cg.builder.build_alloca(llvm_type, "");
+            cg.builder.position_at_end(cur_block);
+            alloc
+        }
+    }
+
+    fn release_temp_alloca(&mut self, type_id: TypeId, pv: PointerValue<'ctx>) {
+        self.alloca_temp_store.entry(type_id).or_default().push(pv);
+    }
+
     fn get_string_literal(
         &mut self,
         cg: &CodeGen<'ctx>,
@@ -731,9 +772,10 @@ impl<'ctx> CodeGen<'ctx> {
         interner: &mut Interners,
         type_store: &mut TypeStore,
     ) {
-        let mut value_store = ValueStore::default();
         let name = interner.get_symbol_name(program, id);
         let _span = debug_span!(stringify!(CodeGen::compile_procedure), name).entered();
+
+        let mut value_store = ValueStore::new(self.ctx.append_basic_block(function, "allocs"));
 
         let entry_block = self.ctx.append_basic_block(function, "entry");
         self.builder.position_at_end(entry_block);
@@ -792,6 +834,10 @@ impl<'ctx> CodeGen<'ctx> {
                 interner,
                 type_store,
             );
+
+            self.builder
+                .position_at_end(value_store.alloca_prelude_block);
+            self.builder.build_unconditional_branch(entry_block);
         }
 
         {
