@@ -182,26 +182,16 @@ impl<'ctx> CodeGen<'ctx> {
             let len = string.len() - 1; // It's null-terminated.
             let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
-            let name = format!("{}", op_io.outputs()[0]);
-
             let struct_type =
                 self.get_type(type_store, type_store.get_builtin(BuiltinTypes::String).id);
-            let struct_ptr = self.builder.build_alloca(struct_type, &name);
-            let struct_value = self
-                .builder
-                .build_load(struct_ptr, &name)
-                .into_struct_value();
 
-            let struct_value = self
-                .builder
-                .build_insert_value(struct_value, len_value, 0, &name)
-                .unwrap();
-            let struct_value = self
-                .builder
-                .build_insert_value(struct_value, str_ptr, 1, &name)
-                .unwrap();
-
-            struct_value.as_basic_value_enum()
+            struct_type
+                .into_struct_type()
+                .const_named_struct(&[
+                    len_value.as_basic_value_enum(),
+                    str_ptr.as_basic_value_enum(),
+                ])
+                .as_basic_value_enum()
         };
 
         value_store.store_value(self, op_io.outputs()[0], store_value);
