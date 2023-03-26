@@ -38,11 +38,14 @@ struct Args {
     #[arg(short = 'I', value_delimiter = ',')]
     library_paths: Vec<PathBuf>,
 
+    /// The MFL file to compile
     file: PathBuf,
 
+    /// Directory storing the intermediate .o files.
     #[arg(long = "obj", default_value = "./obj")]
     obj_dir: PathBuf,
 
+    /// Path to write the output binary.
     #[arg(short = 'o')]
     output: Option<PathBuf>,
 
