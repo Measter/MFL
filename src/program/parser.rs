@@ -3,7 +3,7 @@ use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
-use num_traits::{PrimInt, Unsigned};
+use num::{PrimInt, Unsigned};
 use smallvec::SmallVec;
 use tracing::debug_span;
 
