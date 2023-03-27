@@ -786,6 +786,7 @@ pub fn parse_item_body(
             TokenKind::Load => OpCode::Load,
             TokenKind::Store => OpCode::Store,
 
+            TokenKind::IsNull => OpCode::IsNull,
             TokenKind::Equal => OpCode::Equal,
             TokenKind::Greater => OpCode::Greater,
             TokenKind::GreaterEqual => OpCode::GreaterEqual,

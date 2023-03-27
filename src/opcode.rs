@@ -132,6 +132,7 @@ pub enum OpCode {
         emit_struct: bool,
         field_name: Token,
     },
+    IsNull,
     Load,
     Memory {
         item_id: ItemId,

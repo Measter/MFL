@@ -646,6 +646,24 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
+            OpCode::IsNull => {
+                let mut local_had_error = false;
+                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                if !local_had_error {
+                    type_check2::comparative::is_null(
+                        analyzer,
+                        source_store,
+                        interner,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
+                }
+                if !local_had_error {
+                    const_prop::comparative::is_null(analyzer, op);
+                }
+            }
+
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
                 let mut local_had_error = false;
                 eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);

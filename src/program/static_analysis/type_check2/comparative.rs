@@ -1,4 +1,7 @@
+use ariadne::{Color, Label};
+
 use crate::{
+    diagnostics,
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
@@ -108,4 +111,37 @@ pub fn equal(
 
     let output_id = op_data.outputs[0];
     analyzer.set_value_type(output_id, new_type);
+}
+
+pub fn is_null(
+    analyzer: &mut Analyzer,
+    source_store: &SourceStorage,
+    interner: &Interners,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let input_id = op_data.inputs()[0];
+    let Some([input_type_id]) = analyzer.value_types([input_id]) else { return };
+    let input_type_info = type_store.get_type_info(input_type_id);
+
+    if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {
+        *had_error = true;
+        let mut labels = Vec::new();
+        let type_name = interner.resolve_lexeme(input_type_info.name);
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, input_id, 0, type_name);
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("expected pointer, found `{type_name}`",),
+            labels,
+            None,
+            source_store,
+        );
+    }
+
+    let output_id = op_data.outputs()[0];
+    analyzer.set_value_type(output_id, type_store.get_builtin(BuiltinTypes::Bool).id);
 }

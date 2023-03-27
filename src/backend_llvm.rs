@@ -509,6 +509,10 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_compare(interner, analyzer, value_store, type_store, op)
                 }
 
+                OpCode::IsNull => {
+                    self.build_is_null(interner, analyzer, value_store, type_store, op)
+                }
+
                 OpCode::ShiftLeft | OpCode::ShiftRight => {
                     self.build_shift_left_right(interner, analyzer, value_store, type_store, op)
                 }

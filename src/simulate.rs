@@ -328,6 +328,7 @@ fn simulate_execute_program_block(
             | OpCode::ExtractStruct { .. }
             | OpCode::Load
             | OpCode::Store
+            | OpCode::IsNull
             | OpCode::SysCall { .. } => {
                 generate_error(
                     "operation not supported during const evaluation",

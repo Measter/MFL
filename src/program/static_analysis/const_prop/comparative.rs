@@ -214,3 +214,14 @@ pub fn equal(
     let output_id = op_data.outputs[0];
     analyzer.set_value_const(output_id, ConstVal::Bool(new_const_val));
 }
+
+pub fn is_null(analyzer: &mut Analyzer, op: &Op) {
+    let op_io = analyzer.get_op_io(op.id);
+    let input_id = op_io.inputs()[0];
+    if analyzer.value_consts([input_id]).is_none() {
+        return;
+    }
+
+    let output_id = op_io.outputs()[0];
+    analyzer.set_value_const(output_id, ConstVal::Bool(false));
+}

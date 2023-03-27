@@ -51,6 +51,7 @@ pub enum TokenKind {
     Insert { emit_struct: bool },
     Integer(Spur),
     Is,
+    IsNull,
     Less,
     LessEqual,
     Load,
@@ -116,6 +117,7 @@ impl TokenKind {
             | TokenKind::Include
             | TokenKind::Insert { .. }
             | TokenKind::Integer(_)
+            | TokenKind::IsNull
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load
@@ -508,6 +510,7 @@ impl<'source> Scanner<'source> {
                     "ins" => TokenKind::Insert { emit_struct: true },
                     "insd" => TokenKind::Insert { emit_struct: false },
                     "is" => TokenKind::Is,
+                    "isnull" => TokenKind::IsNull,
                     "macro" => TokenKind::Macro,
                     "memory" => TokenKind::Memory,
                     "not" => TokenKind::BitNot,

@@ -1,4 +1,4 @@
-use inkwell::values::BasicValueEnum;
+use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
 
 use crate::{
     interners::Interners,
@@ -331,5 +331,36 @@ impl<'ctx> CodeGen<'ctx> {
             .builder
             .build_int_compare(pred, a_val, b_val, &output_name);
         value_store.store_value(self, op_io.outputs()[0], res.into());
+    }
+
+    pub(super) fn build_is_null(
+        &mut self,
+        interner: &mut Interners,
+        analyzer: &Analyzer,
+        value_store: &mut ValueStore<'ctx>,
+        type_store: &TypeStore,
+        op: &Op,
+    ) {
+        let op_io = analyzer.get_op_io(op.id);
+        let input_value_id = op_io.inputs()[0];
+
+        let ptr_val = value_store
+            .load_value(self, input_value_id, analyzer, type_store, interner)
+            .into_pointer_value();
+
+        let null_ptr = self
+            .ctx
+            .i8_type()
+            .ptr_type(AddressSpace::default())
+            .const_null();
+        let zero = self.ctx.i64_type().const_zero();
+
+        let name = format!("{}", op_io.outputs()[0]);
+        let ptr_diff = self.builder.build_ptr_diff(ptr_val, null_ptr, &name);
+        let result = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, ptr_diff, zero, &name);
+
+        value_store.store_value(self, op_io.outputs()[0], result.into());
     }
 }
