@@ -4,6 +4,7 @@ use ariadne::{Color, Label};
 use hashbrown::{HashMap, HashSet};
 use intcast::IntCast;
 use lasso::Spur;
+use num::Integer;
 
 use crate::{
     diagnostics,
@@ -444,7 +445,9 @@ impl TypeStore {
         let size_info = match type_info.kind {
             TypeKind::Array { type_id, length } => {
                 let mut inner_size = self.get_size_info(type_id);
-                inner_size.byte_width *= length.to_u64();
+                inner_size.byte_width =
+                    Integer::next_multiple_of(&inner_size.byte_width, &inner_size.alignement)
+                        * length.to_u64();
                 inner_size
             }
             TypeKind::Integer { width, .. } => TypeSize {
@@ -468,10 +471,11 @@ impl TypeStore {
                 let struct_info = self.struct_defs.get(&id).unwrap().clone();
                 for field in &struct_info.fields {
                     let field_size = self.get_size_info(field.kind);
-                    // This logic feels a bit wrong?
+
                     size_info.alignement = size_info.alignement.max(field_size.alignement);
-                    let padding = size_info.byte_width % field_size.byte_width;
-                    size_info.byte_width += padding + field_size.byte_width;
+                    size_info.byte_width =
+                        Integer::next_multiple_of(&size_info.byte_width, &field_size.alignement)
+                            + field_size.byte_width;
                 }
 
                 size_info
@@ -479,7 +483,6 @@ impl TypeStore {
         };
 
         self.type_sizes.insert(id, size_info);
-
         size_info
     }
 
