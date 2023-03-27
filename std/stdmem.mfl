@@ -1,0 +1,31 @@
+const PROT_READ [u64] is 1 end
+const PROT_WRITE [u64] is 2 end
+const MAP_ANONYMOUS [u64] is 32 end
+const MAP_PRIVATE [u64] is 2 end
+
+const SYS_MMAP [u64] is 9 end
+
+struct AllocResult is
+    field pointer ptr(u8)
+    field errno u64
+end
+
+proc alloc [
+    u64 // Size in bytes of the allocation
+] to [AllocResult] is
+    SYS_MMAP 0 rot(3<1)
+    PROT_READ PROT_WRITE or
+    MAP_ANONYMOUS MAP_PRIVATE or
+    0 // File descriptor
+    0 // File offset
+    syscall(7)
+    dup cast(ptr(u8)) swap cast(s64)
+
+    if dup 0< do
+        // Some kind of failure
+        0- cast(u64)
+    else
+        drop 0
+    end
+    pack(AllocResult)
+end
