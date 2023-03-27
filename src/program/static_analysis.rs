@@ -1006,6 +1006,22 @@ fn analyze_block(
                 );
                 const_prop::stack_ops::push_int(analyzer, op, *value);
             }
+            OpCode::SizeOf(kind) => {
+                make_one(analyzer, stack, op);
+                let size_info = type_store.get_size_info(*kind);
+                type_check2::stack_ops::push_int(
+                    analyzer,
+                    type_store,
+                    op,
+                    IntWidth::I64,
+                    Signedness::Unsigned,
+                );
+                const_prop::stack_ops::push_int(
+                    analyzer,
+                    op,
+                    IntKind::Unsigned(size_info.byte_width),
+                );
+            }
             OpCode::PushStr { id, is_c_str } => {
                 stack_check::stack_ops::push_str(analyzer, stack, op);
                 type_check2::stack_ops::push_str(analyzer, type_store, op, *is_c_str);
@@ -1314,7 +1330,8 @@ fn analyze_block(
 
             OpCode::UnresolvedCast { .. }
             | OpCode::UnresolvedIdent(_)
-            | OpCode::UnresolvedPackStruct { .. } => {
+            | OpCode::UnresolvedPackStruct { .. }
+            | OpCode::UnresolvedSizeOf { .. } => {
                 panic!("ICE: Encountered {:?}", op.code);
             }
         }

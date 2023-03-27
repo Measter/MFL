@@ -181,6 +181,7 @@ pub enum OpCode {
     },
     ShiftLeft,
     ShiftRight,
+    SizeOf(TypeId),
     Store,
     Subtract,
     Swap {
@@ -197,6 +198,9 @@ pub enum OpCode {
     },
     UnresolvedIdent(UnresolvedIdent),
     UnresolvedPackStruct {
+        unresolved_type: UnresolvedType,
+    },
+    UnresolvedSizeOf {
         unresolved_type: UnresolvedType,
     },
     While(Box<While>),

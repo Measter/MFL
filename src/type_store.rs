@@ -81,6 +81,15 @@ impl IntWidth {
             IntWidth::I64 => 64,
         }
     }
+
+    fn byte_width(self) -> u64 {
+        match self {
+            IntWidth::I8 => 1,
+            IntWidth::I16 => 2,
+            IntWidth::I32 => 4,
+            IntWidth::I64 => 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +196,12 @@ pub struct TypeInfo {
     pub kind: TypeKind,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TypeSize {
+    pub byte_width: u64,
+    pub alignement: u64,
+}
+
 #[derive(Debug, Clone)]
 struct PointerInfo {
     ptr_id: TypeId,
@@ -202,6 +217,8 @@ pub struct TypeStore {
     struct_id_map: HashMap<ItemId, TypeId>,
     struct_defs: HashMap<TypeId, ResolvedStruct>,
     builtin_struct_item_ids: HashSet<ItemId>,
+
+    type_sizes: HashMap<TypeId, TypeSize>,
 }
 
 impl TypeStore {
@@ -214,6 +231,7 @@ impl TypeStore {
             struct_id_map: HashMap::new(),
             struct_defs: HashMap::new(),
             builtin_struct_item_ids: HashSet::new(),
+            type_sizes: HashMap::new(),
         };
         s.init_builtins(interner);
         s
@@ -415,6 +433,54 @@ impl TypeStore {
     pub fn get_builtin_ptr(&self, id: BuiltinTypes) -> TypeInfo {
         let id = &self.pointer_map[&self.builtins[id as usize]];
         self.kinds[&id.ptr_id]
+    }
+
+    pub fn get_size_info(&mut self, id: TypeId) -> TypeSize {
+        if let Some(info) = self.type_sizes.get(&id) {
+            return *info;
+        }
+
+        let type_info = *self.kinds.get(&id).unwrap();
+        let size_info = match type_info.kind {
+            TypeKind::Array { type_id, length } => {
+                let mut inner_size = self.get_size_info(type_id);
+                inner_size.byte_width *= length.to_u64();
+                inner_size
+            }
+            TypeKind::Integer { width, .. } => TypeSize {
+                byte_width: width.byte_width(),
+                alignement: width.byte_width(),
+            },
+            TypeKind::Pointer(_) => TypeSize {
+                byte_width: 8,
+                alignement: 8,
+            },
+            TypeKind::Bool => TypeSize {
+                byte_width: 1,
+                alignement: 1,
+            },
+            TypeKind::Struct(_) => {
+                let mut size_info = TypeSize {
+                    byte_width: 0,
+                    alignement: 0,
+                };
+
+                let struct_info = self.struct_defs.get(&id).unwrap().clone();
+                for field in &struct_info.fields {
+                    let field_size = self.get_size_info(field.kind);
+                    // This logic feels a bit wrong?
+                    size_info.alignement = size_info.alignement.max(field_size.alignement);
+                    let padding = size_info.byte_width % field_size.byte_width;
+                    size_info.byte_width += padding + field_size.byte_width;
+                }
+
+                size_info
+            }
+        };
+
+        self.type_sizes.insert(id, size_info);
+
+        size_info
     }
 
     pub fn define_struct(

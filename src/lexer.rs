@@ -71,6 +71,7 @@ pub enum TokenKind {
     Rot,
     ShiftLeft,
     ShiftRight,
+    SizeOf,
     SquareBracketClosed,
     SquareBracketOpen,
     Star,
@@ -137,6 +138,7 @@ impl TokenKind {
             | TokenKind::Rot
             | TokenKind::ShiftLeft
             | TokenKind::ShiftRight
+            | TokenKind::SizeOf
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen
             | TokenKind::Star
@@ -523,6 +525,7 @@ impl<'source> Scanner<'source> {
                     "rot" => TokenKind::Rot,
                     "shl" => TokenKind::ShiftLeft,
                     "shr" => TokenKind::ShiftRight,
+                    "sizeof" => TokenKind::SizeOf,
                     "stktrc" => TokenKind::EmitStack,
                     "struct" => TokenKind::Struct,
                     "swap" => TokenKind::Swap,

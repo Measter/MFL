@@ -644,6 +644,16 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::PushInt { width, value } => {
                     self.build_push_int(analyzer, value_store, op, *width, *value)
                 }
+                OpCode::SizeOf(kind) => {
+                    let size_info = type_store.get_size_info(*kind);
+                    self.build_push_int(
+                        analyzer,
+                        value_store,
+                        op,
+                        IntWidth::I64,
+                        IntKind::Unsigned(size_info.byte_width),
+                    );
+                }
                 OpCode::PushStr { id, is_c_str } => self.build_push_str(
                     analyzer,
                     interner,
@@ -676,6 +686,9 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::UnresolvedPackStruct { .. } => {
                     panic!("ICE: Encountered unresolved pack during codegen")
+                }
+                OpCode::UnresolvedSizeOf { .. } => {
+                    panic!("ICE: Encountered unresolved sizeof during codegen")
                 }
             }
         }

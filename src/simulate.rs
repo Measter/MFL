@@ -9,7 +9,7 @@ use crate::{
     opcode::{Direction, IntKind, Op, OpCode},
     program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
     source_file::SourceStorage,
-    type_store::IntWidth,
+    type_store::{IntWidth, TypeStore},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +125,7 @@ fn simulate_execute_program_block(
     program: &Program,
     block: &[Op],
     value_stack: &mut Vec<SimulatorValue>,
+    type_store: &mut TypeStore,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(), SimulationError> {
@@ -170,6 +171,13 @@ fn simulate_execute_program_block(
                 width: *width,
                 kind: *value,
             }),
+            OpCode::SizeOf(kind) => {
+                let size = type_store.get_size_info(*kind);
+                value_stack.push(SimulatorValue::Int {
+                    width: IntWidth::I64,
+                    kind: IntKind::Unsigned(size.byte_width),
+                });
+            }
             // It's a bit weird, given you can't do much with a string, but
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
@@ -198,6 +206,7 @@ fn simulate_execute_program_block(
                     program,
                     &while_op.condition,
                     value_stack,
+                    type_store,
                     interner,
                     source_store,
                 )?;
@@ -209,6 +218,7 @@ fn simulate_execute_program_block(
                     program,
                     &while_op.body_block,
                     value_stack,
+                    type_store,
                     interner,
                     source_store,
                 )?;
@@ -219,6 +229,7 @@ fn simulate_execute_program_block(
                     program,
                     &if_op.condition,
                     value_stack,
+                    type_store,
                     interner,
                     source_store,
                 )?;
@@ -229,6 +240,7 @@ fn simulate_execute_program_block(
                         program,
                         &if_op.then_block,
                         value_stack,
+                        type_store,
                         interner,
                         source_store,
                     )?
@@ -237,6 +249,7 @@ fn simulate_execute_program_block(
                         program,
                         &if_op.else_block,
                         value_stack,
+                        type_store,
                         interner,
                         source_store,
                     )?;
@@ -340,7 +353,8 @@ fn simulate_execute_program_block(
 
             OpCode::UnresolvedCast { .. }
             | OpCode::UnresolvedIdent(_)
-            | OpCode::UnresolvedPackStruct { .. } => {
+            | OpCode::UnresolvedPackStruct { .. }
+            | OpCode::UnresolvedSizeOf { .. } => {
                 panic!("ICE: Encountered {:?}", op.code)
             }
         }
@@ -353,6 +367,7 @@ fn simulate_execute_program_block(
 
 pub(crate) fn simulate_execute_program(
     program: &Program,
+    type_store: &mut TypeStore,
     item_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -364,6 +379,7 @@ pub(crate) fn simulate_execute_program(
         program,
         program.get_item_body(item_id),
         &mut value_stack,
+        type_store,
         interner,
         source_store,
     )?;

@@ -546,7 +546,7 @@ impl Program {
         loop {
             for const_id in const_queue.drain(..) {
                 let item_sig = self.get_item_signature_resolved(const_id);
-                match simulate_execute_program(self, const_id, interner, source_store) {
+                match simulate_execute_program(self, type_store, const_id, interner, source_store) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
@@ -592,7 +592,12 @@ impl Program {
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
-    fn check_asserts(&self, interner: &Interners, source_store: &SourceStorage) -> Result<()> {
+    fn check_asserts(
+        &self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+        type_store: &mut TypeStore,
+    ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
@@ -601,19 +606,20 @@ impl Program {
                 continue;
             }
 
-            let assert_result = match simulate_execute_program(self, id, interner, source_store) {
-                // Type check says we'll have a value at this point.
-                Ok(mut stack) => {
-                    let Some(SimulatorValue::Bool(val)) = stack.pop() else {
+            let assert_result =
+                match simulate_execute_program(self, type_store, id, interner, source_store) {
+                    // Type check says we'll have a value at this point.
+                    Ok(mut stack) => {
+                        let Some(SimulatorValue::Bool(val)) = stack.pop() else {
                         panic!("ICE: Simulated assert returned non-bool");
                     };
-                    val
-                }
-                Err(_) => {
-                    had_error = true;
-                    continue;
-                }
-            };
+                        val
+                    }
+                    Err(_) => {
+                        had_error = true;
+                        continue;
+                    }
+                };
 
             if !assert_result {
                 diagnostics::emit_error(
@@ -658,7 +664,7 @@ impl Program {
         self.evaluate_const_items(interner, source_store, type_store)?;
 
         self.process_idents(interner, source_store)?;
-        self.check_asserts(interner, source_store)?;
+        self.check_asserts(interner, source_store, type_store)?;
 
         Ok(())
     }

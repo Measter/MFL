@@ -189,6 +189,19 @@ impl Program {
 
                     op.code = OpCode::PackStruct { id: type_info.id };
                 }
+                OpCode::UnresolvedSizeOf { unresolved_type } => {
+                    let type_info = match type_store.resolve_type(interner, unresolved_type) {
+                        Ok(info) => info,
+                        Err(err_token) => {
+                            emit_type_error_diag(err_token, interner, source_store);
+
+                            *had_error = true;
+                            continue;
+                        }
+                    };
+
+                    op.code = OpCode::SizeOf(type_info.id);
+                }
 
                 _ => {}
             }

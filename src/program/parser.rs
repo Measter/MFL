@@ -744,7 +744,7 @@ pub fn parse_item_body(
                 }
             }
 
-            TokenKind::Cast => {
+            TokenKind::Cast | TokenKind::SizeOf => {
                 let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                     &mut token_iter,
                     token,
@@ -780,7 +780,11 @@ pub fn parse_item_body(
 
                 let unresolved_type = unresolved_types.pop().unwrap();
 
-                OpCode::UnresolvedCast { unresolved_type }
+                match token.kind {
+                    TokenKind::Cast => OpCode::UnresolvedCast { unresolved_type },
+                    TokenKind::SizeOf => OpCode::UnresolvedSizeOf { unresolved_type },
+                    _ => unreachable!(),
+                }
             }
 
             TokenKind::Load => OpCode::Load,
