@@ -1373,7 +1373,14 @@ fn parse_memory<'a>(
     )
     .recover(&mut had_error, (name_token, Vec::new(), name_token));
 
-    let store_type_location = store_type_start.location.merge(store_type_end.location);
+    let store_type_location = if store_type_tokens.is_empty() {
+        store_type_start.location.merge(store_type_end.location)
+    } else {
+        let first = store_type_tokens.first().unwrap();
+        let last = store_type_tokens.last().unwrap();
+        first.location.merge(last.location)
+    };
+
     let mut unresolved_store_type =
         parse_unresolved_types(interner, source_store, store_type_start, store_type_tokens)
             .recover(&mut had_error, Vec::new());
