@@ -7,7 +7,10 @@ use crate::{
     lexer::Token,
     n_ops::SliceNOps,
     opcode::Op,
-    program::static_analysis::{can_promote_int_unidirectional, Analyzer},
+    program::{
+        static_analysis::{can_promote_int_unidirectional, Analyzer, ConstVal, PtrId},
+        Program,
+    },
     source_file::SourceStorage,
     type_store::{Signedness, TypeId, TypeKind, TypeStore},
 };
@@ -769,6 +772,7 @@ pub fn load(
 }
 
 pub fn store(
+    program: &Program,
     analyzer: &mut Analyzer,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -825,22 +829,34 @@ pub fn store(
 
     if data_type != pointee_type && !can_promote_int {
         *had_error = true;
-        let [data_value] = analyzer.values([data_id]);
         let data_type_info = type_store.get_type_info(data_type);
         let data_type_name = interner.resolve_lexeme(data_type_info.name);
 
         let kind_type_info = type_store.get_type_info(pointee_type);
         let kind_type_name = interner.resolve_lexeme(kind_type_info.name);
 
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, data_id, 0, data_type_name);
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        if let Some(
+            [ConstVal::Ptr {
+                id: PtrId::Mem(mem_id),
+                ..
+            }],
+        ) = analyzer.value_consts([ptr_id])
+        {
+            let sig = program.get_item_signature_unresolved(mem_id);
+            labels.push(
+                Label::new(sig.memory_type_location())
+                    .with_color(Color::Cyan)
+                    .with_message("memory type defined here"),
+            );
+        }
+
         diagnostics::emit_error(
             op.token.location,
-            format!("value must be a {kind_type_name}"),
-            [
-                Label::new(op.token.location).with_color(Color::Red),
-                Label::new(data_value.creator_token.location)
-                    .with_color(Color::Cyan)
-                    .with_message(data_type_name),
-            ],
+            format!("value must be a `{kind_type_name}`"),
+            labels,
             None,
             source_store,
         );

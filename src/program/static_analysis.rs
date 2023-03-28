@@ -1059,6 +1059,7 @@ fn analyze_block(
                 stack_check::memory::store(analyzer, stack, source_store, &mut local_had_error, op);
                 if !local_had_error {
                     type_check2::memory::store(
+                        program,
                         analyzer,
                         interner,
                         source_store,
