@@ -1,9 +1,9 @@
 // Standard stream descriptor IDs
-const STDIN  [u64] is 0 end
-const STDOUT [u64] is 1 end
-const STDERR [u64] is 2 end
+const STDIN  [u64] is 0x00 end
+const STDOUT [u64] is 0x01 end
+const STDERR [u64] is 0x02 end
 
-const WRITE [u64] is 1 end
+const WRITE [u64] is 0x01 end
 
 proc puts [String] to [] is
     // [string]

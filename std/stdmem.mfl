@@ -1,10 +1,10 @@
-const PROT_READ [u64] is 1 end
-const PROT_WRITE [u64] is 2 end
-const MAP_ANONYMOUS [u64] is 32 end
-const MAP_PRIVATE [u64] is 2 end
+const PROT_READ [u64] is 0x01 end
+const PROT_WRITE [u64] is 0x02 end
+const MAP_ANONYMOUS [u64] is 0x20 end
+const MAP_PRIVATE [u64] is 0x02 end
 
-const SYS_MMAP [u64] is 9 end
-const SYS_MUNMAP [u64] is 11 end
+const SYS_MMAP [u64] is 0x09 end
+const SYS_MUNMAP [u64] is 0x0B end
 
 struct AllocResult is
     field pointer ptr(u8)

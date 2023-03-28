@@ -49,7 +49,7 @@ pub enum TokenKind {
     If,
     Include,
     Insert { emit_struct: bool },
-    Integer(Spur),
+    Integer { lexeme: Spur, is_hex: bool },
     Is,
     IsNull,
     Less,
@@ -117,7 +117,7 @@ impl TokenKind {
             | TokenKind::Ident
             | TokenKind::Include
             | TokenKind::Insert { .. }
-            | TokenKind::Integer(_)
+            | TokenKind::Integer { .. }
             | TokenKind::IsNull
             | TokenKind::Less
             | TokenKind::LessEqual
@@ -311,6 +311,41 @@ impl<'source> Scanner<'source> {
         Ok(())
     }
 
+    fn consume_integer_literal(
+        &mut self,
+        start_char: char,
+        valid_char: impl Fn(char) -> bool,
+        source_store: &SourceStorage,
+    ) -> Result<(), ()> {
+        self.string_buf.clear();
+        self.string_buf.push(start_char);
+        while matches!(self.peek(), Some(ch) if valid_char(ch)) && !self.is_at_end() {
+            let c = self.advance();
+            if c != '_' {
+                self.string_buf.push(c);
+            }
+        }
+
+        match self.peek() {
+            Some(c) if !is_valid_post_number(c) => {
+                self.advance();
+                let loc = SourceLocation::new(self.file_id, self.lexeme_range());
+                diagnostics::emit_error(
+                    loc,
+                    format!("invalid character in number: `{c}`"),
+                    Some(Label::new(loc).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+
+                return Err(());
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
     fn scan_token(
         &mut self,
         input: &str,
@@ -432,35 +467,47 @@ impl<'source> Scanner<'source> {
                 ))
             }
 
-            ('0'..='9', _) => {
-                self.string_buf.clear();
-                self.string_buf.push(ch);
-                while matches!(self.peek(), Some('_' | '0'..='9')) && !self.is_at_end() {
-                    let c = self.advance();
-                    if c != '_' {
-                        self.string_buf.push(c);
-                    }
+            ('0', 'x') => {
+                self.advance(); // Consume the 'x'
+
+                let next = self.peek();
+                if !matches!(next, Some(c) if c.is_ascii_hexdigit()) || self.is_at_end() {
+                    let loc = SourceLocation::new(self.file_id, self.lexeme_range());
+                    let next_char = next.unwrap();
+                    diagnostics::emit_error(
+                        loc,
+                        format!("unexpected character in input: `{next_char}`"),
+                        Some(Label::new(loc).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    return Err(());
                 }
 
-                match self.peek() {
-                    Some(c) if !is_valid_post_number(c) => {
-                        self.advance();
-                        let loc = SourceLocation::new(self.file_id, self.lexeme_range());
-                        diagnostics::emit_error(
-                            loc,
-                            format!("invalid character in number: `{c}`"),
-                            Some(Label::new(loc).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-
-                        return Err(());
-                    }
-                    _ => {}
-                }
+                let ch = self.advance();
+                self.consume_integer_literal(
+                    ch,
+                    |c| c == '_' || c.is_ascii_hexdigit(),
+                    source_store,
+                )?;
 
                 let stripped_id = interner.intern_literal(&self.string_buf);
-                let kind = TokenKind::Integer(stripped_id);
+                let kind = TokenKind::Integer {
+                    lexeme: stripped_id,
+                    is_hex: true,
+                };
+
+                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+            }
+
+            ('0'..='9', _) => {
+                self.consume_integer_literal(ch, |c| c == '_' || c.is_ascii_digit(), source_store)?;
+                let stripped_id = interner.intern_literal(&self.string_buf);
+                let kind = TokenKind::Integer {
+                    lexeme: stripped_id,
+                    is_hex: false,
+                };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
                 Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))

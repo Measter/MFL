@@ -2,7 +2,6 @@ use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
-use lasso::Spur;
 use num::{PrimInt, Unsigned};
 use smallvec::SmallVec;
 use tracing::debug_span;
@@ -38,7 +37,7 @@ fn valid_type_token(t: TokenKind) -> bool {
     matches!(
         t,
         TokenKind::Ident
-            | TokenKind::Integer(_)
+            | TokenKind::Integer { .. }
             | TokenKind::ColonColon
             | TokenKind::ParenthesisOpen
             | TokenKind::ParenthesisClosed
@@ -269,7 +268,7 @@ fn parse_unresolved_types(
                 ident,
                 Some(1),
                 ("[", |t| t == TokenKind::SquareBracketOpen),
-                ("integer", |t| matches!( t, TokenKind::Integer(_))),
+                ("integer", |t| matches!( t, TokenKind::Integer{ .. })),
                 ("]", |t| t == TokenKind::SquareBracketClosed),
                 interner,
                 source_store,
@@ -279,8 +278,7 @@ fn parse_unresolved_types(
             };
 
             let len_token = ident_tokens[0];
-            let length_str = interner.resolve_lexeme(len_token.lexeme);
-            let length = length_str.parse().unwrap();
+            let length = parse_integer_lexeme(len_token, interner, source_store)?;
 
             UnresolvedType::Array(
                 ident.location.merge(close_bracket.location),
@@ -305,8 +303,14 @@ fn parse_integer_lexeme<T>(
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer(count) = int_token.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
-    let int = match interner.resolve_literal(count).parse() {
+    let TokenKind::Integer{ lexeme, is_hex } = int_token.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
+    let string = interner.resolve_lexeme(lexeme);
+    let res = if is_hex {
+        T::from_str_radix(string, 16)
+    } else {
+        T::from_str_radix(string, 10)
+    };
+    let int = match res {
         Ok(c) => c,
         Err(_) => {
             diagnostics::emit_error(
@@ -332,23 +336,15 @@ where
 fn parse_integer_op<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     token: Token,
-    stripped_spur: Spur,
     is_known_negative: bool,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(OpCode, SourceLocation), ()> {
     let mut had_error = false;
     let mut overall_location = token.location;
-    let literal_value: u64 = match interner.resolve_literal(stripped_spur).parse() {
+    let literal_value: u64 = match parse_integer_lexeme(token, interner, source_store) {
         Ok(lit) => lit,
         Err(_) => {
-            diagnostics::emit_error(
-                token.location,
-                "literal too large",
-                [Label::new(token.location).with_color(Color::Red)],
-                None,
-                source_store,
-            );
             had_error = true;
             0
         }
@@ -525,7 +521,7 @@ pub fn parse_item_body(
                         token,
                         Some(1),
                         ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("Integer", |t| matches!(t, TokenKind::Integer(_))),
+                        ("Integer", |t| matches!(t, TokenKind::Integer{ .. })),
                         (")", |t| t == TokenKind::ParenthesisClosed),
                         interner,
                         source_store,
@@ -583,7 +579,9 @@ pub fn parse_item_body(
 
                 token.location = token.location.merge(close_paren.location);
 
-                if count_token.len() == 1 && matches!(count_token[0].kind, TokenKind::Integer(_)) {
+                if count_token.len() == 1
+                    && matches!(count_token[0].kind, TokenKind::Integer { .. })
+                {
                     let count_token = count_token[0];
                     let count = parse_integer_lexeme(count_token, interner, source_store)?;
 
@@ -677,7 +675,7 @@ pub fn parse_item_body(
                 let item_count_token = *item_count_token;
                 let shift_count_token = *shift_count_token;
 
-                let item_count = if !matches!(item_count_token.kind, TokenKind::Integer(_)) {
+                let item_count = if !matches!(item_count_token.kind, TokenKind::Integer { .. }) {
                     diagnostics::emit_error(
                         item_count_token.location,
                         format!(
@@ -694,7 +692,7 @@ pub fn parse_item_body(
                     parse_integer_lexeme(item_count_token, interner, source_store)?
                 };
 
-                let shift_count = if !matches!(shift_count_token.kind, TokenKind::Integer(_)) {
+                let shift_count = if !matches!(shift_count_token.kind, TokenKind::Integer { .. }) {
                     diagnostics::emit_error(
                         shift_count_token.location,
                         format!(
@@ -811,8 +809,8 @@ pub fn parse_item_body(
 
                 OpCode::UnresolvedIdent(ident)
             }
-            TokenKind::Integer(id) => {
-                let Ok((int, location)) = parse_integer_op(&mut token_iter, token, id, false, interner, source_store) else {
+            TokenKind::Integer { .. } => {
+                let Ok((int, location)) = parse_integer_op(&mut token_iter, token, false, interner, source_store) else {
                     had_error = true;
                     continue;
                 };
@@ -952,13 +950,12 @@ pub fn parse_item_body(
             TokenKind::Minus => match token_iter.peek().copied() {
                 Some((_, int_token))
                     if int_token.location.neighbour_of(token.location)
-                        && matches!(int_token.kind, TokenKind::Integer(_)) =>
+                        && matches!(int_token.kind, TokenKind::Integer { .. }) =>
                 {
                     token_iter.next();
                     let mut int_token = *int_token;
                     int_token.location = int_token.location.merge(token.location);
-                    let TokenKind::Integer(id) = int_token.kind else { unreachable!() };
-                    let Ok((int, location)) = parse_integer_op(&mut token_iter, int_token, id, true, interner, source_store) else {
+                    let Ok((int, location)) = parse_integer_op(&mut token_iter, int_token, true, interner, source_store) else {
                         had_error = true;
                         continue;
                     };
