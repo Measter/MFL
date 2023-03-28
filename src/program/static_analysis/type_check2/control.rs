@@ -181,6 +181,8 @@ pub fn analyze_while(
             condition_inputs[0],
             0,
             condition_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
         labels.push(Label::new(while_op.do_token.location).with_color(Color::Red));
 
@@ -217,6 +219,8 @@ pub fn analyze_while(
                 merge_pair.pre_value,
                 0,
                 pre_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             diagnostics::build_creator_label_chain(
                 &mut labels,
@@ -224,6 +228,8 @@ pub fn analyze_while(
                 merge_pair.condition_value,
                 1,
                 condition_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
 
             *had_error = true;
@@ -265,6 +271,8 @@ pub fn analyze_if(
                 condition_value_id,
                 0,
                 condition_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(if_op.do_token.location).with_color(Color::Red));
 
@@ -330,6 +338,8 @@ pub fn analyze_if(
                         merge_pair.then_value,
                         0,
                         then_type_name,
+                        Color::Yellow,
+                        Color::Cyan,
                     );
                     diagnostics::build_creator_label_chain(
                         &mut labels,
@@ -337,6 +347,8 @@ pub fn analyze_if(
                         merge_pair.else_value,
                         1,
                         else_type_name,
+                        Color::Yellow,
+                        Color::Cyan,
                     );
 
                     *had_error = true;

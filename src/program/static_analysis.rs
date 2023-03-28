@@ -345,6 +345,8 @@ fn failed_compare_stack_types(
             *actual_id,
             idx.to_u64(),
             value_type,
+            Color::Yellow,
+            Color::Cyan,
         );
 
         let expected_type_info = type_store.get_type_info(*expected);
@@ -425,7 +427,15 @@ fn generate_type_mismatch_diag(
             interner.resolve_lexeme(type_info.name)
         });
 
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, *value_id, order, value_type);
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            *value_id,
+            order,
+            value_type,
+            Color::Yellow,
+            Color::Cyan,
+        );
     }
 
     diagnostics::emit_error(op.token.location, message, labels, None, source_store);

@@ -12,19 +12,21 @@ pub fn build_creator_label_chain(
     value_id: ValueId,
     print_id: u64,
     value_type: &str,
+    root_color: Color,
+    echo_color: Color,
 ) {
     let mut creators = analyzer.get_creator_token(value_id);
 
     let root = creators.pop().unwrap();
     labels.push(
         Label::new(root.location)
-            .with_color(Color::Yellow)
+            .with_color(root_color)
             .with_message(format!("{value_type} (id {print_id})")),
     );
     for creator in creators {
         labels.push(
             Label::new(creator.location)
-                .with_color(Color::Cyan)
+                .with_color(echo_color)
                 .with_message(format!("{value_type} (id {print_id})")),
         );
     }

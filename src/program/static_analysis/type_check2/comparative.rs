@@ -130,7 +130,15 @@ pub fn is_null(
         *had_error = true;
         let mut labels = Vec::new();
         let type_name = interner.resolve_lexeme(input_type_info.name);
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, input_id, 0, type_name);
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            input_id,
+            0,
+            type_name,
+            Color::Yellow,
+            Color::Cyan,
+        );
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
         diagnostics::emit_error(

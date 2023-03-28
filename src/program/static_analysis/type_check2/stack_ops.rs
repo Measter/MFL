@@ -43,6 +43,8 @@ pub fn emit_stack(
                 *value_id,
                 value_idx.to_u64(),
                 value_type,
+                Color::Green,
+                Color::Cyan,
             );
         }
 
@@ -90,6 +92,8 @@ pub fn cast_to_int(
                     input_ids[0],
                     0,
                     input_type_name,
+                    Color::Yellow,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -116,6 +120,8 @@ pub fn cast_to_int(
                     input_ids[0],
                     0,
                     input_type_name,
+                    Color::Green,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Yellow));
 
@@ -184,6 +190,8 @@ pub fn cast_to_ptr(
                 input_ids[0],
                 0,
                 ptr_type_name,
+                Color::Green,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Yellow));
 
@@ -208,6 +216,8 @@ pub fn cast_to_ptr(
                 input_ids[0],
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 

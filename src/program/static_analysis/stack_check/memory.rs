@@ -239,6 +239,8 @@ pub fn unpack(
                 input_id,
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             diagnostics::emit_error(
                 op.token.location,

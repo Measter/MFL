@@ -43,8 +43,24 @@ pub fn extract_array(
 
         let idx_value = format!("{idx}");
         let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 1, array_type_name);
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, idx_id, 2, &idx_value);
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            array_id,
+            1,
+            array_type_name,
+            Color::Yellow,
+            Color::Cyan,
+        );
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            idx_id,
+            2,
+            &idx_value,
+            Color::Yellow,
+            Color::Cyan,
+        );
 
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -90,8 +106,24 @@ pub fn insert_array(
 
         let idx_value = format!("{idx}");
         let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, array_id, 1, array_type_name);
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, idx_id, 2, &idx_value);
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            array_id,
+            1,
+            array_type_name,
+            Color::Yellow,
+            Color::Cyan,
+        );
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            idx_id,
+            2,
+            &idx_value,
+            Color::Yellow,
+            Color::Cyan,
+        );
 
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 

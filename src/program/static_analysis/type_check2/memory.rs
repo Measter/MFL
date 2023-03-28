@@ -63,6 +63,8 @@ pub fn pack_array(
                 other_id,
                 id,
                 other_value_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             diagnostics::build_creator_label_chain(
                 &mut labels,
@@ -70,6 +72,8 @@ pub fn pack_array(
                 *first,
                 0,
                 expected_value_name,
+                Color::Yellow,
+                Color::Cyan,
             );
 
             labels.push(Label::new(op.token.location).with_color(Color::Red));
@@ -128,6 +132,8 @@ pub fn pack_struct(
                 input_id,
                 val_id,
                 other_value_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(
                 Label::new(field_def.name.location)
@@ -194,6 +200,8 @@ pub fn unpack(
                 aggr_id,
                 0,
                 input_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -247,6 +255,8 @@ pub fn extract_array(
                     array_value_id,
                     0,
                     value_type_name,
+                    Color::Yellow,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -272,6 +282,8 @@ pub fn extract_array(
                 array_value_id,
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -303,6 +315,8 @@ pub fn extract_array(
             idx_value_id,
             1,
             idx_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -356,6 +370,8 @@ pub fn insert_array(
                     array_value_id,
                     1,
                     value_type_name,
+                    Color::Yellow,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -381,6 +397,8 @@ pub fn insert_array(
                 array_value_id,
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -414,6 +432,8 @@ pub fn insert_array(
             idx_value_id,
             2,
             idx_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -453,6 +473,8 @@ pub fn insert_array(
             data_value_id,
             0,
             data_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
         diagnostics::build_creator_label_chain(
             &mut labels,
@@ -460,6 +482,8 @@ pub fn insert_array(
             array_value_id,
             1,
             array_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
 
         labels.push(Label::new(op.token.location).with_color(Color::Red));
@@ -511,6 +535,8 @@ pub fn insert_struct(
                     input_struct_value_id,
                     1,
                     value_type_name,
+                    Color::Yellow,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -536,6 +562,8 @@ pub fn insert_struct(
                 input_struct_value_id,
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -600,6 +628,8 @@ pub fn insert_struct(
             data_value_id,
             0,
             data_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
         diagnostics::build_creator_label_chain(
             &mut labels,
@@ -607,6 +637,8 @@ pub fn insert_struct(
             input_struct_value_id,
             1,
             struct_type_name,
+            Color::Yellow,
+            Color::Cyan,
         );
 
         labels.push(Label::new(op.token.location).with_color(Color::Red));
@@ -666,6 +698,8 @@ pub fn extract_struct(
                     input_struct_value_id,
                     1,
                     value_type_name,
+                    Color::Yellow,
+                    Color::Cyan,
                 );
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -691,6 +725,8 @@ pub fn extract_struct(
                 input_struct_value_id,
                 0,
                 value_type_name,
+                Color::Yellow,
+                Color::Cyan,
             );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
@@ -753,7 +789,15 @@ pub fn load(
             let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
 
             let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(&mut labels, analyzer, ptr_id, 0, ptr_type_name);
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                ptr_id,
+                0,
+                ptr_type_name,
+                Color::Yellow,
+                Color::Cyan,
+            );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
             diagnostics::emit_error(
@@ -794,7 +838,15 @@ pub fn store(
             let data_type_name = interner.resolve_lexeme(data_type_info.name);
 
             let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(&mut labels, analyzer, ptr_id, 1, ptr_type_name);
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                ptr_id,
+                1,
+                ptr_type_name,
+                Color::Yellow,
+                Color::Cyan,
+            );
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
             diagnostics::emit_error(
@@ -833,7 +885,15 @@ pub fn store(
         let kind_type_name = interner.resolve_lexeme(kind_type_info.name);
 
         let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(&mut labels, analyzer, data_id, 0, data_type_name);
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            data_id,
+            0,
+            data_type_name,
+            Color::Yellow,
+            Color::Cyan,
+        );
         labels.push(Label::new(op.token.location).with_color(Color::Red));
         if let Some(
             [ConstVal::Ptr {
