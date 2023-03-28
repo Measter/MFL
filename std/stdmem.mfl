@@ -4,6 +4,7 @@ const MAP_ANONYMOUS [u64] is 32 end
 const MAP_PRIVATE [u64] is 2 end
 
 const SYS_MMAP [u64] is 9 end
+const SYS_MUNMAP [u64] is 11 end
 
 struct AllocResult is
     field pointer ptr(u8)
@@ -13,13 +14,17 @@ end
 proc alloc [
     u64 // Size in bytes of the allocation
 ] to [AllocResult] is
+    // We need to store space for the length in the allocation.
+    8+ dup
+
     SYS_MMAP 0 rot(3<1)
     PROT_READ PROT_WRITE or
     MAP_ANONYMOUS MAP_PRIVATE or
     0 // File descriptor
     0 // File offset
     syscall(7)
-    dup cast(ptr(u8)) swap cast(s64)
+    dup cast(s64)
+    // [len ptr errcode]
 
     if dup 0< do
         // Some kind of failure
@@ -27,5 +32,23 @@ proc alloc [
     else
         drop 0
     end
+    // [len ptr errcode]
+    // Store the lenth in the allocation.
+    rot(3>2) over(2)
+    // [ptr errcode len ptr]
+    cast(ptr(u64)) !
+    // [ptr errcode]
+    swap 8+ cast(ptr(u8)) swap
+
     pack(AllocResult)
+end
+
+struct FreeResult is field errno u64 end
+
+proc free [ptr(u8)] to [FreeResult] is
+    // The size is stored in the 8 bytes before the allocation.
+    8- dup @
+    // [ptr len]
+    SYS_MUNMAP rot(3>1) syscall(3)
+    pack(FreeResult)
 end
