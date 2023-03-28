@@ -749,18 +749,17 @@ pub fn load(
         _ => {
             *had_error = true;
 
-            let [ptr_value] = analyzer.values([ptr_id]);
             let ptr_type_info = type_store.get_type_info(ptr_type);
             let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(&mut labels, analyzer, ptr_id, 0, ptr_type_name);
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
             diagnostics::emit_error(
                 op.token.location,
                 "value must be a pointer",
-                [
-                    Label::new(op.token.location).with_color(Color::Red),
-                    Label::new(ptr_value.creator_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message(ptr_type_name),
-                ],
+                labels,
                 None,
                 source_store,
             );
@@ -789,21 +788,19 @@ pub fn store(
         TypeKind::Pointer(kind) => kind,
         _ => {
             *had_error = true;
-            let [ptr_value] = analyzer.values([ptr_id]);
             let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
 
             let data_type_info = type_store.get_type_info(data_type);
             let data_type_name = interner.resolve_lexeme(data_type_info.name);
 
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(&mut labels, analyzer, ptr_id, 1, ptr_type_name);
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
             diagnostics::emit_error(
                 op.token.location,
-                format!("found {ptr_type_name} expected a ptr({data_type_name})"),
-                [
-                    Label::new(op.token.location).with_color(Color::Red),
-                    Label::new(ptr_value.creator_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message(ptr_type_name),
-                ],
+                format!("found `{ptr_type_name}` expected a `ptr({data_type_name})`"),
+                labels,
                 None,
                 source_store,
             );

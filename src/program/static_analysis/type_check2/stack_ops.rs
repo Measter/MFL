@@ -81,18 +81,23 @@ pub fn cast_to_int(
         TypeKind::Pointer(_) => {
             if (width, sign) != (IntWidth::I64, Signedness::Unsigned) {
                 *had_error = true;
-                let [input_value] = analyzer.values(input_ids);
+                let input_type_name = interner.resolve_lexeme(input_type_info.name);
+
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    input_ids[0],
+                    0,
+                    input_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
 
                 diagnostics::emit_error(
                     op.token.location,
                     format!("cannot cast to {}", width.name(sign)),
-                    [
-                        Label::new(op.token.location).with_color(Color::Red),
-                        Label::new(input_value.creator_token.location)
-                            .with_message(format!("{} cannot hold a ptr", width.name(sign)))
-                            .with_color(Color::Cyan),
-                    ],
-                    None,
+                    labels,
+                    Some(format!("{} cannot hold a ptr", width.name(sign))),
                     source_store,
                 );
             }
@@ -102,17 +107,22 @@ pub fn cast_to_int(
             signed: from_sign,
         } => {
             if (from_width, from_sign) == (width, sign) {
-                let [input_value] = analyzer.values(input_ids);
+                let input_type_name = interner.resolve_lexeme(input_type_info.name);
+
+                let mut labels = Vec::new();
+                diagnostics::build_creator_label_chain(
+                    &mut labels,
+                    analyzer,
+                    input_ids[0],
+                    0,
+                    input_type_name,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Yellow));
 
                 diagnostics::emit_warning(
                     op.token.location,
                     "unnecessary cast",
-                    [
-                        Label::new(op.token.location).with_color(Color::Yellow),
-                        Label::new(input_value.creator_token.location)
-                            .with_message(format!("already an {}", width.name(sign)))
-                            .with_color(Color::Cyan),
-                    ],
+                    labels,
                     None,
                     source_store,
                 );
@@ -164,38 +174,47 @@ pub fn cast_to_ptr(
             signed: Signedness::Unsigned,
         } => {}
         TypeKind::Pointer(from_kind) if from_kind == to_kind => {
-            let [value] = analyzer.values(input_ids);
             let ptr_info = type_store.get_pointer(interner, from_kind);
             let ptr_type_name = interner.resolve_lexeme(ptr_info.name);
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_ids[0],
+                0,
+                ptr_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Yellow));
 
             diagnostics::emit_warning(
                 op.token.location,
                 "unnecessary cast",
-                [
-                    Label::new(op.token.location).with_color(Color::Yellow),
-                    Label::new(value.creator_token.location)
-                        .with_message(format!("already a {ptr_type_name}"))
-                        .with_color(Color::Cyan),
-                ],
-                None,
+                labels,
+                Some(format!("already a {ptr_type_name}")),
                 source_store,
             );
         }
         TypeKind::Pointer(_) => {}
 
-        TypeKind::Integer { width, signed } => {
+        TypeKind::Integer { .. } => {
             *had_error = true;
-            let [input_value] = analyzer.values(input_ids);
+            let value_type_name = interner.resolve_lexeme(input_type_info.name);
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                input_ids[0],
+                0,
+                value_type_name,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
 
             diagnostics::emit_error(
                 op.token.location,
                 "cannot cast to ptr",
-                [
-                    Label::new(op.token.location).with_color(Color::Red),
-                    Label::new(input_value.creator_token.location)
-                        .with_message(format!("cannot cast {} to ptr", width.name(signed)))
-                        .with_color(Color::Cyan),
-                ],
+                labels,
                 None,
                 source_store,
             );

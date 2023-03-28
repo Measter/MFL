@@ -171,30 +171,30 @@ pub fn analyze_while(
 
     if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
         *had_error = true;
-        let [value] = analyzer.values(condition_inputs);
         let condition_info = type_store.get_type_info(condition_type);
         let condition_type_name = interner.resolve_lexeme(condition_info.name);
+
+        let mut labels = Vec::new();
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            condition_inputs[0],
+            0,
+            condition_type_name,
+        );
+        labels.push(Label::new(while_op.do_token.location).with_color(Color::Red));
 
         diagnostics::emit_error(
             while_op.do_token.location,
             "condition must evaluate to a boolean",
-            [
-                Label::new(while_op.do_token.location)
-                    .with_color(Color::Cyan)
-                    .with_message("expected here"),
-                Label::new(value.creator_token.location)
-                    .with_color(Color::Red)
-                    .with_message(condition_type_name)
-                    .with_order(1),
-            ],
+            labels,
             None,
             source_store,
         );
     }
 
     for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
-        let [pre_value, condition_value] =
-            analyzer.values([merge_pair.pre_value, merge_pair.condition_value]);
+        let [condition_value] = analyzer.values([merge_pair.condition_value]);
         let Some(input_type_ids @ [pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
         let pre_type_info = type_store.get_type_info(pre_type);
         let condition_type_info = type_store.get_type_info(condition_type);
@@ -209,19 +209,28 @@ pub fn analyze_while(
                 let info = type_store.get_type_info(id);
                 interner.resolve_lexeme(info.name)
             });
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                merge_pair.pre_value,
+                0,
+                pre_type_name,
+            );
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                merge_pair.condition_value,
+                1,
+                condition_type_name,
+            );
+
             *had_error = true;
             diagnostics::emit_error(
                 condition_value.creator_token.location,
                 "while loop condition or body may not change types on the stack",
-                [
-                    Label::new(condition_value.creator_token.location)
-                        .with_color(Color::Red)
-                        .with_message(condition_type_name),
-                    Label::new(pre_value.creator_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message(pre_type_name)
-                        .with_order(1),
-                ],
+                labels,
                 None,
                 source_store,
             );
@@ -246,22 +255,23 @@ pub fn analyze_if(
     if let Some([condition_type]) = analyzer.value_types([condition_value_id]) {
         if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
             *had_error = true;
-            let [value] = analyzer.values([condition_value_id]);
             let condition_type_info = type_store.get_type_info(condition_type);
             let condition_type_name = interner.resolve_lexeme(condition_type_info.name);
+
+            let mut labels = Vec::new();
+            diagnostics::build_creator_label_chain(
+                &mut labels,
+                analyzer,
+                condition_value_id,
+                0,
+                condition_type_name,
+            );
+            labels.push(Label::new(if_op.do_token.location).with_color(Color::Red));
 
             diagnostics::emit_error(
                 if_op.do_token.location,
                 "condition must evaluate to a boolean",
-                [
-                    Label::new(if_op.do_token.location)
-                        .with_color(Color::Cyan)
-                        .with_message("expected here"),
-                    Label::new(value.creator_token.location)
-                        .with_color(Color::Red)
-                        .with_message(condition_type_name)
-                        .with_order(1),
-                ],
+                labels,
                 None,
                 source_store,
             );
@@ -274,8 +284,7 @@ pub fn analyze_if(
     };
 
     for merge_pair in merges {
-        let [then_value, else_value] =
-            analyzer.values([merge_pair.then_value, merge_pair.else_value]);
+        let [then_value] = analyzer.values([merge_pair.then_value]);
         let Some(input_type_ids @ [then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
         let then_type_info = type_store.get_type_info(then_type);
         let else_type_info = type_store.get_type_info(else_type);
@@ -314,19 +323,27 @@ pub fn analyze_if(
                         interner.resolve_lexeme(info.name)
                     });
 
+                    let mut labels = Vec::new();
+                    diagnostics::build_creator_label_chain(
+                        &mut labels,
+                        analyzer,
+                        merge_pair.then_value,
+                        0,
+                        then_type_name,
+                    );
+                    diagnostics::build_creator_label_chain(
+                        &mut labels,
+                        analyzer,
+                        merge_pair.else_value,
+                        1,
+                        else_type_name,
+                    );
+
                     *had_error = true;
                     diagnostics::emit_error(
                         then_value.creator_token.location,
                         "conditional body cannot change types on the stack",
-                        [
-                            Label::new(then_value.creator_token.location)
-                                .with_color(Color::Red)
-                                .with_message(then_type_name),
-                            Label::new(else_value.creator_token.location)
-                                .with_color(Color::Cyan)
-                                .with_message(else_type_name)
-                                .with_order(1),
-                        ],
+                        labels,
                         None,
                         source_store,
                     );

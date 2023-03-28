@@ -339,20 +339,13 @@ fn failed_compare_stack_types(
             interner.resolve_lexeme(type_info.name)
         });
 
-        let mut creators = analyzer.get_creator_token(*actual_id);
-        let root = creators.pop().unwrap();
-        labels.push(
-            Label::new(root.location)
-                .with_color(Color::Yellow)
-                .with_message(format!("{value_type} (depth {idx})")),
+        diagnostics::build_creator_label_chain(
+            &mut labels,
+            analyzer,
+            *actual_id,
+            idx.to_u64(),
+            value_type,
         );
-        for creator in creators {
-            labels.push(
-                Label::new(creator.location)
-                    .with_color(Color::Cyan)
-                    .with_message(format!("{value_type} (depth {idx})")),
-            );
-        }
 
         let expected_type_info = type_store.get_type_info(*expected);
         let expected_name = interner.resolve_lexeme(expected_type_info.name);
@@ -432,33 +425,7 @@ fn generate_type_mismatch_diag(
             interner.resolve_lexeme(type_info.name)
         });
 
-        let mut creator_tokens = analyzer.get_creator_token(*value_id);
-        let root_creator = creator_tokens.pop().unwrap();
-
-        for creator in &creator_tokens {
-            labels.push(
-                Label::new(creator.location)
-                    .with_color(Color::Cyan)
-                    .with_message(format!("{value_type} (id {})", value_id.0))
-                    .with_order(order),
-            )
-        }
-
-        if creator_tokens.is_empty() {
-            labels.push(
-                Label::new(root_creator.location)
-                    .with_color(Color::Yellow)
-                    .with_message(value_type.to_string())
-                    .with_order(order),
-            )
-        } else {
-            labels.push(
-                Label::new(root_creator.location)
-                    .with_color(Color::Yellow)
-                    .with_message(format!("{value_type} (id {})", value_id.0))
-                    .with_order(order),
-            )
-        }
+        diagnostics::build_creator_label_chain(&mut labels, analyzer, *value_id, order, value_type);
     }
 
     diagnostics::emit_error(op.token.location, message, labels, None, source_store);
