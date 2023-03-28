@@ -8,6 +8,15 @@ _start:
     mov RDI, 0
     syscall
 
+global _syscall3
+_syscall3:
+    mov RAX, RDI
+    mov EDI, ESI
+    mov RSI, RDX
+    syscall
+
+    ret
+
 global _syscall4
 _syscall4:
     mov RAX, RDI
