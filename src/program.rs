@@ -16,10 +16,10 @@ use tracing::{debug_span, trace, trace_span};
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::{self, Token},
+    lexer::{self, Token, TokenKind},
     opcode::{Op, OpCode, OpId},
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage},
     type_store::{TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
     Args,
 };
@@ -53,12 +53,12 @@ pub enum ItemKind {
     Memory,
     Function,
     StructDef,
+    Module,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct ItemHeader {
     name: Token,
-    module: ModuleId,
     id: ItemId,
     parent: Option<ItemId>,
     kind: ItemKind,
@@ -68,10 +68,6 @@ pub struct ItemHeader {
 impl ItemHeader {
     pub fn name(&self) -> Token {
         self.name
-    }
-
-    pub fn module(&self) -> ModuleId {
-        self.module
     }
 
     pub fn id(&self) -> ItemId {
@@ -142,12 +138,9 @@ impl ItemSignatureResolved {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ModuleId(u16);
-
 pub struct Program {
-    modules: HashMap<ModuleId, Module>,
-    module_ident_map: HashMap<Spur, ModuleId>,
+    module_info: HashMap<ItemId, ModuleInfo>,
+    module_ident_map: HashMap<Spur, ItemId>,
 
     item_headers: BTreeMap<ItemId, ItemHeader>,
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
@@ -165,8 +158,9 @@ impl Program {
         self.item_headers.iter().map(|(id, item)| (*id, *item))
     }
 
-    pub fn get_module(&self, id: ModuleId) -> &Module {
-        &self.modules[&id]
+    #[track_caller]
+    pub fn get_module(&self, id: ItemId) -> &ModuleInfo {
+        &self.module_info[&id]
     }
 
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
@@ -221,7 +215,7 @@ impl Program {
 impl Program {
     pub fn new() -> Self {
         Program {
-            modules: Default::default(),
+            module_info: Default::default(),
             module_ident_map: Default::default(),
             item_headers: BTreeMap::new(),
             item_signatures_unresolved: HashMap::new(),
@@ -234,16 +228,24 @@ impl Program {
         }
     }
 
-    fn new_module(&mut self, name: Spur) -> ModuleId {
-        let new_id = self.modules.len();
-        let new_id = ModuleId(new_id.to_u16().unwrap());
+    fn new_module(&mut self, name: Token) -> ItemId {
+        let new_id = self.item_headers.len();
+        let new_id = ItemId(new_id.to_u16().unwrap());
 
-        let module = Module {
+        let item_header = ItemHeader {
             name,
+            id: new_id,
+            parent: None,
+            kind: ItemKind::Module,
+            new_op_id: 0,
+        };
+        self.item_headers.insert(new_id, item_header);
+
+        let module = ModuleInfo {
             top_level_symbols: HashMap::new(),
         };
-        self.module_ident_map.insert(name, new_id);
-        self.modules.insert(new_id, module);
+        self.module_ident_map.insert(name.lexeme, new_id);
+        self.module_info.insert(new_id, module);
 
         new_id
     }
@@ -254,15 +256,19 @@ impl Program {
         source_store: &mut SourceStorage,
         type_store: &mut TypeStore,
         args: &Args,
-    ) -> Result<ModuleId> {
+    ) -> Result<ItemId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
 
         let mut loaded_modules = HashSet::new();
         let mut include_queue = Vec::new();
 
         let builtin_structs_module_name = interner.intern_lexeme("builtins");
-        let builtin_module = self.new_module(builtin_structs_module_name);
-        Module::load(
+        let builtin_module = self.new_module(Token {
+            kind: TokenKind::Include,
+            lexeme: builtin_structs_module_name,
+            location: SourceLocation::new(FileId::dud(), 0..0),
+        });
+        ModuleInfo::load(
             self,
             builtin_module,
             source_store,
@@ -276,9 +282,13 @@ impl Program {
 
         let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
         let module_name = interner.intern_lexeme(module_name);
-        let entry_module_id = self.new_module(module_name);
+        let entry_module_id = self.new_module(Token {
+            kind: TokenKind::Include,
+            lexeme: module_name,
+            location: SourceLocation::new(FileId::dud(), 0..0),
+        });
 
-        Module::load(
+        ModuleInfo::load(
             self,
             entry_module_id,
             source_store,
@@ -318,9 +328,9 @@ impl Program {
                 }
             };
 
-            let new_module_id = self.new_module(token.lexeme);
+            let new_module_id = self.new_module(token);
 
-            match Module::load(
+            match ModuleInfo::load(
                 self,
                 new_module_id,
                 source_store,
@@ -413,6 +423,7 @@ impl Program {
                 i.kind() != ItemKind::Macro
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
+                    && i.kind() != ItemKind::Module
             })
             .map(|(id, item)| (*id, *item))
             .collect();
@@ -467,6 +478,7 @@ impl Program {
                 i.kind() != ItemKind::Macro
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
+                    && i.kind() != ItemKind::Module
             })
             .map(|(id, _)| *id)
             .collect();
@@ -498,6 +510,7 @@ impl Program {
                 i.kind() != ItemKind::Macro
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
+                    && i.kind() != ItemKind::Module
             })
             .map(|(id, _)| *id)
             .collect();
@@ -672,9 +685,8 @@ impl Program {
     pub fn new_item(
         &mut self,
         name: Token,
-        module: ModuleId,
         kind: ItemKind,
-        parent: Option<ItemId>,
+        parent: ItemId,
         sig: ItemSignatureUnresolved,
     ) -> ItemId {
         let id = self.item_headers.len();
@@ -682,10 +694,9 @@ impl Program {
 
         let item = ItemHeader {
             name,
-            module,
             id,
             kind,
-            parent,
+            parent: Some(parent),
             new_op_id: 0,
         };
 
@@ -696,32 +707,32 @@ impl Program {
             self.function_data.insert(id, FunctionData::default());
         }
 
-        if parent.is_none() {
-            let module = self.modules.get_mut(&module).unwrap();
-            module.top_level_symbols.insert(name.lexeme, id);
+        let parent_info = self.item_headers[&parent];
+        if parent_info.kind == ItemKind::Module {
+            let module_info = self.module_info.get_mut(&parent).unwrap();
+            module_info.top_level_symbols.insert(name.lexeme, id);
         }
 
         id
     }
 
-    pub fn new_struct(&mut self, module: ModuleId, def: UnresolvedStruct) {
+    pub fn new_struct(&mut self, module: ItemId, def: UnresolvedStruct) {
         let id = self.item_headers.len();
         let id = ItemId(id.to_u16().unwrap());
         let name = def.name;
 
         let item = ItemHeader {
             name,
-            module,
             id,
             kind: ItemKind::StructDef,
-            parent: None,
+            parent: Some(module),
             new_op_id: 0,
         };
 
         self.item_headers.insert(id, item);
         self.structs_unresolved.insert(id, def);
 
-        let module = self.modules.get_mut(&module).unwrap();
+        let module = self.module_info.get_mut(&module).unwrap();
         module.top_level_symbols.insert(name.lexeme, id);
     }
 
@@ -752,17 +763,20 @@ impl Program {
                 if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                     return Some(*found_id);
                 }
+            } else if item.kind == ItemKind::Module {
+                let module = &self.module_info[&id];
+                if let Some(found_id) = module.top_level_symbols.get(&symbol) {
+                    return Some(*found_id);
+                }
             }
             cur_id = item.parent;
         }
 
-        let module = &self.modules[&from.module];
-        module.top_level_symbols.get(&symbol).copied()
+        None
     }
 }
 
-pub struct Module {
-    name: Spur,
+pub struct ModuleInfo {
     top_level_symbols: HashMap<Spur, ItemId>,
 }
 
@@ -772,10 +786,10 @@ pub enum ModuleSource<'a> {
     Builtin(&'static str),
 }
 
-impl Module {
+impl ModuleInfo {
     pub fn load(
         program: &mut Program,
-        module_id: ModuleId,
+        module_id: ItemId,
         source_store: &mut SourceStorage,
         interner: &mut Interners,
         file: ModuleSource,
@@ -816,10 +830,6 @@ impl Module {
 
     pub fn get_item_id(&self, name: Spur) -> Option<ItemId> {
         self.top_level_symbols.get(&name).copied()
-    }
-
-    pub fn name(&self) -> Spur {
-        self.name
     }
 }
 

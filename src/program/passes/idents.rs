@@ -40,13 +40,11 @@ impl Program {
                 if let Some(id) = visible_id {
                     Ok(id)
                 } else {
-                    let module = &self.modules[&item_header.module];
                     let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
-                    let module_lexeme = interner.resolve_lexeme(module.name);
                     *had_error = true;
                     diagnostics::emit_error(
                         item_token.location,
-                        format!("symbol `{token_lexeme}` not found in module `{module_lexeme}`"),
+                        format!("symbol `{token_lexeme}` not found"),
                         Some(
                             Label::new(item_token.location)
                                 .with_color(Color::Red)
@@ -85,7 +83,7 @@ impl Program {
                     }
                 };
 
-                let module = &self.modules[&module_id];
+                let module = &self.module_info[&module_id];
                 match module.top_level_symbols.get(&item_token.lexeme) {
                     Some(item_id) => Ok(*item_id),
                     None => {
@@ -271,6 +269,7 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
+            .filter(|(_, item)| item.kind() != ItemKind::Module)
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -445,7 +444,9 @@ impl Program {
                 ItemKind::Const => "const",
                 ItemKind::Macro => "macro",
                 ItemKind::Assert => "assert",
-                ItemKind::Memory | ItemKind::Function | ItemKind::StructDef => continue,
+                ItemKind::Memory | ItemKind::Function | ItemKind::StructDef | ItemKind::Module => {
+                    continue
+                }
             };
 
             check_queue.clear();
@@ -606,7 +607,7 @@ impl Program {
                             );
                         }
 
-                        ItemKind::Assert | ItemKind::StructDef => {
+                        ItemKind::Assert | ItemKind::StructDef | ItemKind::Module => {
                             *had_error = true;
                             diagnostics::emit_error(
                                 op.token.location,
@@ -645,6 +646,7 @@ impl Program {
                 i.kind() != ItemKind::Macro
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
+                    && i.kind() != ItemKind::Module
             })
             .map(|(id, _)| *id)
             .collect();

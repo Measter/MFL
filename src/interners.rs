@@ -51,8 +51,8 @@ impl Interners {
             parent = item.parent();
         }
 
-        let module_name_spur = program.get_module(item.module()).name();
-        let mut name = self.lexemes.resolve(&module_name_spur).to_owned();
+        // There'll be at least one.
+        let mut name = parts.pop().unwrap().to_owned();
 
         while let Some(part) = parts.pop() {
             name.push('$');

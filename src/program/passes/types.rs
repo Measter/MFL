@@ -222,7 +222,7 @@ impl Program {
         let items = self
             .item_headers
             .iter()
-            .filter(|(_, item)| item.kind != ItemKind::StructDef)
+            .filter(|(_, item)| item.kind != ItemKind::StructDef && item.kind != ItemKind::Module)
             .map(|(id, item)| (*id, *item));
 
         for (item_id, item) in items {

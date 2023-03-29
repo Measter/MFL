@@ -15,7 +15,7 @@ use crate::{
     type_store::{IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
 
-use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleId, Program};
+use super::{ItemId, ItemKind, ItemSignatureUnresolved, Program};
 
 trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;
@@ -494,11 +494,10 @@ fn parse_integer_op<'a>(
 
 pub fn parse_item_body(
     program: &mut Program,
-    module_id: ModuleId,
     tokens: &[Token],
     op_id_gen: &mut impl FnMut() -> OpId,
     interner: &Interners,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<Vec<Op>, ()> {
     let mut ops = Vec::new();
@@ -857,12 +856,11 @@ pub fn parse_item_body(
             TokenKind::While => {
                 match parse_while(
                     program,
-                    module_id,
                     &mut token_iter,
                     tokens,
                     token,
                     op_id_gen,
-                    parent,
+                    parent_id,
                     interner,
                     source_store,
                 ) {
@@ -877,12 +875,11 @@ pub fn parse_item_body(
             TokenKind::Assert | TokenKind::Const => {
                 if parse_item(
                     program,
-                    module_id,
                     &mut token_iter,
                     tokens,
                     token,
                     interner,
-                    parent,
+                    parent_id,
                     source_store,
                 )
                 .is_err()
@@ -894,10 +891,9 @@ pub fn parse_item_body(
             TokenKind::Memory => {
                 if parse_memory(
                     program,
-                    module_id,
                     &mut token_iter,
                     token,
-                    parent,
+                    parent_id,
                     interner,
                     source_store,
                 )
@@ -930,12 +926,11 @@ pub fn parse_item_body(
             TokenKind::If => {
                 match parse_if(
                     program,
-                    module_id,
                     &mut token_iter,
                     tokens,
                     token,
                     op_id_gen,
-                    parent,
+                    parent_id,
                     interner,
                     source_store,
                 ) {
@@ -1118,12 +1113,11 @@ fn get_item_body<'a>(
 
 fn parse_if<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
     op_id_gen: &mut impl FnMut() -> OpId,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
@@ -1138,11 +1132,10 @@ fn parse_if<'a>(
 
     let condition = parse_item_body(
         program,
-        module_id,
         condition,
         op_id_gen,
         interner,
-        parent,
+        parent_id,
         source_store,
     )?;
 
@@ -1157,11 +1150,10 @@ fn parse_if<'a>(
 
     let then_block = parse_item_body(
         program,
-        module_id,
         main_block,
         op_id_gen,
         interner,
-        parent,
+        parent_id,
         source_store,
     )?;
 
@@ -1180,11 +1172,10 @@ fn parse_if<'a>(
 
         let elif_condition = parse_item_body(
             program,
-            module_id,
             elif_condition,
             op_id_gen,
             interner,
-            parent,
+            parent_id,
             source_store,
         )?;
 
@@ -1199,11 +1190,10 @@ fn parse_if<'a>(
 
         let elif_block = parse_item_body(
             program,
-            module_id,
             elif_block,
             op_id_gen,
             interner,
-            parent,
+            parent_id,
             source_store,
         )?;
 
@@ -1229,11 +1219,10 @@ fn parse_if<'a>(
 
         let else_block = parse_item_body(
             program,
-            module_id,
             else_block,
             op_id_gen,
             interner,
-            parent,
+            parent_id,
             source_store,
         )?;
 
@@ -1282,12 +1271,11 @@ fn parse_if<'a>(
 
 fn parse_while<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
     op_id_gen: &mut impl FnMut() -> OpId,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
@@ -1302,11 +1290,10 @@ fn parse_while<'a>(
 
     let condition = parse_item_body(
         program,
-        module_id,
         condition,
         op_id_gen,
         interner,
-        parent,
+        parent_id,
         source_store,
     )?;
 
@@ -1319,15 +1306,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let body_block = parse_item_body(
-        program,
-        module_id,
-        body,
-        op_id_gen,
-        interner,
-        parent,
-        source_store,
-    )?;
+    let body_block = parse_item_body(program, body, op_id_gen, interner, parent_id, source_store)?;
 
     Ok(OpCode::While(Box::new(While {
         do_token,
@@ -1339,10 +1318,9 @@ fn parse_while<'a>(
 
 fn parse_memory<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     keyword: Token,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
@@ -1402,9 +1380,9 @@ fn parse_memory<'a>(
         memory_type_location: store_type_location,
     };
 
-    let item_id = program.new_item(name_token, module_id, ItemKind::Memory, parent, sig);
+    let item_id = program.new_item(name_token, ItemKind::Memory, parent_id, sig);
 
-    if let Some(parent_id) = parent {
+    if program.get_item_header(parent_id).kind() == ItemKind::Function {
         let pd = program.get_function_data_mut(parent_id);
         pd.allocs.insert(name_token.lexeme, item_id);
     }
@@ -1414,11 +1392,10 @@ fn parse_memory<'a>(
 
 fn parse_function_header<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let mut had_error = false;
@@ -1473,7 +1450,7 @@ fn parse_function_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, module_id, ItemKind::Function, parent, sig);
+    let new_item = program.new_item(name, ItemKind::Function, parent_id, sig);
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -1490,11 +1467,10 @@ fn parse_function_header<'a>(
 
 fn parse_macro_header<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
@@ -1506,7 +1482,7 @@ fn parse_macro_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, module_id, ItemKind::Macro, parent, sig);
+    let new_item = program.new_item(name, ItemKind::Macro, parent_id, sig);
 
     let mut had_error = false;
     let (_, is_token) = expect_token(
@@ -1524,11 +1500,10 @@ fn parse_macro_header<'a>(
 
 fn parse_const_header<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let mut had_error = false;
@@ -1557,7 +1532,7 @@ fn parse_const_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, module_id, ItemKind::Const, parent, sig);
+    let new_item = program.new_item(name, ItemKind::Const, parent_id, sig);
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -1574,11 +1549,10 @@ fn parse_const_header<'a>(
 
 fn parse_assert_header<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     name: Token,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
@@ -1593,7 +1567,7 @@ fn parse_assert_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, module_id, ItemKind::Assert, parent, sig);
+    let new_item = program.new_item(name, ItemKind::Assert, parent_id, sig);
 
     let mut had_error = false;
     let (_, is_token) = expect_token(
@@ -1611,12 +1585,11 @@ fn parse_assert_header<'a>(
 
 fn parse_item<'a>(
     program: &mut Program,
-    module_id: ModuleId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     tokens: &'a [Token],
     keyword: Token,
     interner: &Interners,
-    parent: Option<ItemId>,
+    parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -1641,11 +1614,10 @@ fn parse_item<'a>(
 
     let (is_token, item_id) = header_func(
         program,
-        module_id,
         token_iter,
         interner,
         name_token,
-        parent,
+        parent_id,
         source_store,
     )
     .recover(&mut had_error, (name_token, ItemId::dud()));
@@ -1669,11 +1641,10 @@ fn parse_item<'a>(
 
     let mut body = parse_item_body(
         program,
-        module_id,
         body,
         &mut op_id_gen,
         interner,
-        Some(item_id),
+        item_id,
         source_store,
     )
     .recover(&mut had_error, Vec::new());
@@ -1735,20 +1706,18 @@ fn parse_item<'a>(
         had_error = true;
     }
 
-    if let Some(parent_id) = parent {
-        let parent_item = program.get_item_header(parent_id);
-        match (parent_item.kind(), keyword.kind) {
-            (ItemKind::Function, TokenKind::Const) => {
-                let pd = program.get_function_data_mut(parent_id);
-                pd.consts.insert(name_token.lexeme, item_id);
-            }
-            (ItemKind::Function, TokenKind::Memory) => {
-                let pd = program.get_function_data_mut(parent_id);
-                pd.allocs.insert(name_token.lexeme, item_id);
-            }
-            // The other types aren't stored in the proc
-            _ => {}
+    let parent_item = program.get_item_header(parent_id);
+    match (parent_item.kind(), keyword.kind) {
+        (ItemKind::Function, TokenKind::Const) => {
+            let pd = program.get_function_data_mut(parent_id);
+            pd.consts.insert(name_token.lexeme, item_id);
         }
+        (ItemKind::Function, TokenKind::Memory) => {
+            let pd = program.get_function_data_mut(parent_id);
+            pd.allocs.insert(name_token.lexeme, item_id);
+        }
+        // The other types aren't stored in the proc
+        _ => {}
     }
 
     if had_error {
@@ -1760,7 +1729,7 @@ fn parse_item<'a>(
 
 fn parse_struct<'a>(
     program: &mut Program,
-    module_id: ModuleId,
+    module_id: ItemId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     keyword: Token,
     interner: &Interners,
@@ -1860,7 +1829,7 @@ fn parse_struct<'a>(
 
 pub(super) fn parse_module(
     program: &mut Program,
-    module_id: ModuleId,
+    module_id: ItemId,
     tokens: &[Token],
     interner: &Interners,
     include_queue: &mut Vec<Token>,
@@ -1876,12 +1845,11 @@ pub(super) fn parse_module(
             TokenKind::Assert | TokenKind::Const | TokenKind::Macro | TokenKind::Proc => {
                 if parse_item(
                     program,
-                    module_id,
                     &mut token_iter,
                     tokens,
                     *token,
                     interner,
-                    None,
+                    module_id,
                     source_store,
                 )
                 .is_err()
@@ -1893,10 +1861,9 @@ pub(super) fn parse_module(
             TokenKind::Memory => {
                 if parse_memory(
                     program,
-                    module_id,
                     &mut token_iter,
                     *token,
-                    None,
+                    module_id,
                     interner,
                     source_store,
                 )
