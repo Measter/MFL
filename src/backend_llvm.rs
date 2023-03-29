@@ -344,7 +344,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             let function = self
                 .module
-                .add_function(name, function_type, Some(Linkage::Private));
+                .add_function(name, function_type, Some(Linkage::External));
             self.item_function_map.insert(id, function);
         }
         proto_span.exit();
