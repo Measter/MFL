@@ -29,9 +29,13 @@ proc alloc [
     if dup 0< do
         // Some kind of failure
         0- cast(u64)
-    else
-        drop 0
+        // Drop the len and pointer
+        rot(3>1) drop(2)
+        // Store a null pointer.
+        0(u64) cast(ptr(u8))
+        swap pack(AllocResult) return
     end
+    drop 0
     // [len ptr errcode]
     // Store the lenth in the allocation.
     rot(3>2) over(2)
