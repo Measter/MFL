@@ -4,7 +4,6 @@ use hashbrown::HashMap;
 
 pub trait VecNOps<T> {
     fn popn<const N: usize>(&mut self) -> Option<[T; N]>;
-    fn popn_last_mut<const N: usize>(&mut self) -> Option<([T; N], &mut T)>;
 }
 
 impl<T> VecNOps<T> for Vec<T> {
@@ -27,36 +26,15 @@ impl<T> VecNOps<T> for Vec<T> {
             Some(dest.assume_init())
         }
     }
-
-    fn popn_last_mut<const N: usize>(&mut self) -> Option<([T; N], &mut T)> {
-        if self.len() < N + 1 {
-            return None;
-        }
-
-        let popped = self.popn().unwrap();
-        let last = self.last_mut().unwrap();
-        Some((popped, last))
-    }
 }
 
 pub trait SliceNOps<T> {
-    fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)>;
     fn lastn(&self, n: usize) -> Option<&Self>;
     fn lastn_mut(&mut self, n: usize) -> Option<&mut Self>;
     fn as_arr<const N: usize>(&self) -> &[T; N];
 }
 
 impl<T> SliceNOps<T> for [T] {
-    fn firstn<const N: usize>(&self) -> Option<(&[T; N], &Self)> {
-        assert!(N > 0);
-        if self.len() < N {
-            return None;
-        }
-
-        let (start, rest) = self.split_at(N);
-        Some((start.try_into().ok()?, rest))
-    }
-
     fn lastn(&self, n: usize) -> Option<&Self> {
         if self.len() < n {
             return None;
