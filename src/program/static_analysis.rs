@@ -323,31 +323,15 @@ fn failed_compare_stack_types(
         \t\t______|__________|_________"
         .to_owned();
 
-    let mut labels = vec![
-        Label::new(error_location)
-            .with_color(Color::Red)
-            .with_message("actual sampled here"),
-        Label::new(sample_location)
-            .with_color(Color::Cyan)
-            .with_message("expected sampled here"),
-    ];
-
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
+    let mut bad_values = Vec::new();
     for (idx, (expected, actual_id)) in pairs {
         let value_type = analyzer.value_types([*actual_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
             interner.resolve_lexeme(type_info.name)
         });
 
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            *actual_id,
-            idx.to_u64(),
-            value_type,
-            Color::Yellow,
-            Color::Cyan,
-        );
+        bad_values.push((*actual_id, idx.to_u64(), value_type));
 
         let expected_type_info = type_store.get_type_info(*expected);
         let expected_name = interner.resolve_lexeme(expected_type_info.name);
@@ -360,6 +344,17 @@ fn failed_compare_stack_types(
         )
         .unwrap();
     }
+
+    let mut labels =
+        diagnostics::build_creator_label_chain(analyzer, bad_values, Color::Yellow, Color::Cyan);
+    labels.extend([
+        Label::new(error_location)
+            .with_color(Color::Red)
+            .with_message("actual sampled here"),
+        Label::new(sample_location)
+            .with_color(Color::Cyan)
+            .with_message("expected sampled here"),
+    ]);
 
     diagnostics::emit_error(error_location, msg, labels, note, source_store);
 }
@@ -411,33 +406,18 @@ fn generate_type_mismatch_diag(
         }
     }
 
-    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
-
-    for source in op.expansions.iter() {
-        labels.push(
-            Label::new(*source)
-                .with_color(Color::Blue)
-                .with_message("expanded from here"),
-        );
-    }
-
+    let mut bad_values = Vec::new();
     for (value_id, order) in types.iter().rev().zip(1..) {
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
             interner.resolve_lexeme(type_info.name)
         });
-
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            *value_id,
-            order,
-            value_type,
-            Color::Yellow,
-            Color::Cyan,
-        );
+        bad_values.push((*value_id, order, value_type));
     }
 
+    let mut labels =
+        diagnostics::build_creator_label_chain(analyzer, bad_values, Color::Yellow, Color::Cyan);
+    labels.push(Label::new(op.token.location).with_color(Color::Red));
     diagnostics::emit_error(op.token.location, message, labels, None, source_store);
 }
 

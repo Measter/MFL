@@ -6,30 +6,44 @@ use crate::{
     source_file::{SourceLocation, SourceStorage},
 };
 
-pub fn build_creator_label_chain(
-    labels: &mut Vec<Label<SourceLocation>>,
+pub fn build_creator_label_chain<'a, V>(
     analyzer: &Analyzer,
-    value_id: ValueId,
-    print_id: u64,
-    value_type: &str,
+    values: V,
     root_color: Color,
     echo_color: Color,
-) {
-    let mut creators = analyzer.get_creator_token(value_id);
+) -> Vec<Label<SourceLocation>>
+where
+    V: IntoIterator<Item = (ValueId, u64, &'a str)>,
+{
+    let mut labels = Vec::new();
 
-    let root = creators.pop().unwrap();
-    labels.push(
-        Label::new(root.location)
-            .with_color(root_color)
-            .with_message(format!("{value_type} (id {print_id})")),
-    );
-    for creator in creators {
-        labels.push(
-            Label::new(creator.location)
-                .with_color(echo_color)
-                .with_message(format!("{value_type} (id {print_id})")),
-        );
+    for (vid, print_id, label) in values {
+        let mut creators = analyzer.get_creator_token(vid);
+
+        let root = creators.pop().unwrap();
+        labels.push((
+            Label::new(root.location)
+                .with_color(root_color)
+                .with_message(format!("{print_id}: {label}")),
+            root.location,
+        ));
+        for creator in creators {
+            labels.push((
+                Label::new(creator.location)
+                    .with_color(echo_color)
+                    .with_message(format!("{print_id}: {label}")),
+                creator.location,
+            ));
+        }
     }
+
+    labels.sort_by_key(|(_, l)| *l);
+    let num_labels = labels.len().to_i32().unwrap();
+    labels
+        .into_iter()
+        .zip((0..num_labels).rev())
+        .map(|((l, _), idx)| l.with_order(idx))
+        .collect()
 }
 
 pub fn emit_error<Labels>(

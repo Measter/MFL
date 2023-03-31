@@ -42,22 +42,9 @@ pub fn extract_array(
         let array_type_name = interner.resolve_lexeme(array_type_info.name);
 
         let idx_value = format!("{idx}");
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            array_id,
-            1,
-            array_type_name,
-            Color::Yellow,
-            Color::Cyan,
-        );
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            idx_id,
-            2,
-            &idx_value,
+            [(array_id, 1, array_type_name), (idx_id, 2, &idx_value)],
             Color::Yellow,
             Color::Cyan,
         );
@@ -105,22 +92,9 @@ pub fn insert_array(
         let array_type_name = interner.resolve_lexeme(array_type_info.name);
 
         let idx_value = format!("{idx}");
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            array_id,
-            1,
-            array_type_name,
-            Color::Yellow,
-            Color::Cyan,
-        );
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            idx_id,
-            2,
-            &idx_value,
+            [(array_id, 1, array_type_name), (idx_id, 2, &idx_value)],
             Color::Yellow,
             Color::Cyan,
         );

@@ -26,7 +26,7 @@ pub fn emit_stack(
         \t\t______|__________"
         .to_owned();
 
-    let mut labels = Vec::new();
+    let mut value_points = Vec::new();
 
     for (idx, value_id) in stack.iter().enumerate().rev() {
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
@@ -37,20 +37,14 @@ pub fn emit_stack(
         let value_idx = stack.len() - idx - 1;
 
         if emit_labels {
-            diagnostics::build_creator_label_chain(
-                &mut labels,
-                analyzer,
-                *value_id,
-                value_idx.to_u64(),
-                value_type,
-                Color::Green,
-                Color::Cyan,
-            );
+            value_points.push((*value_id, value_idx.to_u64(), value_type));
         }
 
         write!(&mut note, "\n\t\t{:<5} | {:>8}", value_idx, value_type,).unwrap();
     }
 
+    let mut labels =
+        diagnostics::build_creator_label_chain(analyzer, value_points, Color::Green, Color::Cyan);
     labels.push(Label::new(op.token.location).with_color(Color::Cyan));
 
     diagnostics::emit(
@@ -85,13 +79,9 @@ pub fn cast_to_int(
                 *had_error = true;
                 let input_type_name = interner.resolve_lexeme(input_type_info.name);
 
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    input_ids[0],
-                    0,
-                    input_type_name,
+                    [(input_ids[0], 0, input_type_name)],
                     Color::Yellow,
                     Color::Cyan,
                 );
@@ -113,13 +103,9 @@ pub fn cast_to_int(
             if (from_width, from_sign) == (width, sign) {
                 let input_type_name = interner.resolve_lexeme(input_type_info.name);
 
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    input_ids[0],
-                    0,
-                    input_type_name,
+                    [(input_ids[0], 0, input_type_name)],
                     Color::Green,
                     Color::Cyan,
                 );
@@ -183,13 +169,9 @@ pub fn cast_to_ptr(
             let ptr_info = type_store.get_pointer(interner, from_kind);
             let ptr_type_name = interner.resolve_lexeme(ptr_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_ids[0],
-                0,
-                ptr_type_name,
+                [(input_ids[0], 0, ptr_type_name)],
                 Color::Green,
                 Color::Cyan,
             );
@@ -209,13 +191,9 @@ pub fn cast_to_ptr(
             *had_error = true;
             let value_type_name = interner.resolve_lexeme(input_type_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_ids[0],
-                0,
-                value_type_name,
+                [(input_ids[0], 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );

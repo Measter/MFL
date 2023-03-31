@@ -128,14 +128,10 @@ pub fn is_null(
 
     if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {
         *had_error = true;
-        let mut labels = Vec::new();
         let type_name = interner.resolve_lexeme(input_type_info.name);
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            input_id,
-            0,
-            type_name,
+            [(input_id, 0, type_name)],
             Color::Yellow,
             Color::Cyan,
         );

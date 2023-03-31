@@ -53,25 +53,15 @@ pub fn pack_array(
                 ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
             )
         {
-            let mut labels = Vec::new();
             let type_info = type_store.get_type_info(value_type_id);
             let other_value_name = interner.resolve_lexeme(type_info.name);
             let expected_value_name = interner.resolve_lexeme(expected_store_type.name);
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                other_id,
-                id,
-                other_value_name,
-                Color::Yellow,
-                Color::Cyan,
-            );
-            diagnostics::build_creator_label_chain(
-                &mut labels,
-                analyzer,
-                *first,
-                0,
-                expected_value_name,
+                [
+                    (other_id, id, other_value_name),
+                    (*first, 0, expected_value_name),
+                ],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -123,15 +113,11 @@ pub fn pack_struct(
                 ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
             )
         {
-            let mut labels = Vec::new();
             let type_info = type_store.get_type_info(input_type_id);
             let other_value_name = interner.resolve_lexeme(type_info.name);
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_id,
-                val_id,
-                other_value_name,
+                [(input_id, val_id, other_value_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -193,13 +179,9 @@ pub fn unpack(
         _ => {
             let input_type_name = interner.resolve_lexeme(aggr_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                aggr_id,
-                0,
-                input_type_name,
+                [(aggr_id, 0, input_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -248,13 +230,9 @@ pub fn extract_array(
                 type_id
             } else {
                 let value_type_name = interner.resolve_lexeme(array_type_info.name);
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    array_value_id,
-                    0,
-                    value_type_name,
+                    [(array_value_id, 0, value_type_name)],
                     Color::Yellow,
                     Color::Cyan,
                 );
@@ -275,13 +253,9 @@ pub fn extract_array(
 
         TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct(_) => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                array_value_id,
-                0,
-                value_type_name,
+                [(array_value_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -308,13 +282,9 @@ pub fn extract_array(
         }
     ) {
         let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            idx_value_id,
-            1,
-            idx_type_name,
+            [(idx_value_id, 1, idx_type_name)],
             Color::Yellow,
             Color::Cyan,
         );
@@ -363,13 +333,9 @@ pub fn insert_array(
                 type_id
             } else {
                 let value_type_name = interner.resolve_lexeme(array_type_info.name);
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    array_value_id,
-                    1,
-                    value_type_name,
+                    [(array_value_id, 1, value_type_name)],
                     Color::Yellow,
                     Color::Cyan,
                 );
@@ -390,13 +356,9 @@ pub fn insert_array(
 
         TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct(_) => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                array_value_id,
-                0,
-                value_type_name,
+                [(array_value_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -425,13 +387,9 @@ pub fn insert_array(
         }
     ) {
         let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            idx_value_id,
-            2,
-            idx_type_name,
+            [(idx_value_id, 2, idx_type_name)],
             Color::Yellow,
             Color::Cyan,
         );
@@ -466,22 +424,12 @@ pub fn insert_array(
             }
             _ => unreachable!(),
         };
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            data_value_id,
-            0,
-            data_type_name,
-            Color::Yellow,
-            Color::Cyan,
-        );
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            array_value_id,
-            1,
-            array_type_name,
+            [
+                (data_value_id, 0, data_type_name),
+                (array_value_id, 1, array_type_name),
+            ],
             Color::Yellow,
             Color::Cyan,
         );
@@ -528,13 +476,9 @@ pub fn insert_struct(
                 sub_type
             } else {
                 let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    input_struct_value_id,
-                    1,
-                    value_type_name,
+                    [(input_struct_value_id, 1, value_type_name)],
                     Color::Yellow,
                     Color::Cyan,
                 );
@@ -555,13 +499,9 @@ pub fn insert_struct(
 
         TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
             let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_struct_value_id,
-                0,
-                value_type_name,
+                [(input_struct_value_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -621,22 +561,12 @@ pub fn insert_struct(
             }
             _ => unreachable!(),
         };
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            data_value_id,
-            0,
-            data_type_name,
-            Color::Yellow,
-            Color::Cyan,
-        );
-        diagnostics::build_creator_label_chain(
-            &mut labels,
-            analyzer,
-            input_struct_value_id,
-            1,
-            struct_type_name,
+            [
+                (data_value_id, 0, data_type_name),
+                (input_struct_value_id, 1, struct_type_name),
+            ],
             Color::Yellow,
             Color::Cyan,
         );
@@ -691,13 +621,9 @@ pub fn extract_struct(
                 sub_type
             } else {
                 let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
-                let mut labels = Vec::new();
-                diagnostics::build_creator_label_chain(
-                    &mut labels,
+                let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
-                    input_struct_value_id,
-                    1,
-                    value_type_name,
+                    [(input_struct_value_id, 1, value_type_name)],
                     Color::Yellow,
                     Color::Cyan,
                 );
@@ -718,13 +644,9 @@ pub fn extract_struct(
 
         TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Array { .. } => {
             let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_struct_value_id,
-                0,
-                value_type_name,
+                [(input_struct_value_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -788,13 +710,9 @@ pub fn load(
             let ptr_type_info = type_store.get_type_info(ptr_type);
             let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                ptr_id,
-                0,
-                ptr_type_name,
+                [(ptr_id, 0, ptr_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -837,13 +755,9 @@ pub fn store(
             let data_type_info = type_store.get_type_info(data_type);
             let data_type_name = interner.resolve_lexeme(data_type_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                ptr_id,
-                1,
-                ptr_type_name,
+                [(ptr_id, 1, ptr_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -884,13 +798,9 @@ pub fn store(
         let kind_type_info = type_store.get_type_info(pointee_type);
         let kind_type_name = interner.resolve_lexeme(kind_type_info.name);
 
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            data_id,
-            0,
-            data_type_name,
+            [(data_id, 0, data_type_name)],
             Color::Yellow,
             Color::Cyan,
         );

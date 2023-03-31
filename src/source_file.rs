@@ -14,7 +14,7 @@ impl FileId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: u32,

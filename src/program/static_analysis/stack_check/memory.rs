@@ -231,14 +231,10 @@ pub fn unpack(
         }
         _ => {
             *had_error = true;
-            let mut labels = Vec::new();
             let value_type_name = interner.resolve_lexeme(input_type_info.name);
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                input_id,
-                0,
-                value_type_name,
+                [(input_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );

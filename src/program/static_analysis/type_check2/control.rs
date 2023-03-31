@@ -174,13 +174,9 @@ pub fn analyze_while(
         let condition_info = type_store.get_type_info(condition_type);
         let condition_type_name = interner.resolve_lexeme(condition_info.name);
 
-        let mut labels = Vec::new();
-        diagnostics::build_creator_label_chain(
-            &mut labels,
+        let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
-            condition_inputs[0],
-            0,
-            condition_type_name,
+            [(condition_inputs[0], 0, condition_type_name)],
             Color::Yellow,
             Color::Cyan,
         );
@@ -212,22 +208,12 @@ pub fn analyze_while(
                 interner.resolve_lexeme(info.name)
             });
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                merge_pair.pre_value,
-                0,
-                pre_type_name,
-                Color::Yellow,
-                Color::Cyan,
-            );
-            diagnostics::build_creator_label_chain(
-                &mut labels,
-                analyzer,
-                merge_pair.condition_value,
-                1,
-                condition_type_name,
+                [
+                    (merge_pair.pre_value, 0, pre_type_name),
+                    (merge_pair.condition_value, 1, condition_type_name),
+                ],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -264,13 +250,9 @@ pub fn analyze_if(
             let condition_type_info = type_store.get_type_info(condition_type);
             let condition_type_name = interner.resolve_lexeme(condition_type_info.name);
 
-            let mut labels = Vec::new();
-            diagnostics::build_creator_label_chain(
-                &mut labels,
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                condition_value_id,
-                0,
-                condition_type_name,
+                [(condition_value_id, 0, condition_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -331,22 +313,12 @@ pub fn analyze_if(
                         interner.resolve_lexeme(info.name)
                     });
 
-                    let mut labels = Vec::new();
-                    diagnostics::build_creator_label_chain(
-                        &mut labels,
+                    let labels = diagnostics::build_creator_label_chain(
                         analyzer,
-                        merge_pair.then_value,
-                        0,
-                        then_type_name,
-                        Color::Yellow,
-                        Color::Cyan,
-                    );
-                    diagnostics::build_creator_label_chain(
-                        &mut labels,
-                        analyzer,
-                        merge_pair.else_value,
-                        1,
-                        else_type_name,
+                        [
+                            (merge_pair.then_value, 0, then_type_name),
+                            (merge_pair.else_value, 1, else_type_name),
+                        ],
                         Color::Yellow,
                         Color::Cyan,
                     );
