@@ -70,9 +70,9 @@ pub fn pack_array(
 
             diagnostics::emit_error(
                 op.token.location,
-                "unable to pack array: mismatched input types",
+                format!("unable to pack array: expected `{expected_value_name}`, found `{other_value_name}`"),
                 labels,
-                None,
+                format!("Expected `{expected_value_name}` because the first value is that type"),
                 source_store,
             );
 
