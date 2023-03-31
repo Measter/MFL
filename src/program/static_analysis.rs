@@ -283,8 +283,8 @@ impl Analyzer {
     }
 
     /// Returns the creator token of a value, treating Dup and Over tokens as transparent.
-    pub fn get_creator_token(&self, mut value_id: ValueId) -> Vec<Token> {
-        let mut creators = Vec::new();
+    pub fn get_creator_token(&self, mut value_id: ValueId) -> SmallVec<[Token; 2]> {
+        let mut creators = SmallVec::new();
 
         let mut value_info = &self.value_lifetime[&value_id];
         let mut cur_creator = value_info.creator_token;
