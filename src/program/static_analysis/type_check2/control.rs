@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -136,10 +137,45 @@ pub fn resolved_ident(
     }
 }
 
-pub fn syscall(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn syscall(
+    analyzer: &mut Analyzer,
+    interner: &Interners,
+    source_store: &SourceStorage,
+    type_store: &TypeStore,
+    had_error: &mut bool,
+    op: &Op,
+) {
     let op_data = analyzer.get_op_io(op.id);
 
-    // All syscall inputs are untyped.
+    for (idx, input_value) in op_data.inputs().iter().enumerate() {
+        let Some([type_id]) = analyzer.value_types([*input_value]) else { continue };
+        let type_info = type_store.get_type_info(type_id);
+        match type_info.kind {
+            TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {}
+
+            _ => {
+                let type_name = interner.resolve_lexeme(type_info.name);
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(*input_value, idx.to_u64(), type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    "invalid syscall parameter",
+                    labels,
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+            }
+        }
+    }
+
     // The output is always an int.
 
     analyzer.set_value_type(

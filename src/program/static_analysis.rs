@@ -1087,7 +1087,14 @@ fn analyze_block(
                     *arg_count_token,
                 );
                 if !local_had_error {
-                    type_check2::control::syscall(analyzer, type_store, op);
+                    type_check2::control::syscall(
+                        analyzer,
+                        interner,
+                        source_store,
+                        type_store,
+                        &mut local_had_error,
+                        op,
+                    );
                 }
 
                 *had_error |= local_had_error;
