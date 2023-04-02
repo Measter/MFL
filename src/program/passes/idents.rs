@@ -8,10 +8,11 @@ use tracing::{debug_span, trace};
 use crate::{
     diagnostics,
     interners::Interners,
-    opcode::{If, Op, OpCode, UnresolvedIdent, While},
+    lexer::Token,
+    opcode::{If, Op, OpCode, While},
     program::{static_analysis::ConstVal, ItemHeader, ItemId, ItemKind, Program},
     simulate::SimulatorValue,
-    source_file::SourceStorage,
+    source_file::{SourceLocation, SourceStorage},
     type_store::{BuiltinTypes, UnresolvedStruct, UnresolvedType},
 };
 
@@ -22,14 +23,12 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        ident: UnresolvedIdent,
+        ident: &[Token],
     ) -> Result<ItemId, ()> {
         match ident {
-            // Symbol in current module.
-            UnresolvedIdent {
-                module: None,
-                item: item_token,
-            } => {
+            [] => panic!("ICE: empty unresolved ident"),
+            // Symbol visible from the current item.
+            [item_token] => {
                 let visible_id = if item_token.lexeme == item_header.name.lexeme {
                     // Obviously a symbol is visible to itself.
                     Some(item_header.id())
@@ -57,24 +56,16 @@ impl Program {
                     Err(())
                 }
             }
-
-            // Symbol in named module.
-            UnresolvedIdent {
-                module: Some(module_token),
-                item: item_token,
-            } => {
-                let module_id = match self.module_ident_map.get(&module_token.lexeme) {
-                    Some(id) => *id,
+            // Path from the top level module.
+            [top_level_mod, sub_mods @ .., item] => {
+                let tlm = match self.top_level_modules.get(&top_level_mod.lexeme) {
+                    Some(ident) => *ident,
                     None => {
-                        let module_name = interner.resolve_lexeme(module_token.lexeme);
+                        let module_name = interner.resolve_lexeme(top_level_mod.lexeme);
                         diagnostics::emit_error(
-                            item_token.location,
+                            top_level_mod.location,
                             format!("module `{module_name}` not found"),
-                            Some(
-                                Label::new(item_token.location)
-                                    .with_color(Color::Red)
-                                    .with_message("not found"),
-                            ),
+                            Some(Label::new(top_level_mod.location).with_color(Color::Red)),
                             None,
                             source_store,
                         );
@@ -83,20 +74,35 @@ impl Program {
                     }
                 };
 
-                let module = &self.module_info[&module_id];
-                match module.top_level_symbols.get(&item_token.lexeme) {
+                let mut cur_module = &self.module_info[&tlm];
+                for sm in sub_mods {
+                    let next_module = match cur_module.top_level_symbols.get(&sm.lexeme) {
+                        Some(nid) => *nid,
+                        None => {
+                            let module_name = interner.resolve_lexeme(sm.lexeme);
+                            diagnostics::emit_error(
+                                sm.location,
+                                format!("module `{module_name}` not found"),
+                                Some(Label::new(sm.location).with_color(Color::Red)),
+                                None,
+                                source_store,
+                            );
+                            *had_error = true;
+                            return Err(());
+                        }
+                    };
+
+                    cur_module = &self.module_info[&next_module];
+                }
+
+                match cur_module.top_level_symbols.get(&item.lexeme) {
                     Some(item_id) => Ok(*item_id),
                     None => {
-                        let item_name = interner.resolve_lexeme(item_token.lexeme);
-                        let module_name = interner.resolve_lexeme(module_token.lexeme);
+                        let item_name = interner.resolve_lexeme(item.lexeme);
                         diagnostics::emit_error(
-                            item_token.location,
-                            format!("symbol `{item_name}` not found in module `{module_name}`"),
-                            Some(
-                                Label::new(item_token.location)
-                                    .with_color(Color::Red)
-                                    .with_message("not found"),
-                            ),
+                            item.location,
+                            format!("symbol `{item_name}` not found in module"),
+                            Some(Label::new(item.location).with_color(Color::Red)),
                             None,
                             source_store,
                         );
@@ -118,20 +124,25 @@ impl Program {
     ) {
         match unresolved_type {
             UnresolvedType::Simple(unresolved_ident) => {
-                let name = interner.resolve_lexeme(unresolved_ident.item.lexeme);
+                let item_name = unresolved_ident
+                    .last()
+                    .expect("ICE: empty unresolved ident");
+
+                let path_location = unresolved_ident
+                    .iter()
+                    .map(|t| t.location)
+                    .reduce(SourceLocation::merge)
+                    .unwrap();
+
+                let name = interner.resolve_lexeme(item_name.lexeme);
                 let builtin_name = BuiltinTypes::from_name(name);
 
-                if unresolved_ident.module.is_some() && builtin_name.is_some() {
+                if unresolved_ident.len() > 1 && builtin_name.is_some() {
                     // Emit error
-                    let location = unresolved_ident
-                        .module
-                        .unwrap()
-                        .location
-                        .merge(unresolved_ident.item.location);
                     diagnostics::emit_error(
-                        location,
+                        path_location,
                         "cannot name builtin with a module",
-                        [Label::new(location).with_color(Color::Red)],
+                        [Label::new(path_location).with_color(Color::Red)],
                         None,
                         source_store,
                     );
@@ -144,14 +155,17 @@ impl Program {
                         interner,
                         source_store,
                         had_error,
-                        *unresolved_ident,
+                        unresolved_ident,
                     ) else {
                         return;
                     };
 
                     *unresolved_type = UnresolvedType::SimpleCustom {
                         id: ident,
-                        token: unresolved_ident.item,
+                        token: Token {
+                            location: path_location,
+                            ..*item_name
+                        },
                     };
                 };
             }
@@ -220,7 +234,7 @@ impl Program {
                 }
 
                 OpCode::UnresolvedIdent(ident) => {
-                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, *ident) else {
+                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, ident) else {
                         continue;
                     };
 

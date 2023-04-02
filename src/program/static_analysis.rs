@@ -1249,7 +1249,9 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::ResolvedIdent { item_id } => {
+            OpCode::ResolvedIdent {
+                item_id: resolved_item,
+            } => {
                 let mut local_had_error = false;
                 stack_check::control::resolved_ident(
                     program,
@@ -1258,7 +1260,7 @@ fn analyze_block(
                     source_store,
                     &mut local_had_error,
                     op,
-                    *item_id,
+                    *resolved_item,
                 );
                 if !local_had_error {
                     type_check2::control::resolved_ident(
@@ -1269,11 +1271,11 @@ fn analyze_block(
                         type_store,
                         &mut local_had_error,
                         op,
-                        *item_id,
+                        *resolved_item,
                     );
                 }
                 if !local_had_error {
-                    const_prop::control::resolved_ident(program, analyzer, op, *item_id);
+                    const_prop::control::resolved_ident(program, analyzer, op, *resolved_item);
                 }
 
                 *had_error |= local_had_error;

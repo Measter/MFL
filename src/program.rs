@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     ffi::OsStr,
     ops::Not,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use ariadne::{Color, Label};
@@ -140,7 +140,7 @@ impl ItemSignatureResolved {
 
 pub struct Program {
     module_info: HashMap<ItemId, ModuleInfo>,
-    module_ident_map: HashMap<Spur, ItemId>,
+    top_level_modules: HashMap<Spur, ItemId>,
 
     item_headers: BTreeMap<ItemId, ItemHeader>,
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
@@ -216,7 +216,7 @@ impl Program {
     pub fn new() -> Self {
         Program {
             module_info: Default::default(),
-            module_ident_map: Default::default(),
+            top_level_modules: Default::default(),
             item_headers: BTreeMap::new(),
             item_signatures_unresolved: HashMap::new(),
             item_signatures_resolved: HashMap::new(),
@@ -228,14 +228,14 @@ impl Program {
         }
     }
 
-    fn new_module(&mut self, name: Token) -> ItemId {
+    fn new_module(&mut self, name: Token, parent: Option<ItemId>) -> ItemId {
         let new_id = self.item_headers.len();
         let new_id = ItemId(new_id.to_u16().unwrap());
 
         let item_header = ItemHeader {
             name,
             id: new_id,
-            parent: None,
+            parent,
             kind: ItemKind::Module,
             new_op_id: 0,
         };
@@ -244,13 +244,17 @@ impl Program {
         let module = ModuleInfo {
             top_level_symbols: HashMap::new(),
         };
-        self.module_ident_map.insert(name.lexeme, new_id);
         self.module_info.insert(new_id, module);
+
+        if let Some(parent_id) = parent {
+            let parent_module = self.module_info.get_mut(&parent_id).unwrap();
+            parent_module.top_level_symbols.insert(name.lexeme, new_id);
+        }
 
         new_id
     }
 
-    pub fn load_program(
+    pub fn load_program2(
         &mut self,
         interner: &mut Interners,
         source_store: &mut SourceStorage,
@@ -259,114 +263,153 @@ impl Program {
     ) -> Result<ItemId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
 
-        let mut loaded_modules = HashSet::new();
-        let mut include_queue = Vec::new();
-
         let builtin_structs_module_name = interner.intern_lexeme("builtins");
-        let builtin_module = self.new_module(Token {
-            kind: TokenKind::Include,
-            lexeme: builtin_structs_module_name,
-            location: SourceLocation::new(FileId::dud(), 0..0),
-        });
+        let builtin_module = self.new_module(
+            Token {
+                kind: TokenKind::Module,
+                lexeme: builtin_structs_module_name,
+                location: SourceLocation::new(FileId::dud(), 0..0),
+            },
+            None,
+        );
         ModuleInfo::load(
             self,
             builtin_module,
             source_store,
             interner,
-            ModuleSource::Builtin(crate::type_store::STRING_DEF),
-            &mut include_queue,
+            Path::new("builtin"),
+            crate::type_store::STRING_DEF,
+            &mut VecDeque::new(),
         )?;
-        loaded_modules.insert(builtin_structs_module_name);
-
         type_store.update_builtins(&self.structs_unresolved);
 
-        let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
-        let module_name = interner.intern_lexeme(module_name);
-        let entry_module_id = self.new_module(Token {
-            kind: TokenKind::Include,
-            lexeme: module_name,
-            location: SourceLocation::new(FileId::dud(), 0..0),
-        });
-
-        ModuleInfo::load(
-            self,
-            entry_module_id,
-            source_store,
-            interner,
-            ModuleSource::File(&args.file),
-            &mut include_queue,
-        )?;
-
-        loaded_modules.insert(module_name);
-
         let mut had_error = false;
-        while let Some(token) = include_queue.pop() {
-            if loaded_modules.contains(&token.lexeme) {
-                continue;
-            }
+        let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
+        let main_lib_root = args.file.parent().unwrap();
+        let root_file_name = args.file.file_name().unwrap();
+        let entry_module = self.load_library(
+            interner,
+            source_store,
+            &mut had_error,
+            module_name,
+            root_file_name,
+            main_lib_root,
+        );
 
-            let mut filename = Path::new(interner.resolve_lexeme(token.lexeme)).to_owned();
-            filename.set_extension("mfl");
-
-            let full_path = match search_includes(&args.library_paths, &filename) {
-                Some(path) => path,
-                None => {
-                    diagnostics::emit_error(
-                        token.location,
-                        "unable to find module",
-                        Some(
-                            Label::new(token.location)
-                                .with_color(Color::Red)
-                                .with_message("here"),
-                        ),
-                        None,
-                        source_store,
-                    );
-
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            let new_module_id = self.new_module(token);
-
-            match ModuleInfo::load(
-                self,
-                new_module_id,
-                source_store,
-                interner,
-                ModuleSource::File(&full_path),
-                &mut include_queue,
-            ) {
-                Ok(module) => module,
-                Err(e) => {
-                    diagnostics::emit_error(
-                        token.location,
-                        "error loading module",
-                        Some(
-                            Label::new(token.location)
-                                .with_color(Color::Red)
-                                .with_message("here"),
-                        ),
-                        format!("{e}"),
-                        source_store,
-                    );
-
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            loaded_modules.insert(token.lexeme);
+        for lib in &args.library_paths {
+            let module_name = lib.file_stem().and_then(OsStr::to_str).unwrap();
+            had_error |= self
+                .load_library(
+                    interner,
+                    source_store,
+                    &mut had_error,
+                    module_name,
+                    OsStr::new("lib.mfl"),
+                    lib,
+                )
+                .is_err();
         }
 
         if had_error {
-            return Err(eyre!("failed to load program"));
+            return Err(eyre!("Error loading program"));
         }
 
         self.post_process_items(interner, source_store, type_store, args.print_stack_depths)?;
 
-        Ok(entry_module_id)
+        entry_module
+    }
+
+    fn load_library(
+        &mut self,
+        interner: &mut Interners,
+        source_store: &mut SourceStorage,
+        had_error: &mut bool,
+        lib_name: &str,
+        lib_filename: &OsStr,
+        lib_path: &Path,
+    ) -> Result<ItemId> {
+        let mut loaded_modules = HashSet::new();
+        let mut module_queue = VecDeque::new();
+
+        let mut root = lib_path.to_owned();
+
+        module_queue.push_back((ModuleQueueType::Root, None));
+
+        let mut first_module = None;
+        while let Some((module, parent)) = module_queue.pop_front() {
+            let (contents, module_name) = match module {
+                ModuleQueueType::Root => {
+                    root.push(lib_filename);
+
+                    let contents = match std::fs::read_to_string(&root) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            return Err(e)
+                                .with_context(|| eyre!("failed to load `{}`", root.display()));
+                        }
+                    };
+                    (
+                        contents,
+                        Token {
+                            kind: TokenKind::Module,
+                            lexeme: interner.intern_lexeme(lib_name),
+                            location: SourceLocation::new(FileId::dud(), 0..0),
+                        },
+                    )
+                }
+                ModuleQueueType::Include(token) => {
+                    if loaded_modules.contains(&token.lexeme) {
+                        continue;
+                    }
+                    loaded_modules.insert(token.lexeme);
+
+                    let name = interner.resolve_lexeme(token.lexeme);
+                    root.push(name);
+                    root.set_extension("mfl");
+
+                    let contents = match std::fs::read_to_string(&root) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            diagnostics::emit_error(
+                                token.location,
+                                format!("error loading module: {e}"),
+                                [Label::new(token.location).with_color(Color::Red)],
+                                None,
+                                source_store,
+                            );
+                            *had_error = true;
+                            root.pop();
+                            continue;
+                        }
+                    };
+
+                    (contents, token)
+                }
+            };
+
+            let module_id = self.new_module(module_name, parent);
+            if module == ModuleQueueType::Root {
+                self.top_level_modules.insert(module_name.lexeme, module_id);
+            }
+
+            first_module = first_module.or(Some(module_id));
+
+            let res = ModuleInfo::load(
+                self,
+                module_id,
+                source_store,
+                interner,
+                &root,
+                &contents,
+                &mut module_queue,
+            );
+
+            *had_error |= res.is_err();
+
+            root.pop();
+        }
+
+        Ok(first_module.unwrap())
     }
 
     fn expand_macros_in_block(
@@ -750,25 +793,26 @@ impl Program {
         }
 
         // Check our parent's children.
+        let mut prev_kind = from.kind;
         let mut cur_id = from.parent;
         while let Some(id) = cur_id {
             let item = self.get_item_header(id);
-
-            if item.name.lexeme == symbol {
-                return Some(item.id);
-            }
 
             if item.kind == ItemKind::Function {
                 let fd = self.get_function_data(item.id);
                 if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                     return Some(*found_id);
                 }
+            } else if item.kind == ItemKind::Module && prev_kind == ItemKind::Module {
+                // Don't traverse up the module tree. We should only look within the current module.
+                return None;
             } else if item.kind == ItemKind::Module {
                 let module = &self.module_info[&id];
                 if let Some(found_id) = module.top_level_symbols.get(&symbol) {
                     return Some(*found_id);
                 }
             }
+            prev_kind = item.kind;
             cur_id = item.parent;
         }
 
@@ -780,10 +824,10 @@ pub struct ModuleInfo {
     top_level_symbols: HashMap<Spur, ItemId>,
 }
 
-#[derive(Debug)]
-pub enum ModuleSource<'a> {
-    File(&'a Path),
-    Builtin(&'static str),
+#[derive(Debug, PartialEq, Eq)]
+pub enum ModuleQueueType {
+    Root,
+    Include(Token),
 }
 
 impl ModuleInfo {
@@ -792,24 +836,16 @@ impl ModuleInfo {
         module_id: ItemId,
         source_store: &mut SourceStorage,
         interner: &mut Interners,
-        file: ModuleSource,
-        include_queue: &mut Vec<Token>,
+        file: &Path,
+        file_contents: &str,
+        include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     ) -> Result<()> {
         let file_type = format!("{file:?}");
         let _span = debug_span!(stringify!(Module::load), file_type).entered();
 
-        let (file, contents) = match file {
-            ModuleSource::File(file) => (
-                file,
-                std::fs::read_to_string(file)
-                    .with_context(|| eyre!("Failed to open file {}", file.display()))?,
-            ),
-            ModuleSource::Builtin(contents) => (Path::new("builtin"), contents.to_owned()),
-        };
+        let file_id = source_store.add(file, file_contents);
 
-        let file_id = source_store.add(file, &contents);
-
-        let tokens = lexer::lex_file(&contents, file_id, interner, source_store)
+        let tokens = lexer::lex_file(file_contents, file_id, interner, source_store)
             .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
 
         let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
@@ -831,17 +867,4 @@ impl ModuleInfo {
     pub fn get_item_id(&self, name: Spur) -> Option<ItemId> {
         self.top_level_symbols.get(&name).copied()
     }
-}
-
-fn search_includes(paths: &[PathBuf], file_name: &Path) -> Option<PathBuf> {
-    // Stupidly innefficient, but whatever...
-
-    for path in paths {
-        let path = Path::new(path).join(file_name);
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    None
 }

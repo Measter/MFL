@@ -10,7 +10,6 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::Token,
-    opcode::UnresolvedIdent,
     program::ItemId,
     source_file::{SourceLocation, SourceStorage},
 };
@@ -182,7 +181,7 @@ pub struct UnresolvedField {
 
 #[derive(Debug, Clone)]
 pub enum UnresolvedType {
-    Simple(UnresolvedIdent),
+    Simple(Vec<Token>),
     SimpleBuiltin(BuiltinTypes),
     SimpleCustom { id: ItemId, token: Token },
     Array(SourceLocation, Box<UnresolvedType>, usize),

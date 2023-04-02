@@ -38,8 +38,8 @@ pub struct Args {
     #[arg(long = "stack-depth")]
     print_stack_depths: bool,
 
-    /// Comma-separated list of paths to search includes.
-    #[arg(short = 'I', value_delimiter = ',')]
+    /// Comma-separated list of library paths.
+    #[arg(short = 'L', value_delimiter = ',')]
     library_paths: Vec<PathBuf>,
 
     /// The MFL file to compile
@@ -70,7 +70,7 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interners, TypeS
 
     let mut program = Program::new();
     let entry_module_id =
-        program.load_program(&mut interner, &mut source_storage, &mut type_store, args)?;
+        program.load_program2(&mut interner, &mut source_storage, &mut type_store, args)?;
 
     let entry_symbol = interner.intern_lexeme("entry");
     let entry_module = program.get_module(entry_module_id);

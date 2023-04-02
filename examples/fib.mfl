@@ -1,5 +1,3 @@
-include stdio
-
 proc fib [s32] to [s32] is
     if dup 1> do
         dup 1- fib
@@ -26,9 +24,9 @@ end
 
 proc entry [] to [] is
     0 while dup 10<= do
-        dup 1+ dup stdio::putd ord stdio::puts
-        ": " stdio::puts
-        dup fib stdio::putdln
+        dup 1+ dup std::io::putd ord std::io::puts
+        ": " std::io::puts
+        dup fib std::io::putdln
 
         1+
     end drop

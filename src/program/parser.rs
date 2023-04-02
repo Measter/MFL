@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
+use std::{collections::VecDeque, fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
@@ -10,12 +10,12 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedIdent, While},
+    opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     source_file::{SourceLocation, SourceStorage},
     type_store::{IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
 
-use super::{ItemId, ItemKind, ItemSignatureUnresolved, Program};
+use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleQueueType, Program};
 
 trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;
@@ -250,13 +250,8 @@ fn parse_unresolved_types(
                 Box::new(unresolved_type),
             )
         } else {
-            let ident = parse_ident(&mut token_iter, interner, source_store, ident).recover(
-                &mut had_error,
-                UnresolvedIdent {
-                    module: None,
-                    item: ident,
-                },
-            );
+            let ident = parse_ident(&mut token_iter, interner, source_store, ident)
+                .recover(&mut had_error, vec![ident]);
             UnresolvedType::Simple(ident)
         };
 
@@ -903,7 +898,7 @@ pub fn parse_item_body(
                 }
                 continue;
             }
-            TokenKind::Include
+            TokenKind::Module
             | TokenKind::Macro
             | TokenKind::Proc
             | TokenKind::Field
@@ -1013,9 +1008,11 @@ fn parse_ident<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
     interner: &Interners,
     source_store: &SourceStorage,
-    mut token: Token,
-) -> Result<UnresolvedIdent, ()> {
-    if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon) {
+    token: Token,
+) -> Result<Vec<Token>, ()> {
+    let mut path = vec![token];
+
+    while matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon) {
         let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
         let (_, item_id) = expect_token(
             token_iter,
@@ -1026,18 +1023,10 @@ fn parse_ident<'a>(
             source_store,
         )?;
 
-        token.location = token.location.merge(item_id.location);
-
-        Ok(UnresolvedIdent {
-            module: Some(token),
-            item: item_id,
-        })
-    } else {
-        Ok(UnresolvedIdent {
-            module: None,
-            item: token,
-        })
+        path.push(item_id);
     }
+
+    Ok(path)
 }
 
 fn get_item_body<'a>(
@@ -1066,8 +1055,8 @@ fn get_item_body<'a>(
         use TokenKind::*;
         #[allow(clippy::match_like_matches_macro)]
         let is_nested_err = match (keyword.kind, token.kind) {
-            (Proc, Include | Proc | Macro) => true,
-            (Memory | Const, Proc | Macro | Const | Memory | Include) => true,
+            (Proc, Module | Proc | Macro) => true,
+            (Memory | Const, Proc | Macro | Const | Memory | Module) => true,
             _ => false,
         };
 
@@ -1556,10 +1545,7 @@ fn parse_assert_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![UnresolvedType::Simple(UnresolvedIdent {
-            module: None,
-            item: name,
-        })],
+        exit_stack: vec![UnresolvedType::Simple(vec![name])],
         exit_stack_location: name.location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,
@@ -1832,7 +1818,7 @@ pub(super) fn parse_module(
     module_id: ItemId,
     tokens: &[Token],
     interner: &Interners,
-    include_queue: &mut Vec<Token>,
+    include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let _span = debug_span!(stringify!(parser::parse_module)).entered();
@@ -1873,7 +1859,7 @@ pub(super) fn parse_module(
                 }
             }
 
-            TokenKind::Include => {
+            TokenKind::Module => {
                 let (_, module_ident) = match expect_token(
                     &mut token_iter,
                     "ident",
@@ -1889,7 +1875,7 @@ pub(super) fn parse_module(
                     }
                 };
 
-                include_queue.push(module_ident);
+                include_queue.push_back((ModuleQueueType::Include(module_ident), Some(module_id)));
             }
 
             TokenKind::Struct => {

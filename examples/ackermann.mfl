@@ -1,8 +1,6 @@
-include stdio
-
 proc entry [] to [] is
-    3 8 ackermann stdio::putd
-    "\n" stdio::puts
+    3 8 ackermann std::io::putd
+    "\n" std::io::puts
 end
 
 proc ackermann [s32 s32] to [s32] is

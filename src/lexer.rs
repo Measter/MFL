@@ -47,7 +47,6 @@ pub enum TokenKind {
     Here(Spur),
     Ident,
     If,
-    Include,
     Insert { emit_struct: bool },
     Integer { lexeme: Spur, is_hex: bool },
     Is,
@@ -58,6 +57,7 @@ pub enum TokenKind {
     Macro,
     Memory,
     Minus,
+    Module,
     NotEqual,
     Over,
     Pack,
@@ -115,7 +115,7 @@ impl TokenKind {
             | TokenKind::GreaterEqual
             | TokenKind::Here(_)
             | TokenKind::Ident
-            | TokenKind::Include
+            | TokenKind::Module
             | TokenKind::Insert { .. }
             | TokenKind::Integer { .. }
             | TokenKind::IsNull
@@ -555,13 +555,13 @@ impl<'source> Scanner<'source> {
                         TokenKind::Here(id)
                     }
                     "if" => TokenKind::If,
-                    "include" => TokenKind::Include,
                     "ins" => TokenKind::Insert { emit_struct: true },
                     "insd" => TokenKind::Insert { emit_struct: false },
                     "is" => TokenKind::Is,
                     "isnull" => TokenKind::IsNull,
                     "macro" => TokenKind::Macro,
                     "memory" => TokenKind::Memory,
+                    "module" => TokenKind::Module,
                     "not" => TokenKind::BitNot,
                     "or" => TokenKind::BitOr,
                     "over" => TokenKind::Over,
