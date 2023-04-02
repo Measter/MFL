@@ -26,7 +26,7 @@ fn ensure_stack_depth(
 
         let num_missing = usize::saturating_sub(depth, stack.len());
         for _ in 0..num_missing {
-            let pad_value = analyzer.new_value(op);
+            let pad_value = analyzer.new_value(op.token.location, None);
             stack.push(pad_value);
         }
     }
@@ -43,7 +43,7 @@ pub(super) fn eat_one_make_one(
 
     let value_id = stack.pop().unwrap();
     analyzer.consume_value(value_id, op.id);
-    let new_id = analyzer.new_value(op);
+    let new_id = analyzer.new_value(op.token.location, None);
 
     analyzer.set_op_io(op, &[value_id], &[new_id]);
     stack.push(new_id);
@@ -62,14 +62,14 @@ pub(super) fn eat_two_make_one(
     for value_id in inputs {
         analyzer.consume_value(value_id, op.id);
     }
-    let new_id = analyzer.new_value(op);
+    let new_id = analyzer.new_value(op.token.location, None);
 
     analyzer.set_op_io(op, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
 pub(super) fn make_one(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op) {
-    let new_id = analyzer.new_value(op);
+    let new_id = analyzer.new_value(op.token.location, None);
     stack.push(new_id);
     analyzer.set_op_io(op, &[], &[new_id]);
 }

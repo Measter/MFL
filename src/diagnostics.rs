@@ -22,17 +22,17 @@ where
 
         let root = creators.pop().unwrap();
         labels.push((
-            Label::new(root.location)
+            Label::new(root)
                 .with_color(root_color)
                 .with_message(format!("{print_id}: {label}")),
-            root.location,
+            root,
         ));
         for creator in creators {
             labels.push((
-                Label::new(creator.location)
+                Label::new(creator)
                     .with_color(echo_color)
                     .with_message(format!("{print_id}: {label}")),
-                creator.location,
+                creator,
             ));
         }
     }

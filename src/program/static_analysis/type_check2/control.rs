@@ -256,7 +256,7 @@ pub fn analyze_while(
 
             *had_error = true;
             diagnostics::emit_error(
-                condition_value.creator_token.location,
+                condition_value.source_location,
                 "while loop condition or body may not change types on the stack",
                 labels,
                 None,
@@ -361,7 +361,7 @@ pub fn analyze_if(
 
                     *had_error = true;
                     diagnostics::emit_error(
-                        then_value.creator_token.location,
+                        then_value.source_location,
                         "conditional body cannot change types on the stack",
                         labels,
                         None,

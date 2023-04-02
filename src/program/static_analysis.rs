@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::{Token, TokenKind},
+    lexer::Token,
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpCode, OpId},
     option::OptionExt,
@@ -133,8 +133,8 @@ impl Display for ValueId {
 
 #[derive(Debug, Clone)]
 struct Value {
-    creator_token: Token,
-    creator_id: OpId,
+    source_location: SourceLocation,
+    parent_value: Option<ValueId>,
     consumer: SmallVec<[OpId; 4]>,
 }
 
@@ -188,7 +188,11 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    fn new_value(&mut self, creator: &Op) -> ValueId {
+    fn new_value(
+        &mut self,
+        source_location: SourceLocation,
+        parent_value: Option<ValueId>,
+    ) -> ValueId {
         let id = self.value_lifetime.len();
         let id = ValueId(id.to_u16().unwrap());
 
@@ -197,8 +201,8 @@ impl Analyzer {
             .insert(
                 id,
                 Value {
-                    creator_token: creator.token,
-                    creator_id: creator.id,
+                    source_location,
+                    parent_value,
                     consumer: SmallVec::new(),
                 },
             )
@@ -283,25 +287,17 @@ impl Analyzer {
     }
 
     /// Returns the creator token of a value, treating Dup and Over tokens as transparent.
-    pub fn get_creator_token(&self, mut value_id: ValueId) -> SmallVec<[Token; 2]> {
+    pub fn get_creator_token(&self, value_id: ValueId) -> SmallVec<[SourceLocation; 2]> {
         let mut creators = SmallVec::new();
 
-        let mut value_info = &self.value_lifetime[&value_id];
-        let mut cur_creator = value_info.creator_token;
-        creators.push(cur_creator);
+        let value_info = &self.value_lifetime[&value_id];
+        let mut cur_creator = value_info.parent_value;
+        creators.push(value_info.source_location);
 
-        while let TokenKind::Dup | TokenKind::Over = cur_creator.kind {
-            let op_io = self.get_op_io(value_info.creator_id);
-
-            for (&in_id, &out_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-                if out_id == value_id {
-                    value_id = in_id;
-                    value_info = &self.value_lifetime[&in_id];
-                    cur_creator = value_info.creator_token;
-                    creators.push(cur_creator);
-                    break;
-                }
-            }
+        while let Some(parent) = cur_creator {
+            let value_info = &self.value_lifetime[&parent];
+            cur_creator = value_info.parent_value;
+            creators.push(value_info.source_location);
         }
 
         creators

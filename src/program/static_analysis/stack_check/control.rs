@@ -54,7 +54,7 @@ pub fn epilogue_return(
             Ordering::Less => {
                 let num_missing = usize::saturating_sub(item_sig.exit_stack().len(), stack.len());
                 for _ in 0..num_missing {
-                    let pad_value = analyzer.new_value(op);
+                    let pad_value = analyzer.new_value(op.token.location, None);
                     stack.push(pad_value);
                 }
             }
@@ -62,7 +62,7 @@ pub fn epilogue_return(
                 for &value_id in &stack[..stack.len() - item_sig.exit_stack().len()] {
                     let [value] = analyzer.values([value_id]);
                     labels.push(
-                        Label::new(value.creator_token.location)
+                        Label::new(value.source_location)
                             .with_color(Color::Green)
                             .with_message("unused value created here"),
                     );
@@ -105,7 +105,7 @@ pub fn prologue(
 ) {
     let mut outputs = Vec::new();
     for _ in item_sig.entry_stack() {
-        let new_id = analyzer.new_value(op);
+        let new_id = analyzer.new_value(op.token.location, None);
         outputs.push(new_id);
         stack.push(new_id);
     }
@@ -127,7 +127,7 @@ pub fn resolved_ident(
 
     match referenced_item.kind() {
         ItemKind::Memory => {
-            let new_id = analyzer.new_value(op);
+            let new_id = analyzer.new_value(op.token.location, None);
             stack.push(new_id);
             analyzer.set_op_io(op, &[], &[new_id]);
         }
@@ -149,7 +149,7 @@ pub fn resolved_ident(
             let mut outputs = Vec::new();
 
             for _ in referenced_item_sig.exit_stack() {
-                let new_id = analyzer.new_value(op);
+                let new_id = analyzer.new_value(op.token.location, None);
                 outputs.push(new_id);
                 stack.push(new_id);
             }
@@ -191,7 +191,7 @@ pub fn syscall(
         analyzer.consume_value(value_id, op.id);
     }
 
-    let new_id = analyzer.new_value(op);
+    let new_id = analyzer.new_value(op.token.location, None);
     analyzer.set_op_io(op, &inputs, &[new_id]);
     stack.push(new_id);
 }
@@ -242,7 +242,7 @@ pub fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         for _ in 0..(initial_stack.len() + 1).saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op));
+            stack.push(analyzer.new_value(op.token.location, None));
         }
     }
     let condition_value = stack.pop().unwrap();
@@ -297,7 +297,7 @@ pub fn analyze_while(
         *had_error = true;
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         for _ in 0..initial_stack.len().saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op));
+            stack.push(analyzer.new_value(op.token.location, None));
         }
     }
 
@@ -377,7 +377,7 @@ pub fn analyze_if(
         *had_error = true;
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(analyzer.new_value(op));
+        stack.push(analyzer.new_value(op.token.location, None));
     }
     condition_values.push(stack.pop().unwrap());
 
@@ -449,7 +449,7 @@ pub fn analyze_if(
 
         for (&then_value, else_value) in then_block_stack.iter().zip(stack).filter(|(a, b)| a != b)
         {
-            let output_value = analyzer.new_value(op);
+            let output_value = analyzer.new_value(op.token.location, None);
             trace!(
                 ?then_value,
                 ?else_value,

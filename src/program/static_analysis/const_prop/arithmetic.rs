@@ -283,7 +283,7 @@ pub fn multiply_div_rem_shift(
                     Label::new(op.token.location)
                         .with_color(Color::Yellow)
                         .with_message("here"),
-                    Label::new(shift_val.creator_token.location)
+                    Label::new(shift_val.source_location)
                         .with_color(Color::Cyan)
                         .with_message("Shift value from here")
                         .with_order(1),
@@ -302,7 +302,7 @@ pub fn multiply_div_rem_shift(
                     Label::new(op.token.location)
                         .with_color(Color::Yellow)
                         .with_message("here"),
-                    Label::new(shift_val.creator_token.location)
+                    Label::new(shift_val.source_location)
                         .with_color(Color::Cyan)
                         .with_message("Shift value from here")
                         .with_order(1),
@@ -323,7 +323,7 @@ pub fn multiply_div_rem_shift(
                 "division by 0",
                 [
                     Label::new(op.token.location).with_color(Color::Red),
-                    Label::new(div_val.creator_token.location)
+                    Label::new(div_val.source_location)
                         .with_color(Color::Cyan)
                         .with_message("divisor from here")
                         .with_order(1),

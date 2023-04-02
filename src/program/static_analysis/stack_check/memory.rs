@@ -42,7 +42,7 @@ pub fn pack_array(
 
     stack.truncate(stack.len() - input_ids.len());
 
-    let output = analyzer.new_value(op);
+    let output = analyzer.new_value(op.token.location, None);
     stack.push(output);
     analyzer.set_op_io(op, &inputs, &[output]);
 }
@@ -88,7 +88,7 @@ pub fn pack_struct(
 
     stack.truncate(stack.len() - input_ids.len());
 
-    let output = analyzer.new_value(op);
+    let output = analyzer.new_value(op.token.location, None);
     stack.push(output);
     analyzer.set_op_io(op, &inputs, &[output]);
 }
@@ -110,12 +110,12 @@ pub fn extract_array(
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_array {
-        let output_array = analyzer.new_value(op);
+        let output_array = analyzer.new_value(op.token.location, None);
         outputs.push(output_array);
         stack.push(output_array);
     }
 
-    let output_value = analyzer.new_value(op);
+    let output_value = analyzer.new_value(op.token.location, None);
     outputs.push(output_value);
     stack.push(output_value);
 
@@ -141,7 +141,7 @@ pub fn insert_array(
 
     if emit_array {
         // Leave the array on the stack so the user can continue using it.
-        let output = analyzer.new_value(op);
+        let output = analyzer.new_value(op.token.location, None);
         outputs.push(output);
         stack.push(output);
     }
@@ -167,7 +167,7 @@ pub fn insert_struct(
     let mut outputs = SmallVec::<[_; 1]>::new();
     if emit_struct {
         // Leave the struct on the stack so the user can continue using it.
-        let output = analyzer.new_value(op);
+        let output = analyzer.new_value(op.token.location, None);
         outputs.push(output);
         stack.push(output);
     }
@@ -191,12 +191,12 @@ pub fn extract_struct(
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_struct {
-        let output_struct = analyzer.new_value(op);
+        let output_struct = analyzer.new_value(op.token.location, None);
         outputs.push(output_struct);
         stack.push(output_struct);
     }
 
-    let output_value = analyzer.new_value(op);
+    let output_value = analyzer.new_value(op.token.location, None);
     outputs.push(output_value);
     stack.push(output_value);
 
@@ -252,7 +252,7 @@ pub fn unpack(
     let mut outputs = Vec::new();
 
     for _ in 0..length {
-        let id = analyzer.new_value(op);
+        let id = analyzer.new_value(op.token.location, None);
         stack.push(id);
         outputs.push(id);
     }

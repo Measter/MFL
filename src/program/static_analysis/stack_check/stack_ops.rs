@@ -1,5 +1,6 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
@@ -79,8 +80,11 @@ pub fn dup(
 
     let input_range = (stack.len() - count)..stack.len();
     let output_range_start = stack.len();
-    for _ in 0..count {
-        let new_id = analyzer.new_value(op);
+    let input_values: SmallVec<[ValueId; 20]> =
+        stack[input_range.clone()].iter().copied().collect();
+
+    for input_id in input_values {
+        let new_id = analyzer.new_value(op.token.location, Some(input_id));
         stack.push(new_id);
     }
     analyzer.set_op_io(op, &stack[input_range], &stack[output_range_start..]);
@@ -111,14 +115,14 @@ pub fn over(
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, depth + 1);
 
     let src_id = stack[stack.len() - 1 - depth];
-    let new_id = analyzer.new_value(op);
+    let new_id = analyzer.new_value(op.token.location, Some(src_id));
     stack.push(new_id);
 
     analyzer.set_op_io(op, &[src_id], &[new_id]);
 }
 
 pub fn push_str(analyzer: &mut Analyzer, stack: &mut Vec<ValueId>, op: &Op) {
-    let str_id = analyzer.new_value(op);
+    let str_id = analyzer.new_value(op.token.location, None);
     stack.push(str_id);
     analyzer.set_op_io(op, &[], &[str_id]);
 }
