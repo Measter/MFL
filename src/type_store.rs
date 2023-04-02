@@ -184,8 +184,8 @@ pub enum UnresolvedType {
     Simple(Vec<Token>),
     SimpleBuiltin(BuiltinTypes),
     SimpleCustom { id: ItemId, token: Token },
-    Array(SourceLocation, Box<UnresolvedType>, usize),
-    Pointer(SourceLocation, Box<UnresolvedType>),
+    Array(Box<UnresolvedType>, usize),
+    Pointer(Box<UnresolvedType>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -360,11 +360,11 @@ impl TypeStore {
                 .map(|id| self.kinds[id])
                 .ok_or(*token),
             UnresolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
-            UnresolvedType::Array(_, at, length) => {
+            UnresolvedType::Array(at, length) => {
                 let inner = self.resolve_type(interner, at)?;
                 Ok(self.get_array(interner, inner.id, *length))
             }
-            UnresolvedType::Pointer(_, pt) => {
+            UnresolvedType::Pointer(pt) => {
                 let pointee = self.resolve_type(interner, pt)?;
                 Ok(self.get_pointer(interner, pointee.id))
             }

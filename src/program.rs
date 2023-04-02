@@ -85,16 +85,16 @@ impl ItemHeader {
 
 #[derive(Debug)]
 pub struct ItemSignatureUnresolved {
-    exit_stack: Vec<UnresolvedType>,
+    exit_stack: Vec<(UnresolvedType, SourceLocation)>,
     exit_stack_location: SourceLocation,
-    entry_stack: Vec<UnresolvedType>,
+    entry_stack: Vec<(UnresolvedType, SourceLocation)>,
     entry_stack_location: SourceLocation,
     memory_type: Option<UnresolvedType>,
     memory_type_location: SourceLocation,
 }
 
 impl ItemSignatureUnresolved {
-    pub fn exit_stack(&self) -> &[UnresolvedType] {
+    pub fn exit_stack(&self) -> &[(UnresolvedType, SourceLocation)] {
         &self.exit_stack
     }
 
@@ -102,7 +102,7 @@ impl ItemSignatureUnresolved {
         self.exit_stack_location
     }
 
-    pub fn entry_stack(&self) -> &[UnresolvedType] {
+    pub fn entry_stack(&self) -> &[(UnresolvedType, SourceLocation)] {
         &self.entry_stack
     }
 

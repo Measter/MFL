@@ -169,7 +169,7 @@ impl Program {
                     };
                 };
             }
-            UnresolvedType::Array(_, sub_type, _) | UnresolvedType::Pointer(_, sub_type) => self
+            UnresolvedType::Array(sub_type, _) | UnresolvedType::Pointer(sub_type) => self
                 .resolve_idents_in_type(item_header, interner, source_store, had_error, sub_type),
 
             // Nothing to do here.
@@ -316,7 +316,7 @@ impl Program {
                 self.item_signatures_unresolved.insert(item_id, sig);
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
-                for kind in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
+                for (kind, _) in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
                     self.resolve_idents_in_type(item, interner, source_store, &mut had_error, kind);
                 }
 

@@ -246,7 +246,7 @@ impl Program {
                 };
                 resolved_memory_type = Some(info.id);
             } else {
-                for input_sig in unresolved_sig.entry_stack() {
+                for (input_sig, _) in unresolved_sig.entry_stack() {
                     let info = match type_store.resolve_type(interner, input_sig) {
                         Ok(info) => info,
                         Err(tk) => {
@@ -258,7 +258,7 @@ impl Program {
                     resolved_entry.push(info.id);
                 }
 
-                for input_sig in unresolved_sig.exit_stack() {
+                for (input_sig, _) in unresolved_sig.exit_stack() {
                     let info = match type_store.resolve_type(interner, input_sig) {
                         Ok(info) => info,
                         Err(tk) => {

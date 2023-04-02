@@ -13,7 +13,7 @@ use crate::{
     opcode::{If, Op, While},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
-        ItemId, ItemKind, ItemSignatureResolved, Program,
+        ItemId, ItemKind, ItemSignatureUnresolved, Program,
     },
     source_file::SourceStorage,
     type_store::TypeStore,
@@ -101,11 +101,11 @@ pub fn prologue(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op: &Op,
-    item_sig: &ItemSignatureResolved,
+    item_sig: &ItemSignatureUnresolved,
 ) {
     let mut outputs = Vec::new();
-    for _ in item_sig.entry_stack() {
-        let new_id = analyzer.new_value(op.token.location, None);
+    for (_, loc) in item_sig.entry_stack() {
+        let new_id = analyzer.new_value(*loc, None);
         outputs.push(new_id);
         stack.push(new_id);
     }

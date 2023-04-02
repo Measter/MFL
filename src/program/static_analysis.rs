@@ -346,10 +346,10 @@ fn failed_compare_stack_types(
     labels.extend([
         Label::new(error_location)
             .with_color(Color::Red)
-            .with_message("actual sampled here"),
+            .with_message("stack sampled here"),
         Label::new(sample_location)
             .with_color(Color::Cyan)
-            .with_message("expected sampled here"),
+            .with_message("expected due to this signature"),
     ]);
 
     diagnostics::emit_error(error_location, msg, labels, note, source_store);
@@ -1065,7 +1065,8 @@ fn analyze_block(
             }
             OpCode::Prologue => {
                 let item_sig = program.get_item_signature_resolved(item_id);
-                stack_check::control::prologue(analyzer, stack, op, item_sig);
+                let item_tokens = program.get_item_signature_unresolved(item_id);
+                stack_check::control::prologue(analyzer, stack, op, item_tokens);
                 type_check2::control::prologue(analyzer, op, item_sig);
             }
             OpCode::SysCall {

@@ -190,9 +190,9 @@ fn parse_unresolved_types(
     source_store: &SourceStorage,
     prev: Token,
     tokens: Vec<Token>,
-) -> Result<Vec<UnresolvedType>, ()> {
+) -> Result<Vec<(UnresolvedType, SourceLocation)>, ()> {
     let mut had_error = false;
-    let mut types = Vec::new();
+    let mut types: Vec<(UnresolvedType, SourceLocation)> = Vec::new();
     let mut token_iter = tokens.iter().enumerate().peekable();
 
     while token_iter.peek().is_some() {
@@ -210,6 +210,7 @@ fn parse_unresolved_types(
         };
 
         let lexeme = interner.resolve_lexeme(ident.lexeme);
+        let mut type_span = ident.location;
 
         let base_type = if lexeme == "ptr" {
             let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
@@ -225,6 +226,8 @@ fn parse_unresolved_types(
                 had_error = true;
                 continue;
             };
+
+            type_span = type_span.merge(close_paren.location);
 
             let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, open_paren, ident_tokens) else {
                 had_error = true;
@@ -244,11 +247,9 @@ fn parse_unresolved_types(
                 continue;
             }
 
-            let unresolved_type = unresolved_types.pop().unwrap();
-            UnresolvedType::Pointer(
-                ident.location.merge(close_paren.location),
-                Box::new(unresolved_type),
-            )
+            let (unresolved_type, span) = unresolved_types.pop().unwrap();
+            type_span = type_span.merge(span);
+            UnresolvedType::Pointer(Box::new(unresolved_type))
         } else {
             let ident = parse_ident(&mut token_iter, interner, source_store, ident)
                 .recover(&mut had_error, vec![ident]);
@@ -274,17 +275,14 @@ fn parse_unresolved_types(
 
             let len_token = ident_tokens[0];
             let length = parse_integer_lexeme(len_token, interner, source_store)?;
+            type_span = type_span.merge(close_bracket.location);
 
-            UnresolvedType::Array(
-                ident.location.merge(close_bracket.location),
-                Box::new(base_type),
-                length,
-            )
+            UnresolvedType::Array(Box::new(base_type), length)
         } else {
             base_type
         };
 
-        types.push(parsed_type);
+        types.push((parsed_type, type_span));
     }
 
     had_error.not().then_some(types).ok_or(())
@@ -599,7 +597,7 @@ pub fn parse_item_body(
                         continue;
                     }
 
-                    let unresolved_type = unresolved_types.pop().unwrap();
+                    let (unresolved_type, _) = unresolved_types.pop().unwrap();
                     OpCode::UnresolvedPackStruct { unresolved_type }
                 }
             }
@@ -770,7 +768,7 @@ pub fn parse_item_body(
                     continue;
                 }
 
-                let unresolved_type = unresolved_types.pop().unwrap();
+                let (unresolved_type, _) = unresolved_types.pop().unwrap();
 
                 match token.kind {
                     TokenKind::Cast => OpCode::UnresolvedCast { unresolved_type },
@@ -1365,7 +1363,7 @@ fn parse_memory<'a>(
         exit_stack_location: name_token.location,
         entry_stack: Vec::new(),
         entry_stack_location: name_token.location,
-        memory_type: unresolved_store_type.pop(),
+        memory_type: unresolved_store_type.pop().map(|(t, _)| t),
         memory_type_location: store_type_location,
     };
 
@@ -1545,7 +1543,7 @@ fn parse_assert_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![UnresolvedType::Simple(vec![name])],
+        exit_stack: vec![(UnresolvedType::Simple(vec![name]), name.location)],
         exit_stack_location: name.location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,
@@ -1790,7 +1788,7 @@ fn parse_struct<'a>(
 
         fields.push(UnresolvedField {
             name: field_name_token,
-            kind: unresolved_store_type.pop().unwrap(),
+            kind: unresolved_store_type.pop().unwrap().0,
         });
         prev_token = end_token;
 
