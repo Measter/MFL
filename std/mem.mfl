@@ -47,13 +47,11 @@ proc alloc [
     pack(AllocResult)
 end
 
-struct FreeResult is field errno u64 end
-
-proc free [ptr(u8)] to [FreeResult] is
+proc free [ptr(u8)] to [std::SysResult] is
     // The size is stored in the 8 bytes before the allocation.
     8- dup @
     // [ptr len]
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0- cast(u64)
-    pack(FreeResult)
+    pack(std::SysResult)
 end

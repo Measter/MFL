@@ -1,6 +1,5 @@
 proc entry [] to [] is
-    3 8 ackermann std::io::putd
-    "\n" std::io::puts
+    3 8 ackermann std::term::write_si_ln
 end
 
 proc ackermann [s32 s32] to [s32] is

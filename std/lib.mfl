@@ -1,3 +1,6 @@
 module io
 module mem
 module string
+module term
+
+struct SysResult is field errno u64 end

@@ -1,0 +1,29 @@
+// Standard stream descriptor IDs
+proc STDIN  [] to [std::io::FD] is 0x00 pack(std::io::FD) end
+proc STDOUT [] to [std::io::FD] is 0x01 pack(std::io::FD) end
+proc STDERR [] to [std::io::FD] is 0x02 pack(std::io::FD) end
+
+proc write [String] to [] is
+    STDOUT swap std::io::write drop
+end
+
+proc writeln [String] to [] is
+    STDOUT swap std::io::write drop
+    STDOUT "\n" std::io::write drop
+end
+
+proc write_si [s64] to [] is
+    STDOUT swap std::io::write_si drop
+end
+
+proc write_si_ln [s64] to [] is
+    STDOUT swap std::io::write_si_ln drop
+end
+
+proc write_ui [u64] to [] is
+    STDOUT swap std::io::write_ui drop
+end
+
+proc write_ui_ln [s64] to [] is
+    STDOUT swap std::io::write_ui_ln drop
+end

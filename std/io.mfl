@@ -1,42 +1,39 @@
-// Standard stream descriptor IDs
-const STDIN  [u64] is 0x00 end
-const STDOUT [u64] is 0x01 end
-const STDERR [u64] is 0x02 end
-
 const WRITE [u64] is 0x01 end
 
-proc puts [String] to [] is
-    // [string]
-    WRITE STDOUT
-    // [string sysid fd]
+struct FD is
+    field fd u64
+end
+
+struct WriteResult is
+    field written u64
+    field errno u64
+end
+
+proc write [FD String] to [WriteResult] is
+    // [fd string]
+    WRITE
+    // [fd string sysid]
+    rot(3<1)
+    unpack
     rot(3<1)
     // [sysid fd string]
     unpack swap
     syscall(4)
-    drop
+    if dup 0>= do
+        0
+    else
+        0- 0 swap
+    end
+    pack(WriteResult)
 end
 
-proc putsln [String] to [] is
-    puts "\n" puts
+proc writeln [FD String] to [WriteResult] is
+    over swap write
+    if xtr(errno) 0= do drop "\n" write 
+    else swap drop end
 end
 
-proc eputs [String] to [] is
-    // [string]
-    WRITE STDERR
-    // [string sysid fd]
-    rot(3<1)
-    // [sysid fd string]
-    unpack swap
-    syscall(4)
-    drop
-end
-
-
-proc eputsln[String] to [] is
-    eputs "\n" eputs
-end
-
-proc putud [u64] to [] is
+proc write_ui [FD u64] to [WriteResult] is
     memory buf is u8[30] end
 
     // [num]
@@ -65,27 +62,32 @@ proc putud [u64] to [] is
 
     swap buf cast(ptr(u8)) +
     
-    pack(String) puts
+    pack(String) write
 end
 
-proc putudln [u64] to [] is
-    putud "\n" puts
+proc write_ui_ln [FD u64] to [WriteResult] is
+    over swap write_ui
+    if xtr(errno) 0= do drop "\n" write 
+    else swap drop end
 end
 
-proc putd [s64] to [] is
+proc write_si [FD s64] to [WriteResult] is
     // TODO: Properly handle min value.
 
     // [num]
     if dup 0(s64)>= do
         cast(u64)
     else
-        "-" puts
+        over "-" write
+        if xtr(errno) 0!= do rot(3>1) drop(2) return else drop end
         0 swap- cast(u64)
     end
 
-    putud
+    write_ui
 end
 
-proc putdln [s64] to [] is
-    putd "\n" puts
+proc write_si_ln [FD s64] to [WriteResult] is
+    over swap write_si
+    if xtr(errno) 0= do drop "\n" write 
+    else swap drop end
 end

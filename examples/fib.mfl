@@ -24,9 +24,9 @@ end
 
 proc entry [] to [] is
     0 while dup 10<= do
-        dup 1+ dup std::io::putd ord std::io::puts
-        ": " std::io::puts
-        dup fib std::io::putdln
+        dup 1+ dup std::term::write_si ord std::term::write
+        ": " std::term::write
+        dup fib std::term::write_si_ln
 
         1+
     end drop
