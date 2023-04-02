@@ -1,4 +1,5 @@
-use ariadne::{Color, Label};
+use ariadne::Color;
+use intcast::IntCast;
 
 use crate::{
     diagnostics,
@@ -48,23 +49,12 @@ pub fn epilogue_return(
         if item.parent().is_some() {
             *had_error = true;
 
-            let mut creators = analyzer.get_creator_token(value_id);
-            let mut labels = Vec::new();
-
-            let root = creators.pop().unwrap();
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
-            labels.push(
-                Label::new(root.location)
-                    .with_color(Color::Yellow)
-                    .with_message(format!("Id: {}", value_id.0)),
+            let labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(value_id, value_id.0.to_u64(), "")],
+                Color::Yellow,
+                Color::Cyan,
             );
-            for creator in creators {
-                labels.push(
-                    Label::new(creator.location)
-                        .with_color(Color::Cyan)
-                        .with_message(format!("Id: {}", value_id.0)),
-                );
-            }
 
             diagnostics::emit_error(
                 op.token.location,
