@@ -24,6 +24,6 @@ proc write_ui [u64] to [] is
     STDOUT swap std::io::write_ui drop
 end
 
-proc write_ui_ln [s64] to [] is
+proc write_ui_ln [u64] to [] is
     STDOUT swap std::io::write_ui_ln drop
 end
