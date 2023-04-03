@@ -895,7 +895,7 @@ impl<'ctx> CodeGen<'ctx> {
 
 pub(crate) fn compile(
     program: &Program,
-    entry_function: ItemId,
+    top_level_items: Vec<ItemId>,
     interner: &mut Interners,
     type_store: &mut TypeStore,
     args: &Args,
@@ -940,7 +940,7 @@ pub(crate) fn compile(
             "x86-64",
             "",
             opt_level,
-            RelocMode::Default,
+            RelocMode::PIC,
             CodeModel::Default,
         )
         .ok_or_else(|| eyre!("Error creating target machine"))?;
@@ -948,9 +948,13 @@ pub(crate) fn compile(
     let context = Context::create();
     let mut codegen = CodeGen::from_context(&context, opt_level);
 
-    codegen.enqueue_function(entry_function);
+    top_level_items
+        .iter()
+        .for_each(|&id| codegen.enqueue_function(id));
     codegen.build_function_prototypes(program, interner, type_store);
-    codegen.build_entry(entry_function);
+    if !args.is_library {
+        codegen.build_entry(top_level_items[0]);
+    }
     codegen.build(program, interner, type_store);
 
     {

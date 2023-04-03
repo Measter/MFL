@@ -867,4 +867,8 @@ impl ModuleInfo {
     pub fn get_item_id(&self, name: Spur) -> Option<ItemId> {
         self.top_level_symbols.get(&name).copied()
     }
+
+    pub fn top_level_symbols(&self) -> &HashMap<Spur, ItemId> {
+        &self.top_level_symbols
+    }
 }

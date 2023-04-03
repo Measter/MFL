@@ -45,6 +45,9 @@ pub struct Args {
     /// The MFL file to compile
     file: PathBuf,
 
+    #[arg(long = "lib")]
+    is_library: bool,
+
     /// Directory storing the intermediate .o files.
     #[arg(long = "obj", default_value = "./obj")]
     obj_dir: PathBuf,
@@ -62,7 +65,9 @@ pub struct Args {
     emit_asm: bool,
 }
 
-fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interners, TypeStore, ItemId)> {
+fn load_program(
+    args: &Args,
+) -> Result<(Program, SourceStorage, Interners, TypeStore, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
     let mut interner = Interners::new();
@@ -72,46 +77,60 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interners, TypeS
     let entry_module_id =
         program.load_program2(&mut interner, &mut source_storage, &mut type_store, args)?;
 
-    let entry_symbol = interner.intern_lexeme("entry");
-    let entry_module = program.get_module(entry_module_id);
+    let mut top_level_symbols = Vec::new();
 
-    let entry_function_id = entry_module
-        .get_item_id(entry_symbol)
-        .ok_or_else(|| eyre!("`entry` function not found"))?;
+    if args.is_library {
+        let module_info = program.get_module(entry_module_id);
+        for &item_id in module_info.top_level_symbols().values() {
+            let item_header = program.get_item_header(item_id);
+            if item_header.kind() == ItemKind::Function {
+                top_level_symbols.push(item_id);
+            }
+        }
+    } else {
+        let entry_symbol = interner.intern_lexeme("entry");
+        let entry_module = program.get_module(entry_module_id);
 
-    debug!("checking entry signature");
-    let entry_item = program.get_item_header(entry_function_id);
-    if !matches!(entry_item.kind(), ItemKind::Function) {
-        let name = entry_item.name();
-        diagnostics::emit_error(
-            name.location,
-            "`entry` must be a function",
-            Some(
-                Label::new(name.location)
-                    .with_color(Color::Red)
-                    .with_message(format!("found `{:?}`", entry_item.kind())),
-            ),
-            None,
-            &source_storage,
-        );
-        return Err(eyre!("invalid `entry` procedure type"));
-    }
+        let entry_function_id = entry_module
+            .get_item_id(entry_symbol)
+            .ok_or_else(|| eyre!("`entry` function not found"))?;
 
-    let entry_sig = program.get_item_signature_resolved(entry_function_id);
-    if !entry_sig.entry_stack().is_empty() || !entry_sig.exit_stack().is_empty() {
-        let name = entry_item.name();
-        diagnostics::emit_error(
-            name.location,
-            "`entry` must have the signature `[] to []`",
-            Some(
-                Label::new(name.location)
-                    .with_color(Color::Red)
-                    .with_message("defined Here"),
-            ),
-            None,
-            &source_storage,
-        );
-        return Err(eyre!("invalid `entry` signature"));
+        top_level_symbols.push(entry_function_id);
+
+        debug!("checking entry signature");
+        let entry_item = program.get_item_header(entry_function_id);
+        if !matches!(entry_item.kind(), ItemKind::Function) {
+            let name = entry_item.name();
+            diagnostics::emit_error(
+                name.location,
+                "`entry` must be a function",
+                Some(
+                    Label::new(name.location)
+                        .with_color(Color::Red)
+                        .with_message(format!("found `{:?}`", entry_item.kind())),
+                ),
+                None,
+                &source_storage,
+            );
+            return Err(eyre!("invalid `entry` procedure type"));
+        }
+
+        let entry_sig = program.get_item_signature_resolved(entry_function_id);
+        if !entry_sig.entry_stack().is_empty() || !entry_sig.exit_stack().is_empty() {
+            let name = entry_item.name();
+            diagnostics::emit_error(
+                name.location,
+                "`entry` must have the signature `[] to []`",
+                Some(
+                    Label::new(name.location)
+                        .with_color(Color::Red)
+                        .with_message("defined Here"),
+                ),
+                None,
+                &source_storage,
+            );
+            return Err(eyre!("invalid `entry` signature"));
+        }
     }
 
     Ok((
@@ -119,7 +138,7 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interners, TypeS
         source_storage,
         interner,
         type_store,
-        entry_function_id,
+        top_level_symbols,
     ))
 }
 
@@ -134,6 +153,10 @@ fn run_compile(args: Args) -> Result<()> {
         &mut type_store,
         &args,
     )?;
+
+    if args.is_library {
+        return Ok(());
+    }
 
     let output_path = args.output.clone().unwrap();
 
