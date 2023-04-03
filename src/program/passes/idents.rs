@@ -10,6 +10,7 @@ use crate::{
     interners::Interners,
     lexer::Token,
     opcode::{If, Op, OpCode, While},
+    option::OptionExt,
     program::{static_analysis::ConstVal, ItemHeader, ItemId, ItemKind, Program},
     simulate::SimulatorValue,
     source_file::{SourceLocation, SourceStorage},
@@ -57,15 +58,15 @@ impl Program {
                 }
             }
             // Path from the top level module.
-            [top_level_mod, sub_mods @ .., item] => {
-                let tlm = match self.top_level_modules.get(&top_level_mod.lexeme) {
-                    Some(ident) => *ident,
+            [top_level_ident, sub_idents @ .., last_ident] => {
+                let start = match self.get_visible_symbol(item_header, top_level_ident.lexeme) {
+                    Some(item_id) => item_id,
                     None => {
-                        let module_name = interner.resolve_lexeme(top_level_mod.lexeme);
+                        let item_name = interner.resolve_lexeme(top_level_ident.lexeme);
                         diagnostics::emit_error(
-                            top_level_mod.location,
-                            format!("module `{module_name}` not found"),
-                            Some(Label::new(top_level_mod.location).with_color(Color::Red)),
+                            top_level_ident.location,
+                            format!("symbol `{item_name}` not found"),
+                            Some(Label::new(top_level_ident.location).with_color(Color::Red)),
                             None,
                             source_store,
                         );
@@ -74,10 +75,11 @@ impl Program {
                     }
                 };
 
-                let mut cur_module = &self.module_info[&tlm];
-                for sm in sub_mods {
-                    let next_module = match cur_module.top_level_symbols.get(&sm.lexeme) {
-                        Some(nid) => *nid,
+                // We know this is a multi-part ident, so the start must be a module.
+                let mut cur_module = &self.module_info[&start];
+                for sm in sub_idents {
+                    let next_module = match cur_module.get_visible_symbol(sm.lexeme) {
+                        Some(nid) => nid,
                         None => {
                             let module_name = interner.resolve_lexeme(sm.lexeme);
                             diagnostics::emit_error(
@@ -95,14 +97,14 @@ impl Program {
                     cur_module = &self.module_info[&next_module];
                 }
 
-                match cur_module.top_level_symbols.get(&item.lexeme) {
-                    Some(item_id) => Ok(*item_id),
+                match cur_module.get_visible_symbol(last_ident.lexeme) {
+                    Some(item_id) => Ok(item_id),
                     None => {
-                        let item_name = interner.resolve_lexeme(item.lexeme);
+                        let item_name = interner.resolve_lexeme(last_ident.lexeme);
                         diagnostics::emit_error(
-                            item.location,
+                            last_ident.location,
                             format!("symbol `{item_name}` not found in module"),
-                            Some(Label::new(item.location).with_color(Color::Red)),
+                            Some(Label::new(last_ident.location).with_color(Color::Red)),
                             None,
                             source_store,
                         );
@@ -273,6 +275,42 @@ impl Program {
         def
     }
 
+    fn resolve_idents_in_module_imports(
+        &mut self,
+        interner: &Interners,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        item: ItemHeader,
+    ) {
+        // Top level modules are visible from every module, so let's make sure those are imported.
+        let module_info = self.module_info.get_mut(&item.id()).unwrap();
+        for (name, id) in &self.top_level_modules {
+            module_info
+                .visible_symbols
+                .insert(*name, *id)
+                .expect_none("name collision");
+        }
+
+        let module_imports = module_info.unresolved_imports.clone();
+
+        for import in module_imports {
+            let Ok(resolved_item) = self.resolve_single_ident(
+                        item,
+                        interner,
+                        source_store,
+                        had_error,
+                        &import,
+                    ) else { continue };
+            let item_name = self.get_item_header(resolved_item).name;
+            self.module_info
+                .get_mut(&item.id())
+                .unwrap()
+                .visible_symbols
+                .insert(item_name.lexeme, resolved_item)
+                .expect_none("name collision");
+        }
+    }
+
     pub fn resolve_idents(
         &mut self,
         interner: &mut Interners,
@@ -283,7 +321,6 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, item)| item.kind() != ItemKind::Module)
             .map(|(id, item)| (*id, *item))
             .collect();
 
@@ -314,6 +351,8 @@ impl Program {
                 );
 
                 self.item_signatures_unresolved.insert(item_id, sig);
+            } else if item.kind() == ItemKind::Module {
+                self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 for (kind, _) in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {

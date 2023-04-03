@@ -972,6 +972,7 @@ pub fn parse_item_body(
             TokenKind::ColonColon
             | TokenKind::GoesTo
             | TokenKind::Is
+            | TokenKind::Import
             | TokenKind::Do
             | TokenKind::Elif
             | TokenKind::Else
@@ -1855,6 +1856,28 @@ pub(super) fn parse_module(
                 {
                     had_error = true;
                 }
+            }
+
+            TokenKind::Import => {
+                let (_, root_name) = match expect_token(
+                    &mut token_iter,
+                    "ident",
+                    |k| k == TokenKind::Ident,
+                    *token,
+                    interner,
+                    source_store,
+                ) {
+                    Ok(ident) => ident,
+                    Err(_) => {
+                        had_error = true;
+                        continue;
+                    }
+                };
+
+                let path = parse_ident(&mut token_iter, interner, source_store, root_name)
+                    .recover(&mut had_error, Vec::new());
+
+                program.get_module_mut(module_id).add_import(path);
             }
 
             TokenKind::Module => {

@@ -49,6 +49,7 @@ pub enum TokenKind {
     If,
     Insert { emit_struct: bool },
     Integer { lexeme: Spur, is_hex: bool },
+    Import,
     Is,
     IsNull,
     Less,
@@ -118,6 +119,7 @@ impl TokenKind {
             | TokenKind::Module
             | TokenKind::Insert { .. }
             | TokenKind::Integer { .. }
+            | TokenKind::Import
             | TokenKind::IsNull
             | TokenKind::Less
             | TokenKind::LessEqual
@@ -555,6 +557,7 @@ impl<'source> Scanner<'source> {
                         TokenKind::Here(id)
                     }
                     "if" => TokenKind::If,
+                    "import" => TokenKind::Import,
                     "ins" => TokenKind::Insert { emit_struct: true },
                     "insd" => TokenKind::Insert { emit_struct: false },
                     "is" => TokenKind::Is,

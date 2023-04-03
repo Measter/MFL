@@ -18,6 +18,7 @@ use crate::{
     interners::Interners,
     lexer::{self, Token, TokenKind},
     opcode::{Op, OpCode, OpId},
+    option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{FileId, SourceLocation, SourceStorage},
     type_store::{TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
@@ -163,6 +164,11 @@ impl Program {
         &self.module_info[&id]
     }
 
+    #[track_caller]
+    pub fn get_module_mut(&mut self, id: ItemId) -> &mut ModuleInfo {
+        self.module_info.get_mut(&id).unwrap()
+    }
+
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
         self.item_headers[&id]
     }
@@ -242,13 +248,17 @@ impl Program {
         self.item_headers.insert(new_id, item_header);
 
         let module = ModuleInfo {
-            top_level_symbols: HashMap::new(),
+            child_items: HashMap::new(),
+            visible_symbols: HashMap::new(),
+            unresolved_imports: Vec::new(),
         };
         self.module_info.insert(new_id, module);
 
         if let Some(parent_id) = parent {
             let parent_module = self.module_info.get_mut(&parent_id).unwrap();
-            parent_module.top_level_symbols.insert(name.lexeme, new_id);
+            parent_module
+                .add_child(name.lexeme, new_id)
+                .expect_none("child of that name exists");
         }
 
         new_id
@@ -753,7 +763,7 @@ impl Program {
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            module_info.top_level_symbols.insert(name.lexeme, id);
+            module_info.add_child(name.lexeme, id);
         }
 
         id
@@ -776,7 +786,10 @@ impl Program {
         self.structs_unresolved.insert(id, def);
 
         let module = self.module_info.get_mut(&module).unwrap();
-        module.top_level_symbols.insert(name.lexeme, id);
+        // TODO: Add diagnostic
+        module
+            .add_child(name.lexeme, id)
+            .expect_none("child with that name exists");
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
@@ -790,6 +803,11 @@ impl Program {
             if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                 return Some(*found_id);
             }
+        }
+        // If we're a module, then we don't traverse up the tree.
+        if from.kind == ItemKind::Module {
+            let module = &self.module_info[&from.id];
+            return module.get_visible_symbol(symbol);
         }
 
         // Check our parent's children.
@@ -808,8 +826,8 @@ impl Program {
                 return None;
             } else if item.kind == ItemKind::Module {
                 let module = &self.module_info[&id];
-                if let Some(found_id) = module.top_level_symbols.get(&symbol) {
-                    return Some(*found_id);
+                if let Some(found_id) = module.get_visible_symbol(symbol) {
+                    return Some(found_id);
                 }
             }
             prev_kind = item.kind;
@@ -821,7 +839,9 @@ impl Program {
 }
 
 pub struct ModuleInfo {
-    top_level_symbols: HashMap<Spur, ItemId>,
+    child_items: HashMap<Spur, ItemId>,
+    visible_symbols: HashMap<Spur, ItemId>,
+    unresolved_imports: Vec<Vec<Token>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -864,11 +884,20 @@ impl ModuleInfo {
         Ok(())
     }
 
-    pub fn get_item_id(&self, name: Spur) -> Option<ItemId> {
-        self.top_level_symbols.get(&name).copied()
+    pub fn get_visible_symbol(&self, name: Spur) -> Option<ItemId> {
+        self.visible_symbols.get(&name).copied()
     }
 
-    pub fn top_level_symbols(&self) -> &HashMap<Spur, ItemId> {
-        &self.top_level_symbols
+    pub fn get_child_items(&self) -> &HashMap<Spur, ItemId> {
+        &self.child_items
+    }
+
+    fn add_child(&mut self, name: Spur, id: ItemId) -> Option<ItemId> {
+        self.visible_symbols.insert(name, id);
+        self.child_items.insert(name, id)
+    }
+
+    pub fn add_import(&mut self, path: Vec<Token>) {
+        self.unresolved_imports.push(path);
     }
 }
