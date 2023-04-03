@@ -914,7 +914,7 @@ pub(crate) fn compile(
     output_obj.push(args.file.file_stem().unwrap());
     output_obj.set_extension("o");
     let mut bootstrap_obj = args.obj_dir.to_owned();
-    bootstrap_obj.set_file_name("bootstrap.o");
+    bootstrap_obj.push("bootstrap.o");
 
     let mut output_asm = args.obj_dir.to_owned();
     output_asm.push(args.file.file_stem().unwrap());
