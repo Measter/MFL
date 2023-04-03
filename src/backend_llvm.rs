@@ -915,6 +915,8 @@ pub(crate) fn compile(
     output_obj.set_extension("o");
     let mut bootstrap_obj = args.obj_dir.to_owned();
     bootstrap_obj.push("bootstrap.o");
+    let mut syscalls_obj = args.obj_dir.to_owned();
+    syscalls_obj.push("syscalls.o");
 
     let mut output_asm = args.obj_dir.to_owned();
     output_asm.push(args.file.file_stem().unwrap());
@@ -971,21 +973,39 @@ pub(crate) fn compile(
             .map_err(|e| eyre!("Error writing object: {e}"))?;
     }
 
-    let nasm = {
+    let mut nasm_success = true;
+
+    if !args.is_library {
         let _span = trace_span!("Assembling bootstrap").entered();
         trace!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
-        Command::new("nasm")
+        let result = Command::new("nasm")
             .arg("-felf64")
             .arg("./std/bootstrap.s")
             .arg("-o")
             .arg(&bootstrap_obj)
             .status()
-            .with_context(|| eyre!("Failed to execute nasm"))?
-    };
+            .with_context(|| eyre!("Failed to execute nasm"))?;
 
-    if !nasm.success() {
+        nasm_success &= result.success();
+    }
+
+    {
+        let _span = trace_span!("Assembling syscalls").entered();
+        trace!("Assembling... syscalls.s to {}", syscalls_obj.display());
+        let result = Command::new("nasm")
+            .arg("-felf64")
+            .arg("./std/syscalls.s")
+            .arg("-o")
+            .arg(&syscalls_obj)
+            .status()
+            .with_context(|| eyre!("Failed to execute nasm"))?;
+
+        nasm_success &= result.success();
+    }
+
+    if !nasm_success {
         std::process::exit(-2);
     }
 
-    Ok(vec![bootstrap_obj, output_obj])
+    Ok(vec![bootstrap_obj, output_obj, syscalls_obj])
 }
