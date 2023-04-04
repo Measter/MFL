@@ -241,6 +241,39 @@ impl Program {
                         continue;
                     };
 
+                    let found_item_header = self.item_headers[&item_id];
+                    if !matches!(
+                        found_item_header.kind(),
+                        ItemKind::Function | ItemKind::Macro | ItemKind::Const | ItemKind::Memory
+                    ) {
+                        *had_error = true;
+                        let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
+                        // This would be the case if the item was a top-level module.
+                        let note = if found_item_header.name.location.file_id != FileId::dud() {
+                            labels.push(
+                                Label::new(found_item_header.name.location)
+                                    .with_color(Color::Cyan)
+                                    .with_message(format!(
+                                        "item is a {:?}",
+                                        found_item_header.kind()
+                                    )),
+                            );
+                            String::new()
+                        } else {
+                            let name = interner.resolve_lexeme(found_item_header.name.lexeme);
+                            format!("`{name}` is a top-level module")
+                        };
+
+                        diagnostics::emit_error(
+                            op.token.location,
+                            format!("cannot refer to a {:?} here", found_item_header.kind()),
+                            labels,
+                            note,
+                            source_store,
+                        );
+                        continue;
+                    }
+
                     op.code = OpCode::ResolvedIdent { item_id };
                 }
                 OpCode::UnresolvedCast { unresolved_type }
