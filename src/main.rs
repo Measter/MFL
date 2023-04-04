@@ -81,7 +81,7 @@ fn load_program(
 
     if args.is_library {
         let module_info = program.get_module(entry_module_id);
-        for &item_id in module_info.get_child_items().values() {
+        for &(item_id, _) in module_info.get_child_items().values() {
             let item_header = program.get_item_header(item_id);
             if item_header.kind() == ItemKind::Function {
                 top_level_symbols.push(item_id);

@@ -10,10 +10,11 @@ use crate::{
     interners::Interners,
     lexer::Token,
     opcode::{If, Op, OpCode, While},
-    option::OptionExt,
-    program::{static_analysis::ConstVal, ItemHeader, ItemId, ItemKind, Program},
+    program::{
+        static_analysis::ConstVal, symbol_redef_error, ItemHeader, ItemId, ItemKind, Program,
+    },
     simulate::SimulatorValue,
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage},
     type_store::{BuiltinTypes, UnresolvedStruct, UnresolvedType},
 };
 
@@ -285,15 +286,27 @@ impl Program {
         // Top level modules are visible from every module, so let's make sure those are imported.
         let module_info = self.module_info.get_mut(&item.id()).unwrap();
         for (name, id) in &self.top_level_modules {
-            module_info
-                .visible_symbols
-                .insert(*name, *id)
-                .expect_none("name collision");
+            let res = module_info.add_visible_symbol(
+                *name,
+                SourceLocation::new(FileId::dud(), 0..0),
+                *id,
+            );
+
+            if let Err(prev_loc) = res {
+                diagnostics::emit_error(
+                    prev_loc,
+                    "item has same name as top-level module",
+                    [Label::new(prev_loc).with_color(Color::Red)],
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+            }
         }
 
         let module_imports = module_info.unresolved_imports.clone();
 
-        for import in module_imports {
+        for (import, import_span) in module_imports {
             let Ok(resolved_item) = self.resolve_single_ident(
                         item,
                         interner,
@@ -302,12 +315,13 @@ impl Program {
                         &import,
                     ) else { continue };
             let item_name = self.get_item_header(resolved_item).name;
-            self.module_info
-                .get_mut(&item.id())
-                .unwrap()
-                .visible_symbols
-                .insert(item_name.lexeme, resolved_item)
-                .expect_none("name collision");
+            let module_info = self.module_info.get_mut(&item.id()).unwrap();
+
+            let res = module_info.add_visible_symbol(item_name.lexeme, import_span, resolved_item);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(import_span, prev_loc, source_store);
+            }
         }
     }
 

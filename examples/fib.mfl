@@ -1,7 +1,7 @@
-proc fib [s32] to [s32] is
+proc fibonacci [s32] to [s32] is
     if dup 1> do
-        dup 1- fib
-        swap 2- fib
+        dup 1- fibonacci
+        swap 2- fibonacci
         +
     end
 end
@@ -26,7 +26,7 @@ proc entry [] to [] is
     0 while dup 10<= do
         dup 1+ dup std::term::write_si ord std::term::write
         ": " std::term::write
-        dup fib std::term::write_si_ln
+        dup fibonacci std::term::write_si_ln
 
         1+
     end drop

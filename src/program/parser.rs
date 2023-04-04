@@ -1368,7 +1368,14 @@ fn parse_memory<'a>(
         memory_type_location: store_type_location,
     };
 
-    let item_id = program.new_item(name_token, ItemKind::Memory, parent_id, sig);
+    let item_id = program.new_item(
+        source_store,
+        &mut had_error,
+        name_token,
+        ItemKind::Memory,
+        parent_id,
+        sig,
+    );
 
     if program.get_item_header(parent_id).kind() == ItemKind::Function {
         let pd = program.get_function_data_mut(parent_id);
@@ -1438,7 +1445,14 @@ fn parse_function_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, ItemKind::Function, parent_id, sig);
+    let new_item = program.new_item(
+        source_store,
+        &mut had_error,
+        name,
+        ItemKind::Function,
+        parent_id,
+        sig,
+    );
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -1470,9 +1484,16 @@ fn parse_macro_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, ItemKind::Macro, parent_id, sig);
-
     let mut had_error = false;
+    let new_item = program.new_item(
+        source_store,
+        &mut had_error,
+        name,
+        ItemKind::Macro,
+        parent_id,
+        sig,
+    );
+
     let (_, is_token) = expect_token(
         token_iter,
         "is",
@@ -1520,7 +1541,14 @@ fn parse_const_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, ItemKind::Const, parent_id, sig);
+    let new_item = program.new_item(
+        source_store,
+        &mut had_error,
+        name,
+        ItemKind::Const,
+        parent_id,
+        sig,
+    );
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -1552,9 +1580,16 @@ fn parse_assert_header<'a>(
         memory_type_location: name.location,
     };
 
-    let new_item = program.new_item(name, ItemKind::Assert, parent_id, sig);
-
     let mut had_error = false;
+    let new_item = program.new_item(
+        source_store,
+        &mut had_error,
+        name,
+        ItemKind::Assert,
+        parent_id,
+        sig,
+    );
+
     let (_, is_token) = expect_token(
         token_iter,
         "is",
@@ -1803,7 +1838,7 @@ fn parse_struct<'a>(
         fields,
     };
 
-    program.new_struct(module_id, struct_def);
+    program.new_struct(source_store, &mut had_error, module_id, struct_def);
 
     if !had_error {
         Ok(())
@@ -1877,7 +1912,9 @@ pub(super) fn parse_module(
                 let path = parse_ident(&mut token_iter, interner, source_store, root_name)
                     .recover(&mut had_error, Vec::new());
 
-                program.get_module_mut(module_id).add_import(path);
+                program
+                    .get_module_mut(module_id)
+                    .add_unresolved_import(path);
             }
 
             TokenKind::Module => {

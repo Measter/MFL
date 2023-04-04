@@ -234,7 +234,13 @@ impl Program {
         }
     }
 
-    fn new_module(&mut self, name: Token, parent: Option<ItemId>) -> ItemId {
+    fn new_module(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Token,
+        parent: Option<ItemId>,
+    ) -> ItemId {
         let new_id = self.item_headers.len();
         let new_id = ItemId(new_id.to_u16().unwrap());
 
@@ -256,9 +262,11 @@ impl Program {
 
         if let Some(parent_id) = parent {
             let parent_module = self.module_info.get_mut(&parent_id).unwrap();
-            parent_module
-                .add_child(name.lexeme, new_id)
-                .expect_none("child of that name exists");
+            let res = parent_module.add_child(name.lexeme, name.location, new_id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
         }
 
         new_id
@@ -272,9 +280,12 @@ impl Program {
         args: &Args,
     ) -> Result<ItemId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
+        let mut had_error = false;
 
         let builtin_structs_module_name = interner.intern_lexeme("builtins");
         let builtin_module = self.new_module(
+            source_store,
+            &mut had_error,
             Token {
                 kind: TokenKind::Module,
                 lexeme: builtin_structs_module_name,
@@ -293,7 +304,6 @@ impl Program {
         )?;
         type_store.update_builtins(&self.structs_unresolved);
 
-        let mut had_error = false;
         let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
         let main_lib_root = args.file.parent().unwrap();
         let root_file_name = args.file.file_name().unwrap();
@@ -397,7 +407,7 @@ impl Program {
                 }
             };
 
-            let module_id = self.new_module(module_name, parent);
+            let module_id = self.new_module(source_store, had_error, module_name, parent);
             if module == ModuleQueueType::Root {
                 self.top_level_modules.insert(module_name.lexeme, module_id);
             }
@@ -737,6 +747,8 @@ impl Program {
 
     pub fn new_item(
         &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
         name: Token,
         kind: ItemKind,
         parent: ItemId,
@@ -763,13 +775,23 @@ impl Program {
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            module_info.add_child(name.lexeme, id);
+            let res = module_info.add_child(name.lexeme, name.location, id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
         }
 
         id
     }
 
-    pub fn new_struct(&mut self, module: ItemId, def: UnresolvedStruct) {
+    pub fn new_struct(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        module: ItemId,
+        def: UnresolvedStruct,
+    ) {
         let id = self.item_headers.len();
         let id = ItemId(id.to_u16().unwrap());
         let name = def.name;
@@ -783,13 +805,16 @@ impl Program {
         };
 
         self.item_headers.insert(id, item);
+        let name = def.name;
         self.structs_unresolved.insert(id, def);
 
         let module = self.module_info.get_mut(&module).unwrap();
-        // TODO: Add diagnostic
-        module
-            .add_child(name.lexeme, id)
-            .expect_none("child with that name exists");
+        let res = module.add_child(name.lexeme, name.location, id);
+
+        if let Err(prev_loc) = res {
+            *had_error = true;
+            symbol_redef_error(name.location, prev_loc, source_store);
+        }
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
@@ -839,9 +864,9 @@ impl Program {
 }
 
 pub struct ModuleInfo {
-    child_items: HashMap<Spur, ItemId>,
-    visible_symbols: HashMap<Spur, ItemId>,
-    unresolved_imports: Vec<Vec<Token>>,
+    child_items: HashMap<Spur, (ItemId, SourceLocation)>,
+    visible_symbols: HashMap<Spur, (ItemId, SourceLocation)>,
+    unresolved_imports: Vec<(Vec<Token>, SourceLocation)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -885,19 +910,71 @@ impl ModuleInfo {
     }
 
     pub fn get_visible_symbol(&self, name: Spur) -> Option<ItemId> {
-        self.visible_symbols.get(&name).copied()
+        self.visible_symbols.get(&name).map(|(id, _)| *id)
     }
 
-    pub fn get_child_items(&self) -> &HashMap<Spur, ItemId> {
+    pub fn get_child_items(&self) -> &HashMap<Spur, (ItemId, SourceLocation)> {
         &self.child_items
     }
 
-    fn add_child(&mut self, name: Spur, id: ItemId) -> Option<ItemId> {
-        self.visible_symbols.insert(name, id);
-        self.child_items.insert(name, id)
+    fn add_child(
+        &mut self,
+        name: Spur,
+        loc: SourceLocation,
+        id: ItemId,
+    ) -> Result<(), SourceLocation> {
+        use hashbrown::hash_map::Entry;
+        match self.child_items.entry(name) {
+            Entry::Occupied(a) => return Err(a.get().1),
+            Entry::Vacant(a) => a.insert((id, loc)),
+        };
+
+        // Children are added before imports are resolved, so this should never fail.
+        self.visible_symbols
+            .insert(name, (id, loc))
+            .expect_none("ICE: Name collision when adding child");
+        Ok(())
     }
 
-    pub fn add_import(&mut self, path: Vec<Token>) {
-        self.unresolved_imports.push(path);
+    pub fn add_visible_symbol(
+        &mut self,
+        name: Spur,
+        loc: SourceLocation,
+        id: ItemId,
+    ) -> Result<(), SourceLocation> {
+        use hashbrown::hash_map::Entry;
+        match self.visible_symbols.entry(name) {
+            Entry::Occupied(a) => return Err(a.get().1),
+            Entry::Vacant(a) => a.insert((id, loc)),
+        };
+        Ok(())
     }
+
+    pub fn add_unresolved_import(&mut self, path: Vec<Token>) {
+        let loc = path
+            .iter()
+            .map(|t| t.location)
+            .reduce(SourceLocation::merge)
+            .unwrap();
+        self.unresolved_imports.push((path, loc));
+    }
+}
+
+fn symbol_redef_error(
+    new_def: SourceLocation,
+    prev_def: SourceLocation,
+    source_store: &SourceStorage,
+) {
+    diagnostics::emit_error(
+        new_def,
+        "item of that name already exists",
+        [
+            Label::new(new_def).with_color(Color::Red),
+            Label::new(prev_def)
+                .with_color(Color::Cyan)
+                .with_message("previously defined here"),
+        ],
+        None,
+        source_store,
+    );
 }
