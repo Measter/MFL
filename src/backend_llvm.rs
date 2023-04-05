@@ -555,7 +555,7 @@ impl<'ctx> CodeGen<'ctx> {
                     break;
                 }
                 OpCode::Exit => {
-                    self.build_exit(program, interner, type_store, analyzer, value_store, id, op);
+                    self.build_exit();
                     break;
                 }
 

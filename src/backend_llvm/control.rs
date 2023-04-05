@@ -140,16 +140,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_aggregate_return(&return_values);
     }
 
-    pub(super) fn build_exit(
-        &mut self,
-        program: &Program,
-        interner: &mut Interners,
-        type_store: &mut TypeStore,
-        analyzer: &Analyzer,
-        value_store: &mut ValueStore<'ctx>,
-        self_id: ItemId,
-        op: &Op,
-    ) {
+    pub(super) fn build_exit(&mut self) {
         let args = vec![
             self.ctx.i64_type().const_int(60, false).into(),
             self.ctx.i64_type().const_int(1, false).into(),
