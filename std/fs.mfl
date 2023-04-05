@@ -2,6 +2,7 @@ import std::io::FD
 
 const SYS_OPEN [u64] is 0x02 end
 const SYS_CLOSE [u64] is 0x03 end
+const SYS_FSTAT [u64] is 0x05 end
 
 const FLAG_APPEND [u64] is 0x400 end        // O_APPEND
 const FLAG_CREATE [u64] is 0x040 end        // O_CREAT
@@ -84,4 +85,44 @@ end
 proc close [FD] to [std::SysResult] is
     xtrd(fd) SYS_CLOSE swap syscall(2)
     cast(s64) 0 swap - cast(u64) pack(std::SysResult)
+end
+
+struct Timespec is
+    field tv_sec u64
+    field tv_nsec u64
+end
+
+struct Stat is
+    field st_dev u64
+    field st_ino u64
+    field st_nlink u64
+    field st_mode u32
+    field st_uid u32
+    field st_gid u32
+    field __pad0 u32
+    field st_rdev u64
+    field st_size u64
+    field st_blksize u64
+    field st_blocks u64
+    field st_atim Timespec
+    field st_mtim Timespec
+    field st_ctim Timespec
+    field __reserved s64[3]
+end
+
+struct FStatResult is
+    field stat Stat
+    field errno u64
+end
+
+proc fstat [FD] to [FStatResult] is
+    memory buf is Stat end
+    xtrd(fd)
+    SYS_FSTAT swap buf syscall(3) cast(s64)
+    if dup 0< do
+        0 swap - cast(u64) buf@ swap
+    else
+        drop buf@ 0
+    end
+    pack(FStatResult)
 end
