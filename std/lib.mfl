@@ -1,3 +1,4 @@
+module fs
 module io
 module mem
 module string

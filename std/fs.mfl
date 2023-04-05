@@ -1,0 +1,87 @@
+import std::io::FD
+
+const SYS_OPEN [u64] is 0x02 end
+const SYS_CLOSE [u64] is 0x03 end
+
+const FLAG_APPEND [u64] is 0x400 end        // O_APPEND
+const FLAG_CREATE [u64] is 0x040 end        // O_CREAT
+const FLAG_CREATE_NEW [u64] is 0x080 end    // O_EXCL
+const FLAG_TEMP [u64] is 0x40_0000 0x1_0000 or end       // O_TMPFILE | O_DIRECTORY
+const FLAG_TRUNC [u64] is 0x200 end         // O_TRUNC
+
+const FLAG_READONLY [u64] is 0x0 end         // Q_RDONLY
+const FLAG_WRITEONLY [u64] is 0x1 end        // O_WRONLY
+const FLAG_READWRITE [u64] is 0x2 end        // O_RDWR
+
+struct OpenResult is
+    field fd FD
+    field errno u64
+end
+
+proc open [
+    String  // Null-terminated path to the file
+    u64     // Flags for opening
+] to [OpenResult] is
+    // The syscall requires a null-terminated string.
+    // Check for null termination
+    if over xtr(len) 1- std::string::at 0 != do
+        drop(2)
+
+        0 pack(FD)
+        0 1-
+        pack(OpenResult)
+        return
+    end
+
+    SYS_OPEN rot(3>1) 0x1b6 // 0o666
+    // [sysid, path, flags, mode]
+
+    rot(3<1) xtrd(data) rot(3>1)
+    syscall(4)
+
+    // An error ocurred
+    if dup cast(s64) 0< do
+        cast(s64) 0 swap - cast(u64)
+        0 pack(FD) swap
+    else
+        pack(FD) 0
+    end
+
+    pack(OpenResult)
+end
+
+// Opens a file in read-only mode.
+proc open_read [
+    String // Null-terminated path
+] to [OpenResult] is
+    FLAG_READONLY open
+end
+
+// Opens a file in read-write mode, creating the file if it doesn't exist.
+proc open_write [
+    String  // Null-terminated path
+    bool    // Append if it already exists
+] to [OpenResult] is
+    FLAG_READWRITE FLAG_CREATE or swap
+    if do FLAG_APPEND or end
+    open
+end
+
+// Opens a file in read-write mode, creating the file if it doesn't exist,
+// and truncating the file.
+proc create [
+    String // Null-terminated path
+    bool // Force new file.
+] to [OpenResult] is
+    FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
+    if do
+        FLAG_CREATE_NEW or
+    end
+
+    open
+end
+
+proc close [FD] to [std::SysResult] is
+    xtrd(fd) SYS_CLOSE swap syscall(2)
+    cast(s64) 0 swap - cast(u64) pack(std::SysResult)
+end
