@@ -39,6 +39,7 @@ pub enum TokenKind {
     End,
     Equal,
     EmitStack,
+    Exit,
     Extract { emit_struct: bool },
     Field,
     GoesTo,
@@ -109,6 +110,7 @@ impl TokenKind {
             | TokenKind::EmitStack
             | TokenKind::End
             | TokenKind::Equal
+            | TokenKind::Exit
             | TokenKind::Extract { .. }
             | TokenKind::Field
             | TokenKind::GoesTo
@@ -537,6 +539,7 @@ impl<'source> Scanner<'source> {
                     "elif" => TokenKind::Elif,
                     "else" => TokenKind::Else,
                     "end" => TokenKind::End,
+                    "exit" => TokenKind::Exit,
                     "xtr" => TokenKind::Extract { emit_struct: true },
                     "xtrd" => TokenKind::Extract { emit_struct: false },
                     "false" => TokenKind::Boolean(false),

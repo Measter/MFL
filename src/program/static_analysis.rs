@@ -1063,6 +1063,10 @@ fn analyze_block(
                 *had_error |= local_had_error;
                 break;
             }
+            OpCode::Exit => {
+                analyzer.set_op_io(op, &[], &[]);
+                break;
+            }
             OpCode::Prologue => {
                 let item_sig = program.get_item_signature_resolved(item_id);
                 let item_tokens = program.get_item_signature_unresolved(item_id);

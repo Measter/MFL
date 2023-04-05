@@ -554,6 +554,10 @@ impl<'ctx> CodeGen<'ctx> {
                     );
                     break;
                 }
+                OpCode::Exit => {
+                    self.build_exit(program, interner, type_store, analyzer, value_store, id, op);
+                    break;
+                }
 
                 OpCode::If(if_op) => {
                     self.build_if(

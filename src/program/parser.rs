@@ -966,6 +966,7 @@ pub fn parse_item_body(
             TokenKind::ShiftRight => OpCode::ShiftRight,
 
             TokenKind::Return => OpCode::Return,
+            TokenKind::Exit => OpCode::Exit,
 
             // These are only used as part of a sub-block. If they're found anywhere else,
             // it's an error.

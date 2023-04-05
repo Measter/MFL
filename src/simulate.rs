@@ -339,6 +339,7 @@ fn simulate_execute_program_block(
             | OpCode::ExtractArray { .. }
             | OpCode::InsertStruct { .. }
             | OpCode::ExtractStruct { .. }
+            | OpCode::Exit
             | OpCode::Load
             | OpCode::Store
             | OpCode::IsNull

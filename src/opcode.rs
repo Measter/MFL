@@ -114,6 +114,7 @@ pub enum OpCode {
         emit_struct: bool,
         field_name: Token,
     },
+    Exit,
     If(Box<If>),
     Less,
     LessEqual,

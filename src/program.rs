@@ -524,7 +524,7 @@ impl Program {
                     self.determine_terminal_blocks_in_block(&mut while_block.condition);
                     self.determine_terminal_blocks_in_block(&mut while_block.body_block);
                 }
-                OpCode::Return => return true,
+                OpCode::Return | OpCode::Exit => return true,
                 _ => {}
             }
         }

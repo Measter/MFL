@@ -1,6 +1,14 @@
 BITS 64
 segment .text
 
+global _syscall2
+_syscall2:
+    mov RAX, RDI
+    mov EDI, ESI
+    syscall
+
+    ret
+
 global _syscall3
 _syscall3:
     mov RAX, RDI
