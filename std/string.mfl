@@ -1,3 +1,19 @@
+import std::term
+
+proc at [String u64] to [u8] is
+    swap xtr(len)
+    if over(2) swap >= do
+        "[" term::write here term::write "]: index `" term::write
+        swap term::write_ui
+        "` is out of bounds: `0..=" term::write   
+        xtrd(len) term::write_ui
+        "`" term::writeln
+        exit
+    end
+
+    xtrd(data) +@
+end
+
 struct SplitResult is
     field split bool
     field remainder String
