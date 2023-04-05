@@ -28,7 +28,7 @@ proc alloc [
 
     if dup 0< do
         // Some kind of failure
-        0- cast(u64)
+        0 swap - cast(u64)
         // Drop the len and pointer
         rot(3>1) drop(2)
         // Store a null pointer.
@@ -52,7 +52,7 @@ proc free [ptr(u8)] to [std::SysResult] is
     8- dup @
     // [ptr len]
     SYS_MUNMAP rot(3>1) syscall(3)
-    cast(s64) 0- cast(u64)
+    cast(s64) 0 swap - cast(u64)
     pack(std::SysResult)
 end
 
