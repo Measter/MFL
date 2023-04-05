@@ -55,3 +55,62 @@ proc free [ptr(u8)] to [std::SysResult] is
     cast(s64) 0- cast(u64)
     pack(std::SysResult)
 end
+
+struct MMapResult is
+    field pointer ptr(u8)
+    field length u64
+    field errno u64
+end
+
+proc mmap_file [
+    std::io::FD
+    u64 // Protection flags. Must match the FD.
+] to [MMapResult] is
+    over std::fs::fstat
+    if xtr(errno) 0!= do
+        rot(3>1) drop(2)
+        xtrd(errno)
+        0(u64) cast(ptr(u8)) // Null pointer
+        0                    // length
+        rot(3<1) pack(MMapResult) return
+    end
+
+    xtrd(stat) xtrd(st_size) 0
+    // [FD PROT length addr]
+    rev(4)
+    //[addr length Prot FD]
+    unpack
+    MAP_PRIVATE swap 0
+    SYS_MMAP rot(7>1)
+    // We want to keep the length
+    over(4)
+    rot(8>1)
+    syscall(7)
+
+    dup cast(s64)
+    // [length ptr errcode]
+
+    if dup 0< do
+        // Some kind of failure
+        0 swap - cast(u64)
+        // Drop the len and pointer
+        rev(3) drop(2)
+        // Store a null pointer.
+        0(u64) cast(ptr(u8))
+        // And a 0 length
+        0
+        rot(3<1)
+    else
+        drop cast(ptr(u8)) swap 0
+    end
+
+    pack(MMapResult) return
+end
+
+proc unmap_file [MMapResult] to [std::SysResult] is
+    unpack drop
+    // [ptr len]
+    SYS_MUNMAP rot(3>1) syscall(3)
+    cast(s64) 0 swap - cast(u64)
+    pack(std::SysResult)
+end
