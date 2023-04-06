@@ -13,7 +13,7 @@ ariadne = "0.2"
 clap = { version = "4.2", features = ["derive"] }
 color-eyre = "0.6.1"
 hashbrown = "0.13.2"
-intcast = { path = "../intcast" }
+intcast = { path = "./intcast" }
 lasso = "0.6.0"
 num = "0.4.0"
 opentelemetry = "0.18.0"
