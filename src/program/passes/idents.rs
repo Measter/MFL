@@ -124,9 +124,73 @@ impl Program {
         source_store: &SourceStorage,
         had_error: &mut bool,
         unresolved_type: &mut UnresolvedType,
+        generic_params: Option<Token>,
     ) {
         match unresolved_type {
             UnresolvedType::Simple(unresolved_ident) => {
+                let item_name = unresolved_ident
+                    .last()
+                    .expect("ICE: empty unresolved ident");
+
+                let path_location = unresolved_ident
+                    .iter()
+                    .map(|t| t.location)
+                    .reduce(SourceLocation::merge)
+                    .unwrap();
+
+                let name = interner.resolve_lexeme(item_name.lexeme);
+                let builtin_name = BuiltinTypes::from_name(name);
+
+                if unresolved_ident.len() > 1 && builtin_name.is_some() {
+                    // Emit error
+                    diagnostics::emit_error(
+                        path_location,
+                        "cannot name builtin with a module",
+                        [Label::new(path_location).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    *had_error = true;
+                } else if let Some(builtin) = builtin_name {
+                    *unresolved_type = UnresolvedType::SimpleBuiltin(builtin);
+                } else if unresolved_ident.len() == 1
+                    && generic_params.map(|t| t.lexeme) == Some(item_name.lexeme)
+                {
+                    *unresolved_type = UnresolvedType::GenericParam(item_name.lexeme);
+                } else {
+                    let Ok(ident) = self.resolve_single_ident(
+                        item_header,
+                        interner,
+                        source_store,
+                        had_error,
+                        unresolved_ident,
+                    ) else {
+                        return;
+                    };
+
+                    *unresolved_type = UnresolvedType::SimpleCustom {
+                        id: ident,
+                        token: Token {
+                            location: path_location,
+                            ..*item_name
+                        },
+                    };
+                };
+            }
+            UnresolvedType::Array(sub_type, _) | UnresolvedType::Pointer(sub_type) => self
+                .resolve_idents_in_type(
+                    item_header,
+                    interner,
+                    source_store,
+                    had_error,
+                    sub_type,
+                    generic_params,
+                ),
+
+            UnresolvedType::GenericInstance {
+                type_name: unresolved_ident,
+                param,
+            } => {
                 let item_name = unresolved_ident
                     .last()
                     .expect("ICE: empty unresolved ident");
@@ -163,20 +227,31 @@ impl Program {
                         return;
                     };
 
-                    *unresolved_type = UnresolvedType::SimpleCustom {
+                    self.resolve_idents_in_type(
+                        item_header,
+                        interner,
+                        source_store,
+                        had_error,
+                        param,
+                        None,
+                    );
+
+                    *unresolved_type = UnresolvedType::GenericResolvedInstance {
                         id: ident,
-                        token: Token {
+                        id_token: Token {
                             location: path_location,
                             ..*item_name
                         },
+                        param: param.clone(),
                     };
                 };
             }
-            UnresolvedType::Array(sub_type, _) | UnresolvedType::Pointer(sub_type) => self
-                .resolve_idents_in_type(item_header, interner, source_store, had_error, sub_type),
 
             // Nothing to do here.
-            UnresolvedType::SimpleBuiltin(_) | UnresolvedType::SimpleCustom { .. } => {}
+            UnresolvedType::SimpleBuiltin(_)
+            | UnresolvedType::SimpleCustom { .. }
+            | UnresolvedType::GenericParam(_)
+            | UnresolvedType::GenericResolvedInstance { .. } => {}
         }
     }
 
@@ -285,6 +360,7 @@ impl Program {
                         source_store,
                         had_error,
                         unresolved_type,
+                        None,
                     );
                 }
                 _ => {}
@@ -303,7 +379,14 @@ impl Program {
         source_store: &SourceStorage,
     ) -> UnresolvedStruct {
         for field in &mut def.fields {
-            self.resolve_idents_in_type(item, interner, source_store, had_error, &mut field.kind);
+            self.resolve_idents_in_type(
+                item,
+                interner,
+                source_store,
+                had_error,
+                &mut field.kind,
+                def.generic_params,
+            );
         }
 
         def
@@ -395,6 +478,7 @@ impl Program {
                     source_store,
                     &mut had_error,
                     memory_type,
+                    None,
                 );
 
                 self.item_signatures_unresolved.insert(item_id, sig);
@@ -403,7 +487,14 @@ impl Program {
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 for (kind, _) in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
-                    self.resolve_idents_in_type(item, interner, source_store, &mut had_error, kind);
+                    self.resolve_idents_in_type(
+                        item,
+                        interner,
+                        source_store,
+                        &mut had_error,
+                        kind,
+                        None,
+                    );
                 }
 
                 self.item_signatures_unresolved.insert(item_id, sig);

@@ -209,10 +209,10 @@ fn parse_unresolved_types(
             continue;
         };
 
-        let lexeme = interner.resolve_lexeme(ident.lexeme);
         let mut type_span = ident.location;
 
-        let base_type = if lexeme == "ptr" {
+        let base_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ParenthesisOpen)
+        {
             let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                 &mut token_iter,
                 ident,
@@ -249,7 +249,17 @@ fn parse_unresolved_types(
 
             let (unresolved_type, span) = unresolved_types.pop().unwrap();
             type_span = type_span.merge(span);
-            UnresolvedType::Pointer(Box::new(unresolved_type))
+            let lexeme = interner.resolve_lexeme(ident.lexeme);
+            if lexeme == "ptr" {
+                UnresolvedType::Pointer(Box::new(unresolved_type))
+            } else {
+                let ident = parse_ident(&mut token_iter, interner, source_store, ident)
+                    .recover(&mut had_error, vec![ident]);
+                UnresolvedType::GenericInstance {
+                    type_name: ident,
+                    param: Box::new(unresolved_type),
+                }
+            }
         } else {
             let ident = parse_ident(&mut token_iter, interner, source_store, ident)
                 .recover(&mut had_error, vec![ident]);
@@ -1768,6 +1778,24 @@ fn parse_struct<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
+    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ParenthesisOpen)
+    {
+        let (_, mut generic_idents, _) = parse_delimited_token_list(
+            token_iter,
+            name_token,
+            Some(1),
+            ("`(`", |t| t == TokenKind::ParenthesisOpen),
+            ("`ident`", |t| t == TokenKind::Ident),
+            ("`)`", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        )
+        .recover(&mut had_error, (name_token, Vec::new(), name_token));
+        Some(generic_idents.pop().unwrap())
+    } else {
+        None
+    };
+
     let is_token = expect_token(
         token_iter,
         "is",
@@ -1837,6 +1865,7 @@ fn parse_struct<'a>(
     let struct_def = UnresolvedStruct {
         name: name_token,
         fields,
+        generic_params,
     };
 
     program.new_struct(source_store, &mut had_error, module_id, struct_def);

@@ -57,7 +57,10 @@ pub fn pack_struct(
     type_id: TypeId,
 ) {
     let type_info = type_store.get_type_info(type_id);
-    if !matches!(type_info.kind, TypeKind::Struct(_)) {
+    if !matches!(
+        type_info.kind,
+        TypeKind::Struct(_) | TypeKind::StructInstance(_)
+    ) {
         diagnostics::emit_error(
             op.token.location,
             "cannot pack that type",
@@ -225,7 +228,7 @@ pub fn unpack(
 
     let length = match input_type_info.kind {
         TypeKind::Array { length, .. } => length,
-        TypeKind::Struct(_) => {
+        TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
             let struct_info = type_store.get_struct_def(input_type_id);
             struct_info.fields.len()
         }

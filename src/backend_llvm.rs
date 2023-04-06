@@ -27,7 +27,7 @@ use crate::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
         ItemId, ItemKind, Program,
     },
-    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{IntWidth, ResolvedFieldKind, Signedness, TypeId, TypeKind, TypeStore},
     Args,
 };
 
@@ -417,12 +417,15 @@ impl<'ctx> CodeGen<'ctx> {
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
                 .into(),
-            TypeKind::Struct(_) => {
+            TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
                 let struct_def = type_store.get_struct_def(kind);
                 let fields: Vec<BasicTypeEnum> = struct_def
                     .fields
                     .iter()
-                    .map(|f| self.get_type(type_store, f.kind))
+                    .map(|f| {
+                        let ResolvedFieldKind::Fixed(f_kind) = f.kind else { unreachable!() };
+                        self.get_type(type_store, f_kind)
+                    })
                     .collect();
 
                 self.ctx.struct_type(&fields, false).into()
@@ -813,7 +816,8 @@ impl<'ctx> CodeGen<'ctx> {
                 TypeKind::Integer { .. }
                 | TypeKind::Pointer(_)
                 | TypeKind::Bool
-                | TypeKind::Struct(_) => (alloc_type_id, 1, false),
+                | TypeKind::Struct(_)
+                | TypeKind::StructInstance(_) => (alloc_type_id, 1, false),
             };
 
             let mem_type = self.get_type(type_store, store_type_id);

@@ -12,7 +12,7 @@ use crate::{
         Program,
     },
     source_file::SourceStorage,
-    type_store::{Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{ResolvedFieldKind, Signedness, TypeId, TypeKind, TypeStore},
 };
 
 pub fn pack_array(
@@ -101,10 +101,11 @@ pub fn pack_struct(
 
     for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
         let Some([input_type_id]) = analyzer.value_types([input_id]) else { continue };
-        let expected_store_type = type_store.get_type_info(field_def.kind);
+        let ResolvedFieldKind::Fixed(field_def_kind) = field_def.kind else { unreachable!() };
+        let expected_store_type = type_store.get_type_info(field_def_kind);
         let value_type_info = type_store.get_type_info(input_type_id);
 
-        if input_type_id != field_def.kind
+        if input_type_id != field_def_kind
             && !matches!(
                 (expected_store_type.kind, value_type_info.kind),
                 (
@@ -170,10 +171,11 @@ pub fn unpack(
                 analyzer.set_value_type(output_id, type_id);
             }
         }
-        TypeKind::Struct(_) => {
+        TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
             let fields = type_store.get_struct_def(aggr_type_id);
             for (output_id, field_info) in outputs.iter().zip(&fields.fields) {
-                analyzer.set_value_type(*output_id, field_info.kind);
+                let ResolvedFieldKind::Fixed(field_info_kind) = field_info.kind else { unreachable!() };
+                analyzer.set_value_type(*output_id, field_info_kind);
             }
         }
         _ => {
@@ -251,7 +253,10 @@ pub fn extract_array(
             }
         }
 
-        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct(_) => {
+        TypeKind::Integer { .. }
+        | TypeKind::Bool
+        | TypeKind::Struct(_)
+        | TypeKind::StructInstance(_) => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -354,7 +359,10 @@ pub fn insert_array(
             }
         }
 
-        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::Struct(_) => {
+        TypeKind::Integer { .. }
+        | TypeKind::Bool
+        | TypeKind::Struct(_)
+        | TypeKind::StructInstance(_) => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -469,7 +477,7 @@ pub fn insert_struct(
     }
 
     let actual_struct_type_id = match input_struct_type_info.kind {
-        TypeKind::Struct(_) => input_struct_type_id,
+        TypeKind::Struct(_) | TypeKind::StructInstance(_) => input_struct_type_id,
         TypeKind::Pointer(sub_type) => {
             let ptr_type_info = type_store.get_type_info(sub_type);
             if let TypeKind::Struct(_) = ptr_type_info.kind {
@@ -541,9 +549,10 @@ pub fn insert_struct(
         return;
     };
 
-    let field_type_info = type_store.get_type_info(field_info.kind);
+    let ResolvedFieldKind::Fixed(field_info_kind) = field_info.kind else { unreachable!() };
+    let field_type_info = type_store.get_type_info(field_info_kind);
 
-    if data_type_id != field_info.kind
+    if data_type_id != field_info_kind
         && !matches!(
             (field_type_info.kind, data_type_info.kind),
             (
@@ -614,7 +623,7 @@ pub fn extract_struct(
     };
 
     let actual_struct_type_id = match input_struct_type_info.kind {
-        TypeKind::Struct(_) => input_struct_type_id,
+        TypeKind::Struct(_) | TypeKind::StructInstance(_) => input_struct_type_id,
         TypeKind::Pointer(sub_type) => {
             let ptr_type_info = type_store.get_type_info(sub_type);
             if let TypeKind::Struct(_) = ptr_type_info.kind {
@@ -686,7 +695,8 @@ pub fn extract_struct(
         return;
     };
 
-    analyzer.set_value_type(output_data_id, field_info.kind);
+    let ResolvedFieldKind::Fixed(field_info_kind) = field_info.kind else { unreachable!() };
+    analyzer.set_value_type(output_data_id, field_info_kind);
 }
 
 pub fn load(
