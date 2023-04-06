@@ -1,4 +1,6 @@
 import std::io::FD
+import std::Result
+import std::SimpleResult
 
 const SYS_OPEN [u64] is 0x02 end
 const SYS_CLOSE [u64] is 0x03 end
@@ -14,15 +16,10 @@ const FLAG_READONLY [u64] is 0x0 end         // Q_RDONLY
 const FLAG_WRITEONLY [u64] is 0x1 end        // O_WRONLY
 const FLAG_READWRITE [u64] is 0x2 end        // O_RDWR
 
-struct OpenResult is
-    field fd FD
-    field errno u64
-end
-
 proc open [
     String  // Null-terminated path to the file
     u64     // Flags for opening
-] to [OpenResult] is
+] to [Result(FD)] is
     // The syscall requires a null-terminated string.
     // Check for null termination
     if over xtr(len) 1- std::string::at 0 != do
@@ -30,7 +27,7 @@ proc open [
 
         0 pack(FD)
         0 1-
-        pack(OpenResult)
+        swap pack(Result(FD))
         return
     end
 
@@ -43,18 +40,18 @@ proc open [
     // An error ocurred
     if dup cast(s64) 0< do
         cast(s64) 0 swap - cast(u64)
-        0 pack(FD) swap
+        0 pack(FD)
     else
-        pack(FD) 0
+        pack(FD) 0 swap
     end
 
-    pack(OpenResult)
+    pack(Result(FD))
 end
 
 // Opens a file in read-only mode.
 proc open_read [
     String // Null-terminated path
-] to [OpenResult] is
+] to [Result(FD)] is
     FLAG_READONLY open
 end
 
@@ -62,7 +59,7 @@ end
 proc open_write [
     String  // Null-terminated path
     bool    // Append if it already exists
-] to [OpenResult] is
+] to [Result(FD)] is
     FLAG_READWRITE FLAG_CREATE or swap
     if do FLAG_APPEND or end
     open
@@ -73,7 +70,7 @@ end
 proc create [
     String // Null-terminated path
     bool // Force new file.
-] to [OpenResult] is
+] to [Result(FD)] is
     FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
     if do
         FLAG_CREATE_NEW or
@@ -82,9 +79,9 @@ proc create [
     open
 end
 
-proc close [FD] to [std::SysResult] is
+proc close [FD] to [SimpleResult] is
     xtrd(fd) SYS_CLOSE swap syscall(2)
-    cast(s64) 0 swap - cast(u64) pack(std::SysResult)
+    cast(s64) 0 swap - cast(u64) pack(SimpleResult)
 end
 
 struct Timespec is
@@ -110,19 +107,14 @@ struct Stat is
     field __reserved s64[3]
 end
 
-struct FStatResult is
-    field stat Stat
-    field errno u64
-end
-
-proc fstat [FD] to [FStatResult] is
+proc fstat [FD] to [Result(Stat)] is
     memory buf is Stat end
     xtrd(fd)
     SYS_FSTAT swap buf syscall(3) cast(s64)
     if dup 0< do
-        0 swap - cast(u64) buf@ swap
+        0 swap - cast(u64) buf@
     else
-        drop buf@ 0
+        drop buf@ 0 swap
     end
-    pack(FStatResult)
+    pack(Result(Stat))
 end

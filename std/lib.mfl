@@ -4,4 +4,11 @@ module mem
 module string
 module term
 
-struct SysResult is field errno u64 end
+struct Result(T) is
+    field errno u64
+    field data T
+end
+
+struct SimpleResult is
+    field errno u64
+end

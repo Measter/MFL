@@ -1,3 +1,6 @@
+import std::Result
+import std::SimpleResult
+
 const PROT_READ [u64] is 0x01 end
 const PROT_WRITE [u64] is 0x02 end
 const MAP_ANONYMOUS [u64] is 0x20 end
@@ -6,14 +9,9 @@ const MAP_PRIVATE [u64] is 0x02 end
 const SYS_MMAP [u64] is 0x09 end
 const SYS_MUNMAP [u64] is 0x0B end
 
-struct AllocResult is
-    field pointer ptr(u8)
-    field errno u64
-end
-
 proc alloc [
     u64 // Size in bytes of the allocation
-] to [AllocResult] is
+] to [Result(ptr(u8))] is
     // We need to store space for the length in the allocation.
     8+ dup
 
@@ -33,7 +31,7 @@ proc alloc [
         rot(3>1) drop(2)
         // Store a null pointer.
         0(u64) cast(ptr(u8))
-        swap pack(AllocResult) return
+        pack(Result(ptr(u8))) return
     end
     drop 0
     // [len ptr errcode]
@@ -42,40 +40,41 @@ proc alloc [
     // [ptr errcode len ptr]
     cast(ptr(u64)) !
     // [ptr errcode]
-    swap 8+ cast(ptr(u8)) swap
+    swap 8+ cast(ptr(u8))
 
-    pack(AllocResult)
+    pack(Result(ptr(u8)))
 end
 
-proc free [ptr(u8)] to [std::SysResult] is
+proc free [ptr(u8)] to [SimpleResult] is
     // The size is stored in the 8 bytes before the allocation.
     8- dup @
     // [ptr len]
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0 swap - cast(u64)
-    pack(std::SysResult)
+    pack(SimpleResult)
 end
 
-struct MMapResult is
+struct MMap is
     field pointer ptr(u8)
     field length u64
-    field errno u64
 end
 
 proc mmap_file [
     std::io::FD
     u64 // Protection flags. Must match the FD.
-] to [MMapResult] is
+] to [Result(MMap)] is
     over std::fs::fstat
     if xtr(errno) 0!= do
         rot(3>1) drop(2)
         xtrd(errno)
         0(u64) cast(ptr(u8)) // Null pointer
         0                    // length
-        rot(3<1) pack(MMapResult) return
+        pack(MMap)
+        pack(Result(MMap)) return
     end
+    xtrd(data)
 
-    xtrd(stat) xtrd(st_size) 0
+    xtrd(st_size) 0
     // [FD PROT length addr]
     rev(4)
     //[addr length Prot FD]
@@ -99,18 +98,18 @@ proc mmap_file [
         0(u64) cast(ptr(u8))
         // And a 0 length
         0
-        rot(3<1)
+        pack(MMap)
     else
-        drop cast(ptr(u8)) swap 0
+        drop cast(ptr(u8)) swap pack(MMap) 0 swap
     end
 
-    pack(MMapResult) return
+    pack(Result(MMap)) return
 end
 
-proc unmap_file [MMapResult] to [std::SysResult] is
-    unpack drop
+proc unmap_file [MMap] to [SimpleResult] is
+    unpack
     // [ptr len]
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0 swap - cast(u64)
-    pack(std::SysResult)
+    pack(SimpleResult)
 end
