@@ -60,7 +60,7 @@ pub fn pack_struct(
     if !matches!(type_info.kind, TypeKind::Struct(_)) {
         diagnostics::emit_error(
             op.token.location,
-            "cannot unpack that type",
+            "cannot pack that type",
             [Label::new(op.token.location).with_color(Color::Red)],
             None,
             source_store,
