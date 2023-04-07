@@ -233,7 +233,7 @@ impl Program {
                         source_store,
                         had_error,
                         param,
-                        None,
+                        generic_params,
                     );
 
                     *unresolved_type = UnresolvedType::GenericResolvedInstance {
