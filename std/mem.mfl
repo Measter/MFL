@@ -9,11 +9,15 @@ const MAP_PRIVATE [u64] is 0x02 end
 const SYS_MMAP [u64] is 0x09 end
 const SYS_MUNMAP [u64] is 0x0B end
 
+struct MMap is
+    field pointer ptr(u8)
+    field length u64
+end
+
 proc alloc [
     u64 // Size in bytes of the allocation
-] to [Result(ptr(u8))] is
-    // We need to store space for the length in the allocation.
-    8+ dup
+] to [Result(MMap)] is
+    dup
 
     SYS_MMAP 0 rot(3<1)
     PROT_READ PROT_WRITE or
@@ -29,34 +33,25 @@ proc alloc [
         0 swap - cast(u64)
         // Drop the len and pointer
         rot(3>1) drop(2)
-        // Store a null pointer.
-        0(u64) cast(ptr(u8))
-        pack(Result(ptr(u8))) return
+        // Store a null pointer and 0 length.
+        0(u64) cast(ptr(u8)) 0
+        pack(MMap)
+        pack(Result(MMap)) return
     end
     drop 0
     // [len ptr errcode]
-    // Store the lenth in the allocation.
-    rot(3>2) over(2)
-    // [ptr errcode len ptr]
-    cast(ptr(u64)) !
-    // [ptr errcode]
-    swap 8+ cast(ptr(u8))
-
-    pack(Result(ptr(u8)))
+    rev(3)
+    swap cast(ptr(u8)) swap
+    pack(MMap)
+    pack(Result(MMap))
 end
 
-proc free [ptr(u8)] to [SimpleResult] is
-    // The size is stored in the 8 bytes before the allocation.
-    8- dup @
+proc free [MMap] to [SimpleResult] is
+    unpack
     // [ptr len]
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0 swap - cast(u64)
     pack(SimpleResult)
-end
-
-struct MMap is
-    field pointer ptr(u8)
-    field length u64
 end
 
 proc mmap_file [
@@ -106,10 +101,3 @@ proc mmap_file [
     pack(Result(MMap)) return
 end
 
-proc unmap_file [MMap] to [SimpleResult] is
-    unpack
-    // [ptr len]
-    SYS_MUNMAP rot(3>1) syscall(3)
-    cast(s64) 0 swap - cast(u64)
-    pack(SimpleResult)
-end
