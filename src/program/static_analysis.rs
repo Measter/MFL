@@ -1223,7 +1223,8 @@ fn analyze_block(
                         TypeKind::Bool
                         | TypeKind::Array { .. }
                         | TypeKind::Struct(_)
-                        | TypeKind::StructInstance(_) => {
+                        | TypeKind::GenericStructBase(_)
+                        | TypeKind::GenericStructInstance(_) => {
                             diagnostics::emit_error(
                                 op.token.location,
                                 format!(
@@ -1250,7 +1251,8 @@ fn analyze_block(
                         TypeKind::Bool
                         | TypeKind::Array { .. }
                         | TypeKind::Struct(_)
-                        | TypeKind::StructInstance(_) => {}
+                        | TypeKind::GenericStructBase(_)
+                        | TypeKind::GenericStructInstance(_) => {}
                     }
                 }
 

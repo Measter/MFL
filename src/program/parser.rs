@@ -12,7 +12,10 @@ use crate::{
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     source_file::{SourceLocation, SourceStorage},
-    type_store::{IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType},
+    type_store::{
+        IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType,
+        UnresolvedTypeTokens,
+    },
 };
 
 use super::{ItemId, ItemKind, ItemSignatureUnresolved, ModuleQueueType, Program};
@@ -190,9 +193,9 @@ fn parse_unresolved_types(
     source_store: &SourceStorage,
     prev: Token,
     tokens: Vec<Token>,
-) -> Result<Vec<(UnresolvedType, SourceLocation)>, ()> {
+) -> Result<Vec<(UnresolvedTypeTokens, SourceLocation)>, ()> {
     let mut had_error = false;
-    let mut types: Vec<(UnresolvedType, SourceLocation)> = Vec::new();
+    let mut types: Vec<(UnresolvedTypeTokens, SourceLocation)> = Vec::new();
     let mut token_iter = tokens.iter().enumerate().peekable();
 
     while token_iter.peek().is_some() {
@@ -251,11 +254,11 @@ fn parse_unresolved_types(
             type_span = type_span.merge(span);
             let lexeme = interner.resolve_lexeme(ident.lexeme);
             if lexeme == "ptr" {
-                UnresolvedType::Pointer(Box::new(unresolved_type))
+                UnresolvedTypeTokens::Pointer(Box::new(unresolved_type))
             } else {
                 let ident = parse_ident(&mut token_iter, interner, source_store, ident)
                     .recover(&mut had_error, vec![ident]);
-                UnresolvedType::GenericInstance {
+                UnresolvedTypeTokens::GenericInstance {
                     type_name: ident,
                     param: Box::new(unresolved_type),
                 }
@@ -263,7 +266,7 @@ fn parse_unresolved_types(
         } else {
             let ident = parse_ident(&mut token_iter, interner, source_store, ident)
                 .recover(&mut had_error, vec![ident]);
-            UnresolvedType::Simple(ident)
+            UnresolvedTypeTokens::Simple(ident)
         };
 
         let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::SquareBracketOpen)
@@ -287,7 +290,7 @@ fn parse_unresolved_types(
             let length = parse_integer_lexeme(len_token, interner, source_store)?;
             type_span = type_span.merge(close_bracket.location);
 
-            UnresolvedType::Array(Box::new(base_type), length)
+            UnresolvedTypeTokens::Array(Box::new(base_type), length)
         } else {
             base_type
         };
@@ -608,7 +611,9 @@ pub fn parse_item_body(
                     }
 
                     let (unresolved_type, _) = unresolved_types.pop().unwrap();
-                    OpCode::UnresolvedPackStruct { unresolved_type }
+                    OpCode::UnresolvedPackStruct {
+                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
+                    }
                 }
             }
             TokenKind::Unpack => OpCode::Unpack,
@@ -781,8 +786,12 @@ pub fn parse_item_body(
                 let (unresolved_type, _) = unresolved_types.pop().unwrap();
 
                 match token.kind {
-                    TokenKind::Cast => OpCode::UnresolvedCast { unresolved_type },
-                    TokenKind::SizeOf => OpCode::UnresolvedSizeOf { unresolved_type },
+                    TokenKind::Cast => OpCode::UnresolvedCast {
+                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
+                    },
+                    TokenKind::SizeOf => OpCode::UnresolvedSizeOf {
+                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
+                    },
                     _ => unreachable!(),
                 }
             }
@@ -1375,7 +1384,9 @@ fn parse_memory<'a>(
         exit_stack_location: name_token.location,
         entry_stack: Vec::new(),
         entry_stack_location: name_token.location,
-        memory_type: unresolved_store_type.pop().map(|(t, _)| t),
+        memory_type: unresolved_store_type
+            .pop()
+            .map(|(t, _)| UnresolvedType::Tokens(t)),
         memory_type_location: store_type_location,
     };
 
@@ -1448,9 +1459,15 @@ fn parse_function_header<'a>(
             .recover(&mut had_error, Vec::new());
 
     let sig = ItemSignatureUnresolved {
-        exit_stack: unresolved_exit_types,
+        exit_stack: unresolved_exit_types
+            .into_iter()
+            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
+            .collect(),
         exit_stack_location,
-        entry_stack: unresolved_entry_types,
+        entry_stack: unresolved_entry_types
+            .into_iter()
+            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
+            .collect(),
         entry_stack_location,
         memory_type: None,
         memory_type_location: name.location,
@@ -1544,7 +1561,10 @@ fn parse_const_header<'a>(
             .recover(&mut had_error, Vec::new());
 
     let sig = ItemSignatureUnresolved {
-        exit_stack: unresolved_exit_types,
+        exit_stack: unresolved_exit_types
+            .into_iter()
+            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
+            .collect(),
         exit_stack_location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,
@@ -1583,7 +1603,10 @@ fn parse_assert_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Token, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![(UnresolvedType::Simple(vec![name]), name.location)],
+        exit_stack: vec![(
+            UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![name])),
+            name.location,
+        )],
         exit_stack_location: name.location,
         entry_stack: Vec::new(),
         entry_stack_location: name.location,
@@ -1853,7 +1876,7 @@ fn parse_struct<'a>(
 
         fields.push(UnresolvedField {
             name: field_name_token,
-            kind: unresolved_store_type.pop().unwrap().0,
+            kind: UnresolvedType::Tokens(unresolved_store_type.pop().unwrap().0),
         });
         prev_token = end_token;
 

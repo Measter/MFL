@@ -1,0 +1,40 @@
+import std::term::write_ui_ln
+
+struct Foo(T) is
+    field a T
+    field b T[3]
+    field c ptr(T)
+    field d Bar(T)
+    field e Bar(u16)
+end
+
+struct Bar(T) is
+    field a T
+end
+
+
+proc make_foo [] to [Foo(u32)] is 
+    0
+    1(u32) 2 3 pack(3)
+    sizeof(u32) std::mem::alloc xtrd(data) xtrd(pointer) cast(ptr(u32))
+    dup 23 swap !
+    56 pack(Bar(u32))
+    123 pack(Bar(u16))
+    pack(Foo(u32))
+end
+
+proc entry [] to [] is
+    make_foo
+
+    xtr(a) write_ui_ln
+
+    xtr(b) unpack
+    write_ui_ln write_ui_ln write_ui_ln
+
+    xtr(c)
+    @ write_ui_ln
+
+    xtr(d) xtrd(a) write_ui_ln
+    xtr(e) xtrd(a) write_ui_ln
+    drop
+end

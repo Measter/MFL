@@ -15,7 +15,9 @@ use crate::{
     },
     simulate::SimulatorValue,
     source_file::{FileId, SourceLocation, SourceStorage},
-    type_store::{BuiltinTypes, UnresolvedStruct, UnresolvedType},
+    type_store::{
+        BuiltinTypes, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds, UnresolvedTypeTokens,
+    },
 };
 
 impl Program {
@@ -123,11 +125,11 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        unresolved_type: &mut UnresolvedType,
+        unresolved_type: &UnresolvedTypeTokens,
         generic_params: Option<Token>,
-    ) {
-        match unresolved_type {
-            UnresolvedType::Simple(unresolved_ident) => {
+    ) -> Result<UnresolvedTypeIds, ()> {
+        let res = match unresolved_type {
+            UnresolvedTypeTokens::Simple(unresolved_ident) => {
                 let item_name = unresolved_ident
                     .last()
                     .expect("ICE: empty unresolved ident");
@@ -151,43 +153,57 @@ impl Program {
                         source_store,
                     );
                     *had_error = true;
+                    return Err(());
                 } else if let Some(builtin) = builtin_name {
-                    *unresolved_type = UnresolvedType::SimpleBuiltin(builtin);
+                    UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else if unresolved_ident.len() == 1
                     && generic_params.map(|t| t.lexeme) == Some(item_name.lexeme)
                 {
-                    *unresolved_type = UnresolvedType::GenericParam(item_name.lexeme);
+                    UnresolvedTypeIds::SimpleGenericParam(*item_name)
                 } else {
-                    let Ok(ident) = self.resolve_single_ident(
+                    let ident = self.resolve_single_ident(
                         item_header,
                         interner,
                         source_store,
                         had_error,
                         unresolved_ident,
-                    ) else {
-                        return;
-                    };
+                    )?;
 
-                    *unresolved_type = UnresolvedType::SimpleCustom {
+                    UnresolvedTypeIds::SimpleCustom {
                         id: ident,
                         token: Token {
                             location: path_location,
                             ..*item_name
                         },
-                    };
-                };
+                    }
+                }
             }
-            UnresolvedType::Array(sub_type, _) | UnresolvedType::Pointer(sub_type) => self
-                .resolve_idents_in_type(
+            UnresolvedTypeTokens::Array(sub_type, length) => {
+                let sub_type = self.resolve_idents_in_type(
                     item_header,
                     interner,
                     source_store,
                     had_error,
                     sub_type,
                     generic_params,
-                ),
+                )?;
 
-            UnresolvedType::GenericInstance {
+                UnresolvedTypeIds::Array(Box::new(sub_type), *length)
+            }
+            UnresolvedTypeTokens::Pointer(sub_type) => {
+                let sub_type = self.resolve_idents_in_type(
+                    item_header,
+                    interner,
+                    source_store,
+                    had_error,
+                    sub_type,
+                    generic_params,
+                )?;
+
+                UnresolvedTypeIds::Pointer(Box::new(sub_type))
+            }
+
+            UnresolvedTypeTokens::GenericInstance {
                 type_name: unresolved_ident,
                 param,
             } => {
@@ -214,8 +230,9 @@ impl Program {
                         source_store,
                     );
                     *had_error = true;
+                    return Err(());
                 } else if let Some(builtin) = builtin_name {
-                    *unresolved_type = UnresolvedType::SimpleBuiltin(builtin);
+                    UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else {
                     let Ok(ident) = self.resolve_single_ident(
                         item_header,
@@ -224,35 +241,31 @@ impl Program {
                         had_error,
                         unresolved_ident,
                     ) else {
-                        return;
+                        return Err(());
                     };
 
-                    self.resolve_idents_in_type(
+                    let param = self.resolve_idents_in_type(
                         item_header,
                         interner,
                         source_store,
                         had_error,
                         param,
                         generic_params,
-                    );
+                    )?;
 
-                    *unresolved_type = UnresolvedType::GenericResolvedInstance {
+                    UnresolvedTypeIds::GenericInstance {
                         id: ident,
                         id_token: Token {
                             location: path_location,
                             ..*item_name
                         },
-                        param: param.clone(),
-                    };
-                };
+                        param: Box::new(param),
+                    }
+                }
             }
+        };
 
-            // Nothing to do here.
-            UnresolvedType::SimpleBuiltin(_)
-            | UnresolvedType::SimpleCustom { .. }
-            | UnresolvedType::GenericParam(_)
-            | UnresolvedType::GenericResolvedInstance { .. } => {}
-        }
+        Ok(res)
     }
 
     pub fn resolve_idents_in_block(
@@ -354,14 +367,13 @@ impl Program {
                 OpCode::UnresolvedCast { unresolved_type }
                 | OpCode::UnresolvedPackStruct { unresolved_type }
                 | OpCode::UnresolvedSizeOf { unresolved_type } => {
-                    self.resolve_idents_in_type(
-                        item,
-                        interner,
-                        source_store,
-                        had_error,
-                        unresolved_type,
-                        None,
-                    );
+                    let UnresolvedType::Tokens(ty) = unresolved_type else { panic!("ICE: tried to resolve type on resolved type") };
+
+                    let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, ty, None) else {
+                        *had_error = true;
+                        continue;
+                    };
+                    *unresolved_type = UnresolvedType::Id(new_ty);
                 }
                 _ => {}
             }
@@ -379,14 +391,21 @@ impl Program {
         source_store: &SourceStorage,
     ) -> UnresolvedStruct {
         for field in &mut def.fields {
-            self.resolve_idents_in_type(
+            let UnresolvedType::Tokens(field_kind) = &field.kind else { unreachable!() };
+
+            let Ok(new_kind) = self.resolve_idents_in_type(
                 item,
                 interner,
                 source_store,
                 had_error,
-                &mut field.kind,
+                field_kind,
                 def.generic_params,
-            );
+            ) else {
+                *had_error = true;
+                continue;
+            };
+
+            field.kind = UnresolvedType::Id(new_kind);
         }
 
         def
@@ -472,14 +491,21 @@ impl Program {
             } else if item.kind() == ItemKind::Memory {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 let memory_type = sig.memory_type.as_mut().unwrap();
-                self.resolve_idents_in_type(
+                let UnresolvedType::Tokens(memory_type_tokens) = memory_type else {
+                    unreachable!()
+                };
+                let Ok(new_kind) = self.resolve_idents_in_type(
                     item,
                     interner,
                     source_store,
                     &mut had_error,
-                    memory_type,
+                    memory_type_tokens,
                     None,
-                );
+                ) else {
+                    had_error = true;
+                    continue;
+                };
+                *memory_type = UnresolvedType::Id(new_kind);
 
                 self.item_signatures_unresolved.insert(item_id, sig);
             } else if item.kind() == ItemKind::Module {
@@ -487,14 +513,22 @@ impl Program {
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 for (kind, _) in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
-                    self.resolve_idents_in_type(
+                    let UnresolvedType::Tokens(kind_tokens) = kind else {
+                        unreachable!()
+                    };
+                    let Ok(new_kind) = self.resolve_idents_in_type(
                         item,
                         interner,
                         source_store,
                         &mut had_error,
-                        kind,
+                        kind_tokens,
                         None,
-                    );
+                    ) else {
+                        had_error = true;
+                        continue;
+                    };
+
+                    *kind = UnresolvedType::Id(new_kind);
                 }
 
                 self.item_signatures_unresolved.insert(item_id, sig);

@@ -105,7 +105,8 @@ pub enum TypeKind {
     Pointer(TypeId),
     Bool,
     Struct(ItemId),
-    StructInstance(ItemId),
+    GenericStructBase(ItemId),
+    GenericStructInstance(ItemId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -157,22 +158,37 @@ impl From<(Signedness, IntWidth)> for BuiltinTypes {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedStruct {
+pub struct FixedResolvedStruct {
     pub name: Token,
-    pub fields: Vec<ResolvedField>,
-    pub generic_params: Option<Spur>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ResolvedFieldKind {
-    Fixed(TypeId),
-    Generic(Spur),
+    pub fields: Vec<FixedResolvedField>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedField {
+pub struct FixedResolvedField {
     pub name: Token,
-    pub kind: ResolvedFieldKind,
+    pub kind: TypeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericPartiallyResolvedStruct {
+    pub name: Token,
+    pub fields: Vec<GenericPartiallyResolvedField>,
+    pub generic_param: Spur,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericPartiallyResolvedField {
+    name: Token,
+    kind: GenericPartiallyResolvedFieldKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum GenericPartiallyResolvedFieldKind {
+    Fixed(TypeId),
+    GenericParamSimple,                  // T
+    GenericParamPointer(Box<Self>),      // ptr(T)
+    GenericParamArray(Box<Self>, usize), // T[N]
+    GenericStruct(ItemId, Box<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
 }
 
 #[derive(Debug, Clone)]
@@ -188,26 +204,49 @@ pub struct UnresolvedField {
     pub kind: UnresolvedType,
 }
 
+// Used prior to ident resolution
 #[derive(Debug, Clone)]
-pub enum UnresolvedType {
+pub enum UnresolvedTypeTokens {
     Simple(Vec<Token>),
-    SimpleBuiltin(BuiltinTypes),
+    Array(Box<UnresolvedTypeTokens>, usize),
+    Pointer(Box<UnresolvedTypeTokens>),
+    GenericInstance {
+        type_name: Vec<Token>,
+        param: Box<UnresolvedTypeTokens>,
+    },
+}
+
+// Used after ident resolution
+#[derive(Debug, Clone)]
+pub enum UnresolvedTypeIds {
     SimpleCustom {
         id: ItemId,
         token: Token,
     },
-    Array(Box<UnresolvedType>, usize),
-    Pointer(Box<UnresolvedType>),
-    GenericParam(Spur),
+    SimpleBuiltin(BuiltinTypes),
+    SimpleGenericParam(Token),
+    Array(Box<UnresolvedTypeIds>, usize),
+    Pointer(Box<UnresolvedTypeIds>),
     GenericInstance {
-        type_name: Vec<Token>,
-        param: Box<UnresolvedType>,
-    },
-    GenericResolvedInstance {
         id: ItemId,
         id_token: Token,
-        param: Box<UnresolvedType>,
+        param: Box<UnresolvedTypeIds>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum UnresolvedType {
+    Tokens(UnresolvedTypeTokens),
+    Id(UnresolvedTypeIds),
+}
+
+impl UnresolvedType {
+    pub fn as_id(&self) -> &UnresolvedTypeIds {
+        match self {
+            UnresolvedType::Tokens(_) => panic!("ICE: called as_id on Tokens"),
+            UnresolvedType::Id(id) => id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -236,10 +275,12 @@ pub struct TypeStore {
     array_map: HashMap<(TypeId, usize), TypeId>,
     builtins: [TypeId; 10],
 
+    // Maps ItemIds to TypeIds of non-generic structs.
     struct_id_map: HashMap<ItemId, TypeId>,
-    struct_defs: HashMap<TypeId, ResolvedStruct>,
+    fixed_struct_defs: HashMap<TypeId, FixedResolvedStruct>,
     builtin_struct_item_ids: HashSet<ItemId>,
-    generic_struct_map: HashMap<(TypeId, TypeId), TypeId>,
+    generic_struct_id_map: HashMap<TypeId, GenericPartiallyResolvedStruct>,
+    generic_struct_instance_map: HashMap<(TypeId, TypeId), TypeId>,
 
     type_sizes: HashMap<TypeId, TypeSize>,
 }
@@ -252,9 +293,10 @@ impl TypeStore {
             array_map: HashMap::new(),
             builtins: [TypeId(0); 10],
             struct_id_map: HashMap::new(),
-            struct_defs: HashMap::new(),
+            fixed_struct_defs: HashMap::new(),
             builtin_struct_item_ids: HashSet::new(),
-            generic_struct_map: HashMap::new(),
+            generic_struct_id_map: HashMap::new(),
+            generic_struct_instance_map: HashMap::new(),
             type_sizes: HashMap::new(),
         };
         s.init_builtins(interner);
@@ -364,7 +406,7 @@ impl TypeStore {
             },
         );
 
-        if let TypeKind::Struct(struct_id) = kind {
+        if let TypeKind::Struct(struct_id) | TypeKind::GenericStructBase(struct_id) = kind {
             self.struct_id_map.insert(struct_id, id);
         }
 
@@ -374,38 +416,30 @@ impl TypeStore {
     pub fn resolve_type(
         &mut self,
         interner: &mut Interners,
-        tp: &UnresolvedType,
+        tp: &UnresolvedTypeIds,
     ) -> Result<TypeInfo, Token> {
         match tp {
-            UnresolvedType::Simple(_) | UnresolvedType::GenericInstance { .. } => {
-                panic!("ICE: All idents should be resolved")
-            }
-
-            UnresolvedType::SimpleCustom { id, token } => self
+            UnresolvedTypeIds::SimpleCustom { id, token } => self
                 .struct_id_map
                 .get(id)
                 .map(|id| self.kinds[id])
                 .ok_or(*token),
-            UnresolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
-            UnresolvedType::Array(at, length) => {
+            UnresolvedTypeIds::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
+            UnresolvedTypeIds::Array(at, length) => {
                 let inner = self.resolve_type(interner, at)?;
                 Ok(self.get_array(interner, inner.id, *length))
             }
-            UnresolvedType::Pointer(pt) => {
+            UnresolvedTypeIds::Pointer(pt) => {
                 let pointee = self.resolve_type(interner, pt)?;
                 Ok(self.get_pointer(interner, pointee.id))
             }
-            UnresolvedType::GenericResolvedInstance {
-                id,
-                id_token,
-                param,
-            } => {
-                let base_struct_id = *self.struct_id_map.get(id).ok_or(*id_token)?;
+            UnresolvedTypeIds::GenericInstance { id, param, .. } => {
+                let base_struct_id = self.struct_id_map[id];
                 let param_type_id = self.resolve_type(interner, param)?.id;
 
-                Ok(self.get_generic_struct_instance(interner, *id, base_struct_id, param_type_id))
+                Ok(self.instantiate_generic_struct(interner, *id, base_struct_id, param_type_id))
             }
-            UnresolvedType::GenericParam(_) => todo!(),
+            UnresolvedTypeIds::SimpleGenericParam(f) => Err(*f),
         }
     }
 
@@ -460,41 +494,133 @@ impl TypeStore {
         }
     }
 
-    fn get_generic_struct_instance(
+    fn partially_resolve_generic_field(
+        &mut self,
+        interner: &mut Interners,
+        kind: &UnresolvedTypeIds,
+    ) -> GenericPartiallyResolvedFieldKind {
+        match kind {
+            UnresolvedTypeIds::SimpleCustom { .. } => {
+                let resolved = self.resolve_type(interner, kind).unwrap();
+                GenericPartiallyResolvedFieldKind::Fixed(resolved.id)
+            }
+            UnresolvedTypeIds::SimpleBuiltin(bi) => {
+                GenericPartiallyResolvedFieldKind::Fixed(self.get_builtin(*bi).id)
+            }
+            UnresolvedTypeIds::SimpleGenericParam(_) => {
+                GenericPartiallyResolvedFieldKind::GenericParamSimple
+            }
+            UnresolvedTypeIds::Array(sub_type, length) => {
+                let inner_kind = self.partially_resolve_generic_field(interner, sub_type);
+                GenericPartiallyResolvedFieldKind::GenericParamArray(Box::new(inner_kind), *length)
+            }
+            UnresolvedTypeIds::Pointer(sub_type) => {
+                let inner_kind = self.partially_resolve_generic_field(interner, sub_type);
+                GenericPartiallyResolvedFieldKind::GenericParamPointer(Box::new(inner_kind))
+            }
+            UnresolvedTypeIds::GenericInstance { id, param, .. } => {
+                let generic_param = self.partially_resolve_generic_field(interner, param);
+                GenericPartiallyResolvedFieldKind::GenericStruct(*id, Box::new(generic_param))
+            }
+        }
+    }
+
+    pub fn partially_resolve_generic_struct(
+        &mut self,
+        interner: &mut Interners,
+        base_item_id: ItemId,
+        def: &UnresolvedStruct,
+    ) -> Result<(), Token> {
+        let Some(generic_param) = def.generic_params else {
+            panic!("ICE: Tried to define generic struct for a non-generic definition");
+        };
+
+        let mut resolved_fields = Vec::new();
+
+        for field in &def.fields {
+            let field_kind = self.partially_resolve_generic_field(interner, field.kind.as_id());
+
+            resolved_fields.push(GenericPartiallyResolvedField {
+                name: field.name,
+                kind: field_kind,
+            });
+        }
+
+        let generic_base = GenericPartiallyResolvedStruct {
+            name: def.name,
+            fields: resolved_fields,
+            generic_param: generic_param.lexeme,
+        };
+
+        let type_id = self.struct_id_map[&base_item_id];
+
+        self.generic_struct_id_map.insert(type_id, generic_base);
+
+        Ok(())
+    }
+
+    fn resolve_generic_field(
+        &mut self,
+        interner: &mut Interners,
+        kind: &GenericPartiallyResolvedFieldKind,
+        param_id: TypeId,
+    ) -> TypeId {
+        match kind {
+            GenericPartiallyResolvedFieldKind::Fixed(id) => *id,
+            GenericPartiallyResolvedFieldKind::GenericParamSimple => param_id,
+            GenericPartiallyResolvedFieldKind::GenericParamPointer(sub_type) => {
+                let pointee_id = self.resolve_generic_field(interner, sub_type, param_id);
+                self.get_pointer(interner, pointee_id).id
+            }
+            GenericPartiallyResolvedFieldKind::GenericParamArray(sub_type, length) => {
+                let content_type_id = self.resolve_generic_field(interner, sub_type, param_id);
+                self.get_array(interner, content_type_id, *length).id
+            }
+            GenericPartiallyResolvedFieldKind::GenericStruct(base_struct_id, param) => {
+                let base_struct_type_id = self.struct_id_map[base_struct_id];
+                let sub_param_id = self.resolve_generic_field(interner, param, param_id);
+
+                self.instantiate_generic_struct(
+                    interner,
+                    *base_struct_id,
+                    base_struct_type_id,
+                    sub_param_id,
+                )
+                .id
+            }
+        }
+    }
+
+    fn instantiate_generic_struct(
         &mut self,
         interner: &mut Interners,
         base_item_id: ItemId,
         base_type_id: TypeId,
         param_id: TypeId,
     ) -> TypeInfo {
-        if let Some(id) = self.generic_struct_map.get(&(base_type_id, param_id)) {
+        if let Some(id) = self
+            .generic_struct_instance_map
+            .get(&(base_type_id, param_id))
+        {
             return self.kinds[id];
         }
 
         let base_type_info = self.get_type_info(base_type_id);
-        let base_def = &self.struct_defs[&base_type_id];
-        // if base_def.generic_params.is_none() {
-        //     let base_name = interner.resolve_lexeme(base_def.name.lexeme);
-        //     panic!("ICE: Tried to create instance of non-generic struct `{base_name}` (type id: {base_type_id:?}, param id: {param_id:?})");
-        // }
+        let base_def = &self.generic_struct_id_map[&base_type_id].clone();
 
         let mut resolved_fields = Vec::new();
 
         for field in &base_def.fields {
-            let new_kind = match field.kind {
-                ResolvedFieldKind::Fixed(id) => ResolvedFieldKind::Fixed(id),
-                ResolvedFieldKind::Generic(_) => ResolvedFieldKind::Fixed(param_id),
-            };
-            resolved_fields.push(ResolvedField {
+            let new_kind = self.resolve_generic_field(interner, &field.kind, param_id);
+            resolved_fields.push(FixedResolvedField {
                 name: field.name,
                 kind: new_kind,
             });
         }
 
-        let new_def = ResolvedStruct {
+        let new_def = FixedResolvedStruct {
             name: base_def.name,
             fields: resolved_fields,
-            generic_params: None,
         };
 
         let param_info = self.get_type_info(param_id);
@@ -507,10 +633,10 @@ impl TypeStore {
         let type_id = self.add_type(
             name,
             base_type_info.location,
-            TypeKind::StructInstance(base_item_id),
+            TypeKind::GenericStructInstance(base_item_id),
         );
-        self.struct_defs.insert(type_id, new_def);
-        self.generic_struct_map
+        self.fixed_struct_defs.insert(type_id, new_def);
+        self.generic_struct_instance_map
             .insert((base_type_id, param_id), type_id);
 
         self.kinds[&type_id]
@@ -555,20 +681,15 @@ impl TypeStore {
                 byte_width: 1,
                 alignement: 1,
             },
-            TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let mut size_info = TypeSize {
                     byte_width: 0,
                     alignement: 0,
                 };
 
-                let struct_info = self.struct_defs.get(&id).unwrap().clone();
-                if struct_info.generic_params.is_some() {
-                    panic!("ICE: Tried to get size of generic struct");
-                }
+                let struct_info = self.fixed_struct_defs.get(&id).unwrap().clone();
                 for field in &struct_info.fields {
-                    let ResolvedFieldKind::Fixed(field_kind) = field.kind else { unreachable!() };
-                    let field_size = self.get_size_info(field_kind);
-
+                    let field_size = self.get_size_info(field.kind);
                     size_info.alignement = size_info.alignement.max(field_size.alignement);
                     size_info.byte_width =
                         Integer::next_multiple_of(&size_info.byte_width, &field_size.alignement)
@@ -577,39 +698,41 @@ impl TypeStore {
 
                 size_info
             }
+            TypeKind::GenericStructBase(_) => {
+                panic!("ICE: Tried to get size of generic struct base")
+            }
         };
 
         self.type_sizes.insert(id, size_info);
         size_info
     }
 
-    pub fn define_struct(
+    pub fn define_fixed_struct(
         &mut self,
         interner: &mut Interners,
         struct_id: ItemId,
         def: &UnresolvedStruct,
     ) -> Result<TypeId, Token> {
+        if def.generic_params.is_some() {
+            panic!("ICE: Tried to define fixed struct for a generic definition");
+        }
+
         let mut resolved_fields = Vec::new();
 
         for field in &def.fields {
-            let kind = if let UnresolvedType::GenericParam(id) = field.kind {
-                ResolvedFieldKind::Generic(id)
-            } else {
-                let kind = self
-                    .resolve_type(interner, &field.kind)
-                    .map_err(|_| field.name)?;
-                ResolvedFieldKind::Fixed(kind.id)
-            };
-            resolved_fields.push(ResolvedField {
+            let kind = self
+                .resolve_type(interner, field.kind.as_id())
+                .map_err(|_| field.name)?
+                .id;
+            resolved_fields.push(FixedResolvedField {
                 name: field.name,
                 kind,
             });
         }
 
-        let def = ResolvedStruct {
+        let def = FixedResolvedStruct {
             name: def.name,
             fields: resolved_fields,
-            generic_params: def.generic_params.map(|t| t.lexeme),
         };
 
         let type_id = self.struct_id_map[&struct_id];
@@ -620,14 +743,14 @@ impl TypeStore {
             self.builtins[BuiltinTypes::String as usize] = type_id;
         }
 
-        self.struct_defs.insert(type_id, def);
+        self.fixed_struct_defs.insert(type_id, def);
 
         Ok(type_id)
     }
 
     #[track_caller]
-    pub fn get_struct_def(&self, id: TypeId) -> &ResolvedStruct {
-        &self.struct_defs[&id]
+    pub fn get_struct_def(&self, id: TypeId) -> &FixedResolvedStruct {
+        &self.fixed_struct_defs[&id]
     }
 }
 

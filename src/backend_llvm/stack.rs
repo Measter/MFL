@@ -56,7 +56,10 @@ impl<'ctx> CodeGen<'ctx> {
                         self.ctx.i64_type(),
                         "cast_ptr",
                     ),
-                    TypeKind::Array { .. } | TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
+                    TypeKind::Array { .. }
+                    | TypeKind::Struct(_)
+                    | TypeKind::GenericStructBase(_)
+                    | TypeKind::GenericStructInstance(_) => {
                         unreachable!()
                     }
                 };
@@ -99,7 +102,8 @@ impl<'ctx> CodeGen<'ctx> {
                     | TypeKind::Bool
                     | TypeKind::Array { .. }
                     | TypeKind::Struct(_)
-                    | TypeKind::StructInstance(_) => {
+                    | TypeKind::GenericStructBase(_)
+                    | TypeKind::GenericStructInstance(_) => {
                         unreachable!()
                     }
                 };
@@ -108,7 +112,9 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Bool => unreachable!(),
             TypeKind::Array { .. } => unreachable!(),
-            TypeKind::Struct(_) | TypeKind::StructInstance(_) => unreachable!(),
+            TypeKind::Struct(_)
+            | TypeKind::GenericStructBase(_)
+            | TypeKind::GenericStructInstance(_) => unreachable!(),
         }
     }
 

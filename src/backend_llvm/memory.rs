@@ -11,7 +11,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::{static_analysis::Analyzer, ItemId},
-    type_store::{ResolvedFieldKind, TypeKind, TypeStore},
+    type_store::{TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -47,7 +47,7 @@ impl<'ctx> CodeGen<'ctx> {
         let aggr_value = aggr_llvm_type.const_zero();
         let mut aggr_value = match output_type_info.kind {
             TypeKind::Array { .. } => aggr_value.into_array_value().as_aggregate_value_enum(),
-            TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 aggr_value.into_struct_value().as_aggregate_value_enum()
             }
             _ => unreachable!(),
@@ -59,9 +59,9 @@ impl<'ctx> CodeGen<'ctx> {
 
             let field_store_type_info = match output_type_info.kind {
                 TypeKind::Array { type_id, .. } => type_store.get_type_info(type_id),
-                TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                     let struct_info = type_store.get_struct_def(output_type_id);
-                    let ResolvedFieldKind::Fixed(field_kind) = struct_info.fields[idx].kind else { unreachable!() };
+                    let field_kind = struct_info.fields[idx].kind;
                     type_store.get_type_info(field_kind)
                 }
                 _ => unreachable!(),
@@ -114,9 +114,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let aggr = match input_type_info.kind {
             TypeKind::Array { .. } => aggr.into_array_value().as_aggregate_value_enum(),
-            TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
-                aggr.into_struct_value().as_aggregate_value_enum()
-            }
+            TypeKind::Struct(_) => aggr.into_struct_value().as_aggregate_value_enum(),
             _ => unreachable!(),
         };
 
@@ -311,8 +309,7 @@ impl<'ctx> CodeGen<'ctx> {
             .position(|fi| fi.name.lexeme == field_name.lexeme)
             .unwrap();
         let field_info = &struct_def.fields[field_idx];
-        let ResolvedFieldKind::Fixed(field_info_kind) = field_info.kind else { unreachable!() };
-        let field_type_info = type_store.get_type_info(field_info_kind);
+        let field_type_info = type_store.get_type_info(field_info.kind);
 
         let data_val = if let (
             TypeKind::Integer {
@@ -386,7 +383,7 @@ impl<'ctx> CodeGen<'ctx> {
         let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
 
         let (struct_value, struct_def) = match input_struct_type_info.kind {
-            TypeKind::Struct(_) | TypeKind::StructInstance(_) => {
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = type_store.get_struct_def(input_struct_type_id);
                 (input_struct_val.into_struct_value(), struct_def)
             }
