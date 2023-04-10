@@ -1,17 +1,17 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use lasso::Spur;
 
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
     n_ops::SliceNOps,
     opcode::Op,
     program::{
         static_analysis::{can_promote_int_unidirectional, Analyzer, ConstVal, PtrId},
         Program,
     },
-    source_file::SourceStorage,
+    source_file::{SourceStorage, Spanned},
     type_store::{Signedness, TypeId, TypeKind, TypeStore},
 };
 
@@ -463,7 +463,7 @@ pub fn insert_struct(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
-    field_name: Token,
+    field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -535,10 +535,10 @@ pub fn insert_struct(
     let Some(field_info) = struct_type_info
         .fields
         .iter()
-        .find(|fi| fi.name.lexeme == field_name.lexeme) else {
+        .find(|fi| fi.name.inner == field_name.inner) else {
         *had_error = true;
-        let unknown_field_name = interner.resolve_lexeme(field_name.lexeme);
-        let struct_name = interner.resolve_lexeme(struct_type_info.name.lexeme);
+        let unknown_field_name = interner.resolve_lexeme(field_name.inner);
+        let struct_name = interner.resolve_lexeme(struct_type_info.name.inner);
         diagnostics::emit_error(
             field_name.location,
             format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
@@ -608,7 +608,7 @@ pub fn extract_struct(
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
-    field_name: Token,
+    field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -683,10 +683,10 @@ pub fn extract_struct(
     let Some(field_info) = struct_def
         .fields
         .iter()
-        .find(|fi| fi.name.lexeme == field_name.lexeme) else {
+        .find(|fi| fi.name.inner == field_name.inner) else {
         *had_error = true;
-        let unknown_field_name = interner.resolve_lexeme(field_name.lexeme);
-        let struct_name = interner.resolve_lexeme(struct_def.name.lexeme);
+        let unknown_field_name = interner.resolve_lexeme(field_name.inner);
+        let struct_name = interner.resolve_lexeme(struct_def.name.inner);
         diagnostics::emit_error(
             field_name.location,
             format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),

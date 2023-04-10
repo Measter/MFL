@@ -4,9 +4,8 @@ use lasso::Spur;
 use smallvec::SmallVec;
 
 use crate::{
-    lexer::Token,
     program::ItemId,
-    source_file::SourceLocation,
+    source_file::{SourceLocation, Spanned},
     type_store::{IntWidth, Signedness, TypeId, UnresolvedType},
 };
 
@@ -64,23 +63,23 @@ impl IntKind {
 #[derive(Debug, Clone)]
 pub struct While {
     pub condition: Vec<Op>,
-    pub do_token: Token,
+    pub do_token: SourceLocation,
     pub body_block: Vec<Op>,
-    pub end_token: Token,
+    pub end_token: SourceLocation,
 }
 
 #[derive(Debug, Clone)]
 pub struct If {
-    pub open_token: Token,
+    pub open_token: SourceLocation,
     pub condition: Vec<Op>,
     pub is_condition_terminal: bool,
-    pub do_token: Token,
+    pub do_token: SourceLocation,
     pub then_block: Vec<Op>,
     pub is_then_terminal: bool,
-    pub else_token: Token,
+    pub else_token: SourceLocation,
     pub else_block: Vec<Op>,
     pub is_else_terminal: bool,
-    pub end_token: Token,
+    pub end_token: SourceLocation,
 }
 
 #[derive(Debug, Clone)]
@@ -97,12 +96,10 @@ pub enum OpCode {
     },
     Div,
     Dup {
-        count: u8,
-        count_token: Token,
+        count: Spanned<u8>,
     },
     Drop {
-        count: u8,
-        count_token: Token,
+        count: Spanned<u8>,
     },
     EmitStack(bool),
     Epilogue,
@@ -112,7 +109,7 @@ pub enum OpCode {
     },
     ExtractStruct {
         emit_struct: bool,
-        field_name: Token,
+        field_name: Spanned<Spur>,
     },
     Exit,
     If(Box<If>),
@@ -125,7 +122,7 @@ pub enum OpCode {
     },
     InsertStruct {
         emit_struct: bool,
-        field_name: Token,
+        field_name: Spanned<Spur>,
     },
     IsNull,
     Load,
@@ -136,8 +133,7 @@ pub enum OpCode {
     Multiply,
     NotEq,
     Over {
-        depth: u8,
-        depth_token: Token,
+        depth: Spanned<u8>,
     },
     PackArray {
         count: u8,
@@ -164,15 +160,12 @@ pub enum OpCode {
     Rem,
     Return,
     Reverse {
-        count: u8,
-        count_token: Token,
+        count: Spanned<u8>,
     },
     Rot {
-        item_count: u8,
+        item_count: Spanned<u8>,
         direction: Direction,
-        shift_count: u8,
-        item_count_token: Token,
-        shift_count_token: Token,
+        shift_count: Spanned<u8>,
     },
     ShiftLeft,
     ShiftRight,
@@ -180,18 +173,16 @@ pub enum OpCode {
     Store,
     Subtract,
     Swap {
-        count: u8,
-        count_token: Token,
+        count: Spanned<u8>,
     },
     SysCall {
-        arg_count: u8,
-        arg_count_token: Token,
+        arg_count: Spanned<u8>,
     },
     Unpack,
     UnresolvedCast {
         unresolved_type: UnresolvedType,
     },
-    UnresolvedIdent(Vec<Token>),
+    UnresolvedIdent(Vec<Spanned<Spur>>),
     UnresolvedPackStruct {
         unresolved_type: UnresolvedType,
     },
@@ -289,12 +280,12 @@ impl Display for OpId {
 pub struct Op {
     pub code: OpCode,
     pub id: OpId,
-    pub token: Token,
+    pub token: Spanned<Spur>,
     pub expansions: SmallVec<[SourceLocation; 2]>,
 }
 
 impl Op {
-    pub fn new(id: OpId, code: OpCode, token: Token) -> Self {
+    pub fn new(id: OpId, code: OpCode, token: Spanned<Spur>) -> Self {
         Self {
             id,
             code,

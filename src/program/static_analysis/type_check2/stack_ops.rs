@@ -126,7 +126,7 @@ pub fn cast_to_int(
         #[allow(unreachable_patterns)]
         _ => {
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -211,7 +211,7 @@ pub fn cast_to_ptr(
         _ => {
             // Type mismatch.
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,

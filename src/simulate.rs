@@ -198,7 +198,7 @@ fn simulate_execute_program_block(
                 });
             }
             OpCode::Drop { count, .. } => {
-                value_stack.truncate(value_stack.len() - count.to_usize())
+                value_stack.truncate(value_stack.len() - count.inner.to_usize())
             }
 
             OpCode::While(while_op) => loop {
@@ -272,14 +272,14 @@ fn simulate_execute_program_block(
                 ));
             }
             OpCode::Dup { count, .. } => {
-                let range = (value_stack.len() - count.to_usize())..value_stack.len();
+                let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();
                 for i in range {
                     let a = value_stack[i];
                     value_stack.push(a);
                 }
             }
             OpCode::Over { depth, .. } => {
-                let value = value_stack[value_stack.len() - 1 - depth.to_usize()];
+                let value = value_stack[value_stack.len() - 1 - depth.inner.to_usize()];
                 value_stack.push(value);
             }
             OpCode::Rot {
@@ -288,22 +288,25 @@ fn simulate_execute_program_block(
                 shift_count,
                 ..
             } => {
-                let shift_count = shift_count % item_count;
-                let start = value_stack.len() - item_count.to_usize();
+                let shift_count = shift_count.inner % item_count.inner;
+                let start = value_stack.len() - item_count.inner.to_usize();
                 match direction {
                     Direction::Left => value_stack[start..].rotate_left(shift_count.to_usize()),
                     Direction::Right => value_stack[start..].rotate_right(shift_count.to_usize()),
                 }
             }
             OpCode::Swap { count, .. } => {
-                let slice_start = value_stack.len() - count.to_usize();
+                let slice_start = value_stack.len() - count.inner.to_usize();
                 let (rest, a_slice) = value_stack.split_at_mut(slice_start);
-                let (_, b_slice) = rest.split_at_mut(rest.len() - count.to_usize());
+                let (_, b_slice) = rest.split_at_mut(rest.len() - count.inner.to_usize());
 
                 a_slice.swap_with_slice(b_slice);
             }
             OpCode::Reverse { count, .. } => {
-                value_stack.lastn_mut(count.to_usize()).unwrap().reverse();
+                value_stack
+                    .lastn_mut(count.inner.to_usize())
+                    .unwrap()
+                    .reverse();
             }
 
             // These are no-ops for the simulator, only there to help the compiler.

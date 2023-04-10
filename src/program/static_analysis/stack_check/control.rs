@@ -8,14 +8,13 @@ use tracing::trace;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
         ItemId, ItemKind, ItemSignatureUnresolved, Program,
     },
-    source_file::SourceStorage,
+    source_file::{SourceStorage, Spanned},
     type_store::TypeStore,
 };
 
@@ -75,7 +74,7 @@ pub fn epilogue_return(
             op.token.location,
             format!(
                 "function `{}` returns {} values, found {}",
-                interner.resolve_lexeme(item.name().lexeme),
+                interner.resolve_lexeme(item.name().inner),
                 item_sig.exit_stack().len(),
                 stack.len()
             ),
@@ -104,8 +103,8 @@ pub fn prologue(
     item_sig: &ItemSignatureUnresolved,
 ) {
     let mut outputs = Vec::new();
-    for (_, loc) in item_sig.entry_stack() {
-        let new_id = analyzer.new_value(*loc, None);
+    for arg in item_sig.entry_stack() {
+        let new_id = analyzer.new_value(arg.location, None);
         outputs.push(new_id);
         stack.push(new_id);
     }
@@ -165,16 +164,13 @@ pub fn syscall(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    num_args: u8,
-    arg_count_token: Token,
+    num_args: Spanned<u8>,
 ) {
-    let num_args = num_args.to_usize();
-
-    if !matches!(num_args, 1..=7) {
+    if !matches!(num_args.inner, 1..=7) {
         diagnostics::emit_error(
             op.token.location,
             "invalid syscall size",
-            [Label::new(arg_count_token.location)
+            [Label::new(num_args.location)
                 .with_color(Color::Red)
                 .with_message("valid syscall sizes are 1..=7")],
             None,
@@ -184,6 +180,7 @@ pub fn syscall(
         return;
     }
 
+    let num_args = num_args.inner.to_usize();
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
@@ -234,7 +231,7 @@ pub fn analyze_while(
         generate_stack_length_mismatch_diag(
             source_store,
             op.token.location,
-            while_op.do_token.location,
+            while_op.do_token,
             stack.len(),
             initial_stack.len(),
         );
@@ -290,7 +287,7 @@ pub fn analyze_while(
         generate_stack_length_mismatch_diag(
             source_store,
             op.token.location,
-            while_op.end_token.location,
+            while_op.end_token,
             stack.len(),
             initial_stack.len(),
         );
@@ -369,8 +366,8 @@ pub fn analyze_if(
     if stack.is_empty() {
         generate_stack_length_mismatch_diag(
             source_store,
-            if_op.do_token.location,
-            if_op.do_token.location,
+            if_op.do_token,
+            if_op.do_token,
             stack.len(),
             1,
         );
@@ -400,7 +397,7 @@ pub fn analyze_if(
 
     // We always have an else block, so save our current stack state for comparison.
     let then_block_stack = stack.clone();
-    let then_block_sample_location = if_op.else_token.location;
+    let then_block_sample_location = if_op.else_token;
 
     // And restore our stack back to the initial stack.
     stack.clear();
@@ -440,7 +437,7 @@ pub fn analyze_if(
             generate_stack_length_mismatch_diag(
                 source_store,
                 then_block_sample_location,
-                if_op.end_token.location,
+                if_op.end_token,
                 stack.len(),
                 then_block_stack.len(),
             );

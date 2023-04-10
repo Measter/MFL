@@ -2,6 +2,7 @@ use std::{collections::VecDeque, fmt::Display, iter::Peekable, ops::Not, str::Fr
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use lasso::Spur;
 use num::{PrimInt, Unsigned};
 use smallvec::SmallVec;
 use tracing::debug_span;
@@ -11,7 +12,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{
         IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType,
         UnresolvedTypeTokens,
@@ -50,22 +51,24 @@ fn valid_type_token(t: TokenKind) -> bool {
 }
 
 fn expect_token<'a>(
-    tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     kind_str: &str,
     mut expected: impl FnMut(TokenKind) -> bool,
-    prev: Token,
+    prev: Spanned<Token>,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(usize, Token), ()> {
+) -> Result<(usize, Spanned<Token>), ()> {
     match tokens.peek() {
-        Some((_, ident)) if expected(ident.kind) => tokens.next().map(|(a, b)| (a, *b)).ok_or(()),
+        Some((_, ident)) if expected(ident.inner.kind) => {
+            tokens.next().map(|(a, b)| (a, *b)).ok_or(())
+        }
         Some((_, ident)) => {
             diagnostics::emit_error(
                 ident.location,
                 format!(
                     "expected `{}`, found `{}`",
                     kind_str,
-                    interner.resolve_lexeme(ident.lexeme)
+                    interner.resolve_lexeme(ident.inner.lexeme)
                 ),
                 Some(Label::new(ident.location).with_color(Color::Red)),
                 None,
@@ -87,15 +90,15 @@ fn expect_token<'a>(
 }
 
 fn parse_delimited_token_list<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    prev: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    prev: Spanned<Token>,
     expected_len: Option<usize>,
     (open_delim_str, open_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
     (token_str, mut token_fn): (&'static str, impl FnMut(TokenKind) -> bool),
     (close_delim_str, mut close_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(Token, Vec<Token>, Token), ()> {
+) -> Result<(Spanned<Token>, Vec<Spanned<Token>>, Spanned<Token>), ()> {
     let mut had_error = false;
     let (_, open_token) = expect_token(
         token_iter,
@@ -127,13 +130,13 @@ fn parse_delimited_token_list<'a>(
                 return Err(());
             };
 
-        if depth == 0 && close_delim_fn(next_token.kind) {
+        if depth == 0 && close_delim_fn(next_token.inner.kind) {
             break; // The end of the list, so break the loop.
         }
 
-        if next_token.kind.is_matched_open() {
+        if next_token.inner.kind.is_matched_open() {
             depth += 1;
-        } else if next_token.kind.is_matched_close() {
+        } else if next_token.inner.kind.is_matched_close() {
             depth -= 1;
         }
 
@@ -148,7 +151,7 @@ fn parse_delimited_token_list<'a>(
                 had_error = true;
 
                 // If it's not the close token, we should consume it so we can continue.
-                if !close_delim_fn(next_token.kind) {
+                if !close_delim_fn(next_token.inner.kind) {
                     token_iter.next();
                 }
 
@@ -191,8 +194,8 @@ fn parse_delimited_token_list<'a>(
 fn parse_unresolved_types(
     interner: &Interners,
     source_store: &SourceStorage,
-    prev: Token,
-    tokens: Vec<Token>,
+    prev: Spanned<Token>,
+    tokens: Vec<Spanned<Token>>,
 ) -> Result<Vec<(UnresolvedTypeTokens, SourceLocation)>, ()> {
     let mut had_error = false;
     let mut types: Vec<(UnresolvedTypeTokens, SourceLocation)> = Vec::new();
@@ -214,7 +217,7 @@ fn parse_unresolved_types(
 
         let mut type_span = ident.location;
 
-        let base_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ParenthesisOpen)
+        let base_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
         {
             let Ok((open_paren, ident_tokens, close_paren)) = parse_delimited_token_list(
                 &mut token_iter,
@@ -252,12 +255,12 @@ fn parse_unresolved_types(
 
             let (unresolved_type, span) = unresolved_types.pop().unwrap();
             type_span = type_span.merge(span);
-            let lexeme = interner.resolve_lexeme(ident.lexeme);
+            let lexeme = interner.resolve_lexeme(ident.inner.lexeme);
             if lexeme == "ptr" {
                 UnresolvedTypeTokens::Pointer(Box::new(unresolved_type))
             } else {
                 let ident = parse_ident(&mut token_iter, interner, source_store, ident)
-                    .recover(&mut had_error, vec![ident]);
+                    .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
                 UnresolvedTypeTokens::GenericInstance {
                     type_name: ident,
                     param: Box::new(unresolved_type),
@@ -265,11 +268,11 @@ fn parse_unresolved_types(
             }
         } else {
             let ident = parse_ident(&mut token_iter, interner, source_store, ident)
-                .recover(&mut had_error, vec![ident]);
+                .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
             UnresolvedTypeTokens::Simple(ident)
         };
 
-        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::SquareBracketOpen)
+        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::SquareBracketOpen)
         {
             // Parsing an array!
             let Ok((_, ident_tokens, close_bracket)) = parse_delimited_token_list(
@@ -302,14 +305,14 @@ fn parse_unresolved_types(
 }
 
 fn parse_integer_lexeme<T>(
-    int_token: Token,
+    int_token: Spanned<Token>,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<T, ()>
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer{ lexeme, is_hex } = int_token.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
+    let TokenKind::Integer{ lexeme, is_hex } = int_token.inner.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
     let string = interner.resolve_lexeme(lexeme);
     let res = if is_hex {
         T::from_str_radix(string, 16)
@@ -340,8 +343,8 @@ where
 }
 
 fn parse_integer_op<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    token: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
     is_known_negative: bool,
     interner: &Interners,
     source_store: &SourceStorage,
@@ -367,7 +370,7 @@ fn parse_integer_op<'a>(
         had_error = true;
     }
 
-    let (width, value) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+    let (width, value) = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
     {
         let (_, ident_token, close_paren) = parse_delimited_token_list(
             token_iter,
@@ -382,7 +385,7 @@ fn parse_integer_op<'a>(
         let ident_token = ident_token[0];
         overall_location = overall_location.merge(close_paren.location);
 
-        let (width, is_signed_kind) = match interner.resolve_lexeme(ident_token.lexeme) {
+        let (width, is_signed_kind) = match interner.resolve_lexeme(ident_token.inner.lexeme) {
             "u8" => (IntWidth::I8, Signedness::Unsigned),
             "s8" => (IntWidth::I8, Signedness::Signed),
             "u16" => (IntWidth::I16, Signedness::Unsigned),
@@ -500,7 +503,7 @@ fn parse_integer_op<'a>(
 
 pub fn parse_item_body(
     program: &mut Program,
-    tokens: &[Token],
+    tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
     interner: &Interners,
     parent_id: ItemId,
@@ -512,14 +515,14 @@ pub fn parse_item_body(
     let mut token_iter = tokens.iter().enumerate().peekable();
     while let Some((_, token)) = token_iter.next() {
         let mut token = *token;
-        let kind = match token.kind {
+        let kind = match token.inner.kind {
             TokenKind::Drop
             | TokenKind::Dup
             | TokenKind::Over
             | TokenKind::Reverse
             | TokenKind::Swap
             | TokenKind::SysCall => {
-                let (count, count_token) = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                let count = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
                         &mut token_iter,
@@ -538,30 +541,24 @@ pub fn parse_item_body(
                     token.location = token.location.merge(close_paren.location);
 
                     let count_token = count_token[0];
-                    let count = parse_integer_lexeme(count_token, interner, source_store)?;
-                    (count, count_token)
+                    let count: u8 = parse_integer_lexeme(count_token, interner, source_store)?;
+                    count.with_span(count_token.location)
                 } else {
-                    let default_amount = if token.kind == TokenKind::Reverse {
+                    let default_amount = if token.inner.kind == TokenKind::Reverse {
                         2
                     } else {
                         1
                     };
-                    (default_amount, token)
+                    default_amount.with_span(token.location)
                 };
 
-                match token.kind {
-                    TokenKind::Drop => OpCode::Drop { count, count_token },
-                    TokenKind::Dup => OpCode::Dup { count, count_token },
-                    TokenKind::Over => OpCode::Over {
-                        depth: count,
-                        depth_token: count_token,
-                    },
-                    TokenKind::Reverse => OpCode::Reverse { count, count_token },
-                    TokenKind::Swap => OpCode::Swap { count, count_token },
-                    TokenKind::SysCall => OpCode::SysCall {
-                        arg_count: count,
-                        arg_count_token: count_token,
-                    },
+                match token.inner.kind {
+                    TokenKind::Drop => OpCode::Drop { count },
+                    TokenKind::Dup => OpCode::Dup { count },
+                    TokenKind::Over => OpCode::Over { depth: count },
+                    TokenKind::Reverse => OpCode::Reverse { count },
+                    TokenKind::Swap => OpCode::Swap { count },
+                    TokenKind::SysCall => OpCode::SysCall { arg_count: count },
 
                     _ => unreachable!(),
                 }
@@ -585,7 +582,7 @@ pub fn parse_item_body(
                 token.location = token.location.merge(close_paren.location);
 
                 if count_token.len() == 1
-                    && matches!(count_token[0].kind, TokenKind::Integer { .. })
+                    && matches!(count_token[0].inner.kind, TokenKind::Integer { .. })
                 {
                     let count_token = count_token[0];
                     let count = parse_integer_lexeme(count_token, interner, source_store)?;
@@ -618,7 +615,7 @@ pub fn parse_item_body(
             }
             TokenKind::Unpack => OpCode::Unpack,
             TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
-                if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok((_, ident_token, close_paren)) = parse_delimited_token_list(
                         &mut token_iter,
@@ -637,19 +634,19 @@ pub fn parse_item_body(
                     token.location = token.location.merge(close_paren.location);
 
                     let ident_token = ident_token[0];
-                    match token.kind {
+                    match token.inner.kind {
                         TokenKind::Extract { emit_struct } => OpCode::ExtractStruct {
                             emit_struct,
-                            field_name: ident_token,
+                            field_name: ident_token.map(|t| t.lexeme),
                         },
                         TokenKind::Insert { emit_struct } => OpCode::InsertStruct {
                             emit_struct,
-                            field_name: ident_token,
+                            field_name: ident_token.map(|t| t.lexeme),
                         },
                         _ => unreachable!(),
                     }
                 } else {
-                    match token.kind {
+                    match token.inner.kind {
                         TokenKind::Extract { emit_struct } => OpCode::ExtractArray {
                             emit_array: emit_struct,
                         },
@@ -682,41 +679,43 @@ pub fn parse_item_body(
                 let item_count_token = *item_count_token;
                 let shift_count_token = *shift_count_token;
 
-                let item_count = if !matches!(item_count_token.kind, TokenKind::Integer { .. }) {
-                    diagnostics::emit_error(
-                        item_count_token.location,
-                        format!(
-                            "expected `integer`, found `{}`",
-                            interner.resolve_lexeme(item_count_token.lexeme)
-                        ),
-                        Some(Label::new(item_count_token.location).with_color(Color::Red)),
-                        None,
-                        source_store,
-                    );
-                    local_error = true;
-                    1
-                } else {
-                    parse_integer_lexeme(item_count_token, interner, source_store)?
-                };
+                let item_count =
+                    if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {
+                        diagnostics::emit_error(
+                            item_count_token.location,
+                            format!(
+                                "expected `integer`, found `{}`",
+                                interner.resolve_lexeme(item_count_token.inner.lexeme)
+                            ),
+                            Some(Label::new(item_count_token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        local_error = true;
+                        1
+                    } else {
+                        parse_integer_lexeme(item_count_token, interner, source_store)?
+                    };
 
-                let shift_count = if !matches!(shift_count_token.kind, TokenKind::Integer { .. }) {
-                    diagnostics::emit_error(
-                        shift_count_token.location,
-                        format!(
-                            "expected `integer`, found `{}`",
-                            interner.resolve_lexeme(shift_count_token.lexeme)
-                        ),
-                        Some(Label::new(shift_count_token.location).with_color(Color::Red)),
-                        None,
-                        source_store,
-                    );
-                    local_error = true;
-                    1
-                } else {
-                    parse_integer_lexeme(shift_count_token, interner, source_store)?
-                };
+                let shift_count =
+                    if !matches!(shift_count_token.inner.kind, TokenKind::Integer { .. }) {
+                        diagnostics::emit_error(
+                            shift_count_token.location,
+                            format!(
+                                "expected `integer`, found `{}`",
+                                interner.resolve_lexeme(shift_count_token.inner.lexeme)
+                            ),
+                            Some(Label::new(shift_count_token.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        local_error = true;
+                        1
+                    } else {
+                        parse_integer_lexeme(shift_count_token, interner, source_store)?
+                    };
 
-                let direction = match direction_token.kind {
+                let direction = match direction_token.inner.kind {
                     TokenKind::Less => Direction::Left,
                     TokenKind::Greater => Direction::Right,
                     _ => {
@@ -724,7 +723,7 @@ pub fn parse_item_body(
                             direction_token.location,
                             format!(
                                 "expected `<` or `>`, found `{}`",
-                                interner.resolve_lexeme(direction_token.lexeme)
+                                interner.resolve_lexeme(direction_token.inner.lexeme)
                             ),
                             Some(Label::new(direction_token.location).with_color(Color::Red)),
                             None,
@@ -741,11 +740,9 @@ pub fn parse_item_body(
                 }
 
                 OpCode::Rot {
-                    item_count,
+                    item_count: item_count.with_span(item_count_token.location),
                     direction,
-                    shift_count,
-                    item_count_token,
-                    shift_count_token,
+                    shift_count: shift_count.with_span(shift_count_token.location),
                 }
             }
 
@@ -785,7 +782,7 @@ pub fn parse_item_body(
 
                 let (unresolved_type, _) = unresolved_types.pop().unwrap();
 
-                match token.kind {
+                match token.inner.kind {
                     TokenKind::Cast => OpCode::UnresolvedCast {
                         unresolved_type: UnresolvedType::Tokens(unresolved_type),
                     },
@@ -835,7 +832,7 @@ pub fn parse_item_body(
                 is_c_str: false,
             },
             TokenKind::EmitStack => {
-                let emit_labels = if matches!(token_iter.peek(), Some((_,tk)) if tk.kind == TokenKind::ParenthesisOpen)
+                let emit_labels = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok((_, count_token, close_paren)) = parse_delimited_token_list(
                         &mut token_iter,
@@ -854,7 +851,7 @@ pub fn parse_item_body(
                     token.location = token.location.merge(close_paren.location);
 
                     let emit_token = count_token[0];
-                    let TokenKind::Boolean(emit_labels) = emit_token.kind else { unreachable!() };
+                    let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else { unreachable!() };
                     emit_labels
                 } else {
                     false
@@ -922,7 +919,7 @@ pub fn parse_item_body(
             | TokenKind::Struct => {
                 diagnostics::emit_error(
                     token.location,
-                    format!("cannot use `{:?}` inside a procedure", token.kind),
+                    format!("cannot use `{:?}` inside a procedure", token.inner.kind),
                     Some(
                         Label::new(token.location)
                             .with_color(Color::Red)
@@ -957,7 +954,7 @@ pub fn parse_item_body(
             TokenKind::Minus => match token_iter.peek().copied() {
                 Some((_, int_token))
                     if int_token.location.neighbour_of(token.location)
-                        && matches!(int_token.kind, TokenKind::Integer { .. }) =>
+                        && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
                 {
                     token_iter.next();
                     let mut int_token = *int_token;
@@ -1005,7 +1002,7 @@ pub fn parse_item_body(
                     token.location,
                     format!(
                         "unexpected token `{}` in input",
-                        interner.resolve_lexeme(token.lexeme)
+                        interner.resolve_lexeme(token.inner.lexeme)
                     ),
                     Some(Label::new(token.location)),
                     None,
@@ -1017,21 +1014,21 @@ pub fn parse_item_body(
             }
         };
 
-        ops.push(Op::new(op_id_gen(), kind, token));
+        ops.push(Op::new(op_id_gen(), kind, token.map(|t| t.lexeme)));
     }
 
     had_error.not().then_some(ops).ok_or(())
 }
 
 fn parse_ident<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
     source_store: &SourceStorage,
-    token: Token,
-) -> Result<Vec<Token>, ()> {
-    let mut path = vec![token];
+    token: Spanned<Token>,
+) -> Result<Vec<Spanned<Spur>>, ()> {
+    let mut path = vec![token.map(|t| t.lexeme)];
 
-    while matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ColonColon) {
+    while matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ColonColon) {
         let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
         let (_, item_id) = expect_token(
             token_iter,
@@ -1042,20 +1039,20 @@ fn parse_ident<'a>(
             source_store,
         )?;
 
-        path.push(item_id);
+        path.push(item_id.map(|t| t.lexeme));
     }
 
     Ok(path)
 }
 
 fn get_item_body<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
-    mut last_token: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    tokens: &'a [Spanned<Token>],
+    keyword: Spanned<Token>,
+    mut last_token: Spanned<Token>,
     target_token_type: fn(TokenKind) -> bool,
     source_store: &SourceStorage,
-) -> Result<(&'a [Token], Token), ()> {
+) -> Result<(&'a [Spanned<Token>], Spanned<Token>), ()> {
     let body_start_idx = match token_iter.peek() {
         Some((idx, _)) => *idx,
         None => {
@@ -1073,7 +1070,7 @@ fn get_item_body<'a>(
     for (idx, token) in token_iter {
         use TokenKind::*;
         #[allow(clippy::match_like_matches_macro)]
-        let is_nested_err = match (keyword.kind, token.kind) {
+        let is_nested_err = match (keyword.inner.kind, token.inner.kind) {
             (Proc, Module | Proc | Macro) => true,
             (Memory | Const, Proc | Macro | Const | Memory | Module) => true,
             _ => false,
@@ -1082,7 +1079,10 @@ fn get_item_body<'a>(
         if is_nested_err {
             diagnostics::emit_error(
                 token.location,
-                format!("cannot use {:?} inside a {:?}", token.kind, keyword.kind),
+                format!(
+                    "cannot use {:?} inside a {:?}",
+                    token.inner.kind, keyword.inner.kind
+                ),
                 Some(Label::new(token.location).with_color(Color::Red)),
                 None,
                 source_store,
@@ -1092,10 +1092,10 @@ fn get_item_body<'a>(
 
         // If the block_depth is greater than 1, it means we're in a sub-block. All sub-blocks
         // will always close with an End token, so if we are in a sub-block only look for End.
-        if token.kind.new_block() {
+        if token.inner.kind.new_block() {
             block_depth += 1;
-        } else if (block_depth > 1 && token.kind == TokenKind::End)
-            || (block_depth == 1 && target_token_type(token.kind))
+        } else if (block_depth > 1 && token.inner.kind == TokenKind::End)
+            || (block_depth == 1 && target_token_type(token.inner.kind))
         {
             block_depth -= 1;
         }
@@ -1108,7 +1108,7 @@ fn get_item_body<'a>(
         }
     }
 
-    if !target_token_type(last_token.kind) {
+    if !target_token_type(last_token.inner.kind) {
         diagnostics::end_of_file(last_token.location, source_store);
         return Err(());
     }
@@ -1121,9 +1121,9 @@ fn get_item_body<'a>(
 
 fn parse_if<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    tokens: &'a [Spanned<Token>],
+    keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
     interner: &Interners,
@@ -1168,7 +1168,7 @@ fn parse_if<'a>(
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
 
-    while close_token.kind == TokenKind::Elif {
+    while close_token.inner.kind == TokenKind::Elif {
         let (elif_condition, do_token) = get_item_body(
             token_iter,
             tokens,
@@ -1215,7 +1215,7 @@ fn parse_if<'a>(
         close_token = cur_close_token;
     }
 
-    let mut else_block = if close_token.kind == TokenKind::Else {
+    let mut else_block = if close_token.inner.kind == TokenKind::Else {
         let (else_block, end_token) = get_item_body(
             token_iter,
             tokens,
@@ -1246,42 +1246,42 @@ fn parse_if<'a>(
         let if_op = Op::new(
             op_id_gen(),
             OpCode::If(Box::new(If {
-                open_token,
+                open_token: open_token.location,
                 condition,
                 is_condition_terminal: false,
-                do_token,
+                do_token: do_token.location,
                 then_block,
                 is_then_terminal: false,
-                else_token,
+                else_token: else_token.location,
                 else_block,
                 is_else_terminal: false,
-                end_token: close_token,
+                end_token: close_token.location,
             })),
-            open_token,
+            open_token.map(|t| t.lexeme),
         );
 
         else_block = vec![if_op];
     }
 
     Ok(OpCode::If(Box::new(If {
-        open_token: keyword,
+        open_token: keyword.location,
         condition,
         is_condition_terminal: false,
-        do_token,
+        do_token: do_token.location,
         then_block,
         is_then_terminal: false,
-        else_token,
+        else_token: else_token.location,
         else_block,
         is_else_terminal: false,
-        end_token: close_token,
+        end_token: close_token.location,
     })))
 }
 
 fn parse_while<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    tokens: &'a [Spanned<Token>],
+    keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
     interner: &Interners,
@@ -1317,21 +1317,21 @@ fn parse_while<'a>(
     let body_block = parse_item_body(program, body, op_id_gen, interner, parent_id, source_store)?;
 
     Ok(OpCode::While(Box::new(While {
-        do_token,
+        do_token: do_token.location,
         condition,
         body_block,
-        end_token,
+        end_token: end_token.location,
     })))
 }
 
 fn parse_memory<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    keyword: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    keyword: Spanned<Token>,
     parent_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
+) -> Result<(Spanned<Token>, ItemId), ()> {
     let mut had_error = false;
     let name_token = expect_token(
         token_iter,
@@ -1380,20 +1380,17 @@ fn parse_memory<'a>(
     }
 
     let sig = ItemSignatureUnresolved {
-        exit_stack: Vec::new(),
-        exit_stack_location: name_token.location,
-        entry_stack: Vec::new(),
-        entry_stack_location: name_token.location,
+        exit_stack: Vec::new().with_span(name_token.location),
+        entry_stack: Vec::new().with_span(name_token.location),
         memory_type: unresolved_store_type
             .pop()
-            .map(|(t, _)| UnresolvedType::Tokens(t)),
-        memory_type_location: store_type_location,
+            .map(|(t, _)| UnresolvedType::Tokens(t).with_span(store_type_location)),
     };
 
     let item_id = program.new_item(
         source_store,
         &mut had_error,
-        name_token,
+        name_token.map(|t| t.lexeme),
         ItemKind::Memory,
         parent_id,
         sig,
@@ -1401,7 +1398,7 @@ fn parse_memory<'a>(
 
     if program.get_item_header(parent_id).kind() == ItemKind::Function {
         let pd = program.get_function_data_mut(parent_id);
-        pd.allocs.insert(name_token.lexeme, item_id);
+        pd.allocs.insert(name_token.inner.lexeme, item_id);
     }
 
     had_error.not().then_some((name_token, item_id)).ok_or(())
@@ -1409,12 +1406,12 @@ fn parse_memory<'a>(
 
 fn parse_function_header<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
-    name: Token,
+    name: Spanned<Token>,
     parent_id: ItemId,
     source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
+) -> Result<(Spanned<Token>, ItemId), ()> {
     let mut had_error = false;
     let (entry_stack_start, entry_tokens, entry_stack_end) = parse_delimited_token_list(
         token_iter,
@@ -1461,22 +1458,21 @@ fn parse_function_header<'a>(
     let sig = ItemSignatureUnresolved {
         exit_stack: unresolved_exit_types
             .into_iter()
-            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
-            .collect(),
-        exit_stack_location,
+            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
+            .collect::<Vec<_>>()
+            .with_span(exit_stack_location),
         entry_stack: unresolved_entry_types
             .into_iter()
-            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
-            .collect(),
-        entry_stack_location,
+            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
+            .collect::<Vec<_>>()
+            .with_span(entry_stack_location),
         memory_type: None,
-        memory_type_location: name.location,
     };
 
     let new_item = program.new_item(
         source_store,
         &mut had_error,
-        name,
+        name.map(|t| t.lexeme),
         ItemKind::Function,
         parent_id,
         sig,
@@ -1497,26 +1493,23 @@ fn parse_function_header<'a>(
 
 fn parse_macro_header<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
-    name: Token,
+    name: Spanned<Token>,
     parent_id: ItemId,
     source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
+) -> Result<(Spanned<Token>, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: Vec::new(),
-        exit_stack_location: name.location,
-        entry_stack: Vec::new(),
-        entry_stack_location: name.location,
+        exit_stack: Vec::new().with_span(name.location),
+        entry_stack: Vec::new().with_span(name.location),
         memory_type: None,
-        memory_type_location: name.location,
     };
 
     let mut had_error = false;
     let new_item = program.new_item(
         source_store,
         &mut had_error,
-        name,
+        name.map(|t| t.lexeme),
         ItemKind::Macro,
         parent_id,
         sig,
@@ -1537,12 +1530,12 @@ fn parse_macro_header<'a>(
 
 fn parse_const_header<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
-    name: Token,
+    name: Spanned<Token>,
     parent_id: ItemId,
     source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
+) -> Result<(Spanned<Token>, ItemId), ()> {
     let mut had_error = false;
     let (exit_stack_start, exit_tokens, exit_stack_end) = parse_delimited_token_list(
         token_iter,
@@ -1563,19 +1556,17 @@ fn parse_const_header<'a>(
     let sig = ItemSignatureUnresolved {
         exit_stack: unresolved_exit_types
             .into_iter()
-            .map(|(t, s)| (UnresolvedType::Tokens(t), s))
-            .collect(),
-        exit_stack_location,
-        entry_stack: Vec::new(),
-        entry_stack_location: name.location,
+            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
+            .collect::<Vec<_>>()
+            .with_span(exit_stack_location),
+        entry_stack: Vec::new().with_span(name.location),
         memory_type: None,
-        memory_type_location: name.location,
     };
 
     let new_item = program.new_item(
         source_store,
         &mut had_error,
-        name,
+        name.map(|t| t.lexeme),
         ItemKind::Const,
         parent_id,
         sig,
@@ -1596,29 +1587,27 @@ fn parse_const_header<'a>(
 
 fn parse_assert_header<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
-    name: Token,
+    name: Spanned<Token>,
     parent_id: ItemId,
     source_store: &SourceStorage,
-) -> Result<(Token, ItemId), ()> {
+) -> Result<(Spanned<Token>, ItemId), ()> {
     let sig = ItemSignatureUnresolved {
-        exit_stack: vec![(
-            UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![name])),
-            name.location,
-        )],
-        exit_stack_location: name.location,
-        entry_stack: Vec::new(),
-        entry_stack_location: name.location,
+        exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![
+            name.map(|t| t.lexeme)
+        ]))
+        .with_span(name.location)]
+        .with_span(name.location),
+        entry_stack: Vec::new().with_span(name.location),
         memory_type: None,
-        memory_type_location: name.location,
     };
 
     let mut had_error = false;
     let new_item = program.new_item(
         source_store,
         &mut had_error,
-        name,
+        name.map(|t| t.lexeme),
         ItemKind::Assert,
         parent_id,
         sig,
@@ -1639,9 +1628,9 @@ fn parse_assert_header<'a>(
 
 fn parse_item<'a>(
     program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    tokens: &'a [Token],
-    keyword: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    tokens: &'a [Spanned<Token>],
+    keyword: Spanned<Token>,
     interner: &Interners,
     parent_id: ItemId,
     source_store: &SourceStorage,
@@ -1658,7 +1647,7 @@ fn parse_item<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let header_func = match keyword.kind {
+    let header_func = match keyword.inner.kind {
         TokenKind::Proc => parse_function_header,
         TokenKind::Macro => parse_macro_header,
         TokenKind::Const => parse_const_header,
@@ -1717,7 +1706,7 @@ fn parse_item<'a>(
             Op {
                 code: OpCode::Prologue,
                 id: op_id_gen(),
-                token: name_token,
+                token: name_token.map(|t| t.lexeme),
                 expansions: SmallVec::new(),
             },
         );
@@ -1725,7 +1714,7 @@ fn parse_item<'a>(
         body.push(Op {
             code: OpCode::Epilogue,
             id: op_id_gen(),
-            token: end_token,
+            token: end_token.map(|t| t.lexeme),
             expansions: SmallVec::new(),
         });
     }
@@ -1738,7 +1727,7 @@ fn parse_item<'a>(
     let item_header = program.get_item_header(item_id);
 
     if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.lexeme)
+        .get_visible_symbol(item_header, name_token.inner.lexeme)
         .filter(|&f| f != item_id)
     {
         let prev_item = program.get_item_header(prev_def).name();
@@ -1761,14 +1750,14 @@ fn parse_item<'a>(
     }
 
     let parent_item = program.get_item_header(parent_id);
-    match (parent_item.kind(), keyword.kind) {
+    match (parent_item.kind(), keyword.inner.kind) {
         (ItemKind::Function, TokenKind::Const) => {
             let pd = program.get_function_data_mut(parent_id);
-            pd.consts.insert(name_token.lexeme, item_id);
+            pd.consts.insert(name_token.inner.lexeme, item_id);
         }
         (ItemKind::Function, TokenKind::Memory) => {
             let pd = program.get_function_data_mut(parent_id);
-            pd.allocs.insert(name_token.lexeme, item_id);
+            pd.allocs.insert(name_token.inner.lexeme, item_id);
         }
         // The other types aren't stored in the proc
         _ => {}
@@ -1784,8 +1773,8 @@ fn parse_item<'a>(
 fn parse_struct<'a>(
     program: &mut Program,
     module_id: ItemId,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Token)>>,
-    keyword: Token,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    keyword: Spanned<Token>,
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
@@ -1801,7 +1790,7 @@ fn parse_struct<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.kind == TokenKind::ParenthesisOpen)
+    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let (_, mut generic_idents, _) = parse_delimited_token_list(
             token_iter,
@@ -1814,7 +1803,7 @@ fn parse_struct<'a>(
             source_store,
         )
         .recover(&mut had_error, (name_token, Vec::new(), name_token));
-        Some(generic_idents.pop().unwrap())
+        Some(generic_idents.pop().unwrap().map(|t| t.lexeme))
     } else {
         None
     };
@@ -1875,18 +1864,18 @@ fn parse_struct<'a>(
         }
 
         fields.push(UnresolvedField {
-            name: field_name_token,
+            name: field_name_token.map(|t| t.lexeme),
             kind: UnresolvedType::Tokens(unresolved_store_type.pop().unwrap().0),
         });
         prev_token = end_token;
 
-        if end_token.kind == TokenKind::End {
+        if end_token.inner.kind == TokenKind::End {
             break;
         }
     }
 
     let struct_def = UnresolvedStruct {
-        name: name_token,
+        name: name_token.map(|t| t.lexeme),
         fields,
         generic_params,
     };
@@ -1903,7 +1892,7 @@ fn parse_struct<'a>(
 pub(super) fn parse_module(
     program: &mut Program,
     module_id: ItemId,
-    tokens: &[Token],
+    tokens: &[Spanned<Token>],
     interner: &Interners,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     source_store: &SourceStorage,
@@ -1914,7 +1903,7 @@ pub(super) fn parse_module(
     let mut token_iter = tokens.iter().enumerate().peekable();
 
     while let Some((_, token)) = token_iter.next() {
-        match token.kind {
+        match token.inner.kind {
             TokenKind::Assert | TokenKind::Const | TokenKind::Macro | TokenKind::Proc => {
                 if parse_item(
                     program,
@@ -1986,7 +1975,10 @@ pub(super) fn parse_module(
                     }
                 };
 
-                include_queue.push_back((ModuleQueueType::Include(module_ident), Some(module_id)));
+                include_queue.push_back((
+                    ModuleQueueType::Include(module_ident.map(|t| t.lexeme)),
+                    Some(module_id),
+                ));
             }
 
             TokenKind::Struct => {
@@ -2007,7 +1999,7 @@ pub(super) fn parse_module(
             _ => {
                 diagnostics::emit_error(
                     token.location,
-                    format!("top-level can only declared `const`, `include`, `macro` `memory` or `proc`, found `{:?}`", token.kind),
+                    format!("top-level can only declared `const`, `include`, `macro` `memory` or `proc`, found `{:?}`", token.inner.kind),
                     Some(Label::new(token.location).with_color(Color::Red).with_message("here")),
                     None,
                     source_store

@@ -451,11 +451,11 @@ impl<'ctx> CodeGen<'ctx> {
             match op.code {
                 OpCode::If(_) => trace!(?op.id, "If"),
                 OpCode::While(_) => trace!(?op.id, "While"),
-                OpCode::Swap { count, .. } => trace!(?op.id, count, "Swap"),
-                OpCode::Dup { count, .. } => trace!(?op.id, count, "Dup" ),
-                OpCode::Drop { count, .. } => trace!(?op.id, count, "Drop"),
-                OpCode::Over { depth, .. } => trace!(?op.id, depth, "Over"),
-                OpCode::Reverse { count, .. } => trace!(?op.id, count, "Rev"),
+                OpCode::Swap { count, .. } => trace!(?op.id, count.inner, "Swap"),
+                OpCode::Dup { count, .. } => trace!(?op.id, count.inner, "Dup" ),
+                OpCode::Drop { count, .. } => trace!(?op.id, count.inner, "Drop"),
+                OpCode::Over { depth, .. } => trace!(?op.id, depth.inner, "Over"),
+                OpCode::Reverse { count, .. } => trace!(?op.id, count.inner, "Rev"),
                 OpCode::Memory {
                     item_id, global, ..
                 } => trace!(?op.id, ?item_id, global, "Memory"),
@@ -464,7 +464,7 @@ impl<'ctx> CodeGen<'ctx> {
                     direction,
                     shift_count,
                     ..
-                } => trace!(item_count, ?direction, shift_count, "Rot"),
+                } => trace!(item_count.inner, ?direction, shift_count.inner, "Rot"),
                 _ => trace!(?op.id, "{:?}", op.code),
             }
 
@@ -669,7 +669,7 @@ impl<'ctx> CodeGen<'ctx> {
                     *is_c_str,
                 ),
 
-                OpCode::SysCall { arg_count, .. } => {
+                OpCode::SysCall { arg_count } => {
                     self.build_syscall(interner, analyzer, value_store, type_store, op, *arg_count)
                 }
 

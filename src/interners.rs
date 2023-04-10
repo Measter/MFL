@@ -42,12 +42,12 @@ impl Interners {
         let mut parts = Vec::new();
 
         let item = program.get_item_header(id);
-        parts.push(self.lexemes.resolve(&item.name().lexeme));
+        parts.push(self.lexemes.resolve(&item.name().inner));
 
         let mut parent = item.parent();
         while let Some(parent_id) = parent {
             let item = program.get_item_header(parent_id);
-            parts.push(self.lexemes.resolve(&item.name().lexeme));
+            parts.push(self.lexemes.resolve(&item.name().inner));
             parent = item.parent();
         }
 

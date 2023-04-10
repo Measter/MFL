@@ -16,11 +16,11 @@ use tracing::{debug_span, trace, trace_span};
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::{self, Token, TokenKind},
+    lexer,
     opcode::{Op, OpCode, OpId},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
-    source_file::{FileId, SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
     Args,
 };
@@ -59,7 +59,7 @@ pub enum ItemKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ItemHeader {
-    name: Token,
+    name: Spanned<Spur>,
     id: ItemId,
     parent: Option<ItemId>,
     kind: ItemKind,
@@ -67,7 +67,7 @@ pub struct ItemHeader {
 }
 
 impl ItemHeader {
-    pub fn name(&self) -> Token {
+    pub fn name(&self) -> Spanned<Spur> {
         self.name
     }
 
@@ -86,37 +86,34 @@ impl ItemHeader {
 
 #[derive(Debug)]
 pub struct ItemSignatureUnresolved {
-    exit_stack: Vec<(UnresolvedType, SourceLocation)>,
-    exit_stack_location: SourceLocation,
-    entry_stack: Vec<(UnresolvedType, SourceLocation)>,
-    entry_stack_location: SourceLocation,
-    memory_type: Option<UnresolvedType>,
-    memory_type_location: SourceLocation,
+    exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    memory_type: Option<Spanned<UnresolvedType>>,
 }
 
 impl ItemSignatureUnresolved {
-    pub fn exit_stack(&self) -> &[(UnresolvedType, SourceLocation)] {
-        &self.exit_stack
+    pub fn exit_stack(&self) -> &[Spanned<UnresolvedType>] {
+        &self.exit_stack.inner
     }
 
     pub fn exit_stack_location(&self) -> SourceLocation {
-        self.exit_stack_location
+        self.exit_stack.location
     }
 
-    pub fn entry_stack(&self) -> &[(UnresolvedType, SourceLocation)] {
-        &self.entry_stack
+    pub fn entry_stack(&self) -> &[Spanned<UnresolvedType>] {
+        &self.entry_stack.inner
     }
 
     pub fn entry_stack_location(&self) -> SourceLocation {
-        self.entry_stack_location
+        self.entry_stack.location
     }
 
     pub fn memory_type(&self) -> &UnresolvedType {
-        self.memory_type.as_ref().unwrap()
+        &self.memory_type.as_ref().unwrap().inner
     }
 
     pub fn memory_type_location(&self) -> SourceLocation {
-        self.memory_type_location
+        self.memory_type.as_ref().unwrap().location
     }
 }
 pub struct ItemSignatureResolved {
@@ -238,7 +235,7 @@ impl Program {
         &mut self,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        name: Token,
+        name: Spanned<Spur>,
         parent: Option<ItemId>,
     ) -> ItemId {
         let new_id = self.item_headers.len();
@@ -262,7 +259,7 @@ impl Program {
 
         if let Some(parent_id) = parent {
             let parent_module = self.module_info.get_mut(&parent_id).unwrap();
-            let res = parent_module.add_child(name.lexeme, name.location, new_id);
+            let res = parent_module.add_child(name.inner, name.location, new_id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
@@ -286,11 +283,7 @@ impl Program {
         let builtin_module = self.new_module(
             source_store,
             &mut had_error,
-            Token {
-                kind: TokenKind::Module,
-                lexeme: builtin_structs_module_name,
-                location: SourceLocation::new(FileId::dud(), 0..0),
-            },
+            builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
             None,
         );
         ModuleInfo::load(
@@ -370,20 +363,18 @@ impl Program {
                     };
                     (
                         contents,
-                        Token {
-                            kind: TokenKind::Module,
-                            lexeme: interner.intern_lexeme(lib_name),
-                            location: SourceLocation::new(FileId::dud(), 0..0),
-                        },
+                        interner
+                            .intern_lexeme(lib_name)
+                            .with_span(SourceLocation::new(FileId::dud(), 0..0)),
                     )
                 }
                 ModuleQueueType::Include(token) => {
-                    if loaded_modules.contains(&token.lexeme) {
+                    if loaded_modules.contains(&token.inner) {
                         continue;
                     }
-                    loaded_modules.insert(token.lexeme);
+                    loaded_modules.insert(token.inner);
 
-                    let name = interner.resolve_lexeme(token.lexeme);
+                    let name = interner.resolve_lexeme(token.inner);
                     root.push(name);
                     root.set_extension("mfl");
 
@@ -409,7 +400,7 @@ impl Program {
 
             let module_id = self.new_module(source_store, had_error, module_name, parent);
             if module == ModuleQueueType::Root {
-                self.top_level_modules.insert(module_name.lexeme, module_id);
+                self.top_level_modules.insert(module_name.inner, module_id);
             }
 
             first_module = first_module.or(Some(module_id));
@@ -749,7 +740,7 @@ impl Program {
         &mut self,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        name: Token,
+        name: Spanned<Spur>,
         kind: ItemKind,
         parent: ItemId,
         sig: ItemSignatureUnresolved,
@@ -775,7 +766,7 @@ impl Program {
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.lexeme, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
@@ -809,7 +800,7 @@ impl Program {
         self.structs_unresolved.insert(id, def);
 
         let module = self.module_info.get_mut(&module).unwrap();
-        let res = module.add_child(name.lexeme, name.location, id);
+        let res = module.add_child(name.inner, name.location, id);
 
         if let Err(prev_loc) = res {
             *had_error = true;
@@ -818,7 +809,7 @@ impl Program {
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
-        if from.name.lexeme == symbol {
+        if from.name.inner == symbol {
             return Some(from.id);
         }
 
@@ -864,15 +855,15 @@ impl Program {
 }
 
 pub struct ModuleInfo {
-    child_items: HashMap<Spur, (ItemId, SourceLocation)>,
-    visible_symbols: HashMap<Spur, (ItemId, SourceLocation)>,
-    unresolved_imports: Vec<(Vec<Token>, SourceLocation)>,
+    child_items: HashMap<Spur, Spanned<ItemId>>,
+    visible_symbols: HashMap<Spur, Spanned<ItemId>>,
+    unresolved_imports: Vec<Spanned<Vec<Spanned<Spur>>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ModuleQueueType {
     Root,
-    Include(Token),
+    Include(Spanned<Spur>),
 }
 
 impl ModuleInfo {
@@ -910,10 +901,10 @@ impl ModuleInfo {
     }
 
     pub fn get_visible_symbol(&self, name: Spur) -> Option<ItemId> {
-        self.visible_symbols.get(&name).map(|(id, _)| *id)
+        self.visible_symbols.get(&name).map(|id| id.inner)
     }
 
-    pub fn get_child_items(&self) -> &HashMap<Spur, (ItemId, SourceLocation)> {
+    pub fn get_child_items(&self) -> &HashMap<Spur, Spanned<ItemId>> {
         &self.child_items
     }
 
@@ -925,13 +916,13 @@ impl ModuleInfo {
     ) -> Result<(), SourceLocation> {
         use hashbrown::hash_map::Entry;
         match self.child_items.entry(name) {
-            Entry::Occupied(a) => return Err(a.get().1),
-            Entry::Vacant(a) => a.insert((id, loc)),
+            Entry::Occupied(a) => return Err(a.get().location),
+            Entry::Vacant(a) => a.insert(id.with_span(loc)),
         };
 
         // Children are added before imports are resolved, so this should never fail.
         self.visible_symbols
-            .insert(name, (id, loc))
+            .insert(name, id.with_span(loc))
             .expect_none("ICE: Name collision when adding child");
         Ok(())
     }
@@ -944,19 +935,19 @@ impl ModuleInfo {
     ) -> Result<(), SourceLocation> {
         use hashbrown::hash_map::Entry;
         match self.visible_symbols.entry(name) {
-            Entry::Occupied(a) => return Err(a.get().1),
-            Entry::Vacant(a) => a.insert((id, loc)),
+            Entry::Occupied(a) => return Err(a.get().location),
+            Entry::Vacant(a) => a.insert(id.with_span(loc)),
         };
         Ok(())
     }
 
-    pub fn add_unresolved_import(&mut self, path: Vec<Token>) {
+    pub fn add_unresolved_import(&mut self, path: Vec<Spanned<Spur>>) {
         let loc = path
             .iter()
             .map(|t| t.location)
             .reduce(SourceLocation::merge)
             .unwrap();
-        self.unresolved_imports.push((path, loc));
+        self.unresolved_imports.push(path.with_span(loc));
     }
 }
 

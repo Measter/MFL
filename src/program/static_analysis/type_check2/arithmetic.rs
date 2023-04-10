@@ -65,7 +65,7 @@ pub fn add(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -125,7 +125,7 @@ pub fn subtract(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -162,7 +162,7 @@ pub fn bitnot(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -216,7 +216,7 @@ pub fn bitand_bitor_bitxor(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -267,7 +267,7 @@ pub fn multiply_div_rem_shift(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,

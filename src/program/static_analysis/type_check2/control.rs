@@ -216,10 +216,10 @@ pub fn analyze_while(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(while_op.do_token.location).with_color(Color::Red));
+        labels.push(Label::new(while_op.do_token).with_color(Color::Red));
 
         diagnostics::emit_error(
-            while_op.do_token.location,
+            while_op.do_token,
             "condition must evaluate to a boolean",
             labels,
             None,
@@ -292,10 +292,10 @@ pub fn analyze_if(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(if_op.do_token.location).with_color(Color::Red));
+            labels.push(Label::new(if_op.do_token).with_color(Color::Red));
 
             diagnostics::emit_error(
-                if_op.do_token.location,
+                if_op.do_token,
                 "condition must evaluate to a boolean",
                 labels,
                 None,

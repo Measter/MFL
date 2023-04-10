@@ -6,6 +6,7 @@ use crate::{
     interners::Interners,
     opcode::{If, Op, While},
     program::{static_analysis::Analyzer, ItemId, Program},
+    source_file::Spanned,
     type_store::{TypeKind, TypeStore},
 };
 
@@ -173,10 +174,10 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
         op: &Op,
-        arg_count: u8,
+        arg_count: Spanned<u8>,
     ) {
         let op_io = analyzer.get_op_io(op.id);
-        let callee_value = self.syscall_wrappers[arg_count.to_usize() - 1];
+        let callee_value = self.syscall_wrappers[arg_count.inner.to_usize() - 1];
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
@@ -201,9 +202,11 @@ impl<'ctx> CodeGen<'ctx> {
             .map(Into::into)
             .collect();
 
-        let result =
-            self.builder
-                .build_call(callee_value, &args, &format!("calling syscall{arg_count}"));
+        let result = self.builder.build_call(
+            callee_value,
+            &args,
+            &format!("calling syscall{}", arg_count.inner),
+        );
 
         let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left() else {
                         panic!("ICE: All syscalls return a value");

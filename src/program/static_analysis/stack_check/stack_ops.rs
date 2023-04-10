@@ -4,10 +4,9 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
-    lexer::Token,
     n_ops::SliceNOps,
     opcode::{Direction, Op},
-    source_file::SourceStorage,
+    source_file::{SourceStorage, Spanned},
 };
 
 use super::{
@@ -21,16 +20,13 @@ pub fn drop(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
-    count_token: Token,
+    count: Spanned<u8>,
 ) {
-    let count = count.to_usize();
-
-    if count == 0 {
+    if count.inner == 0 {
         diagnostics::emit_error(
             op.token.location,
             "invalid drop count",
-            [Label::new(count_token.location)
+            [Label::new(count.location)
                 .with_color(Color::Red)
                 .with_message("cannot drop 0 items")],
             None,
@@ -39,6 +35,8 @@ pub fn drop(
         *had_error = true;
         return;
     }
+
+    let count = count.inner.to_usize();
 
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, count);
 
@@ -57,16 +55,13 @@ pub fn dup(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
-    count_token: Token,
+    count: Spanned<u8>,
 ) {
-    let count = count.to_usize();
-
-    if count == 0 {
+    if count.inner == 0 {
         diagnostics::emit_error(
             op.token.location,
             "invalid duplicate count",
-            [Label::new(count_token.location)
+            [Label::new(count.location)
                 .with_color(Color::Red)
                 .with_message("cannot duplicate 0 items")],
             None,
@@ -75,6 +70,8 @@ pub fn dup(
         *had_error = true;
         return;
     }
+
+    let count = count.inner.to_usize();
 
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, count);
 
@@ -96,11 +93,9 @@ pub fn over(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    depth: u8,
+    depth: Spanned<u8>,
 ) {
-    let depth = depth.to_usize();
-
-    if depth == 0 {
+    if depth.inner == 0 {
         diagnostics::emit_warning(
             op.token.location,
             "unclear stack op",
@@ -111,6 +106,8 @@ pub fn over(
             source_store,
         );
     }
+
+    let depth = depth.inner.to_usize();
 
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, depth + 1);
 
@@ -133,19 +130,16 @@ pub fn reverse(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
-    count_token: Token,
+    count: Spanned<u8>,
 ) {
-    let count = count.to_usize();
-
-    match count {
+    match count.inner {
         0 | 1 => {
             diagnostics::emit_warning(
                 op.token.location,
                 "invalid reverse count",
-                [Label::new(count_token.location)
+                [Label::new(count.location)
                     .with_color(Color::Yellow)
-                    .with_message(format!("cannot reverse {count} items"))],
+                    .with_message(format!("cannot reverse {} items", count.inner))],
                 None,
                 source_store,
             );
@@ -154,7 +148,7 @@ pub fn reverse(
             diagnostics::emit_warning(
                 op.token.location,
                 "unclear stack op",
-                [Label::new(count_token.location)
+                [Label::new(count.location)
                     .with_color(Color::Yellow)
                     .with_message("using `swap` wolud make intent clearer")],
                 None,
@@ -164,6 +158,7 @@ pub fn reverse(
         _ => {}
     }
 
+    let count = count.inner.to_usize();
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, count);
 
     stack.lastn_mut(count).unwrap().reverse();
@@ -175,20 +170,15 @@ pub fn rot(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    item_count: u8,
+    item_count: Spanned<u8>,
     direction: Direction,
-    shift_count: u8,
-    item_count_token: Token,
-    shift_count_token: Token,
+    mut shift_count: Spanned<u8>,
 ) {
-    let item_count = item_count.to_usize();
-    let mut shift_count = shift_count.to_usize();
-
-    if item_count == 0 {
+    if item_count.inner == 0 {
         diagnostics::emit_error(
             op.token.location,
             "invalid item count",
-            [Label::new(item_count_token.location)
+            [Label::new(item_count.location)
                 .with_color(Color::Red)
                 .with_message("cannot rotate 0 items")],
             None,
@@ -197,33 +187,39 @@ pub fn rot(
         *had_error = true;
         return;
     }
-    if shift_count > item_count {
-        shift_count %= item_count;
+    if shift_count.inner > item_count.inner {
+        shift_count.inner %= item_count.inner;
         diagnostics::emit_warning(
             op.token.location,
             "truncated shift count",
-            [Label::new(shift_count_token.location)
+            [Label::new(shift_count.location)
                 .with_color(Color::Red)
-                .with_message(format!("shift count has been truncated to {shift_count}"))],
+                .with_message(format!(
+                    "shift count has been truncated to {}",
+                    shift_count.inner
+                ))],
             None,
             source_store,
         );
-        shift_count %= item_count;
     }
 
-    if shift_count == item_count {
+    if shift_count.inner == item_count.inner {
         diagnostics::emit_warning(
             op.token.location,
             "rotate is a no-op",
-            [Label::new(shift_count_token.location)
+            [Label::new(shift_count.location)
                 .with_color(Color::Yellow)
-                .with_message(format!("shift count equals item count ({item_count})"))],
+                .with_message(format!(
+                    "shift count equals item count ({})",
+                    item_count.inner
+                ))],
             None,
             source_store,
         );
         return;
     }
-
+    let item_count = item_count.inner.to_usize();
+    let shift_count = shift_count.inner.to_usize();
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, item_count);
 
     let start = stack.len() - item_count;
@@ -239,22 +235,22 @@ pub fn swap(
     source_store: &SourceStorage,
     had_error: &mut bool,
     op: &Op,
-    count: u8,
-    count_token: Token,
+    count: Spanned<u8>,
 ) {
-    let count = count.to_usize();
-
-    if count == 0 {
+    if count.inner == 0 {
         diagnostics::emit_warning(
             op.token.location,
             "invalid swap count",
-            [Label::new(count_token.location)
+            [Label::new(count.location)
                 .with_color(Color::Yellow)
                 .with_message("cannot swap 0 items")],
             None,
             source_store,
         );
+        return;
     }
+
+    let count = count.inner.to_usize();
     ensure_stack_depth(analyzer, stack, source_store, had_error, op, count * 2);
 
     let slice_start = stack.len() - count;

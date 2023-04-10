@@ -43,7 +43,7 @@ pub fn compare(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -95,7 +95,7 @@ pub fn equal(
             *had_error = true;
             // Don't emit an diagnostic here if any are Unknown, as it's a result of
             // an earlier error.
-            let lexeme = interner.resolve_lexeme(op.token.lexeme);
+            let lexeme = interner.resolve_lexeme(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,

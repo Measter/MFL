@@ -9,9 +9,8 @@ use num::Integer;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
     program::ItemId,
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{SourceLocation, SourceStorage, Spanned},
 };
 
 pub const STRING_DEF: &str = "
@@ -159,26 +158,26 @@ impl From<(Signedness, IntWidth)> for BuiltinTypes {
 
 #[derive(Debug, Clone)]
 pub struct FixedResolvedStruct {
-    pub name: Token,
+    pub name: Spanned<Spur>,
     pub fields: Vec<FixedResolvedField>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FixedResolvedField {
-    pub name: Token,
+    pub name: Spanned<Spur>,
     pub kind: TypeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct GenericPartiallyResolvedStruct {
-    pub name: Token,
+    pub name: Spanned<Spur>,
     pub fields: Vec<GenericPartiallyResolvedField>,
     pub generic_param: Spur,
 }
 
 #[derive(Debug, Clone)]
 pub struct GenericPartiallyResolvedField {
-    name: Token,
+    name: Spanned<Spur>,
     kind: GenericPartiallyResolvedFieldKind,
 }
 
@@ -193,25 +192,25 @@ pub enum GenericPartiallyResolvedFieldKind {
 
 #[derive(Debug, Clone)]
 pub struct UnresolvedStruct {
-    pub name: Token,
+    pub name: Spanned<Spur>,
     pub fields: Vec<UnresolvedField>,
-    pub generic_params: Option<Token>,
+    pub generic_params: Option<Spanned<Spur>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnresolvedField {
-    pub name: Token,
+    pub name: Spanned<Spur>,
     pub kind: UnresolvedType,
 }
 
 // Used prior to ident resolution
 #[derive(Debug, Clone)]
 pub enum UnresolvedTypeTokens {
-    Simple(Vec<Token>),
+    Simple(Vec<Spanned<Spur>>),
     Array(Box<UnresolvedTypeTokens>, usize),
     Pointer(Box<UnresolvedTypeTokens>),
     GenericInstance {
-        type_name: Vec<Token>,
+        type_name: Vec<Spanned<Spur>>,
         param: Box<UnresolvedTypeTokens>,
     },
 }
@@ -221,15 +220,15 @@ pub enum UnresolvedTypeTokens {
 pub enum UnresolvedTypeIds {
     SimpleCustom {
         id: ItemId,
-        token: Token,
+        token: Spanned<Spur>,
     },
     SimpleBuiltin(BuiltinTypes),
-    SimpleGenericParam(Token),
+    SimpleGenericParam(Spanned<Spur>),
     Array(Box<UnresolvedTypeIds>, usize),
     Pointer(Box<UnresolvedTypeIds>),
     GenericInstance {
         id: ItemId,
-        id_token: Token,
+        id_token: Spanned<Spur>,
         param: Box<UnresolvedTypeIds>,
     },
 }
@@ -417,7 +416,7 @@ impl TypeStore {
         &mut self,
         interner: &mut Interners,
         tp: &UnresolvedTypeIds,
-    ) -> Result<TypeInfo, Token> {
+    ) -> Result<TypeInfo, Spanned<Spur>> {
         match tp {
             UnresolvedTypeIds::SimpleCustom { id, token } => self
                 .struct_id_map
@@ -530,7 +529,7 @@ impl TypeStore {
         interner: &mut Interners,
         base_item_id: ItemId,
         def: &UnresolvedStruct,
-    ) -> Result<(), Token> {
+    ) {
         let Some(generic_param) = def.generic_params else {
             panic!("ICE: Tried to define generic struct for a non-generic definition");
         };
@@ -549,14 +548,12 @@ impl TypeStore {
         let generic_base = GenericPartiallyResolvedStruct {
             name: def.name,
             fields: resolved_fields,
-            generic_param: generic_param.lexeme,
+            generic_param: generic_param.inner,
         };
 
         let type_id = self.struct_id_map[&base_item_id];
 
         self.generic_struct_id_map.insert(type_id, generic_base);
-
-        Ok(())
     }
 
     fn resolve_generic_field(
@@ -625,7 +622,7 @@ impl TypeStore {
 
         let param_info = self.get_type_info(param_id);
 
-        let base_name = interner.resolve_lexeme(base_def.name.lexeme);
+        let base_name = interner.resolve_lexeme(base_def.name.inner);
         let param_name = interner.resolve_lexeme(param_info.name);
         let name = format!("{base_name}({param_name})");
         let name = interner.intern_lexeme(&name);
@@ -712,7 +709,7 @@ impl TypeStore {
         interner: &mut Interners,
         struct_id: ItemId,
         def: &UnresolvedStruct,
-    ) -> Result<TypeId, Token> {
+    ) -> Result<TypeId, Spanned<Spur>> {
         if def.generic_params.is_some() {
             panic!("ICE: Tried to define fixed struct for a generic definition");
         }
@@ -737,7 +734,7 @@ impl TypeStore {
 
         let type_id = self.struct_id_map[&struct_id];
 
-        if interner.resolve_lexeme(def.name.lexeme) == "String"
+        if interner.resolve_lexeme(def.name.inner) == "String"
             && self.builtin_struct_item_ids.contains(&struct_id)
         {
             self.builtins[BuiltinTypes::String as usize] = type_id;
@@ -754,10 +751,14 @@ impl TypeStore {
     }
 }
 
-pub fn emit_type_error_diag(token: Token, interner: &Interners, source_store: &SourceStorage) {
+pub fn emit_type_error_diag(
+    token: Spanned<Spur>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) {
     diagnostics::emit_error(
         token.location,
-        format!("unknown type `{}`", interner.resolve_lexeme(token.lexeme)),
+        format!("unknown type `{}`", interner.resolve_lexeme(token.inner)),
         [Label::new(token.location).with_color(Color::Red)],
         None,
         source_store,

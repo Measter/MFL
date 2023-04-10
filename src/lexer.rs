@@ -13,7 +13,7 @@ use tracing::debug_span;
 use crate::{
     diagnostics,
     interners::Interners,
-    source_file::{FileId, SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,16 +176,11 @@ impl TokenKind {
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: Spur,
-    pub location: SourceLocation,
 }
 
 impl Token {
-    fn new(kind: TokenKind, lexeme: Spur, file_id: FileId, source_range: Range<u32>) -> Self {
-        Self {
-            kind,
-            lexeme,
-            location: SourceLocation::new(file_id, source_range),
-        }
+    fn new(kind: TokenKind, lexeme: Spur) -> Self {
+        Self { kind, lexeme }
     }
 }
 
@@ -355,7 +350,7 @@ impl<'source> Scanner<'source> {
         input: &str,
         interner: &mut Interners,
         source_store: &SourceStorage,
-    ) -> Result<Option<Token>, ()> {
+    ) -> Result<Option<Spanned<Token>>, ()> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
 
@@ -381,7 +376,10 @@ impl<'source> Scanner<'source> {
                 self.advance(); // Consume the '='
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(
+                    Token::new(kind, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             (
@@ -407,7 +405,10 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(
+                    Token::new(kind, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             ('"', _) => {
@@ -423,15 +424,16 @@ impl<'source> Scanner<'source> {
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
                 let literal = interner.intern_literal(&self.string_buf);
 
-                Some(Token::new(
-                    TokenKind::String {
-                        id: literal,
-                        is_c_str,
-                    },
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                ))
+                Some(
+                    Token::new(
+                        TokenKind::String {
+                            id: literal,
+                            is_c_str,
+                        },
+                        lexeme,
+                    )
+                    .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             ('\'', _) => {
@@ -452,23 +454,19 @@ impl<'source> Scanner<'source> {
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
                 let ch = self.string_buf.chars().next().unwrap();
 
-                Some(Token::new(
-                    TokenKind::Char(ch),
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                ))
+                Some(
+                    Token::new(TokenKind::Char(ch), lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             (':', ':') => {
                 self.advance(); // Consume the second ':'
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(
-                    TokenKind::ColonColon,
-                    lexeme,
-                    self.file_id,
-                    self.lexeme_range(),
-                ))
+                Some(
+                    Token::new(TokenKind::ColonColon, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             ('0', 'x') => {
@@ -502,7 +500,10 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(
+                    Token::new(kind, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             ('0'..='9', _) => {
@@ -514,7 +515,10 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(
+                    Token::new(kind, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             (c, _) if is_ident_start(c) => {
@@ -592,7 +596,10 @@ impl<'source> Scanner<'source> {
                 };
 
                 let lexeme = interner.intern_lexeme(self.lexeme(input));
-                Some(Token::new(kind, lexeme, self.file_id, self.lexeme_range()))
+                Some(
+                    Token::new(kind, lexeme)
+                        .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
+                )
             }
 
             (c, _) => {
@@ -617,7 +624,7 @@ pub(crate) fn lex_file(
     file_id: FileId,
     interner: &mut Interners,
     source_store: &SourceStorage,
-) -> Result<Vec<Token>, ()> {
+) -> Result<Vec<Spanned<Token>>, ()> {
     let _span = debug_span!(stringify!(lexer::lex_file)).entered();
 
     let mut scanner = Scanner {

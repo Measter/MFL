@@ -4,13 +4,14 @@ use inkwell::{
     AddressSpace,
 };
 use intcast::IntCast;
+use lasso::Spur;
 
 use crate::{
     interners::Interners,
-    lexer::Token,
     n_ops::SliceNOps,
     opcode::Op,
     program::{static_analysis::Analyzer, ItemId},
+    source_file::Spanned,
     type_store::{TypeKind, TypeStore},
 };
 
@@ -272,7 +273,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
         op: &Op,
-        field_name: Token,
+        field_name: Spanned<Spur>,
         emit_struct: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
@@ -306,7 +307,7 @@ impl<'ctx> CodeGen<'ctx> {
         let field_idx = struct_def
             .fields
             .iter()
-            .position(|fi| fi.name.lexeme == field_name.lexeme)
+            .position(|fi| fi.name.inner == field_name.inner)
             .unwrap();
         let field_info = &struct_def.fields[field_idx];
         let field_type_info = type_store.get_type_info(field_info.kind);
@@ -371,7 +372,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
         op: &Op,
-        field_name: Token,
+        field_name: Spanned<Spur>,
         emit_struct: bool,
     ) {
         let op_io = analyzer.get_op_io(op.id);
@@ -402,7 +403,7 @@ impl<'ctx> CodeGen<'ctx> {
         let field_idx = struct_def
             .fields
             .iter()
-            .position(|fi| fi.name.lexeme == field_name.lexeme)
+            .position(|fi| fi.name.inner == field_name.inner)
             .unwrap();
 
         let data_value_id = if emit_struct {

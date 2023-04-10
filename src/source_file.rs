@@ -66,6 +66,36 @@ impl SourceLocation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spanned<T> {
+    pub inner: T,
+    pub location: SourceLocation,
+}
+
+impl<T> Spanned<T> {
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
+        f(self.inner).with_span(self.location)
+    }
+}
+
+pub trait WithSpan {
+    fn with_span(self, location: SourceLocation) -> Spanned<Self>
+    where
+        Self: Sized;
+}
+
+impl<T> WithSpan for T {
+    fn with_span(self, location: SourceLocation) -> Spanned<Self>
+    where
+        Self: Sized,
+    {
+        Spanned {
+            inner: self,
+            location,
+        }
+    }
+}
+
 struct LoadedSource {
     name: String,
     contents: String,

@@ -12,12 +12,11 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpCode, OpId},
     option::OptionExt,
     program::{ItemId, Program},
-    source_file::{SourceLocation, SourceStorage},
+    source_file::{SourceLocation, SourceStorage, Spanned},
     type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
@@ -141,7 +140,7 @@ struct Value {
 #[derive(Debug, Clone)]
 pub struct OpData {
     #[allow(unused)] // We need this for a debug print in a panic.
-    creator_token: Token,
+    creator_token: Spanned<Spur>,
     inputs: SmallVec<[ValueId; 8]>,
     outputs: SmallVec<[ValueId; 8]>,
 }
@@ -643,18 +642,10 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::Drop { count, count_token } => {
-                stack_check::stack_ops::drop(
-                    analyzer,
-                    stack,
-                    source_store,
-                    had_error,
-                    op,
-                    *count,
-                    *count_token,
-                );
+            OpCode::Drop { count } => {
+                stack_check::stack_ops::drop(analyzer, stack, source_store, had_error, op, *count);
             }
-            OpCode::Dup { count, count_token } => {
+            OpCode::Dup { count } => {
                 let mut local_had_error = false;
                 stack_check::stack_ops::dup(
                     analyzer,
@@ -663,7 +654,6 @@ fn analyze_block(
                     &mut local_had_error,
                     op,
                     *count,
-                    *count_token,
                 );
                 if !local_had_error {
                     type_check2::stack_ops::dup(analyzer, op);
@@ -796,7 +786,7 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::Over { depth, .. } => {
+            OpCode::Over { depth } => {
                 let mut local_had_error = false;
                 stack_check::stack_ops::over(
                     analyzer,
@@ -862,7 +852,7 @@ fn analyze_block(
 
                 *had_error |= local_had_error;
             }
-            OpCode::Reverse { count, count_token } => {
+            OpCode::Reverse { count } => {
                 stack_check::stack_ops::reverse(
                     analyzer,
                     stack,
@@ -870,15 +860,12 @@ fn analyze_block(
                     had_error,
                     op,
                     *count,
-                    *count_token,
                 );
             }
             OpCode::Rot {
                 item_count,
                 direction,
                 shift_count,
-                item_count_token,
-                shift_count_token,
             } => {
                 stack_check::stack_ops::rot(
                     analyzer,
@@ -889,20 +876,10 @@ fn analyze_block(
                     *item_count,
                     *direction,
                     *shift_count,
-                    *item_count_token,
-                    *shift_count_token,
                 );
             }
-            OpCode::Swap { count, count_token } => {
-                stack_check::stack_ops::swap(
-                    analyzer,
-                    stack,
-                    source_store,
-                    had_error,
-                    op,
-                    *count,
-                    *count_token,
-                );
+            OpCode::Swap { count } => {
+                stack_check::stack_ops::swap(analyzer, stack, source_store, had_error, op, *count);
             }
             OpCode::Unpack => {
                 let mut local_had_error = false;
@@ -1073,10 +1050,7 @@ fn analyze_block(
                 stack_check::control::prologue(analyzer, stack, op, item_tokens);
                 type_check2::control::prologue(analyzer, op, item_sig);
             }
-            OpCode::SysCall {
-                arg_count,
-                arg_count_token,
-            } => {
+            OpCode::SysCall { arg_count } => {
                 let mut local_had_error = false;
                 stack_check::control::syscall(
                     analyzer,
@@ -1085,7 +1059,6 @@ fn analyze_block(
                     &mut local_had_error,
                     op,
                     *arg_count,
-                    *arg_count_token,
                 );
                 if !local_had_error {
                     type_check2::control::syscall(

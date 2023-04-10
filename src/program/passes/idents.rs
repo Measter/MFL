@@ -3,18 +3,18 @@ use std::ops::Not;
 use ariadne::{Color, Label};
 use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashSet;
+use lasso::Spur;
 use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
     interners::Interners,
-    lexer::Token,
     opcode::{If, Op, OpCode, While},
     program::{
         static_analysis::ConstVal, symbol_redef_error, ItemHeader, ItemId, ItemKind, Program,
     },
     simulate::SimulatorValue,
-    source_file::{FileId, SourceLocation, SourceStorage},
+    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds, UnresolvedTypeTokens,
     },
@@ -27,23 +27,23 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        ident: &[Token],
+        ident: &[Spanned<Spur>],
     ) -> Result<ItemId, ()> {
         match ident {
             [] => panic!("ICE: empty unresolved ident"),
             // Symbol visible from the current item.
             [item_token] => {
-                let visible_id = if item_token.lexeme == item_header.name.lexeme {
+                let visible_id = if item_token.inner == item_header.name.inner {
                     // Obviously a symbol is visible to itself.
                     Some(item_header.id())
                 } else {
-                    self.get_visible_symbol(item_header, item_token.lexeme)
+                    self.get_visible_symbol(item_header, item_token.inner)
                 };
 
                 if let Some(id) = visible_id {
                     Ok(id)
                 } else {
-                    let token_lexeme = interner.resolve_lexeme(item_token.lexeme);
+                    let token_lexeme = interner.resolve_lexeme(item_token.inner);
                     *had_error = true;
                     diagnostics::emit_error(
                         item_token.location,
@@ -62,10 +62,10 @@ impl Program {
             }
             // Path from the top level module.
             [top_level_ident, sub_idents @ .., last_ident] => {
-                let start = match self.get_visible_symbol(item_header, top_level_ident.lexeme) {
+                let start = match self.get_visible_symbol(item_header, top_level_ident.inner) {
                     Some(item_id) => item_id,
                     None => {
-                        let item_name = interner.resolve_lexeme(top_level_ident.lexeme);
+                        let item_name = interner.resolve_lexeme(top_level_ident.inner);
                         diagnostics::emit_error(
                             top_level_ident.location,
                             format!("symbol `{item_name}` not found"),
@@ -81,10 +81,10 @@ impl Program {
                 // We know this is a multi-part ident, so the start must be a module.
                 let mut cur_module = &self.module_info[&start];
                 for sm in sub_idents {
-                    let next_module = match cur_module.get_visible_symbol(sm.lexeme) {
+                    let next_module = match cur_module.get_visible_symbol(sm.inner) {
                         Some(nid) => nid,
                         None => {
-                            let module_name = interner.resolve_lexeme(sm.lexeme);
+                            let module_name = interner.resolve_lexeme(sm.inner);
                             diagnostics::emit_error(
                                 sm.location,
                                 format!("module `{module_name}` not found"),
@@ -100,10 +100,10 @@ impl Program {
                     cur_module = &self.module_info[&next_module];
                 }
 
-                match cur_module.get_visible_symbol(last_ident.lexeme) {
+                match cur_module.get_visible_symbol(last_ident.inner) {
                     Some(item_id) => Ok(item_id),
                     None => {
-                        let item_name = interner.resolve_lexeme(last_ident.lexeme);
+                        let item_name = interner.resolve_lexeme(last_ident.inner);
                         diagnostics::emit_error(
                             last_ident.location,
                             format!("symbol `{item_name}` not found in module"),
@@ -126,7 +126,7 @@ impl Program {
         source_store: &SourceStorage,
         had_error: &mut bool,
         unresolved_type: &UnresolvedTypeTokens,
-        generic_params: Option<Token>,
+        generic_params: Option<Spanned<Spur>>,
     ) -> Result<UnresolvedTypeIds, ()> {
         let res = match unresolved_type {
             UnresolvedTypeTokens::Simple(unresolved_ident) => {
@@ -140,7 +140,7 @@ impl Program {
                     .reduce(SourceLocation::merge)
                     .unwrap();
 
-                let name = interner.resolve_lexeme(item_name.lexeme);
+                let name = interner.resolve_lexeme(item_name.inner);
                 let builtin_name = BuiltinTypes::from_name(name);
 
                 if unresolved_ident.len() > 1 && builtin_name.is_some() {
@@ -157,7 +157,7 @@ impl Program {
                 } else if let Some(builtin) = builtin_name {
                     UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else if unresolved_ident.len() == 1
-                    && generic_params.map(|t| t.lexeme) == Some(item_name.lexeme)
+                    && generic_params.map(|t| t.inner) == Some(item_name.inner)
                 {
                     UnresolvedTypeIds::SimpleGenericParam(*item_name)
                 } else {
@@ -171,10 +171,7 @@ impl Program {
 
                     UnresolvedTypeIds::SimpleCustom {
                         id: ident,
-                        token: Token {
-                            location: path_location,
-                            ..*item_name
-                        },
+                        token: item_name.inner.with_span(path_location),
                     }
                 }
             }
@@ -217,7 +214,7 @@ impl Program {
                     .reduce(SourceLocation::merge)
                     .unwrap();
 
-                let name = interner.resolve_lexeme(item_name.lexeme);
+                let name = interner.resolve_lexeme(item_name.inner);
                 let builtin_name = BuiltinTypes::from_name(name);
 
                 if unresolved_ident.len() > 1 && builtin_name.is_some() {
@@ -255,10 +252,7 @@ impl Program {
 
                     UnresolvedTypeIds::GenericInstance {
                         id: ident,
-                        id_token: Token {
-                            location: path_location,
-                            ..*item_name
-                        },
+                        id_token: item_name.inner.with_span(path_location),
                         param: Box::new(param),
                     }
                 }
@@ -348,7 +342,7 @@ impl Program {
                             );
                             String::new()
                         } else {
-                            let name = interner.resolve_lexeme(found_item_header.name.lexeme);
+                            let name = interner.resolve_lexeme(found_item_header.name.inner);
                             format!("`{name}` is a top-level module")
                         };
 
@@ -441,21 +435,22 @@ impl Program {
 
         let module_imports = module_info.unresolved_imports.clone();
 
-        for (import, import_span) in module_imports {
+        for import in module_imports {
             let Ok(resolved_item) = self.resolve_single_ident(
                         item,
                         interner,
                         source_store,
                         had_error,
-                        &import,
+                        &import.inner,
                     ) else { continue };
             let item_name = self.get_item_header(resolved_item).name;
             let module_info = self.module_info.get_mut(&item.id()).unwrap();
 
-            let res = module_info.add_visible_symbol(item_name.lexeme, import_span, resolved_item);
+            let res =
+                module_info.add_visible_symbol(item_name.inner, import.location, resolved_item);
             if let Err(prev_loc) = res {
                 *had_error = true;
-                symbol_redef_error(import_span, prev_loc, source_store);
+                symbol_redef_error(import.location, prev_loc, source_store);
             }
         }
     }
@@ -491,7 +486,7 @@ impl Program {
             } else if item.kind() == ItemKind::Memory {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 let memory_type = sig.memory_type.as_mut().unwrap();
-                let UnresolvedType::Tokens(memory_type_tokens) = memory_type else {
+                let UnresolvedType::Tokens(memory_type_tokens) = &memory_type.inner else {
                     unreachable!()
                 };
                 let Ok(new_kind) = self.resolve_idents_in_type(
@@ -505,15 +500,20 @@ impl Program {
                     had_error = true;
                     continue;
                 };
-                *memory_type = UnresolvedType::Id(new_kind);
+                memory_type.inner = UnresolvedType::Id(new_kind);
 
                 self.item_signatures_unresolved.insert(item_id, sig);
             } else if item.kind() == ItemKind::Module {
                 self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
-                for (kind, _) in sig.entry_stack.iter_mut().chain(&mut sig.exit_stack) {
-                    let UnresolvedType::Tokens(kind_tokens) = kind else {
+                for kind in sig
+                    .entry_stack
+                    .inner
+                    .iter_mut()
+                    .chain(&mut sig.exit_stack.inner)
+                {
+                    let UnresolvedType::Tokens(kind_tokens) = &kind.inner else {
                         unreachable!()
                     };
                     let Ok(new_kind) = self.resolve_idents_in_type(
@@ -528,7 +528,7 @@ impl Program {
                         continue;
                     };
 
-                    *kind = UnresolvedType::Id(new_kind);
+                    kind.inner = UnresolvedType::Id(new_kind);
                 }
 
                 self.item_signatures_unresolved.insert(item_id, sig);
@@ -776,7 +776,7 @@ impl Program {
                         ItemKind::Const => {
                             let Some(vals) = self.const_vals.get( &found_item.id ) else {
                                 let own_item = self.item_headers[&own_item_id];
-                                let name = interner.resolve_lexeme(own_item.name.lexeme);
+                                let name = interner.resolve_lexeme(own_item.name.inner);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (_, val) in vals {
@@ -826,7 +826,7 @@ impl Program {
                         }
                         ItemKind::Macro => {
                             let own_item = self.item_headers[&own_item_id];
-                            let name = interner.resolve_lexeme(own_item.name.lexeme);
+                            let name = interner.resolve_lexeme(own_item.name.inner);
                             panic!(
                                 "ICE: Encountered assert, or macro during ident processing {name}"
                             );

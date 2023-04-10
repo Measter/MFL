@@ -75,12 +75,12 @@ impl Program {
             if def.generic_params.is_some() {
                 generic_structs.push(id);
                 type_store.add_type(
-                    def.name.lexeme,
+                    def.name.inner,
                     def.name.location,
                     TypeKind::GenericStructBase(id),
                 );
             } else {
-                type_store.add_type(def.name.lexeme, def.name.location, TypeKind::Struct(id));
+                type_store.add_type(def.name.inner, def.name.location, TypeKind::Struct(id));
             }
         }
 
@@ -90,25 +90,7 @@ impl Program {
 
         for id in generic_structs {
             let def = self.structs_unresolved.get(&id).unwrap();
-            if let Err(missing_token) =
-                type_store.partially_resolve_generic_struct(interner, id, def)
-            {
-                // The type that failed to resolve is us.
-                diagnostics::emit_error(
-                    missing_token.location,
-                    "undefined field type",
-                    [
-                        Label::new(missing_token.location).with_color(Color::Red),
-                        Label::new(def.name.location)
-                            .with_color(Color::Cyan)
-                            .with_message("In this struct"),
-                    ],
-                    None,
-                    source_store,
-                );
-                had_error = true;
-                continue;
-            }
+            type_store.partially_resolve_generic_struct(interner, id, def)
         }
 
         // Now we try to resolve the struct definition.
@@ -271,8 +253,9 @@ impl Program {
 
             let unresolved_sig = &self.item_signatures_unresolved[&item_id];
 
-            let mut resolved_entry = SmallVec::with_capacity(unresolved_sig.entry_stack.len());
-            let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.len());
+            let mut resolved_entry =
+                SmallVec::with_capacity(unresolved_sig.entry_stack.inner.len());
+            let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.inner.len());
             let mut resolved_memory_type = None;
 
             if item.kind == ItemKind::Memory {
@@ -288,8 +271,8 @@ impl Program {
                     };
                 resolved_memory_type = Some(info.id);
             } else {
-                for (input_sig, _) in unresolved_sig.entry_stack() {
-                    let info = match type_store.resolve_type(interner, input_sig.as_id()) {
+                for input_sig in unresolved_sig.entry_stack() {
+                    let info = match type_store.resolve_type(interner, input_sig.inner.as_id()) {
                         Ok(info) => info,
                         Err(tk) => {
                             had_error = true;
@@ -300,8 +283,8 @@ impl Program {
                     resolved_entry.push(info.id);
                 }
 
-                for (input_sig, _) in unresolved_sig.exit_stack() {
-                    let info = match type_store.resolve_type(interner, input_sig.as_id()) {
+                for output_sig in unresolved_sig.exit_stack() {
+                    let info = match type_store.resolve_type(interner, output_sig.inner.as_id()) {
                         Ok(info) => info,
                         Err(tk) => {
                             had_error = true;
