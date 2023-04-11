@@ -1,10 +1,11 @@
 import std::term::write_ui_ln
+import std::term::write_si_ln
 
-struct Foo(T) is
+struct Foo(T U) is
     field a T
     field b T[3]
-    field c ptr(T)
-    field d Bar(T)
+    field c ptr(U)
+    field d Bar(U)
     field e Bar(u16)
 end
 
@@ -13,14 +14,14 @@ struct Bar(T) is
 end
 
 
-proc make_foo [] to [Foo(u32)] is 
+proc make_foo [] to [Foo(u32 s16)] is 
     0
     1(u32) 2 3 pack(3)
-    sizeof(u32) std::mem::alloc xtrd(data) xtrd(pointer) cast(ptr(u32))
-    dup 23 swap !
-    56 pack(Bar(u32))
+    sizeof(s16) std::mem::alloc xtrd(data) xtrd(pointer) cast(ptr(s16))
+    dup -23 swap !
+    -56 pack(Bar(s16))
     123 pack(Bar(u16))
-    pack(Foo(u32))
+    pack(Foo(u32 s16))
 end
 
 proc entry [] to [] is
@@ -32,9 +33,9 @@ proc entry [] to [] is
     write_ui_ln write_ui_ln write_ui_ln
 
     xtr(c)
-    @ write_ui_ln
+    @ write_si_ln
 
-    xtr(d) xtrd(a) write_ui_ln
+    xtr(d) xtrd(a) write_si_ln
     xtr(e) xtrd(a) write_ui_ln
     drop
 end

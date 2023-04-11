@@ -126,7 +126,7 @@ impl Program {
         source_store: &SourceStorage,
         had_error: &mut bool,
         unresolved_type: &UnresolvedTypeTokens,
-        generic_params: Option<Spanned<Spur>>,
+        generic_params: Option<&Vec<Spanned<Spur>>>,
     ) -> Result<UnresolvedTypeIds, ()> {
         let res = match unresolved_type {
             UnresolvedTypeTokens::Simple(unresolved_ident) => {
@@ -157,7 +157,9 @@ impl Program {
                 } else if let Some(builtin) = builtin_name {
                     UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else if unresolved_ident.len() == 1
-                    && generic_params.map(|t| t.inner) == Some(item_name.inner)
+                    && generic_params
+                        .and_then(|t| t.iter().find(|tp| tp.inner == item_name.inner))
+                        .is_some()
                 {
                     UnresolvedTypeIds::SimpleGenericParam(*item_name)
                 } else {
@@ -202,7 +204,7 @@ impl Program {
 
             UnresolvedTypeTokens::GenericInstance {
                 type_name: unresolved_ident,
-                param,
+                params,
             } => {
                 let item_name = unresolved_ident
                     .last()
@@ -229,6 +231,7 @@ impl Program {
                     *had_error = true;
                     return Err(());
                 } else if let Some(builtin) = builtin_name {
+                    assert!(generic_params.is_none());
                     UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else {
                     let Ok(ident) = self.resolve_single_ident(
@@ -241,19 +244,24 @@ impl Program {
                         return Err(());
                     };
 
-                    let param = self.resolve_idents_in_type(
-                        item_header,
-                        interner,
-                        source_store,
-                        had_error,
-                        param,
-                        generic_params,
-                    )?;
+                    let params: Vec<_> = params
+                        .iter()
+                        .map(|p| {
+                            self.resolve_idents_in_type(
+                                item_header,
+                                interner,
+                                source_store,
+                                had_error,
+                                p,
+                                generic_params,
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
 
                     UnresolvedTypeIds::GenericInstance {
                         id: ident,
                         id_token: item_name.inner.with_span(path_location),
-                        param: Box::new(param),
+                        params,
                     }
                 }
             }
@@ -393,7 +401,7 @@ impl Program {
                 source_store,
                 had_error,
                 field_kind,
-                def.generic_params,
+                def.generic_params.as_ref(),
             ) else {
                 *had_error = true;
                 continue;

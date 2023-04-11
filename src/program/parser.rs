@@ -240,30 +240,32 @@ fn parse_unresolved_types(
                 continue;
             };
 
-            if unresolved_types.len() != 1 {
-                let span = open_paren.location.merge(close_paren.location);
-                diagnostics::emit_error(
-                    span,
-                    format!("expected 1 type, found {}", unresolved_types.len()),
-                    [Label::new(span).with_color(Color::Red)],
-                    None,
-                    source_store,
-                );
-                had_error = true;
-                continue;
-            }
+            type_span = unresolved_types
+                .iter()
+                .fold(type_span, |acc, (_, span)| acc.merge(*span));
 
-            let (unresolved_type, span) = unresolved_types.pop().unwrap();
-            type_span = type_span.merge(span);
             let lexeme = interner.resolve_lexeme(ident.inner.lexeme);
             if lexeme == "ptr" {
-                UnresolvedTypeTokens::Pointer(Box::new(unresolved_type))
+                if unresolved_types.len() != 1 {
+                    let span = open_paren.location.merge(close_paren.location);
+                    diagnostics::emit_error(
+                        span,
+                        format!("expected 1 type, found {}", unresolved_types.len()),
+                        [Label::new(span).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    had_error = true;
+                    continue;
+                }
+
+                UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().0))
             } else {
                 let ident = parse_ident(&mut token_iter, interner, source_store, ident)
                     .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
                 UnresolvedTypeTokens::GenericInstance {
                     type_name: ident,
-                    param: Box::new(unresolved_type),
+                    params: unresolved_types.into_iter().map(|(t, _)| t).collect(),
                 }
             }
         } else {
@@ -1792,10 +1794,10 @@ fn parse_struct<'a>(
 
     let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
     {
-        let (_, mut generic_idents, _) = parse_delimited_token_list(
+        let (_, generic_idents, _) = parse_delimited_token_list(
             token_iter,
             name_token,
-            Some(1),
+            None,
             ("`(`", |t| t == TokenKind::ParenthesisOpen),
             ("`ident`", |t| t == TokenKind::Ident),
             ("`)`", |t| t == TokenKind::ParenthesisClosed),
@@ -1803,7 +1805,13 @@ fn parse_struct<'a>(
             source_store,
         )
         .recover(&mut had_error, (name_token, Vec::new(), name_token));
-        Some(generic_idents.pop().unwrap().map(|t| t.lexeme))
+
+        Some(
+            generic_idents
+                .into_iter()
+                .map(|st| st.map(|t| t.lexeme))
+                .collect(),
+        )
     } else {
         None
     };
