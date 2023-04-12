@@ -177,8 +177,8 @@ pub struct GenericPartiallyResolvedStruct {
 
 #[derive(Debug, Clone)]
 pub struct GenericPartiallyResolvedField {
-    name: Spanned<Spur>,
-    kind: GenericPartiallyResolvedFieldKind,
+    pub name: Spanned<Spur>,
+    pub kind: GenericPartiallyResolvedFieldKind,
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +188,36 @@ pub enum GenericPartiallyResolvedFieldKind {
     GenericParamPointer(Box<Self>),      // ptr(T)
     GenericParamArray(Box<Self>, usize), // T[N]
     GenericStruct(ItemId, Vec<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
+}
+
+impl GenericPartiallyResolvedFieldKind {
+    pub fn match_generic_type(
+        &self,
+        param: Spur,
+        input_id: TypeId,
+        input_kind: TypeKind,
+    ) -> Option<TypeId> {
+        match (self, input_kind) {
+            (GenericPartiallyResolvedFieldKind::GenericParamSimple(s), _) if s.inner == param => {
+                Some(input_id)
+            }
+            (
+                GenericPartiallyResolvedFieldKind::GenericParamPointer(t),
+                TypeKind::Pointer(ptr_type),
+            ) if matches!(&**t, GenericPartiallyResolvedFieldKind::GenericParamSimple(t) if t.inner == param) => {
+                Some(ptr_type)
+            }
+
+            (
+                GenericPartiallyResolvedFieldKind::GenericParamArray(t, ..),
+                TypeKind::Array { type_id, .. },
+            ) if matches!(&**t, GenericPartiallyResolvedFieldKind::GenericParamSimple(t) if t.inner == param) => {
+                Some(type_id)
+            }
+
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -598,7 +628,7 @@ impl TypeStore {
         }
     }
 
-    fn instantiate_generic_struct(
+    pub fn instantiate_generic_struct(
         &mut self,
         interner: &mut Interners,
         base_item_id: ItemId,
@@ -786,6 +816,11 @@ impl TypeStore {
     #[track_caller]
     pub fn get_struct_def(&self, id: TypeId) -> &FixedResolvedStruct {
         &self.fixed_struct_defs[&id]
+    }
+
+    #[track_caller]
+    pub fn get_generic_base_def(&self, id: TypeId) -> &GenericPartiallyResolvedStruct {
+        &self.generic_struct_id_map[&id]
     }
 }
 

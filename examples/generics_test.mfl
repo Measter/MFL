@@ -13,15 +13,14 @@ struct Bar(T) is
     field a T
 end
 
-
 proc make_foo [] to [Foo(u32 s16)] is 
-    0
+    0(u32)
     1(u32) 2 3 pack(3)
     sizeof(s16) std::mem::alloc xtrd(data) xtrd(pointer) cast(ptr(s16))
     dup -23 swap !
-    -56 pack(Bar(s16))
-    123 pack(Bar(u16))
-    pack(Foo(u32 s16))
+    -56(s16) pack(Bar)
+    123(u16) pack(Bar)
+    pack(Foo)
 end
 
 proc entry [] to [] is

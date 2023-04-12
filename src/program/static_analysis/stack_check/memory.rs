@@ -57,33 +57,28 @@ pub fn pack_struct(
     type_id: TypeId,
 ) {
     let type_info = type_store.get_type_info(type_id);
-    if !matches!(
-        type_info.kind,
-        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_)
-    ) {
-        diagnostics::emit_error(
-            op.token.location,
-            "cannot pack that type",
-            [Label::new(op.token.location).with_color(Color::Red)],
-            None,
-            source_store,
-        );
-        *had_error = true;
-        return;
-    }
-    let struct_info = type_store.get_struct_def(type_id);
+    let num_fields = match type_info.kind {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            type_store.get_struct_def(type_id).fields.len()
+        }
+        TypeKind::GenericStructBase(_) => type_store.get_generic_base_def(type_id).fields.len(),
+        _ => {
+            diagnostics::emit_error(
+                op.token.location,
+                "cannot pack that type",
+                [Label::new(op.token.location).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            *had_error = true;
+            return;
+        }
+    };
 
-    ensure_stack_depth(
-        analyzer,
-        stack,
-        source_store,
-        had_error,
-        op,
-        struct_info.fields.len(),
-    );
+    ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_fields);
 
     let mut inputs = Vec::new();
-    let input_ids = stack.lastn(struct_info.fields.len()).unwrap();
+    let input_ids = stack.lastn(num_fields).unwrap();
     for &id in input_ids {
         inputs.push(id);
         analyzer.consume_value(id, op.id);

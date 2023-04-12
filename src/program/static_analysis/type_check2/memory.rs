@@ -89,15 +89,61 @@ pub fn pack_struct(
     analyzer: &mut Analyzer,
     interner: &mut Interners,
     source_store: &SourceStorage,
-    type_store: &TypeStore,
+    type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
     type_id: TypeId,
 ) {
-    let struct_info = type_store.get_struct_def(type_id);
-
     let op_data = analyzer.get_op_io(op.id);
     let inputs = op_data.inputs();
+
+    // Let's see if we can determine the field types from our inputs.
+    let type_id = if let TypeKind::GenericStructBase(item_id) =
+        type_store.get_type_info(type_id).kind
+    {
+        let generic_def = type_store.get_generic_base_def(type_id);
+
+        let mut param_types = Vec::new();
+
+        for param in &generic_def.generic_params {
+            let mut found_field = false;
+            for (field, input_id) in generic_def.fields.iter().zip(inputs) {
+                let Some([input_type]) = analyzer.value_types([*input_id]) else { continue };
+                let input_type_kind = type_store.get_type_info(input_type).kind;
+
+                let Some(type_id) =
+                        field
+                            .kind
+                            .match_generic_type(param.inner, input_type, input_type_kind) else { continue };
+
+                param_types.push(type_id);
+                found_field = true;
+                break;
+            }
+
+            if !found_field {
+                *had_error = true;
+                diagnostics::emit_error(
+                    op.token.location,
+                    "Unable to infer type parameter",
+                    [
+                        Label::new(op.token.location).with_color(Color::Red),
+                        Label::new(param.location).with_color(Color::Cyan),
+                    ],
+                    None,
+                    source_store,
+                );
+            }
+        }
+
+        type_store
+            .instantiate_generic_struct(interner, item_id, type_id, param_types)
+            .id
+    } else {
+        type_id
+    };
+
+    let struct_info = type_store.get_struct_def(type_id);
 
     for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
         let Some([input_type_id]) = analyzer.value_types([input_id]) else { continue };
