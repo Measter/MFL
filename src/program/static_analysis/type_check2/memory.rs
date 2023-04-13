@@ -611,7 +611,9 @@ pub fn insert_struct(
     {
         let data_type_name = interner.resolve_lexeme(data_type_info.name);
         let struct_type_name = match input_struct_type_info.kind {
-            TypeKind::Struct(_) => interner.resolve_lexeme(input_struct_type_info.name),
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                interner.resolve_lexeme(input_struct_type_info.name)
+            }
             TypeKind::Pointer(subtype_id) => {
                 let sub_type_info = type_store.get_type_info(subtype_id);
                 interner.resolve_lexeme(sub_type_info.name)
