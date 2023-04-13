@@ -647,9 +647,9 @@ pub fn parse_item_body(
                     let Ok(delim) = parse_delimited_token_list(
                         &mut token_iter,
                         token,
-                        Some(1),
+                        None,
                         ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("ident", |t| t == TokenKind::Ident),
+                        ("ident", |t| t == TokenKind::Ident || t == TokenKind::Dot),
                         (")", |t| t == TokenKind::ParenthesisClosed),
                         interner,
                         source_store,
@@ -659,16 +659,103 @@ pub fn parse_item_body(
                     };
 
                     token.location = token.location.merge(delim.close.location);
+                    let mut delim_iter = delim.list.iter().enumerate().peekable();
+                    let mut idents = Vec::new();
 
-                    let ident_token = delim.list[0];
+                    // We want to make sure the Dots exist, but we don't actually want them.
+                    let mut local_had_error = false;
+                    let mut prev_token = delim.open;
+                    loop {
+                        let Ok(next) = expect_token(
+                            &mut delim_iter,
+                            "ident",
+                            |t| t == TokenKind::Ident,
+                            prev_token,
+                            interner,
+                            source_store,
+                        ) else {
+                            local_had_error = true;
+                            break;
+                        };
+                        idents.push(next.1);
+
+                        if matches!(delim_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::Dot)
+                        {
+                            prev_token = *delim_iter.next().unwrap().1;
+                            continue;
+                        }
+                        break;
+                    }
+
+                    if local_had_error {
+                        had_error = true;
+                        continue;
+                    }
+
                     match token.inner.kind {
-                        TokenKind::Extract { emit_struct } => OpCode::ExtractStruct {
-                            emit_struct,
-                            field_name: ident_token.map(|t| t.lexeme),
-                        },
+                        TokenKind::Extract { emit_struct } => {
+                            // As we're generating multiple ops, we need a bit of manual handling.
+                            let mut emit_struct = emit_struct;
+                            for field_name in idents {
+                                let first = OpCode::ExtractStruct {
+                                    emit_struct,
+                                    field_name: field_name.map(|t| t.lexeme),
+                                };
+
+                                ops.push(Op::new(op_id_gen(), first, token.map(|t| t.lexeme)));
+                                emit_struct = false;
+                            }
+
+                            continue;
+                        }
+                        TokenKind::Insert { emit_struct } if idents.len() > 1 => {
+                            // Hang on to your seat, this'll be a good one!
+                            let [prev @ .., _] = idents.as_slice() else { unreachable!() };
+
+                            for &ident in prev {
+                                let xtr = OpCode::ExtractStruct {
+                                    emit_struct: true,
+                                    field_name: ident.map(|t| t.lexeme),
+                                };
+                                ops.push(Op::new(op_id_gen(), xtr, token.map(|t| t.lexeme)));
+                            }
+
+                            let rot_len = (idents.len() + 1).to_u8().unwrap();
+                            let rot = OpCode::Rot {
+                                item_count: rot_len.with_span(token.location),
+                                direction: Direction::Left,
+                                shift_count: 1.with_span(token.location),
+                            };
+                            ops.push(Op::new(op_id_gen(), rot, token.map(|t| t.lexeme)));
+
+                            let [first, prev @ ..] = idents.as_slice() else { unreachable!() };
+                            for ident in prev.iter().rev() {
+                                let swap = OpCode::Swap {
+                                    count: 1.with_span(token.location),
+                                };
+                                ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
+                                let ins = OpCode::InsertStruct {
+                                    emit_struct: true,
+                                    field_name: ident.map(|t| t.lexeme),
+                                };
+                                ops.push(Op::new(op_id_gen(), ins, token.map(|t| t.lexeme)));
+                            }
+
+                            let swap = OpCode::Swap {
+                                count: 1.with_span(token.location),
+                            };
+                            ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
+                            let kind = OpCode::InsertStruct {
+                                emit_struct,
+                                field_name: first.map(|t| t.lexeme),
+                            };
+                            ops.push(Op::new(op_id_gen(), kind, token.map(|t| t.lexeme)));
+                            continue;
+                            // todo!()
+                        }
                         TokenKind::Insert { emit_struct } => OpCode::InsertStruct {
                             emit_struct,
-                            field_name: ident_token.map(|t| t.lexeme),
+                            field_name: idents[0].map(|t| t.lexeme),
                         },
                         _ => unreachable!(),
                     }
@@ -1018,6 +1105,7 @@ pub fn parse_item_body(
             | TokenKind::Is
             | TokenKind::Import
             | TokenKind::Do
+            | TokenKind::Dot
             | TokenKind::Elif
             | TokenKind::Else
             | TokenKind::End

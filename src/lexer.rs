@@ -32,6 +32,7 @@ pub enum TokenKind {
     Const,
     Div,
     Do,
+    Dot,
     Drop,
     Dup,
     Elif,
@@ -103,6 +104,7 @@ impl TokenKind {
             | TokenKind::Const
             | TokenKind::Div
             | TokenKind::Do
+            | TokenKind::Dot
             | TokenKind::Drop
             | TokenKind::Dup
             | TokenKind::Elif
@@ -383,7 +385,8 @@ impl<'source> Scanner<'source> {
             }
 
             (
-                '+' | '-' | '=' | '<' | '>' | '*' | '/' | '%' | '[' | ']' | '(' | ')' | '@' | '!',
+                '+' | '-' | '=' | '<' | '>' | '*' | '/' | '%' | '[' | ']' | '(' | ')' | '@' | '!'
+                | '.',
                 _,
             ) => {
                 let kind = match ch {
@@ -401,6 +404,7 @@ impl<'source> Scanner<'source> {
                     ']' => TokenKind::SquareBracketClosed,
                     '!' => TokenKind::Store,
                     '@' => TokenKind::Load,
+                    '.' => TokenKind::Dot,
                     _ => unreachable!(),
                 };
 

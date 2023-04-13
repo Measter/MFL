@@ -283,7 +283,7 @@ Supported Types:
 |`T[N]`|`uN`|`T[N]`|`T`|
 |`ptr(T[N])`|`uN`|`ptr(T[N])`|`T`|
 
-### `ins(Field)`, `insd(Field)` (Insert into Struct)
+### `ins(Field[.Field]*)`, `insd(Field[.Field]*)` (Insert into Struct)
 
 Stores a value to field `Field` in a value of struct `T`
 
@@ -303,7 +303,7 @@ Supported Types:
 |`F`|`T`|`T`|
 |`F`|`ptr(T)`|`ptr(T)`|
 
-### `xtr(Field)`, `xtrd(Field)` (Extract from Struct)
+### `xtr(Field[.Field]*)`, `xtrd(Field[.Field]*)` (Extract from Struct)
 
 Retrieves a value from a struct at the given field.
 
