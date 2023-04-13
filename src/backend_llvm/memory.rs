@@ -288,7 +288,7 @@ impl<'ctx> CodeGen<'ctx> {
         let data_type_info = type_store.get_type_info(data_type_id);
 
         let (struct_value, struct_def) = match input_struct_type_info.kind {
-            TypeKind::Struct(_) => {
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = type_store.get_struct_def(input_struct_type_id);
                 (input_struct_val.into_struct_value(), struct_def)
             }
@@ -347,7 +347,9 @@ impl<'ctx> CodeGen<'ctx> {
             )
             .unwrap();
 
-        if let TypeKind::Struct(_) = input_struct_type_info.kind {
+        if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) =
+            input_struct_type_info.kind
+        {
             // In this case we just store the struct directly.
             if emit_struct {
                 value_store.store_value(
