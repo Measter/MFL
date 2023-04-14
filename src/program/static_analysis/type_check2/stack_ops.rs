@@ -1,10 +1,9 @@
-use std::fmt::Write;
-
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use prettytable::{row, Table};
 
 use crate::{
-    diagnostics,
+    diagnostics::{self, TABLE_FORMAT},
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
@@ -22,9 +21,9 @@ pub fn emit_stack(
     op: &Op,
     emit_labels: bool,
 ) {
-    let mut note = "\n\t\tID    |     Type\n\
-        \t\t______|__________"
-        .to_owned();
+    let mut note = Table::new();
+    note.set_format(*TABLE_FORMAT);
+    note.set_titles(row!("ID", "Type"));
 
     let mut value_points = Vec::new();
 
@@ -40,7 +39,7 @@ pub fn emit_stack(
             value_points.push((*value_id, value_idx.to_u64(), value_type));
         }
 
-        write!(&mut note, "\n\t\t{:<5} | {:>8}", value_idx, value_type,).unwrap();
+        note.add_row(row!(value_idx.to_string(), value_type));
     }
 
     let mut labels =
@@ -52,7 +51,7 @@ pub fn emit_stack(
         op.token.location,
         "printing stack trace",
         labels,
-        note,
+        note.to_string(),
         source_store,
     );
 }

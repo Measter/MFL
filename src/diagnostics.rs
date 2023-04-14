@@ -1,10 +1,23 @@
 use ariadne::{Color, Label, Report, ReportKind};
 use intcast::IntCast;
+use once_cell::sync::Lazy;
+use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
     program::static_analysis::{Analyzer, ValueId},
     source_file::{SourceLocation, SourceStorage},
 };
+
+pub static TABLE_FORMAT: Lazy<TableFormat> = Lazy::new(|| {
+    let mut format = TableFormat::new();
+    format.padding(1, 1);
+    format.column_separator('│');
+    format.separators(
+        &[LinePosition::Title],
+        LineSeparator::new('─', '┼', '├', '┤'),
+    );
+    format
+});
 
 pub fn build_creator_label_chain<'a, V>(
     analyzer: &Analyzer,

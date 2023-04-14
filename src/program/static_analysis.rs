@@ -7,10 +7,11 @@ use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
+use prettytable::{row, Table};
 use smallvec::SmallVec;
 
 use crate::{
-    diagnostics,
+    diagnostics::{self, TABLE_FORMAT},
     interners::Interners,
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpCode, OpId},
@@ -314,9 +315,9 @@ fn failed_compare_stack_types(
     error_location: SourceLocation,
     msg: &str,
 ) {
-    let mut note = "\n\t\tDepth | Expected |   Actual\n\
-        \t\t______|__________|_________"
-        .to_owned();
+    let mut note = Table::new();
+    note.set_format(*TABLE_FORMAT);
+    note.set_titles(row!("Depth", "Expected", "Actual"));
 
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
     let mut bad_values = Vec::new();
@@ -330,14 +331,11 @@ fn failed_compare_stack_types(
 
         let expected_type_info = type_store.get_type_info(*expected);
         let expected_name = interner.resolve_lexeme(expected_type_info.name);
-        write!(
-            &mut note,
-            "\n\t\t{:<5} | {:<8} | {:>8}",
-            actual_stack.len() - idx - 1,
+        note.add_row(row!(
+            (actual_stack.len() - idx - 1).to_string(),
             expected_name,
-            value_type,
-        )
-        .unwrap();
+            value_type
+        ));
     }
 
     let mut labels =
@@ -351,7 +349,7 @@ fn failed_compare_stack_types(
             .with_message("expected due to this signature"),
     ]);
 
-    diagnostics::emit_error(error_location, msg, labels, note, source_store);
+    diagnostics::emit_error(error_location, msg, labels, note.to_string(), source_store);
 }
 
 fn generate_type_mismatch_diag(
