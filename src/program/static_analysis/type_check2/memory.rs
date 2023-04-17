@@ -216,7 +216,7 @@ pub fn unpack(
                 analyzer.set_value_type(output_id, type_id);
             }
         }
-        TypeKind::Struct(_) => {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
             let fields = type_store.get_struct_def(aggr_type_id);
             for (output_id, field_info) in outputs.iter().zip(&fields.fields) {
                 analyzer.set_value_type(*output_id, field_info.kind);

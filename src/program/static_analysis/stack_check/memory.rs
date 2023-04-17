@@ -223,7 +223,7 @@ pub fn unpack(
 
     let length = match input_type_info.kind {
         TypeKind::Array { length, .. } => length,
-        TypeKind::Struct(_) => {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
             let struct_info = type_store.get_struct_def(input_type_id);
             struct_info.fields.len()
         }

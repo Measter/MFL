@@ -115,7 +115,9 @@ impl<'ctx> CodeGen<'ctx> {
 
         let aggr = match input_type_info.kind {
             TypeKind::Array { .. } => aggr.into_array_value().as_aggregate_value_enum(),
-            TypeKind::Struct(_) => aggr.into_struct_value().as_aggregate_value_enum(),
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                aggr.into_struct_value().as_aggregate_value_enum()
+            }
             _ => unreachable!(),
         };
 
