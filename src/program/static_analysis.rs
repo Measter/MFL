@@ -1231,6 +1231,7 @@ fn analyze_block(
             }
             OpCode::ResolvedIdent {
                 item_id: resolved_item,
+                ..
             } => {
                 let mut local_had_error = false;
                 stack_check::control::resolved_ident(

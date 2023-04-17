@@ -277,6 +277,7 @@ impl Program {
         had_error: &mut bool,
         interner: &Interners,
         source_store: &SourceStorage,
+        generic_params: Option<&Vec<Spanned<Spur>>>,
     ) -> Vec<Op> {
         for op in &mut body {
             match &mut op.code {
@@ -288,6 +289,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        generic_params,
                     );
                     let temp_body = std::mem::take(&mut while_op.body_block);
                     while_op.body_block = self.resolve_idents_in_block(
@@ -296,6 +298,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        generic_params,
                     );
                 }
                 OpCode::If(if_op) => {
@@ -307,6 +310,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        generic_params,
                     );
                     let temp_body = std::mem::take(&mut if_op.then_block);
                     if_op.then_block = self.resolve_idents_in_block(
@@ -315,6 +319,7 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        generic_params,
                     );
                     let temp_body = std::mem::take(&mut if_op.else_block);
                     if_op.else_block = self.resolve_idents_in_block(
@@ -323,18 +328,37 @@ impl Program {
                         had_error,
                         interner,
                         source_store,
+                        generic_params,
                     );
                 }
 
                 OpCode::UnresolvedIdent(ident) => {
-                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, ident) else {
+                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, &ident.path) else {
                         continue;
                     };
+
+                    let mut resolved_generic_params = Vec::new();
+                    for param in &ident.generic_params {
+                        let UnresolvedType::Tokens(param) = param else { unreachable!() };
+                        let Ok(f) = self.resolve_idents_in_type(
+                            item,
+                            interner,
+                            source_store,
+                            had_error,
+                            param,
+                            generic_params,
+                        ) else { continue; };
+                        resolved_generic_params.push(UnresolvedType::Id(f));
+                    }
 
                     let found_item_header = self.item_headers[&item_id];
                     if !matches!(
                         found_item_header.kind(),
-                        ItemKind::Function | ItemKind::Macro | ItemKind::Const | ItemKind::Memory
+                        ItemKind::Function
+                            | ItemKind::GenericFunction
+                            | ItemKind::Macro
+                            | ItemKind::Const
+                            | ItemKind::Memory
                     ) {
                         *had_error = true;
                         let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
@@ -364,14 +388,17 @@ impl Program {
                         continue;
                     }
 
-                    op.code = OpCode::ResolvedIdent { item_id };
+                    op.code = OpCode::ResolvedIdent {
+                        item_id,
+                        generic_params: resolved_generic_params,
+                    };
                 }
                 OpCode::UnresolvedCast { unresolved_type }
                 | OpCode::UnresolvedPackStruct { unresolved_type }
                 | OpCode::UnresolvedSizeOf { unresolved_type } => {
                     let UnresolvedType::Tokens(ty) = unresolved_type else { panic!("ICE: tried to resolve type on resolved type") };
 
-                    let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, ty, None) else {
+                    let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, ty, generic_params) else {
                         *had_error = true;
                         continue;
                     };
@@ -515,6 +542,13 @@ impl Program {
                 self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
+
+                let generic_params = if item.kind() == ItemKind::GenericFunction {
+                    Some(&self.function_data[&item_id].generic_params)
+                } else {
+                    None
+                };
+
                 for kind in sig
                     .entry_stack
                     .inner
@@ -530,7 +564,7 @@ impl Program {
                         source_store,
                         &mut had_error,
                         kind_tokens,
-                        None,
+                        generic_params,
                     ) else {
                         had_error = true;
                         continue;
@@ -550,6 +584,7 @@ impl Program {
                         &mut had_error,
                         interner,
                         source_store,
+                        generic_params,
                     ),
                 );
             }
@@ -677,9 +712,11 @@ impl Program {
                 ItemKind::Const => "const",
                 ItemKind::Macro => "macro",
                 ItemKind::Assert => "assert",
-                ItemKind::Memory | ItemKind::Function | ItemKind::StructDef | ItemKind::Module => {
-                    continue
-                }
+                ItemKind::Memory
+                | ItemKind::Function
+                | ItemKind::StructDef
+                | ItemKind::Module
+                | ItemKind::GenericFunction => continue,
             };
 
             check_queue.clear();
@@ -777,7 +814,7 @@ impl Program {
                     });
                 }
 
-                OpCode::ResolvedIdent { item_id } => {
+                OpCode::ResolvedIdent { item_id, .. } => {
                     let found_item = self.item_headers[&item_id];
 
                     match found_item.kind() {
@@ -832,6 +869,9 @@ impl Program {
                                 expansions: op.expansions,
                             });
                         }
+                        ItemKind::GenericFunction => {
+                            unreachable!()
+                        }
                         ItemKind::Macro => {
                             let own_item = self.item_headers[&own_item_id];
                             let name = interner.resolve_lexeme(own_item.name.inner);
@@ -880,6 +920,7 @@ impl Program {
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
+                    && i.kind() != ItemKind::GenericFunction
             })
             .map(|(id, _)| *id)
             .collect();

@@ -83,6 +83,12 @@ pub struct If {
 }
 
 #[derive(Debug, Clone)]
+pub struct UnresolvedIdent {
+    pub path: Vec<Spanned<Spur>>,
+    pub generic_params: Vec<UnresolvedType>,
+}
+
+#[derive(Debug, Clone)]
 pub enum OpCode {
     Add,
     ArgC,
@@ -156,6 +162,7 @@ pub enum OpCode {
     },
     ResolvedIdent {
         item_id: ItemId,
+        generic_params: Vec<UnresolvedType>,
     },
     Rem,
     Return,
@@ -182,7 +189,7 @@ pub enum OpCode {
     UnresolvedCast {
         unresolved_type: UnresolvedType,
     },
-    UnresolvedIdent(Vec<Spanned<Spur>>),
+    UnresolvedIdent(UnresolvedIdent),
     UnresolvedPackStruct {
         unresolved_type: UnresolvedType,
     },

@@ -9,16 +9,17 @@ const MAP_PRIVATE [u64] is 0x02 end
 const SYS_MMAP [u64] is 0x09 end
 const SYS_MUNMAP [u64] is 0x0B end
 
-struct MMap is
-    field pointer ptr(u8)
+struct MMap(T) is
+    field pointer ptr(T)
     field length u64
 end
 
-proc alloc [
-    u64 // Size in bytes of the allocation
-] to [Result(MMap)] is
+proc alloc(T) [
+    u64 // Number of Ts to allocate for
+] to [Result(MMap(T))] is
     dup
 
+    sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
     SYS_MMAP 0 rot(3<1)
     PROT_READ PROT_WRITE or
     MAP_ANONYMOUS MAP_PRIVATE or
@@ -34,21 +35,22 @@ proc alloc [
         // Drop the len and pointer
         rot(3>1) drop(2)
         // Store a null pointer and 0 length.
-        0(u64) cast(ptr(u8)) 0
+        0(u64) cast(ptr(T)) 0
         pack(MMap)
-        pack(Result(MMap)) return
+        pack(Result) return
     end
     drop 0
     // [len ptr errcode]
     rev(3)
-    swap cast(ptr(u8)) swap
+    swap cast(ptr(T)) swap
     pack(MMap)
-    pack(Result(MMap))
+    pack(Result)
 end
 
-proc free [MMap] to [SimpleResult] is
+proc free(T) [MMap(T)] to [SimpleResult] is
     unpack
     // [ptr len]
+    sizeof(T) *
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0 swap - cast(u64)
     pack(SimpleResult)
@@ -57,7 +59,7 @@ end
 proc mmap_file [
     std::io::FD
     u64 // Protection flags. Must match the FD.
-] to [Result(MMap)] is
+] to [Result(MMap(u8))] is
     over std::fs::fstat
     if xtr(errno) 0!= do
         rot(3>1) drop(2)
@@ -65,7 +67,7 @@ proc mmap_file [
         0(u64) cast(ptr(u8)) // Null pointer
         0                    // length
         pack(MMap)
-        pack(Result(MMap)) return
+        pack(Result) return
     end
     xtrd(data)
 
@@ -98,6 +100,6 @@ proc mmap_file [
         drop cast(ptr(u8)) swap pack(MMap) 0 swap
     end
 
-    pack(Result(MMap)) return
+    pack(Result) return
 end
 

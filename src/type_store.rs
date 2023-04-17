@@ -108,7 +108,7 @@ pub enum TypeKind {
     GenericStructInstance(ItemId),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinTypes {
     U8,
     U16,
@@ -234,7 +234,7 @@ pub struct UnresolvedField {
 }
 
 // Used prior to ident resolution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedTypeTokens {
     Simple(Vec<Spanned<Spur>>),
     Array(Box<UnresolvedTypeTokens>, usize),
@@ -246,7 +246,7 @@ pub enum UnresolvedTypeTokens {
 }
 
 // Used after ident resolution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedTypeIds {
     SimpleCustom {
         id: ItemId,
@@ -263,7 +263,7 @@ pub enum UnresolvedTypeIds {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedType {
     Tokens(UnresolvedTypeTokens),
     Id(UnresolvedTypeIds),

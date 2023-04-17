@@ -14,7 +14,7 @@ impl FileId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceLocation {
     pub file_id: FileId,
     pub source_start: u32,
@@ -66,7 +66,7 @@ impl SourceLocation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Spanned<T> {
     pub inner: T,
     pub location: SourceLocation,

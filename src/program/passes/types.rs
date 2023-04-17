@@ -245,7 +245,11 @@ impl Program {
         let items = self
             .item_headers
             .iter()
-            .filter(|(_, item)| item.kind != ItemKind::StructDef && item.kind != ItemKind::Module)
+            .filter(|(_, item)| {
+                item.kind != ItemKind::StructDef
+                    && item.kind != ItemKind::Module
+                    && item.kind != ItemKind::GenericFunction
+            })
             .map(|(id, item)| (*id, *item));
 
         for (item_id, item) in items {

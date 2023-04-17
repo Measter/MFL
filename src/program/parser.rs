@@ -2,7 +2,6 @@ use std::{collections::VecDeque, fmt::Display, iter::Peekable, ops::Not, str::Fr
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
-use lasso::Spur;
 use num::{PrimInt, Unsigned};
 use smallvec::SmallVec;
 use tracing::debug_span;
@@ -11,7 +10,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
-    opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
+    opcode::{Direction, If, IntKind, Op, OpCode, OpId, UnresolvedIdent, While},
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{
         IntWidth, Signedness, UnresolvedField, UnresolvedStruct, UnresolvedType,
@@ -285,16 +284,30 @@ fn parse_unresolved_types(
 
                 UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().0))
             } else {
-                let ident = parse_ident(&mut token_iter, interner, source_store, ident)
-                    .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
+                let ident = parse_ident(
+                    &mut token_iter,
+                    interner,
+                    source_store,
+                    &mut had_error,
+                    ident,
+                )
+                .map(|id| id.path)
+                .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
                 UnresolvedTypeTokens::GenericInstance {
                     type_name: ident,
                     params: unresolved_types.into_iter().map(|(t, _)| t).collect(),
                 }
             }
         } else {
-            let ident = parse_ident(&mut token_iter, interner, source_store, ident)
-                .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
+            let ident = parse_ident(
+                &mut token_iter,
+                interner,
+                source_store,
+                &mut had_error,
+                ident,
+            )
+            .map(|id| id.path)
+            .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
             UnresolvedTypeTokens::Simple(ident)
         };
 
@@ -924,7 +937,7 @@ pub fn parse_item_body(
                 value: IntKind::Unsigned((ch as u8).to_u64()),
             },
             TokenKind::Ident => {
-                let Ok(ident) = parse_ident(&mut token_iter, interner, source_store, token) else {
+                let Ok(ident) = parse_ident(&mut token_iter, interner, source_store, &mut had_error, token) else {
                     had_error = true;
                     continue;
                 };
@@ -1139,8 +1152,9 @@ fn parse_ident<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     interner: &Interners,
     source_store: &SourceStorage,
-    token: Spanned<Token>,
-) -> Result<Vec<Spanned<Spur>>, ()> {
+    had_error: &mut bool,
+    mut token: Spanned<Token>,
+) -> Result<UnresolvedIdent, ()> {
     let mut path = vec![token.map(|t| t.lexeme)];
 
     while matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ColonColon) {
@@ -1157,7 +1171,53 @@ fn parse_ident<'a>(
         path.push(item_id.map(|t| t.lexeme));
     }
 
-    Ok(path)
+    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+    {
+        let Ok(delim) = parse_delimited_token_list(
+            token_iter,
+            token,
+            None,
+            ("(", |t| t == TokenKind::ParenthesisOpen),
+            ("Ident", valid_type_token),
+            (")", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        ) else {
+            *had_error = true;
+            return Err(());
+        };
+        token.location = token.location.merge(delim.close.location);
+
+        let span = delim.span();
+        let Ok( unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, delim.list) else {
+            *had_error = true;
+            return Err(());
+        };
+
+        if unresolved_types.is_empty() {
+            diagnostics::emit_error(
+                span,
+                "expected at least type, found 0",
+                [Label::new(span).with_color(Color::Red)],
+                None,
+                source_store,
+            );
+            *had_error = true;
+            return Err(());
+        }
+
+        unresolved_types
+            .into_iter()
+            .map(|(ut, _)| UnresolvedType::Tokens(ut))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(UnresolvedIdent {
+        path,
+        generic_params,
+    })
 }
 
 fn get_item_body<'a>(
@@ -1528,9 +1588,27 @@ fn parse_function_header<'a>(
     source_store: &SourceStorage,
 ) -> Result<(Spanned<Token>, ItemId), ()> {
     let mut had_error = false;
+
+    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+    {
+        parse_delimited_token_list(
+            token_iter,
+            name,
+            None,
+            ("(", |t| t == TokenKind::ParenthesisOpen),
+            ("ident", |t| t == TokenKind::Ident),
+            (")", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        )
+        .recover(&mut had_error, Delimited::fallback(name))
+    } else {
+        Delimited::fallback(name)
+    };
+
     let entry_stack = parse_delimited_token_list(
         token_iter,
-        name,
+        generic_params.close,
         None,
         ("[", |t| t == TokenKind::SquareBracketOpen),
         ("Ident", valid_type_token),
@@ -1584,14 +1662,29 @@ fn parse_function_header<'a>(
         memory_type: None,
     };
 
-    let new_item = program.new_item(
-        source_store,
-        &mut had_error,
-        name.map(|t| t.lexeme),
-        ItemKind::Function,
-        parent_id,
-        sig,
-    );
+    let new_item = if generic_params.list.is_empty() {
+        program.new_item(
+            source_store,
+            &mut had_error,
+            name.map(|t| t.lexeme),
+            ItemKind::Function,
+            parent_id,
+            sig,
+        )
+    } else {
+        program.new_generic_function(
+            source_store,
+            &mut had_error,
+            name.map(|t| t.lexeme),
+            parent_id,
+            sig,
+            generic_params
+                .list
+                .into_iter()
+                .map(|t| t.map(|t| t.lexeme))
+                .collect(),
+        )
+    };
 
     let (_, is_token) = expect_token(
         token_iter,
@@ -2077,8 +2170,15 @@ pub(super) fn parse_module(
                     }
                 };
 
-                let path = parse_ident(&mut token_iter, interner, source_store, root_name)
-                    .recover(&mut had_error, Vec::new());
+                let path = parse_ident(
+                    &mut token_iter,
+                    interner,
+                    source_store,
+                    &mut had_error,
+                    root_name,
+                )
+                .map(|id| id.path)
+                .recover(&mut had_error, Vec::new());
 
                 program
                     .get_module_mut(module_id)

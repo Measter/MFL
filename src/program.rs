@@ -43,6 +43,7 @@ impl ItemId {
 pub struct FunctionData {
     pub allocs: HashMap<Spur, ItemId>,
     pub consts: HashMap<Spur, ItemId>,
+    pub generic_params: Vec<Spanned<Spur>>,
 }
 
 // TODO: Add compile-time asserts
@@ -53,6 +54,7 @@ pub enum ItemKind {
     Macro,
     Memory,
     Function,
+    GenericFunction,
     StructDef,
     Module,
 }
@@ -149,6 +151,7 @@ pub struct Program {
     analyzers: HashMap<ItemId, Analyzer>,
 
     structs_unresolved: HashMap<ItemId, UnresolvedStruct>,
+    generic_functions_map: HashMap<(ItemId, Vec<UnresolvedType>), ItemId>,
 }
 
 impl Program {
@@ -228,6 +231,7 @@ impl Program {
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
             structs_unresolved: HashMap::new(),
+            generic_functions_map: HashMap::new(),
         }
     }
 
@@ -565,6 +569,7 @@ impl Program {
                     && i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
+                    && i.kind() != ItemKind::GenericFunction
             })
             .map(|(id, _)| *id)
             .collect();
@@ -719,6 +724,7 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
         self.resolve_idents(interner, source_store)?;
+        self.instantiate_generic_functions(interner, source_store)?;
         self.resolve_struct_defs(interner, source_store, type_store)?;
         self.resolve_types(interner, source_store, type_store)?;
 
@@ -762,6 +768,50 @@ impl Program {
         if kind == ItemKind::Function {
             self.function_data.insert(id, FunctionData::default());
         }
+
+        let parent_info = self.item_headers[&parent];
+        if parent_info.kind == ItemKind::Module {
+            let module_info = self.module_info.get_mut(&parent).unwrap();
+            let res = module_info.add_child(name.inner, name.location, id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
+        }
+
+        id
+    }
+
+    pub fn new_generic_function(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: ItemId,
+        sig: ItemSignatureUnresolved,
+        params: Vec<Spanned<Spur>>,
+    ) -> ItemId {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
+
+        let item = ItemHeader {
+            name,
+            id,
+            kind: ItemKind::GenericFunction,
+            parent: Some(parent),
+            new_op_id: 0,
+        };
+
+        self.item_headers.insert(id, item);
+        self.item_signatures_unresolved.insert(id, sig);
+
+        self.function_data.insert(
+            id,
+            FunctionData {
+                generic_params: params,
+                ..Default::default()
+            },
+        );
 
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {
