@@ -151,7 +151,7 @@ pub struct Program {
     analyzers: HashMap<ItemId, Analyzer>,
 
     structs_unresolved: HashMap<ItemId, UnresolvedStruct>,
-    generic_functions_map: HashMap<(ItemId, Vec<UnresolvedType>), ItemId>,
+    generic_functions_map: HashMap<(ItemId, String), ItemId>,
 }
 
 impl Program {

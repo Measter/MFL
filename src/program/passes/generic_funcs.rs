@@ -154,19 +154,17 @@ impl Program {
         fn_id: ItemId,
         generic_params: Vec<UnresolvedType>,
     ) -> ItemId {
-        if let Some(id) = self
-            .generic_functions_map
-            .get(&(fn_id, generic_params.clone()))
-        {
-            return *id;
-        }
-
         let base_fd = &self.function_data[&fn_id];
         assert!(base_fd.allocs.is_empty());
         assert!(base_fd.consts.is_empty());
 
         let base_header = &self.item_headers[&fn_id];
         assert_eq!(generic_params.len(), base_fd.generic_params.len());
+
+        let new_name = build_mangled_name(interner, base_header.name.inner, &generic_params);
+        if let Some(id) = self.generic_functions_map.get(&(fn_id, new_name.clone())) {
+            return *id;
+        }
 
         let param_map: HashMap<_, _> = base_fd
             .generic_params
@@ -203,12 +201,11 @@ impl Program {
             memory_type: None,
         };
 
-        let new_name = build_mangled_name(interner, base_header.name.inner, &generic_params);
-        let new_name = interner.intern_lexeme(&new_name);
+        let new_name_spur = interner.intern_lexeme(&new_name);
         let new_id = self.new_item(
             source_store,
             &mut false,
-            new_name.with_span(base_header.name.location),
+            new_name_spur.with_span(base_header.name.location),
             ItemKind::Function,
             base_header.parent.unwrap(),
             new_sig,
@@ -218,6 +215,7 @@ impl Program {
         expand_generic_params_in_block(&mut body, &param_map);
         // TODO: Need to clone allocs and consts, and then update the body with the new IDs.
         self.set_item_body(new_id, body);
+        self.generic_functions_map.insert((fn_id, new_name), new_id);
 
         new_id
     }
