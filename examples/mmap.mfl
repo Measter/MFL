@@ -21,7 +21,7 @@ proc entry [] to [] is
     dup unpack swap pack(String)
     term::writeln
 
-    std::mem::free
+    std::mem::free(u8)
     if xtr(errno) 0!= do
         "Error unmapping file! Error code: " term::write
         xtr(errno) term::write_ui_ln
