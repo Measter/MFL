@@ -16,7 +16,7 @@ end
 proc make_foo [] to [Foo(u32 s16)] is 
     0(u32)
     1(u32) 2 3 pack(3)
-    sizeof(s16) std::mem::alloc xtrd(data.pointer) cast(ptr(s16))
+    1 std::mem::alloc(s16) xtrd(data.pointer)
     dup -23 swap !
     -56(s16) pack(Bar)
     123(u16) pack(Bar)
