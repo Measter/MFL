@@ -308,7 +308,8 @@ impl Program {
                     );
                     *item_id = new_id;
 
-                    if !seen_ids.insert(new_id) {
+                    if seen_ids.insert(new_id) {
+                        // Not seen before
                         queue.push(new_id);
                     }
                 }
