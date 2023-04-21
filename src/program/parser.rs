@@ -240,6 +240,21 @@ fn parse_unresolved_types(
 
         let mut type_span = ident.location;
 
+        let mut base_path = vec![ident.map(|t| t.lexeme)];
+        while matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ColonColon) {
+            let (_, colon) = token_iter.next().unwrap();
+            let (_, next_seg) = expect_token(
+                &mut token_iter,
+                "ident",
+                |t| t == TokenKind::Ident,
+                *colon,
+                interner,
+                source_store,
+            )?;
+            base_path.push(next_seg.map(|t| t.lexeme));
+            type_span = type_span.merge(next_seg.location);
+        }
+
         let base_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
         {
             let Ok(delim) = parse_delimited_token_list(
@@ -269,7 +284,7 @@ fn parse_unresolved_types(
                 .fold(type_span, |acc, (_, span)| acc.merge(*span));
 
             let lexeme = interner.resolve_lexeme(ident.inner.lexeme);
-            if lexeme == "ptr" {
+            if base_path.len() == 1 && lexeme == "ptr" {
                 if unresolved_types.len() != 1 {
                     diagnostics::emit_error(
                         diag_span,
@@ -284,31 +299,13 @@ fn parse_unresolved_types(
 
                 UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().0))
             } else {
-                let ident = parse_ident(
-                    &mut token_iter,
-                    interner,
-                    source_store,
-                    &mut had_error,
-                    ident,
-                )
-                .map(|id| id.path)
-                .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
                 UnresolvedTypeTokens::GenericInstance {
-                    type_name: ident,
+                    type_name: base_path,
                     params: unresolved_types.into_iter().map(|(t, _)| t).collect(),
                 }
             }
         } else {
-            let ident = parse_ident(
-                &mut token_iter,
-                interner,
-                source_store,
-                &mut had_error,
-                ident,
-            )
-            .map(|id| id.path)
-            .recover(&mut had_error, vec![ident.map(|t| t.lexeme)]);
-            UnresolvedTypeTokens::Simple(ident)
+            UnresolvedTypeTokens::Simple(base_path)
         };
 
         let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::SquareBracketOpen)
