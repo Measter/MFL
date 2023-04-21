@@ -15,8 +15,8 @@ use crate::{
 
 pub const STRING_DEF: &str = "
 struct String is
-    field len u64
-    field data ptr(u8)
+    field length u64
+    field pointer ptr(u8)
 end
 ";
 

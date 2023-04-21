@@ -12,3 +12,47 @@ end
 struct SimpleResult is
     field errno u64
 end
+
+proc get(T U) [T u64] to [T U] is
+    swap xtr(length)
+    if over(2) swap >= do
+        "[" term::write here term::write "]: index `" term::write
+        swap term::write_ui
+        "` is out of bounds: `0..=" term::write   
+        xtrd(length) term::write_ui
+        "`" term::writeln
+        exit
+    end
+
+    xtr(pointer) rot(3<1) +@
+end
+
+proc getd(T U) [T u64] to [U] is
+    get(T U) swap drop
+end
+
+proc store(T U) [T U u64] to [T] is
+    // [slice, val, idx]
+    rot(3<1)
+    xtr(length)
+    // [val, idx, slice, length]
+    if over(2) <= do
+        rot(3<1) drop
+        // [idx, slice]
+
+        "[" term::write here term::write "]: index `" term::write
+        swap term::write_ui
+        "` is out of bounds: `0..=" term::write   
+        xtrd(length) term::write_ui
+        "`" term::writeln
+        exit
+    end
+
+    // [val, idx, slice]
+    rot(3>1) over(2)
+    xtrd(pointer) +!
+end
+
+proc stored(T U) [T U u64] to [] is
+    store(T U) drop
+end

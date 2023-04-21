@@ -22,7 +22,7 @@ proc open [
 ] to [Result(FD)] is
     // The syscall requires a null-terminated string.
     // Check for null termination
-    if over xtr(len) 1- std::string::at 0 != do
+    if over xtr(length) 1- std::getd(String u8) 0 != do
         drop(2)
 
         0 pack(FD)
@@ -34,7 +34,7 @@ proc open [
     SYS_OPEN rot(3>1) 0x1b6 // 0o666
     // [sysid, path, flags, mode]
 
-    rot(3<1) xtrd(data) rot(3>1)
+    rot(3<1) xtrd(pointer) rot(3>1)
     syscall(4)
 
     // An error ocurred

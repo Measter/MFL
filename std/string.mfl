@@ -1,19 +1,5 @@
 import std::term
 
-proc at [String u64] to [u8] is
-    swap xtr(len)
-    if over(2) swap >= do
-        "[" term::write here term::write "]: index `" term::write
-        swap term::write_ui
-        "` is out of bounds: `0..=" term::write   
-        xtrd(len) term::write_ui
-        "`" term::writeln
-        exit
-    end
-
-    xtrd(data) +@
-end
-
 struct SplitResult is
     field split bool
     field remainder String
@@ -32,7 +18,7 @@ proc split_front [
     memory char is u8 end
 
     // [string, char]
-    if over xtrd(len) 0= do
+    if over xtrd(length) 0= do
         drop
 
         false swap dup pack(SplitResult)
@@ -41,8 +27,8 @@ proc split_front [
         str!
 
         0(u64) while 
-            dup str xtrd(len) <
-            if dup do over str xtrd(data)+ @ char@ != and end
+            dup str xtrd(length) <
+            if dup do over str xtrd(pointer)+ @ char@ != and end
         do
             // [counter]
             1+
@@ -50,7 +36,7 @@ proc split_front [
         // We're either at the end of the string, or found our character.
 
         // [idx]
-        if dup str xtrd(len) = do
+        if dup str xtrd(length) = do
             // Reached the end of the string
             drop
             false str@ "" pack(SplitResult)
@@ -58,7 +44,7 @@ proc split_front [
             // We found the split character!
 
             // Construct the prefix
-            str xtrd(data)
+            str xtrd(pointer)
             // [idx, ptr]
             over
             // [idx, ptr, len]
@@ -92,11 +78,11 @@ proc trim_start [String] to [String] is
     memory str is String end
     str!
     
-    0 while dup str xtrd(len) < do
-        if str xtrd(data)@ is_whitespace do
+    0 while dup str xtrd(length) < do
+        if str xtrd(pointer)@ is_whitespace do
             str@ unpack
-            1+ str insd(data)
-            1- str insd(len)
+            1+ str insd(pointer)
+            1- str insd(length)
         else
             // Can't break loops at the moment, so this will do.
             drop
@@ -113,11 +99,11 @@ proc trim_end [String] to [String] is
     memory str is String end
     str!
 
-    if str xtrd(len) 0= do str@ return end
+    if str xtrd(length) 0= do str@ return end
 
-    str xtrd(len) 1- while dup 0> do
-        if dup str xtrd(data) +@ is_whitespace do
-            str xtr(len) 1- swap insd(len)
+    str xtrd(length) 1- while dup 0> do
+        if dup str xtrd(pointer) +@ is_whitespace do
+            str xtr(length) 1- swap insd(length)
         else
             // Cant break loops at the moment.
             drop str@ return
