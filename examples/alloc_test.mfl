@@ -1,0 +1,28 @@
+import std::mem::alloc
+import std::mem::free
+
+struct Foo is
+    field a u32
+    field b u32
+end
+
+proc entry [] to [] is
+    3 alloc(Foo)
+    if xtr(errno) 0!= do
+        "alloc fail" std::term::writeln
+        drop exit
+    end
+    xtrd(data)
+
+    1 2 pack(Foo) 0(u64) std::store(std::mem::MMap(Foo) Foo)
+
+    0 std::get(std::mem::MMap(Foo) Foo)
+    xtr(a) std::term::write_ui_ln
+    xtrd(b) std::term::write_ui_ln
+
+    free(Foo)
+    if xtrd(errno) 0!= do
+        "free fail" std::term::writeln
+        exit
+    end
+end
