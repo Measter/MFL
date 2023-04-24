@@ -270,6 +270,7 @@ pub enum UnresolvedType {
 }
 
 impl UnresolvedType {
+    #[track_caller]
     pub fn as_id(&self) -> &UnresolvedTypeIds {
         match self {
             UnresolvedType::Tokens(_) => panic!("ICE: called as_id on Tokens"),
