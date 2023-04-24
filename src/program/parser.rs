@@ -1564,7 +1564,8 @@ fn parse_memory<'a>(
         sig,
     );
 
-    if program.get_item_header(parent_id).kind() == ItemKind::Function {
+    let parent_kind = program.get_item_header(parent_id).kind();
+    if parent_kind == ItemKind::Function || parent_kind == ItemKind::GenericFunction {
         let pd = program.get_function_data_mut(parent_id);
         pd.allocs.insert(name_token.inner.lexeme, item_id);
     }
@@ -1911,11 +1912,11 @@ fn parse_item<'a>(
 
     let parent_item = program.get_item_header(parent_id);
     match (parent_item.kind(), keyword.inner.kind) {
-        (ItemKind::Function, TokenKind::Const) => {
+        (ItemKind::Function | ItemKind::GenericFunction, TokenKind::Const) => {
             let pd = program.get_function_data_mut(parent_id);
             pd.consts.insert(name_token.inner.lexeme, item_id);
         }
-        (ItemKind::Function, TokenKind::Memory) => {
+        (ItemKind::Function | ItemKind::GenericFunction, TokenKind::Memory) => {
             let pd = program.get_function_data_mut(parent_id);
             pd.allocs.insert(name_token.inner.lexeme, item_id);
         }

@@ -518,6 +518,15 @@ impl Program {
                     ),
                 );
             } else if item.kind() == ItemKind::Memory {
+                let generic_params = match item.parent {
+                    Some(parent_id)
+                        if self.get_item_header(parent_id).kind == ItemKind::GenericFunction =>
+                    {
+                        Some(&self.function_data[&parent_id].generic_params)
+                    }
+                    _ => None,
+                };
+
                 let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
                 let memory_type = sig.memory_type.as_mut().unwrap();
                 let UnresolvedType::Tokens(memory_type_tokens) = &memory_type.inner else {
@@ -529,7 +538,7 @@ impl Program {
                     source_store,
                     &mut had_error,
                     memory_type_tokens,
-                    None,
+                    generic_params,
                 ) else {
                     had_error = true;
                     continue;

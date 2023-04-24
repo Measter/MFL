@@ -263,6 +263,12 @@ impl Program {
             let mut resolved_memory_type = None;
 
             if item.kind == ItemKind::Memory {
+                let parent_kind = self.get_item_header(item.parent.unwrap()).kind;
+                if parent_kind == ItemKind::GenericFunction {
+                    // We don't process these.
+                    continue;
+                }
+
                 resolved_exit.push(type_store.get_builtin(BuiltinTypes::U64).id);
                 let info =
                     match type_store.resolve_type(interner, unresolved_sig.memory_type().as_id()) {

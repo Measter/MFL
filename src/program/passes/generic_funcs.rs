@@ -115,23 +115,33 @@ fn expand_generic_params_in_type(
     }
 }
 
-fn expand_generic_params_in_block(block: &mut [Op], param_map: &HashMap<Spur, &UnresolvedTypeIds>) {
+fn expand_generic_params_in_block(
+    block: &mut [Op],
+    param_map: &HashMap<Spur, &UnresolvedTypeIds>,
+    alloc_map: &HashMap<ItemId, ItemId>,
+) {
     for op in block {
         match &mut op.code {
             OpCode::While(while_op) => {
-                expand_generic_params_in_block(&mut while_op.condition, param_map);
-                expand_generic_params_in_block(&mut while_op.body_block, param_map);
+                expand_generic_params_in_block(&mut while_op.condition, param_map, alloc_map);
+                expand_generic_params_in_block(&mut while_op.body_block, param_map, alloc_map);
             }
             OpCode::If(if_op) => {
-                expand_generic_params_in_block(&mut if_op.condition, param_map);
-                expand_generic_params_in_block(&mut if_op.then_block, param_map);
-                expand_generic_params_in_block(&mut if_op.else_block, param_map);
+                expand_generic_params_in_block(&mut if_op.condition, param_map, alloc_map);
+                expand_generic_params_in_block(&mut if_op.then_block, param_map, alloc_map);
+                expand_generic_params_in_block(&mut if_op.else_block, param_map, alloc_map);
             }
 
-            OpCode::ResolvedIdent { generic_params, .. } => {
+            OpCode::ResolvedIdent {
+                generic_params,
+                item_id,
+            } => {
                 for p in generic_params {
                     let UnresolvedType::Id(p) = p else { unreachable!() };
                     *p = expand_generic_params_in_type(p, param_map);
+                }
+                if let Some(new_id) = alloc_map.get(item_id) {
+                    *item_id = *new_id;
                 }
             }
             OpCode::UnresolvedCast { unresolved_type }
@@ -155,7 +165,6 @@ impl Program {
         generic_params: Vec<UnresolvedType>,
     ) -> ItemId {
         let base_fd = &self.function_data[&fn_id];
-        assert!(base_fd.allocs.is_empty());
         assert!(base_fd.consts.is_empty());
 
         let base_header = &self.item_headers[&fn_id];
@@ -202,7 +211,7 @@ impl Program {
         };
 
         let new_name_spur = interner.intern_lexeme(&new_name);
-        let new_id = self.new_item(
+        let new_proc_id = self.new_item(
             source_store,
             &mut false,
             new_name_spur.with_span(base_header.name.location),
@@ -211,13 +220,49 @@ impl Program {
             new_sig,
         );
 
-        let mut body = self.item_bodies[&fn_id].clone();
-        expand_generic_params_in_block(&mut body, &param_map);
-        // TODO: Need to clone allocs and consts, and then update the body with the new IDs.
-        self.set_item_body(new_id, body);
-        self.generic_functions_map.insert((fn_id, new_name), new_id);
+        let base_allocs = self.function_data[&fn_id].allocs.clone();
 
-        new_id
+        let mut alloc_map = HashMap::new();
+        for (name, base_alloc) in base_allocs {
+            let alloc_header = self.item_headers[&base_alloc];
+            let alloc_sig = &self.item_signatures_unresolved[&base_alloc];
+            let UnresolvedType::Id(alloc_memory_type) =
+                &alloc_sig.memory_type.as_ref().unwrap().inner else { unreachable!() };
+            let new_memory_sig = expand_generic_params_in_type(alloc_memory_type, &param_map);
+
+            let new_sig = ItemSignatureUnresolved {
+                exit_stack: alloc_sig.exit_stack.clone(),
+                entry_stack: alloc_sig.entry_stack.clone(),
+                memory_type: Some(
+                    UnresolvedType::Id(new_memory_sig).with_span(alloc_sig.memory_type_location()),
+                ),
+            };
+
+            let new_alloc_id = self.new_item(
+                source_store,
+                &mut false,
+                alloc_header.name,
+                ItemKind::Memory,
+                new_proc_id,
+                new_sig,
+            );
+
+            self.function_data
+                .get_mut(&new_proc_id)
+                .unwrap()
+                .allocs
+                .insert(name, new_alloc_id);
+            alloc_map.insert(base_alloc, new_alloc_id);
+        }
+
+        let mut body = self.item_bodies[&fn_id].clone();
+        expand_generic_params_in_block(&mut body, &param_map, &alloc_map);
+        // TODO: Need to clone allocs and consts, and then update the body with the new IDs.
+        self.set_item_body(new_proc_id, body);
+        self.generic_functions_map
+            .insert((fn_id, new_name), new_proc_id);
+
+        new_proc_id
     }
 
     fn instantiate_generic_functions_in_block(

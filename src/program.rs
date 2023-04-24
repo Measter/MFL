@@ -780,7 +780,7 @@ impl Program {
         }
 
         // Check our own children.
-        if from.kind == ItemKind::Function {
+        if from.kind == ItemKind::Function || from.kind == ItemKind::GenericFunction {
             let fd = self.get_function_data(from.id);
             if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                 return Some(*found_id);
@@ -798,7 +798,7 @@ impl Program {
         while let Some(id) = cur_id {
             let item = self.get_item_header(id);
 
-            if item.kind == ItemKind::Function {
+            if item.kind == ItemKind::Function || item.kind == ItemKind::GenericFunction {
                 let fd = self.get_function_data(item.id);
                 if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
                     return Some(*found_id);
