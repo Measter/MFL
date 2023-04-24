@@ -17,7 +17,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer,
-    opcode::{Op, OpCode, OpId},
+    opcode::{Op, OpCode},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
@@ -51,7 +51,6 @@ pub struct FunctionData {
 pub enum ItemKind {
     Assert,
     Const,
-    Macro,
     Memory,
     Function,
     GenericFunction,
@@ -65,7 +64,6 @@ pub struct ItemHeader {
     id: ItemId,
     parent: Option<ItemId>,
     kind: ItemKind,
-    new_op_id: u32,
 }
 
 impl ItemHeader {
@@ -250,7 +248,6 @@ impl Program {
             id: new_id,
             parent,
             kind: ItemKind::Module,
-            new_op_id: 0,
         };
         self.item_headers.insert(new_id, item_header);
 
@@ -427,81 +424,6 @@ impl Program {
         Ok(first_module.unwrap())
     }
 
-    fn expand_macros_in_block(
-        &self,
-        block: &mut Vec<Op>,
-        id: ItemId,
-        new_op_id: &mut impl FnMut() -> OpId,
-    ) {
-        let mut i = 0;
-        while i < block.len() {
-            match block[i].code {
-                OpCode::While(ref mut while_op) => {
-                    self.expand_macros_in_block(&mut while_op.condition, id, new_op_id);
-                    self.expand_macros_in_block(&mut while_op.body_block, id, new_op_id);
-                }
-                OpCode::If(ref mut if_op) => {
-                    self.expand_macros_in_block(&mut if_op.condition, id, new_op_id);
-                    self.expand_macros_in_block(&mut if_op.then_block, id, new_op_id);
-                    self.expand_macros_in_block(&mut if_op.else_block, id, new_op_id);
-                }
-                OpCode::ResolvedIdent { item_id, .. } if item_id != id => {
-                    let found_item = self.item_headers[&item_id];
-                    if found_item.kind() == ItemKind::Macro {
-                        let token = block[i].token;
-                        let expansions = block[i].expansions.clone();
-                        let new_ops = self.get_item_body(item_id).iter().map(|new_op| {
-                            let mut new_op = new_op.clone();
-                            new_op.id = new_op_id();
-                            new_op.expansions.push(token.location);
-                            new_op.expansions.extend_from_slice(&expansions);
-                            new_op
-                        });
-
-                        block.splice(i..i + 1, new_ops);
-
-                        // Want to continue with the current op index
-                        continue;
-                    }
-                }
-                _ => {}
-            }
-
-            i += 1;
-        }
-        //
-    }
-
-    fn expand_macros(&mut self, interner: &mut Interners) {
-        let _span = debug_span!(stringify!(Program::expand_macros)).entered();
-        let non_macro_items: Vec<_> = self
-            .item_headers
-            .iter()
-            .filter(|(_, i)| {
-                i.kind() != ItemKind::Macro
-                    && i.kind() != ItemKind::Memory
-                    && i.kind() != ItemKind::StructDef
-                    && i.kind() != ItemKind::Module
-            })
-            .map(|(id, item)| (*id, *item))
-            .collect();
-
-        for (item_id, item) in non_macro_items {
-            trace!(name = interner.get_symbol_name(self, item_id));
-            let mut new_op_id = item.new_op_id;
-
-            let mut op_id_gen = || {
-                let id = new_op_id;
-                new_op_id += 1;
-                OpId(id)
-            };
-
-            let mut body = self.item_bodies.remove(&item_id).unwrap();
-            self.expand_macros_in_block(&mut body, item_id, &mut op_id_gen);
-            self.item_bodies.insert(item_id, body);
-        }
-    }
-
     // The self parameter is the source of this, but it makes more sense for it to be a method.
     #[allow(clippy::only_used_in_recursion)]
     fn determine_terminal_blocks_in_block(&self, block: &mut [Op]) -> bool {
@@ -533,8 +455,7 @@ impl Program {
             .item_headers
             .iter()
             .filter(|(_, i)| {
-                i.kind() != ItemKind::Macro
-                    && i.kind() != ItemKind::Memory
+                i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
             })
@@ -565,8 +486,7 @@ impl Program {
             .item_headers
             .iter()
             .filter(|(_, i)| {
-                i.kind() != ItemKind::Macro
-                    && i.kind() != ItemKind::Memory
+                i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
                     && i.kind() != ItemKind::GenericFunction
@@ -729,7 +649,6 @@ impl Program {
         self.resolve_types(interner, source_store, type_store)?;
 
         self.check_invalid_cyclic_refs(interner, source_store)?;
-        self.expand_macros(interner);
 
         self.determine_terminal_blocks(interner)?;
 
@@ -759,7 +678,6 @@ impl Program {
             id,
             kind,
             parent: Some(parent),
-            new_op_id: 0,
         };
 
         self.item_headers.insert(id, item);
@@ -799,7 +717,6 @@ impl Program {
             id,
             kind: ItemKind::GenericFunction,
             parent: Some(parent),
-            new_op_id: 0,
         };
 
         self.item_headers.insert(id, item);
@@ -842,7 +759,6 @@ impl Program {
             id,
             kind: ItemKind::StructDef,
             parent: Some(module),
-            new_op_id: 0,
         };
 
         self.item_headers.insert(id, item);

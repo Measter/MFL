@@ -356,7 +356,6 @@ impl Program {
                         found_item_header.kind(),
                         ItemKind::Function
                             | ItemKind::GenericFunction
-                            | ItemKind::Macro
                             | ItemKind::Const
                             | ItemKind::Memory
                     ) {
@@ -710,7 +709,6 @@ impl Program {
 
             let kind = match root_item.kind() {
                 ItemKind::Const => "const",
-                ItemKind::Macro => "macro",
                 ItemKind::Assert => "assert",
                 ItemKind::Memory
                 | ItemKind::Function
@@ -872,13 +870,6 @@ impl Program {
                         ItemKind::GenericFunction => {
                             unreachable!()
                         }
-                        ItemKind::Macro => {
-                            let own_item = self.item_headers[&own_item_id];
-                            let name = interner.resolve_lexeme(own_item.name.inner);
-                            panic!(
-                                "ICE: Encountered assert, or macro during ident processing {name}"
-                            );
-                        }
 
                         ItemKind::Assert | ItemKind::StructDef | ItemKind::Module => {
                             *had_error = true;
@@ -916,8 +907,7 @@ impl Program {
             .item_headers
             .iter()
             .filter(|(_, i)| {
-                i.kind() != ItemKind::Macro
-                    && i.kind() != ItemKind::Memory
+                i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
                     && i.kind() != ItemKind::GenericFunction

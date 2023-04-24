@@ -57,7 +57,6 @@ pub enum TokenKind {
     Less,
     LessEqual,
     Load,
-    Macro,
     Memory,
     Minus,
     Module,
@@ -128,7 +127,6 @@ impl TokenKind {
             | TokenKind::Less
             | TokenKind::LessEqual
             | TokenKind::Load
-            | TokenKind::Macro
             | TokenKind::Memory
             | TokenKind::Minus
             | TokenKind::NotEqual
@@ -573,7 +571,6 @@ impl<'source> Scanner<'source> {
                     "insd" => TokenKind::Insert { emit_struct: false },
                     "is" => TokenKind::Is,
                     "isnull" => TokenKind::IsNull,
-                    "macro" => TokenKind::Macro,
                     "memory" => TokenKind::Memory,
                     "module" => TokenKind::Module,
                     "not" => TokenKind::BitNot,

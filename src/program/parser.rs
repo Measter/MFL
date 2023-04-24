@@ -1036,11 +1036,7 @@ pub fn parse_item_body(
                 }
                 continue;
             }
-            TokenKind::Module
-            | TokenKind::Macro
-            | TokenKind::Proc
-            | TokenKind::Field
-            | TokenKind::Struct => {
+            TokenKind::Module | TokenKind::Proc | TokenKind::Field | TokenKind::Struct => {
                 diagnostics::emit_error(
                     token.location,
                     format!("cannot use `{:?}` inside a procedure", token.inner.kind),
@@ -1243,8 +1239,8 @@ fn get_item_body<'a>(
         use TokenKind::*;
         #[allow(clippy::match_like_matches_macro)]
         let is_nested_err = match (keyword.inner.kind, token.inner.kind) {
-            (Proc, Module | Proc | Macro) => true,
-            (Memory | Const, Proc | Macro | Const | Memory | Module) => true,
+            (Proc, Module | Proc) => true,
+            (Memory | Const, Proc | Const | Memory | Module) => true,
             _ => false,
         };
 
@@ -1696,43 +1692,6 @@ fn parse_function_header<'a>(
     had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
-fn parse_macro_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interners,
-    name: Spanned<Token>,
-    parent_id: ItemId,
-    source_store: &SourceStorage,
-) -> Result<(Spanned<Token>, ItemId), ()> {
-    let sig = ItemSignatureUnresolved {
-        exit_stack: Vec::new().with_span(name.location),
-        entry_stack: Vec::new().with_span(name.location),
-        memory_type: None,
-    };
-
-    let mut had_error = false;
-    let new_item = program.new_item(
-        source_store,
-        &mut had_error,
-        name.map(|t| t.lexeme),
-        ItemKind::Macro,
-        parent_id,
-        sig,
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    had_error.not().then_some((is_token, new_item)).ok_or(())
-}
-
 fn parse_const_header<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -1854,7 +1813,6 @@ fn parse_item<'a>(
 
     let header_func = match keyword.inner.kind {
         TokenKind::Proc => parse_function_header,
-        TokenKind::Macro => parse_macro_header,
         TokenKind::Const => parse_const_header,
         TokenKind::Assert => parse_assert_header,
         _ => unreachable!(),
@@ -1904,27 +1862,24 @@ fn parse_item<'a>(
 
     let item_header = program.get_item_header_mut(item_id);
 
-    if item_header.kind() != ItemKind::Macro {
-        // Makes later logic a bit easier if we always have a prologue and epilogue.
-        body.insert(
-            0,
-            Op {
-                code: OpCode::Prologue,
-                id: op_id_gen(),
-                token: name_token.map(|t| t.lexeme),
-                expansions: SmallVec::new(),
-            },
-        );
-
-        body.push(Op {
-            code: OpCode::Epilogue,
+    // Makes later logic a bit easier if we always have a prologue and epilogue.
+    body.insert(
+        0,
+        Op {
+            code: OpCode::Prologue,
             id: op_id_gen(),
-            token: end_token.map(|t| t.lexeme),
+            token: name_token.map(|t| t.lexeme),
             expansions: SmallVec::new(),
-        });
-    }
+        },
+    );
 
-    item_header.new_op_id = op_id;
+    body.push(Op {
+        code: OpCode::Epilogue,
+        id: op_id_gen(),
+        token: end_token.map(|t| t.lexeme),
+        expansions: SmallVec::new(),
+    });
+
     program.set_item_body(item_id, body);
 
     // stupid borrow checker...
@@ -2120,7 +2075,7 @@ pub(super) fn parse_module(
 
     while let Some((_, token)) = token_iter.next() {
         match token.inner.kind {
-            TokenKind::Assert | TokenKind::Const | TokenKind::Macro | TokenKind::Proc => {
+            TokenKind::Assert | TokenKind::Const | TokenKind::Proc => {
                 if parse_item(
                     program,
                     &mut token_iter,
