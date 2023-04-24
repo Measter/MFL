@@ -18,7 +18,7 @@ proc get(T U) [T u64] to [T U] is
     if over(2) swap >= do
         "[" term::write here term::write "]: index `" term::write
         swap term::write_ui
-        "` is out of bounds: `0..=" term::write   
+        "` is out of bounds: `0.." term::write   
         xtrd(length) term::write_ui
         "`" term::writeln
         exit
@@ -42,7 +42,7 @@ proc store(T U) [T U u64] to [T] is
 
         "[" term::write here term::write "]: index `" term::write
         swap term::write_ui
-        "` is out of bounds: `0..=" term::write   
+        "` is out of bounds: `0.." term::write   
         xtrd(length) term::write_ui
         "`" term::writeln
         exit
