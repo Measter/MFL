@@ -107,20 +107,6 @@ fn apply_bool_op(
     }
 }
 
-fn generate_error(msg: impl ToString, op: &Op, source_store: &SourceStorage) {
-    let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
-
-    for source in &op.expansions {
-        labels.push(
-            Label::new(*source)
-                .with_color(Color::Blue)
-                .with_message("expanded from here"),
-        );
-    }
-
-    diagnostics::emit_error(op.token.location, msg, labels, None, source_store);
-}
-
 fn simulate_execute_program_block(
     program: &Program,
     block: &[Op],
@@ -324,7 +310,13 @@ fn simulate_execute_program_block(
                         value_stack.extend(vals.iter().map(|(_, v)| *v));
                     }
                     _ => {
-                        generate_error("non-const cannot be refenced in a const", op, source_store);
+                        diagnostics::emit_error(
+                            op.token.location,
+                            "non-const cannot be refenced in a const",
+                            [Label::new(op.token.location).with_color(Color::Red)],
+                            None,
+                            source_store,
+                        );
                         return Err(SimulationError::UnsupportedOp);
                     }
                 }
@@ -347,9 +339,11 @@ fn simulate_execute_program_block(
             | OpCode::Store
             | OpCode::IsNull
             | OpCode::SysCall { .. } => {
-                generate_error(
+                diagnostics::emit_error(
+                    op.token.location,
                     "operation not supported during const evaluation",
-                    op,
+                    [Label::new(op.token.location).with_color(Color::Red)],
+                    None,
                     source_store,
                 );
                 return Err(SimulationError::UnsupportedOp);

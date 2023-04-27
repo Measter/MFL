@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use lasso::Spur;
-use smallvec::SmallVec;
 
 use crate::{
     program::ItemId,
@@ -288,16 +287,10 @@ pub struct Op {
     pub code: OpCode,
     pub id: OpId,
     pub token: Spanned<Spur>,
-    pub expansions: SmallVec<[SourceLocation; 2]>,
 }
 
 impl Op {
     pub fn new(id: OpId, code: OpCode, token: Spanned<Spur>) -> Self {
-        Self {
-            id,
-            code,
-            token,
-            expansions: SmallVec::new(),
-        }
+        Self { id, code, token }
     }
 }

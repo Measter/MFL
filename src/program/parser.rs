@@ -3,7 +3,6 @@ use std::{collections::VecDeque, fmt::Display, iter::Peekable, ops::Not, str::Fr
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use num::{PrimInt, Unsigned};
-use smallvec::SmallVec;
 use tracing::debug_span;
 
 use crate::{
@@ -1870,7 +1869,6 @@ fn parse_item<'a>(
             code: OpCode::Prologue,
             id: op_id_gen(),
             token: name_token.map(|t| t.lexeme),
-            expansions: SmallVec::new(),
         },
     );
 
@@ -1878,7 +1876,6 @@ fn parse_item<'a>(
         code: OpCode::Epilogue,
         id: op_id_gen(),
         token: end_token.map(|t| t.lexeme),
-        expansions: SmallVec::new(),
     });
 
     program.set_item_body(item_id, body);

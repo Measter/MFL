@@ -782,7 +782,6 @@ impl Program {
                         })),
                         id: op.id,
                         token: op.token,
-                        expansions: op.expansions,
                     });
                 }
                 OpCode::If(if_op) => {
@@ -817,7 +816,6 @@ impl Program {
                         })),
                         id: op.id,
                         token: op.token,
-                        expansions: op.expansions,
                     });
                 }
 
@@ -848,7 +846,6 @@ impl Program {
                                     code,
                                     id: op.id,
                                     token: op.token,
-                                    expansions: op.expansions.clone(),
                                 });
 
                                 let analyzer = self.analyzers.get_mut(&own_item_id).unwrap();
@@ -865,7 +862,6 @@ impl Program {
                                 },
                                 id: op.id,
                                 token: op.token,
-                                expansions: op.expansions,
                             });
                         }
                         ItemKind::Function => {
@@ -873,7 +869,6 @@ impl Program {
                                 code: OpCode::CallFunction { item_id },
                                 id: op.id,
                                 token: op.token,
-                                expansions: op.expansions,
                             });
                         }
                         ItemKind::GenericFunction => {
