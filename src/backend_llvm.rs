@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::Command};
+use std::path::PathBuf;
 
 use color_eyre::{
     eyre::{eyre, Context as _},
@@ -980,38 +980,18 @@ pub(crate) fn compile(
             .map_err(|e| eyre!("Error writing object: {e}"))?;
     }
 
-    let mut nasm_success = true;
-
     if !args.is_library {
-        let _span = trace_span!("Assembling bootstrap").entered();
-        trace!("Assembling... bootstrap.s to {}", bootstrap_obj.display());
-        let result = Command::new("nasm")
-            .arg("-felf64")
-            .arg("./std/bootstrap.s")
-            .arg("-o")
-            .arg(&bootstrap_obj)
-            .status()
-            .with_context(|| eyre!("Failed to execute nasm"))?;
-
-        nasm_success &= result.success();
+        let _span = trace_span!("Writing bootstrap").entered();
+        const BOOTSTRAP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.o"));
+        std::fs::write(&bootstrap_obj, BOOTSTRAP)
+            .map_err(|e| eyre!("Error writing bootstrap: {e}"))?;
     }
 
     {
-        let _span = trace_span!("Assembling syscalls").entered();
-        trace!("Assembling... syscalls.s to {}", syscalls_obj.display());
-        let result = Command::new("nasm")
-            .arg("-felf64")
-            .arg("./std/syscalls.s")
-            .arg("-o")
-            .arg(&syscalls_obj)
-            .status()
-            .with_context(|| eyre!("Failed to execute nasm"))?;
-
-        nasm_success &= result.success();
-    }
-
-    if !nasm_success {
-        std::process::exit(-2);
+        let _span = trace_span!("Writing syscalls").entered();
+        const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
+        std::fs::write(&syscalls_obj, SYSCALLS)
+            .map_err(|e| eyre!("Error writing syscall wrappers: {e}"))?;
     }
 
     Ok(vec![bootstrap_obj, output_obj, syscalls_obj])
