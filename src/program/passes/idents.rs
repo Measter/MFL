@@ -62,39 +62,33 @@ impl Program {
             }
             // Path from the top level module.
             [top_level_ident, sub_idents @ .., last_ident] => {
-                let start = match self.get_visible_symbol(item_header, top_level_ident.inner) {
-                    Some(item_id) => item_id,
-                    None => {
-                        let item_name = interner.resolve_lexeme(top_level_ident.inner);
-                        diagnostics::emit_error(
-                            top_level_ident.location,
-                            format!("symbol `{item_name}` not found"),
-                            Some(Label::new(top_level_ident.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        *had_error = true;
-                        return Err(());
-                    }
+                let Some(start) =  self.get_visible_symbol(item_header, top_level_ident.inner) else {
+                    let item_name = interner.resolve_lexeme(top_level_ident.inner);
+                    diagnostics::emit_error(
+                        top_level_ident.location,
+                        format!("symbol `{item_name}` not found"),
+                        Some(Label::new(top_level_ident.location).with_color(Color::Red)),
+                        None,
+                        source_store,
+                    );
+                    *had_error = true;
+                    return Err(());
                 };
 
                 // We know this is a multi-part ident, so the start must be a module.
                 let mut cur_module = &self.module_info[&start];
                 for sm in sub_idents {
-                    let next_module = match cur_module.get_visible_symbol(sm.inner) {
-                        Some(nid) => nid,
-                        None => {
-                            let module_name = interner.resolve_lexeme(sm.inner);
-                            diagnostics::emit_error(
-                                sm.location,
-                                format!("module `{module_name}` not found"),
-                                Some(Label::new(sm.location).with_color(Color::Red)),
-                                None,
-                                source_store,
-                            );
-                            *had_error = true;
-                            return Err(());
-                        }
+                    let Some(next_module) =  cur_module.get_visible_symbol(sm.inner) else {
+                        let module_name = interner.resolve_lexeme(sm.inner);
+                        diagnostics::emit_error(
+                            sm.location,
+                            format!("module `{module_name}` not found"),
+                            Some(Label::new(sm.location).with_color(Color::Red)),
+                            None,
+                            source_store,
+                        );
+                        *had_error = true;
+                        return Err(());
                     };
 
                     cur_module = &self.module_info[&next_module];

@@ -764,31 +764,28 @@ pub fn load(
     let Some([ptr_type]) = analyzer.value_types([ptr_id]) else { return };
     let ptr_info = type_store.get_type_info(ptr_type);
 
-    let kind = match ptr_info.kind {
-        TypeKind::Pointer(kind) => kind,
-        _ => {
-            *had_error = true;
+    let TypeKind::Pointer(kind) =  ptr_info.kind else {
+        *had_error = true;
 
-            let ptr_type_info = type_store.get_type_info(ptr_type);
-            let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
+        let ptr_type_info = type_store.get_type_info(ptr_type);
+        let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
-                [(ptr_id, 0, ptr_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(ptr_id, 0, ptr_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
 
-            diagnostics::emit_error(
-                op.token.location,
-                "value must be a pointer",
-                labels,
-                None,
-                source_store,
-            );
-            return;
-        }
+        diagnostics::emit_error(
+            op.token.location,
+            "value must be a pointer",
+            labels,
+            None,
+            source_store,
+        );
+        return;
     };
 
     analyzer.set_value_type(op_data.outputs[0], kind);
@@ -808,32 +805,29 @@ pub fn store(
     let Some([data_type, ptr_type]) = analyzer.value_types([data_id, ptr_id]) else { return };
     let ptr_type_info = type_store.get_type_info(ptr_type);
 
-    let pointee_type = match ptr_type_info.kind {
-        TypeKind::Pointer(kind) => kind,
-        _ => {
-            *had_error = true;
-            let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
+    let TypeKind::Pointer(pointee_type) = ptr_type_info.kind else {
+        *had_error = true;
+        let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
 
-            let data_type_info = type_store.get_type_info(data_type);
-            let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let data_type_info = type_store.get_type_info(data_type);
+        let data_type_name = interner.resolve_lexeme(data_type_info.name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
-                [(ptr_id, 1, ptr_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(ptr_id, 1, ptr_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
 
-            diagnostics::emit_error(
-                op.token.location,
-                format!("found `{ptr_type_name}` expected a `ptr({data_type_name})`"),
-                labels,
-                None,
-                source_store,
-            );
-            return;
-        }
+        diagnostics::emit_error(
+            op.token.location,
+            format!("found `{ptr_type_name}` expected a `ptr({data_type_name})`"),
+            labels,
+            None,
+            source_store,
+        );
+        return;
     };
 
     let data_type_info = type_store.get_type_info(data_type);

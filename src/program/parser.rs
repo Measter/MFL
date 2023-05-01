@@ -217,7 +217,7 @@ fn parse_unresolved_types(
     interner: &Interners,
     source_store: &SourceStorage,
     prev: Spanned<Token>,
-    tokens: Vec<Spanned<Token>>,
+    tokens: &[Spanned<Token>],
 ) -> Result<Vec<(UnresolvedTypeTokens, SourceLocation)>, ()> {
     let mut had_error = false;
     let mut types: Vec<(UnresolvedTypeTokens, SourceLocation)> = Vec::new();
@@ -273,7 +273,7 @@ fn parse_unresolved_types(
             type_span = type_span.merge(delim.close.location);
             let diag_span = delim.span();
 
-            let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, delim.list) else {
+            let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
                 had_error = true;
                 continue;
             };
@@ -354,24 +354,21 @@ where
     } else {
         T::from_str_radix(string, 10)
     };
-    let int = match res {
-        Ok(c) => c,
-        Err(_) => {
-            diagnostics::emit_error(
-                int_token.location,
-                "integer out bounds",
-                [Label::new(int_token.location)
-                    .with_color(Color::Red)
-                    .with_message(format!(
-                        "integer must be in range {}..={}",
-                        T::min_value(),
-                        T::max_value()
-                    ))],
-                None,
-                source_store,
-            );
-            return Err(());
-        }
+    let Ok(int) = res else {
+        diagnostics::emit_error(
+            int_token.location,
+            "integer out bounds",
+            [Label::new(int_token.location)
+                .with_color(Color::Red)
+                .with_message(format!(
+                    "integer must be in range {}..={}",
+                    T::min_value(),
+                    T::max_value()
+                ))],
+            None,
+            source_store,
+        );
+        return Err(());
     };
 
     Ok(int)
@@ -458,6 +455,7 @@ fn parse_integer_op<'a>(
 
         let int_value = match is_signed_kind {
             Signedness::Signed => {
+                // FIXME: Need to check bounds before cast
                 let value: i64 = literal_value as i64;
                 let value = if is_known_negative { -value } else { value };
 
@@ -626,7 +624,7 @@ pub fn parse_item_body(
                 } else {
                     let span = delim.span();
 
-                    let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, delim.list) else {
+                    let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
                         had_error = true;
                         continue;
                     };
@@ -886,7 +884,7 @@ pub fn parse_item_body(
                 token.location = token.location.merge(delim.close.location);
 
                 let span = delim.span();
-                let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, delim.list) else {
+                let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
                     had_error = true;
                     continue;
                 };
@@ -1181,7 +1179,7 @@ fn parse_ident<'a>(
         token.location = token.location.merge(delim.close.location);
 
         let span = delim.span();
-        let Ok( unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, delim.list) else {
+        let Ok( unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
             *had_error = true;
             return Err(());
         };
@@ -1532,7 +1530,7 @@ fn parse_memory<'a>(
     };
 
     let mut unresolved_store_type =
-        parse_unresolved_types(interner, source_store, store_type.open, store_type.list)
+        parse_unresolved_types(interner, source_store, store_type.open, &store_type.list)
             .recover(&mut had_error, Vec::new());
 
     if unresolved_store_type.len() != 1 {
@@ -1612,7 +1610,7 @@ fn parse_function_header<'a>(
     .recover(&mut had_error, Delimited::fallback(name));
     let entry_stack_location = entry_stack.span();
     let unresolved_entry_types =
-        parse_unresolved_types(interner, source_store, entry_stack.open, entry_stack.list)
+        parse_unresolved_types(interner, source_store, entry_stack.open, &entry_stack.list)
             .recover(&mut had_error, Vec::new());
 
     expect_token(
@@ -1638,7 +1636,7 @@ fn parse_function_header<'a>(
     .recover(&mut had_error, Delimited::fallback(name));
     let exit_stack_location = exit_stack.span();
     let unresolved_exit_types =
-        parse_unresolved_types(interner, source_store, exit_stack.open, exit_stack.list)
+        parse_unresolved_types(interner, source_store, exit_stack.open, &exit_stack.list)
             .recover(&mut had_error, Vec::new());
 
     let sig = ItemSignatureUnresolved {
@@ -1714,7 +1712,7 @@ fn parse_const_header<'a>(
     .recover(&mut had_error, Delimited::fallback(name));
     let exit_stack_location = exit_stack.span();
     let unresolved_exit_types =
-        parse_unresolved_types(interner, source_store, exit_stack.open, exit_stack.list)
+        parse_unresolved_types(interner, source_store, exit_stack.open, &exit_stack.list)
             .recover(&mut had_error, Vec::new());
 
     let sig = ItemSignatureUnresolved {
@@ -2018,7 +2016,7 @@ fn parse_struct<'a>(
             .unwrap_or(type_tokens.close);
         let store_type_location = type_tokens.open.location.merge(last_type_token.location);
         let mut unresolved_store_type =
-            parse_unresolved_types(interner, source_store, type_tokens.open, type_tokens.list)
+            parse_unresolved_types(interner, source_store, type_tokens.open, &type_tokens.list)
                 .recover(&mut had_error, Vec::new());
 
         if unresolved_store_type.len() != 1 {
@@ -2105,19 +2103,16 @@ pub(super) fn parse_module(
             }
 
             TokenKind::Import => {
-                let (_, root_name) = match expect_token(
+                let Ok((_, root_name)) = expect_token(
                     &mut token_iter,
                     "ident",
                     |k| k == TokenKind::Ident,
                     *token,
                     interner,
                     source_store,
-                ) {
-                    Ok(ident) => ident,
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
+                ) else {
+                    had_error = true;
+                    continue;
                 };
 
                 let path = parse_ident(
@@ -2136,19 +2131,16 @@ pub(super) fn parse_module(
             }
 
             TokenKind::Module => {
-                let (_, module_ident) = match expect_token(
+                let Ok((_, module_ident)) = expect_token(
                     &mut token_iter,
                     "ident",
                     |k| k == TokenKind::Ident,
                     *token,
                     interner,
                     source_store,
-                ) {
-                    Ok(ident) => ident,
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
+                ) else {
+                    had_error = true;
+                    continue;
                 };
 
                 include_queue.push_back((

@@ -110,9 +110,9 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, op_io.outputs()[0], output.into());
             }
-            TypeKind::Bool => unreachable!(),
-            TypeKind::Array { .. } => unreachable!(),
-            TypeKind::Struct(_)
+            TypeKind::Bool
+            | TypeKind::Array { .. }
+            | TypeKind::Struct(_)
             | TypeKind::GenericStructBase(_)
             | TypeKind::GenericStructInstance(_) => unreachable!(),
         }

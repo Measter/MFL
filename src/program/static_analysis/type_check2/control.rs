@@ -91,7 +91,7 @@ pub fn resolved_ident(
             let ptr_type = type_store.get_pointer(interner, referenced_item_sig.memory_type());
             analyzer.set_value_type(output_id, ptr_type.id);
         }
-        _ => {
+        ItemKind::Function => {
             for (&expected, actual_id) in referenced_item_sig
                 .entry_stack()
                 .iter()
@@ -134,6 +134,7 @@ pub fn resolved_ident(
                 analyzer.set_value_type(output_id, output_type);
             }
         }
+        _ => unreachable!(),
     }
 }
 

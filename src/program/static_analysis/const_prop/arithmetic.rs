@@ -174,9 +174,8 @@ pub fn subtract(
                 );
                 *had_error = true;
                 return;
-            } else {
-                ConstVal::Int(IntKind::Unsigned(offset2 - offset1))
             }
+            ConstVal::Int(IntKind::Unsigned(offset2 - offset1))
         }
 
         // Pointers with the same ID, but one or both have runtime offsets.
@@ -290,7 +289,7 @@ pub fn multiply_div_rem_shift(
                 ],
                 format!("shift value ({shift_amount}) will be masked to the lower 6 bits"),
                 source_store,
-            )
+            );
         }
 
         if (shift_amount & 63) >= output_width.bit_width() {
@@ -309,7 +308,7 @@ pub fn multiply_div_rem_shift(
                 ],
                 format!("shift value ({shift_amount}) exceeds width"),
                 source_store,
-            )
+            );
         }
     } else if matches!(&op.code, OpCode::Div | OpCode::Rem) {
         let div_amount = match b_const_val {

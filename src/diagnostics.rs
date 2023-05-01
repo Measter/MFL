@@ -68,7 +68,7 @@ pub fn emit_error<Labels>(
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
-    emit(ReportKind::Error, loc, msg, labels, note, sources)
+    emit(ReportKind::Error, loc, msg, labels, note, sources);
 }
 
 pub fn emit_warning<Labels>(
@@ -80,7 +80,7 @@ pub fn emit_warning<Labels>(
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
-    emit(ReportKind::Warning, loc, msg, labels, note, sources)
+    emit(ReportKind::Warning, loc, msg, labels, note, sources);
 }
 
 pub fn emit<Labels>(

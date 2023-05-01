@@ -162,7 +162,7 @@ impl Program {
         interner: &mut Interners,
         source_store: &SourceStorage,
         fn_id: ItemId,
-        generic_params: Vec<UnresolvedType>,
+        generic_params: &[UnresolvedType],
     ) -> ItemId {
         let base_fd = &self.function_data[&fn_id];
         assert!(base_fd.consts.is_empty());
@@ -170,7 +170,7 @@ impl Program {
         let base_header = &self.item_headers[&fn_id];
         assert_eq!(generic_params.len(), base_fd.generic_params.len());
 
-        let new_name = build_mangled_name(interner, base_header.name.inner, &generic_params);
+        let new_name = build_mangled_name(interner, base_header.name.inner, generic_params);
         if let Some(id) = self.generic_functions_map.get(&(fn_id, new_name.clone())) {
             return *id;
         }
@@ -178,7 +178,7 @@ impl Program {
         let param_map: HashMap<_, _> = base_fd
             .generic_params
             .iter()
-            .zip(&generic_params)
+            .zip(generic_params)
             .map(|(name, ty)| {
                 let UnresolvedType::Id(ty) = ty else {unreachable!()};
                 (name.inner, ty)
@@ -349,7 +349,7 @@ impl Program {
                         interner,
                         source_store,
                         *item_id,
-                        generic_params.clone(),
+                        generic_params,
                     );
                     *item_id = new_id;
 

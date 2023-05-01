@@ -449,7 +449,7 @@ impl Program {
         false
     }
 
-    fn determine_terminal_blocks(&mut self, interner: &mut Interners) -> Result<()> {
+    fn determine_terminal_blocks(&mut self, interner: &mut Interners) {
         let _span = debug_span!(stringify!(Program::determine_terminal_blocks)).entered();
         let items: Vec<_> = self
             .item_headers
@@ -469,8 +469,6 @@ impl Program {
             self.determine_terminal_blocks_in_block(&mut body);
             self.item_bodies.insert(item_id, body);
         }
-
-        Ok(())
     }
 
     fn analyze_data_flow(
@@ -593,7 +591,7 @@ impl Program {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
-        for (&id, &item) in self.item_headers.iter() {
+        for (&id, &item) in &self.item_headers {
             if item.kind() != ItemKind::Assert {
                 continue;
             }
@@ -650,7 +648,7 @@ impl Program {
 
         self.check_invalid_cyclic_refs(interner, source_store)?;
 
-        self.determine_terminal_blocks(interner)?;
+        self.determine_terminal_blocks(interner);
 
         self.analyze_data_flow(interner, source_store, type_store, print_stack_depths)?;
         self.evaluate_const_items(interner, source_store, type_store)?;

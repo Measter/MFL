@@ -16,7 +16,7 @@ impl<T> VecNOps<T> for Vec<T> {
         // SAFETY: We know the Vec has enough elements, so we won't be accessing uninitialized data.
         unsafe {
             let mut dest: MaybeUninit<[T; N]> = MaybeUninit::uninit();
-            let dest_ptr = dest.as_mut_ptr() as *mut T;
+            let dest_ptr = dest.as_mut_ptr().cast::<T>();
             let stack_ptr = self.as_mut_ptr().add(self.len() - N);
 
             std::ptr::copy_nonoverlapping(stack_ptr, dest_ptr, N);

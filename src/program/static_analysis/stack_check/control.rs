@@ -130,7 +130,7 @@ pub fn resolved_ident(
             stack.push(new_id);
             analyzer.set_op_io(op, &[], &[new_id]);
         }
-        _ => {
+        ItemKind::Function => {
             // TODO: Maybe do a custom error here so we can point to the expected signature.
             ensure_stack_depth(
                 analyzer,
@@ -155,6 +155,7 @@ pub fn resolved_ident(
 
             analyzer.set_op_io(op, &inputs, &outputs);
         }
+        _ => unreachable!(),
     }
 }
 

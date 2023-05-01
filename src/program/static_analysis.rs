@@ -380,7 +380,7 @@ fn generate_type_mismatch_diag(
                         interner.resolve_lexeme(type_info.name)
                     })
                 });
-            write!(&mut message, "`{a}` and `{b}`").unwrap()
+            write!(&mut message, "`{a}` and `{b}`").unwrap();
         }
         [xs @ .., last] => {
             for x in xs {
@@ -723,7 +723,7 @@ fn analyze_block(
                         type_store,
                         &mut local_had_error,
                         op,
-                    )
+                    );
                 }
 
                 *had_error |= local_had_error;
@@ -1214,10 +1214,10 @@ fn analyze_block(
                 if !local_had_error {
                     match type_info.kind {
                         TypeKind::Integer { width, signed } => {
-                            const_prop::stack_ops::cast_to_int(analyzer, op, width, signed)
+                            const_prop::stack_ops::cast_to_int(analyzer, op, width, signed);
                         }
                         TypeKind::Pointer(kind) => {
-                            const_prop::stack_ops::cast_to_ptr(analyzer, op, kind)
+                            const_prop::stack_ops::cast_to_ptr(analyzer, op, kind);
                         }
                         TypeKind::Bool
                         | TypeKind::Array { .. }

@@ -62,7 +62,7 @@ pub fn epilogue_return(
                 labels,
                 None,
                 source_store,
-            )
+            );
         }
     }
 }

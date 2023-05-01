@@ -160,10 +160,6 @@ pub fn cast_to_ptr(
     let input_type_info = type_store.get_type_info(input);
 
     match input_type_info.kind {
-        TypeKind::Integer {
-            width: IntWidth::I64,
-            signed: Signedness::Unsigned,
-        } => {}
         TypeKind::Pointer(from_kind) if from_kind == to_kind => {
             let ptr_info = type_store.get_pointer(interner, from_kind);
             let ptr_type_name = interner.resolve_lexeme(ptr_info.name);
@@ -184,7 +180,11 @@ pub fn cast_to_ptr(
                 source_store,
             );
         }
-        TypeKind::Pointer(_) => {}
+        TypeKind::Integer {
+            width: IntWidth::I64,
+            signed: Signedness::Unsigned,
+        }
+        | TypeKind::Pointer(_) => {}
 
         TypeKind::Integer { .. } => {
             *had_error = true;

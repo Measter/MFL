@@ -90,7 +90,7 @@ impl Program {
 
         for id in generic_structs {
             let def = self.structs_unresolved.get(&id).unwrap();
-            type_store.partially_resolve_generic_struct(interner, id, def)
+            type_store.partially_resolve_generic_struct(interner, id, def);
         }
 
         // Now we try to resolve the struct definition.

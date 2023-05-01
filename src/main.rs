@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_arguments)]
+#![warn(clippy::needless_pass_by_value, clippy::manual_let_else)]
 
 use std::{
     path::{Path, PathBuf},
@@ -142,16 +143,16 @@ fn load_program(
     ))
 }
 
-fn run_compile(args: Args) -> Result<()> {
-    let (program, _source_storage, mut interner, mut type_store, entry_function) =
-        load_program(&args)?;
+fn run_compile(args: &Args) -> Result<()> {
+    let (program, _source_storage, mut interner, mut type_store, top_level_items) =
+        load_program(args)?;
 
     let objects = backend_llvm::compile(
         &program,
-        entry_function,
+        &top_level_items,
         &mut interner,
         &mut type_store,
-        &args,
+        args,
     )?;
 
     if args.is_library {
@@ -202,7 +203,7 @@ fn main() -> Result<()> {
             output_binary.set_extension("");
             Some(output_binary)
         });
-        run_compile(args)?;
+        run_compile(&args)?;
     }
 
     opentelemetry::global::shutdown_tracer_provider();

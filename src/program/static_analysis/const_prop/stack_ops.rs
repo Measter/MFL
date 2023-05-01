@@ -15,7 +15,7 @@ pub fn cast_to_int(analyzer: &mut Analyzer, op: &Op, to_width: IntWidth, to_sign
     let new_const_val = match input_const_val {
         ConstVal::Int(v) => ConstVal::Int(v.cast(to_width, to_signed)),
         ConstVal::Bool(b) => ConstVal::Int(IntKind::Unsigned(b as _)),
-        _ => return,
+        ConstVal::Ptr { .. } => return,
     };
 
     analyzer.set_value_const(op_data.outputs[0], new_const_val);

@@ -36,6 +36,9 @@ mod control;
 mod memory;
 mod stack;
 
+const BOOTSTRAP_OBJ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.o"));
+const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
+
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> T;
 
 impl IntWidth {
@@ -902,7 +905,7 @@ impl<'ctx> CodeGen<'ctx> {
 
 pub(crate) fn compile(
     program: &Program,
-    top_level_items: Vec<ItemId>,
+    top_level_items: &[ItemId],
     interner: &mut Interners,
     type_store: &mut TypeStore,
     args: &Args,
@@ -917,15 +920,15 @@ pub(crate) fn compile(
         return Err(eyre!("obj path is not a directory"));
     }
 
-    let mut output_obj = args.obj_dir.to_owned();
+    let mut output_obj = args.obj_dir.clone();
     output_obj.push(args.file.file_stem().unwrap());
     output_obj.set_extension("o");
-    let mut bootstrap_obj = args.obj_dir.to_owned();
+    let mut bootstrap_obj = args.obj_dir.clone();
     bootstrap_obj.push("bootstrap.o");
-    let mut syscalls_obj = args.obj_dir.to_owned();
+    let mut syscalls_obj = args.obj_dir.clone();
     syscalls_obj.push("syscalls.o");
 
-    let mut output_asm = args.obj_dir.to_owned();
+    let mut output_asm = args.obj_dir.clone();
     output_asm.push(args.file.file_stem().unwrap());
     output_asm.set_extension("s");
 
@@ -982,14 +985,12 @@ pub(crate) fn compile(
 
     if !args.is_library {
         let _span = trace_span!("Writing bootstrap").entered();
-        const BOOTSTRAP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.o"));
-        std::fs::write(&bootstrap_obj, BOOTSTRAP)
+        std::fs::write(&bootstrap_obj, BOOTSTRAP_OBJ)
             .map_err(|e| eyre!("Error writing bootstrap: {e}"))?;
     }
 
     {
         let _span = trace_span!("Writing syscalls").entered();
-        const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
         std::fs::write(&syscalls_obj, SYSCALLS)
             .map_err(|e| eyre!("Error writing syscall wrappers: {e}"))?;
     }

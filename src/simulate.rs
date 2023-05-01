@@ -184,7 +184,7 @@ fn simulate_execute_program_block(
                 });
             }
             OpCode::Drop { count, .. } => {
-                value_stack.truncate(value_stack.len() - count.inner.to_usize())
+                value_stack.truncate(value_stack.len() - count.inner.to_usize());
             }
 
             OpCode::While(while_op) => loop {
@@ -229,7 +229,7 @@ fn simulate_execute_program_block(
                         type_store,
                         interner,
                         source_store,
-                    )?
+                    )?;
                 } else {
                     simulate_execute_program_block(
                         program,
@@ -302,23 +302,20 @@ fn simulate_execute_program_block(
             OpCode::ResolvedIdent { item_id, .. } => {
                 let referenced_item = program.get_item_header(*item_id);
 
-                match referenced_item.kind() {
-                    ItemKind::Const => {
-                        let Some(vals) = program.get_consts(*item_id) else {
-                            return Err(SimulationError::UnreadyConst);
-                        };
-                        value_stack.extend(vals.iter().map(|(_, v)| *v));
-                    }
-                    _ => {
-                        diagnostics::emit_error(
-                            op.token.location,
-                            "non-const cannot be refenced in a const",
-                            [Label::new(op.token.location).with_color(Color::Red)],
-                            None,
-                            source_store,
-                        );
-                        return Err(SimulationError::UnsupportedOp);
-                    }
+                if referenced_item.kind() == ItemKind::Const {
+                    let Some(vals) = program.get_consts(*item_id) else {
+                        return Err(SimulationError::UnreadyConst);
+                    };
+                    value_stack.extend(vals.iter().map(|(_, v)| *v));
+                } else {
+                    diagnostics::emit_error(
+                        op.token.location,
+                        "non-const cannot be refenced in a const",
+                        [Label::new(op.token.location).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    return Err(SimulationError::UnsupportedOp);
                 }
             }
 
