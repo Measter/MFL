@@ -130,7 +130,7 @@ pub fn resolved_ident(
             stack.push(new_id);
             analyzer.set_op_io(op, &[], &[new_id]);
         }
-        ItemKind::Function => {
+        ItemKind::Function | ItemKind::Const => {
             // TODO: Maybe do a custom error here so we can point to the expected signature.
             ensure_stack_depth(
                 analyzer,
@@ -155,7 +155,7 @@ pub fn resolved_ident(
 
             analyzer.set_op_io(op, &inputs, &outputs);
         }
-        _ => unreachable!(),
+        _ => panic!("ICE: Unexpected item kind: {:?}", referenced_item.kind()),
     }
 }
 
