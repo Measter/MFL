@@ -160,10 +160,11 @@ pub fn pack_struct(
             )
         {
             let type_info = type_store.get_type_info(input_type_id);
-            let other_value_name = interner.resolve_lexeme(type_info.name);
+            let other_value_type_name = interner.resolve_lexeme(type_info.name);
+            let expected_value_type_name = interner.resolve_lexeme(expected_store_type.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                [(input_id, val_id, other_value_name)],
+                [(input_id, val_id, other_value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
@@ -179,12 +180,15 @@ pub fn pack_struct(
             );
 
             labels.push(Label::new(op.token.location).with_color(Color::Red));
+            let note = format!(
+                "Expected type `{expected_value_type_name}`, found `{other_value_type_name}`"
+            );
 
             diagnostics::emit_error(
                 op.token.location,
                 "unable to pack struct: mismatched input types",
                 labels,
-                None,
+                note,
                 source_store,
             );
 
