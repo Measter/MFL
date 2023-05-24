@@ -6,6 +6,11 @@ proc foo(T) [T] to [Bar(T)] is
     pack(Bar(T))
 end
 
+proc quux(T) [T] to [T] is
+    memory f is T end
+    f! f@
+end
+
 proc entry [] to [] is 
     5 foo(u32)
     xtrd(a) std::term::write_ui_ln
@@ -21,6 +26,7 @@ proc entry [] to [] is
         "failed alloc" std::term::writeln exit
     end
     xtrd(data)
+    quux(std::mem::MMap(Bar(u16)))
     xtr(pointer) drop
     std::mem::free(Bar(u16))
     if xtrd(errno) 0!= do
