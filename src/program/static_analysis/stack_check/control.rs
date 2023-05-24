@@ -122,7 +122,6 @@ pub fn resolved_ident(
     item: ItemId,
 ) {
     let referenced_item = program.get_item_header(item);
-    let referenced_item_sig = program.get_item_signature_resolved(item);
 
     match referenced_item.kind() {
         ItemKind::Memory => {
@@ -131,6 +130,8 @@ pub fn resolved_ident(
             analyzer.set_op_io(op, &[], &[new_id]);
         }
         ItemKind::Function | ItemKind::Const => {
+            let referenced_item_sig = program.get_item_signature_resolved(item);
+
             // TODO: Maybe do a custom error here so we can point to the expected signature.
             ensure_stack_depth(
                 analyzer,

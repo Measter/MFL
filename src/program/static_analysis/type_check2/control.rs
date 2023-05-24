@@ -81,17 +81,20 @@ pub fn resolved_ident(
     item_id: ItemId,
 ) {
     let referenced_item = program.get_item_header(item_id);
-    let referenced_item_sig = program.get_item_signature_resolved(item_id);
-    let referenced_item_sig_tokens = program.get_item_signature_unresolved(item_id);
     let op_data = analyzer.get_op_io(op.id);
 
     match referenced_item.kind() {
         ItemKind::Memory => {
+            let reference_item_memory_type = program.get_memory_type_resolved(item_id);
+
             let output_id = op_data.outputs[0];
-            let ptr_type = type_store.get_pointer(interner, referenced_item_sig.memory_type());
+            let ptr_type = type_store.get_pointer(interner, reference_item_memory_type);
             analyzer.set_value_type(output_id, ptr_type.id);
         }
         ItemKind::Function | ItemKind::Const => {
+            let referenced_item_sig = program.get_item_signature_resolved(item_id);
+            let referenced_item_sig_tokens = program.get_item_signature_unresolved(item_id);
+
             for (&expected, actual_id) in referenced_item_sig
                 .entry_stack()
                 .iter()

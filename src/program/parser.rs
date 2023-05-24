@@ -1544,21 +1544,17 @@ fn parse_memory<'a>(
         had_error = true;
     }
 
-    let sig = ItemSignatureUnresolved {
-        exit_stack: Vec::new().with_span(name_token.location),
-        entry_stack: Vec::new().with_span(name_token.location),
-        memory_type: unresolved_store_type
-            .pop()
-            .map(|(t, _)| UnresolvedType::Tokens(t).with_span(store_type_location)),
-    };
+    let memory_type = unresolved_store_type
+        .pop()
+        .map(|(t, _)| UnresolvedType::Tokens(t).with_span(store_type_location))
+        .unwrap();
 
-    let item_id = program.new_item(
+    let item_id = program.new_memory(
         source_store,
         &mut had_error,
         name_token.map(|t| t.lexeme),
-        ItemKind::Memory,
         parent_id,
-        sig,
+        memory_type,
     );
 
     let parent_kind = program.get_item_header(parent_id).kind();
@@ -1650,7 +1646,6 @@ fn parse_function_header<'a>(
             .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
             .collect::<Vec<_>>()
             .with_span(entry_stack_location),
-        memory_type: None,
     };
 
     let new_item = if generic_params.list.is_empty() {
@@ -1722,7 +1717,6 @@ fn parse_const_header<'a>(
             .collect::<Vec<_>>()
             .with_span(exit_stack_location),
         entry_stack: Vec::new().with_span(name.location),
-        memory_type: None,
     };
 
     let new_item = program.new_item(
@@ -1762,7 +1756,6 @@ fn parse_assert_header<'a>(
         .with_span(name.location)]
         .with_span(name.location),
         entry_stack: Vec::new().with_span(name.location),
-        memory_type: None,
     };
 
     let mut had_error = false;

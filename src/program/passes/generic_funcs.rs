@@ -207,7 +207,6 @@ impl Program {
         let new_sig = ItemSignatureUnresolved {
             exit_stack: exit_stack.with_span(old_sig.exit_stack.location),
             entry_stack: entry_stack.with_span(old_sig.entry_stack.location),
-            memory_type: None,
         };
 
         let new_name_spur = interner.intern_lexeme(&new_name);
@@ -225,24 +224,16 @@ impl Program {
         let mut alloc_map = HashMap::new();
         for (name, base_alloc) in base_allocs {
             let alloc_header = self.item_headers[&base_alloc];
-            let alloc_sig = &self.item_signatures_unresolved[&base_alloc];
-            let UnresolvedType::Id(alloc_memory_type) =
-                &alloc_sig.memory_type.as_ref().unwrap().inner else { unreachable!() };
+            let alloc_type = &self.memory_type_unresolved[&base_alloc];
+            let UnresolvedType::Id(alloc_memory_type) = &alloc_type.inner else { unreachable!() };
+
             let new_memory_sig = expand_generic_params_in_type(alloc_memory_type, &param_map);
+            let new_sig = UnresolvedType::Id(new_memory_sig).with_span(alloc_type.location);
 
-            let new_sig = ItemSignatureUnresolved {
-                exit_stack: alloc_sig.exit_stack.clone(),
-                entry_stack: alloc_sig.entry_stack.clone(),
-                memory_type: Some(
-                    UnresolvedType::Id(new_memory_sig).with_span(alloc_sig.memory_type_location()),
-                ),
-            };
-
-            let new_alloc_id = self.new_item(
+            let new_alloc_id = self.new_memory(
                 source_store,
                 &mut false,
                 alloc_header.name,
-                ItemKind::Memory,
                 new_proc_id,
                 new_sig,
             );

@@ -872,9 +872,9 @@ pub fn store(
             }],
         ) = analyzer.value_consts([ptr_id])
         {
-            let sig = program.get_item_signature_unresolved(mem_id);
+            let memory_type = program.get_memory_type_unresolved(mem_id);
             labels.push(
-                Label::new(sig.memory_type_location())
+                Label::new(memory_type.location)
                     .with_color(Color::Cyan)
                     .with_message("memory type defined here"),
             );

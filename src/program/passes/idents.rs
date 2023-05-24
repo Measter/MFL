@@ -521,8 +521,7 @@ impl Program {
                     _ => None,
                 };
 
-                let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
-                let memory_type = sig.memory_type.as_mut().unwrap();
+                let mut memory_type = self.memory_type_unresolved.remove(&item_id).unwrap();
                 let UnresolvedType::Tokens(memory_type_tokens) = &memory_type.inner else {
                     unreachable!()
                 };
@@ -539,7 +538,7 @@ impl Program {
                 };
                 memory_type.inner = UnresolvedType::Id(new_kind);
 
-                self.item_signatures_unresolved.insert(item_id, sig);
+                self.memory_type_unresolved.insert(item_id, memory_type);
             } else if item.kind() == ItemKind::Module {
                 self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
             } else {

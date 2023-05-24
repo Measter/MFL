@@ -808,7 +808,7 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining local allocations");
         let function_data = program.get_function_data(id);
         for &item_id in function_data.allocs.values() {
-            let alloc_type_id = program.get_item_signature_resolved(item_id).memory_type();
+            let alloc_type_id = program.get_memory_type_resolved(item_id);
             let (store_type_id, alloc_size, is_array) = match type_store
                 .get_type_info(alloc_type_id)
                 .kind

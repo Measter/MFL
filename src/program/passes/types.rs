@@ -11,7 +11,7 @@ use crate::{
     opcode::{Op, OpCode},
     program::{ItemKind, ItemSignatureResolved, Program},
     source_file::SourceStorage,
-    type_store::{emit_type_error_diag, BuiltinTypes, TypeKind, TypeStore, UnresolvedTypeIds},
+    type_store::{emit_type_error_diag, TypeKind, TypeStore, UnresolvedTypeIds},
 };
 
 impl Program {
@@ -255,13 +255,6 @@ impl Program {
         for (item_id, item) in items {
             trace!(name = interner.get_symbol_name(self, item_id));
 
-            let unresolved_sig = &self.item_signatures_unresolved[&item_id];
-
-            let mut resolved_entry =
-                SmallVec::with_capacity(unresolved_sig.entry_stack.inner.len());
-            let mut resolved_exit = SmallVec::with_capacity(unresolved_sig.exit_stack.inner.len());
-            let mut resolved_memory_type = None;
-
             if item.kind == ItemKind::Memory {
                 let parent_kind = self.get_item_header(item.parent.unwrap()).kind;
                 if parent_kind == ItemKind::GenericFunction {
@@ -269,9 +262,10 @@ impl Program {
                     continue;
                 }
 
-                resolved_exit.push(type_store.get_builtin(BuiltinTypes::U64).id);
+                let unresolved_memory_type = &self.memory_type_unresolved[&item_id];
+
                 let info =
-                    match type_store.resolve_type(interner, unresolved_sig.memory_type().as_id()) {
+                    match type_store.resolve_type(interner, unresolved_memory_type.inner.as_id()) {
                         Ok(info) => info,
                         Err(tk) => {
                             had_error = true;
@@ -279,8 +273,15 @@ impl Program {
                             continue;
                         }
                     };
-                resolved_memory_type = Some(info.id);
+
+                self.memory_type_resolved.insert(item_id, info.id);
             } else {
+                let unresolved_sig = &self.item_signatures_unresolved[&item_id];
+                let mut resolved_entry =
+                    SmallVec::with_capacity(unresolved_sig.entry_stack.inner.len());
+                let mut resolved_exit =
+                    SmallVec::with_capacity(unresolved_sig.exit_stack.inner.len());
+
                 for input_sig in unresolved_sig.entry_stack() {
                     let info = match type_store.resolve_type(interner, input_sig.inner.as_id()) {
                         Ok(info) => info,
@@ -304,18 +305,15 @@ impl Program {
                     };
                     resolved_exit.push(info.id);
                 }
-            }
 
-            self.item_signatures_resolved.insert(
-                item_id,
-                ItemSignatureResolved {
-                    entry_stack: resolved_entry,
-                    exit_stack: resolved_exit,
-                    memory_type: resolved_memory_type,
-                },
-            );
+                self.item_signatures_resolved.insert(
+                    item_id,
+                    ItemSignatureResolved {
+                        entry_stack: resolved_entry,
+                        exit_stack: resolved_exit,
+                    },
+                );
 
-            if item.kind != ItemKind::Memory {
                 let body = self.item_bodies.remove(&item_id).unwrap();
                 self.item_bodies.insert(
                     item_id,

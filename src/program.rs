@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     ffi::OsStr,
+    hash::Hash,
     ops::Not,
     path::Path,
 };
@@ -88,7 +89,6 @@ impl ItemHeader {
 pub struct ItemSignatureUnresolved {
     exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
-    memory_type: Option<Spanned<UnresolvedType>>,
 }
 
 impl ItemSignatureUnresolved {
@@ -107,19 +107,10 @@ impl ItemSignatureUnresolved {
     pub fn entry_stack_location(&self) -> SourceLocation {
         self.entry_stack.location
     }
-
-    pub fn memory_type(&self) -> &UnresolvedType {
-        &self.memory_type.as_ref().unwrap().inner
-    }
-
-    pub fn memory_type_location(&self) -> SourceLocation {
-        self.memory_type.as_ref().unwrap().location
-    }
 }
 pub struct ItemSignatureResolved {
     exit_stack: SmallVec<[TypeId; 8]>,
     entry_stack: SmallVec<[TypeId; 8]>,
-    memory_type: Option<TypeId>,
 }
 
 impl ItemSignatureResolved {
@@ -130,10 +121,6 @@ impl ItemSignatureResolved {
     pub fn entry_stack(&self) -> &[TypeId] {
         &self.entry_stack
     }
-
-    pub fn memory_type(&self) -> TypeId {
-        self.memory_type.unwrap()
-    }
 }
 
 pub struct Program {
@@ -143,6 +130,8 @@ pub struct Program {
     item_headers: BTreeMap<ItemId, ItemHeader>,
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
     item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
+    memory_type_unresolved: HashMap<ItemId, Spanned<UnresolvedType>>,
+    memory_type_resolved: HashMap<ItemId, TypeId>,
     item_bodies: HashMap<ItemId, Vec<Op>>,
     function_data: HashMap<ItemId, FunctionData>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
@@ -175,6 +164,7 @@ impl Program {
         self.item_headers.get_mut(&id).unwrap()
     }
 
+    #[track_caller]
     pub fn get_item_signature_unresolved(&self, id: ItemId) -> &ItemSignatureUnresolved {
         &self.item_signatures_unresolved[&id]
     }
@@ -182,6 +172,18 @@ impl Program {
     #[track_caller]
     pub fn get_item_signature_resolved(&self, id: ItemId) -> &ItemSignatureResolved {
         &self.item_signatures_resolved[&id]
+    }
+
+    #[track_caller]
+    pub fn get_memory_type_unresolved(&self, id: ItemId) -> Spanned<&UnresolvedType> {
+        let v = &self.memory_type_unresolved[&id];
+
+        (&v.inner).with_span(v.location)
+    }
+
+    #[track_caller]
+    pub fn get_memory_type_resolved(&self, id: ItemId) -> TypeId {
+        self.memory_type_resolved[&id]
     }
 
     #[track_caller]
@@ -224,6 +226,8 @@ impl Program {
             item_headers: BTreeMap::new(),
             item_signatures_unresolved: HashMap::new(),
             item_signatures_resolved: HashMap::new(),
+            memory_type_resolved: HashMap::new(),
+            memory_type_unresolved: HashMap::new(),
             item_bodies: HashMap::new(),
             function_data: HashMap::new(),
             const_vals: HashMap::new(),
@@ -770,6 +774,40 @@ impl Program {
             *had_error = true;
             symbol_redef_error(name.location, prev_loc, source_store);
         }
+    }
+
+    pub fn new_memory(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: ItemId,
+        memory_type: Spanned<UnresolvedType>,
+    ) -> ItemId {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
+
+        let item = ItemHeader {
+            name,
+            id,
+            kind: ItemKind::Memory,
+            parent: Some(parent),
+        };
+
+        self.item_headers.insert(id, item);
+        self.memory_type_unresolved.insert(id, memory_type);
+
+        let parent_info = self.item_headers[&parent];
+        if parent_info.kind == ItemKind::Module {
+            let module_info = self.module_info.get_mut(&parent).unwrap();
+            let res = module_info.add_child(name.inner, name.location, id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
+        }
+
+        id
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
