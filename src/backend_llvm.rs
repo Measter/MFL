@@ -613,6 +613,7 @@ impl<'ctx> CodeGen<'ctx> {
                     analyzer,
                     value_store,
                     type_store,
+                    function,
                     op,
                     *emit_array,
                 ),

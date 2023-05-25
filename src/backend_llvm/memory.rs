@@ -1,7 +1,7 @@
 use inkwell::{
     types::BasicType,
-    values::{AggregateValue, BasicValue},
-    AddressSpace,
+    values::{AggregateValue, BasicValue, FunctionValue, IntValue},
+    AddressSpace, IntPredicate,
 };
 use intcast::IntCast;
 use lasso::Spur;
@@ -12,7 +12,7 @@ use crate::{
     opcode::Op,
     program::{static_analysis::Analyzer, ItemId},
     source_file::Spanned,
-    type_store::{TypeKind, TypeStore},
+    type_store::{Signedness, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -131,6 +131,36 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn build_bounds_check(&mut self, function: FunctionValue, idx: IntValue, length: IntValue) {
+        let current_block = self.builder.get_insert_block().unwrap();
+        let success_block = self
+            .ctx
+            .append_basic_block(function, "bounds_check_success");
+        let fail_block = self.ctx.append_basic_block(function, "bounds_check_fail");
+
+        self.builder.position_at_end(current_block);
+        let cmp_res =
+            self.builder
+                .build_int_compare(IntPredicate::ULT, idx, length, "bounds_check_cmp");
+
+        self.builder
+            .build_conditional_branch(cmp_res, success_block, fail_block);
+
+        self.builder.position_at_end(fail_block);
+        // Crash and burn
+        // TODO: Print message for position and index/length. That is, do a Rust.
+        let args = vec![
+            self.ctx.i64_type().const_int(60, false).into(),
+            self.ctx.i64_type().const_int(1, false).into(),
+        ];
+
+        let callee = self.syscall_wrappers[1];
+        self.builder.build_call(callee, &args, "exit");
+        self.builder.build_unreachable();
+
+        self.builder.position_at_end(success_block);
+    }
+
     pub(super) fn build_extract_array(
         &mut self,
         interner: &mut Interners,
@@ -188,6 +218,7 @@ impl<'ctx> CodeGen<'ctx> {
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
+        function: FunctionValue<'ctx>,
         op: &Op,
         emit_array: bool,
     ) {
@@ -202,30 +233,32 @@ impl<'ctx> CodeGen<'ctx> {
         let array_type_info = type_store.get_type_info(array_type_id);
         let data_type_info = type_store.get_type_info(data_type_id);
 
-        let (arr_ptr, store_type_info) = match array_type_info.kind {
-            TypeKind::Array { type_id, .. } => {
+        let (arr_ptr, store_type_info, length) = match array_type_info.kind {
+            TypeKind::Array { type_id, length } => {
                 // Ugh, this sucks!
                 let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
                 self.builder.build_store(store_location, array_val);
                 let store_type_info = type_store.get_type_info(type_id);
 
                 let new_ptr_type = self
-                    .get_type(type_store, store_type_info.id)
+                    .get_type(type_store, type_id)
                     .ptr_type(AddressSpace::default());
 
                 let arr_ptr = self
                     .builder
                     .build_pointer_cast(store_location, new_ptr_type, "");
 
-                (arr_ptr, store_type_info)
+                let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+
+                (arr_ptr, store_type_info, length_value)
             }
             TypeKind::Pointer(sub_type_id) => {
                 let sub_type_info = type_store.get_type_info(sub_type_id);
-                let TypeKind::Array{type_id, ..} = sub_type_info.kind else { unreachable!() };
-                let store_type_info = type_store.get_type_info(type_id);
+                let TypeKind::Array{type_id: store_type_id, length} = sub_type_info.kind else { unreachable!() };
+                let store_type_info = type_store.get_type_info(store_type_id);
 
                 let new_ptr_type = self
-                    .get_type(type_store, store_type_info.id)
+                    .get_type(type_store, store_type_id)
                     .ptr_type(AddressSpace::default());
 
                 let arr_ptr = self.builder.build_pointer_cast(
@@ -234,39 +267,68 @@ impl<'ctx> CodeGen<'ctx> {
                     "",
                 );
 
-                (arr_ptr, store_type_info)
+                let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+
+                (arr_ptr, store_type_info, length_value)
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = type_store.get_struct_def(array_type_id);
-                let field_name = interner.intern_lexeme("pointer");
+                let struct_value = array_val.into_struct_value();
 
-                let (field_idx, field_info) = struct_def
+                let pointer_field_name = interner.intern_lexeme("pointer");
+                let (ptr_field_idx, ptr_field_info) = struct_def
                     .fields
                     .iter()
                     .enumerate()
-                    .find(|(_, fi)| fi.name.inner == field_name)
+                    .find(|(_, fi)| fi.name.inner == pointer_field_name)
                     .unwrap();
 
-                let TypeKind::Pointer(store_type) = type_store.get_type_info(field_info.kind).kind else { unreachable!() };
-
-                let struct_value = array_val.into_struct_value();
+                let TypeKind::Pointer(store_type) = type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
 
                 let ptr_name = format!("{array_value_id}_pointer");
                 let ptr_value = self
                     .builder
-                    .build_extract_value(struct_value, field_idx.to_u32().unwrap(), &ptr_name)
+                    .build_extract_value(struct_value, ptr_field_idx.to_u32().unwrap(), &ptr_name)
                     .unwrap()
                     .into_pointer_value();
 
-                (ptr_value, type_store.get_type_info(store_type))
+                let length_field_name = interner.intern_lexeme("length");
+                let length_field_idx = struct_def
+                    .fields
+                    .iter()
+                    .position(|fi| fi.name.inner == length_field_name)
+                    .unwrap();
+
+                let length_name = format!("{array_value_id}_length");
+                let length_value = self
+                    .builder
+                    .build_extract_value(
+                        struct_value,
+                        length_field_idx.to_u32().unwrap(),
+                        &length_name,
+                    )
+                    .unwrap()
+                    .into_int_value();
+
+                (
+                    ptr_value,
+                    type_store.get_type_info(store_type),
+                    length_value,
+                )
             }
             _ => unreachable!(),
         };
 
-        let offset_ptr = unsafe {
-            self.builder
-                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
-        };
+        let idx_val = self.cast_int(
+            idx_val.into_int_value(),
+            self.ctx.i64_type(),
+            Signedness::Unsigned,
+        );
+
+        self.build_bounds_check(function, idx_val, length);
+
+        // And finally actually build the insert
+        let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, &[idx_val], "") };
 
         let data_val = if let (
             TypeKind::Integer {
