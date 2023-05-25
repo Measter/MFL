@@ -12,8 +12,43 @@ use crate::{
         Program,
     },
     source_file::{SourceStorage, Spanned},
-    type_store::{Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{IntWidth, Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
 };
+
+fn is_slice_like_struct(
+    interner: &mut Interners,
+    type_store: &TypeStore,
+    struct_info: TypeInfo,
+) -> Option<TypeId> {
+    let mut has_valid_length_field = false;
+    let mut store_type_id = None;
+
+    let length_spur = interner.intern_lexeme("length");
+    let pointer_spur = interner.intern_lexeme("pointer");
+
+    let struct_def = type_store.get_struct_def(struct_info.id);
+
+    for field in &struct_def.fields {
+        let field_kind = type_store.get_type_info(field.kind).kind;
+
+        match field_kind {
+            TypeKind::Integer {
+                width: IntWidth::I64,
+                signed: Signedness::Unsigned,
+            } if field.name.inner == length_spur => has_valid_length_field = true,
+            TypeKind::Pointer(ptr_id) if field.name.inner == pointer_spur => {
+                store_type_id = Some(ptr_id)
+            }
+            _ => {}
+        }
+    }
+
+    if has_valid_length_field {
+        store_type_id
+    } else {
+        None
+    }
+}
 
 pub fn pack_array(
     analyzer: &mut Analyzer,
@@ -361,7 +396,7 @@ pub fn extract_array(
 
 pub fn insert_array(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -408,11 +443,33 @@ pub fn insert_array(
             }
         }
 
-        TypeKind::Integer { .. }
-        | TypeKind::Bool
-        | TypeKind::Struct(_)
-        | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            if let Some(store_type) = is_slice_like_struct(interner, type_store, array_type_info) {
+                store_type
+            } else {
+                let value_type_name = interner.resolve_lexeme(array_type_info.name);
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(array_value_id, 0, value_type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    op.token.location,
+                    format!("cannot insert into a `{value_type_name}`"),
+                    labels,
+                    "Struct must be slice-like (must have a pointer and length field)".to_owned(),
+                    source_store,
+                );
+
+                *had_error = true;
+                return;
+            }
+        }
+
+        TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::GenericStructBase(_) => {
             let value_type_name = interner.resolve_lexeme(array_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,

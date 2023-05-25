@@ -245,7 +245,7 @@ Supported Types:
 
 ### `ins`, `insd` (Insert into Array)
 
-Stores a value into an array at the given runtime index.
+Stores a value into an array or slice-like struct (a struct with a `pointer` and `length` field) at the given runtime index.
 
 Stack(`ins`): `[a b c]` to `[d]`
 
@@ -262,6 +262,7 @@ Supported Types:
 |---|---|---|---|
 |`T`|`T[N]`|`uN`|`T[N]`|
 |`T`|`ptr(T[N])`|`uN`|`ptr(T[N])`|
+|`T`|`U`|`uN`|`U`|
 
 ### `xtr`, `xtrd` (Extract from Array)
 

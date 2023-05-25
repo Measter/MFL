@@ -209,22 +209,63 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_store(store_location, array_val);
                 let store_type_info = type_store.get_type_info(type_id);
 
-                (store_location, store_type_info)
+                let new_ptr_type = self
+                    .get_type(type_store, store_type_info.id)
+                    .ptr_type(AddressSpace::default());
+
+                let arr_ptr = self
+                    .builder
+                    .build_pointer_cast(store_location, new_ptr_type, "");
+
+                (arr_ptr, store_type_info)
             }
             TypeKind::Pointer(sub_type_id) => {
                 let sub_type_info = type_store.get_type_info(sub_type_id);
                 let TypeKind::Array{type_id, ..} = sub_type_info.kind else { unreachable!() };
                 let store_type_info = type_store.get_type_info(type_id);
 
-                (array_val.into_pointer_value(), store_type_info)
+                let new_ptr_type = self
+                    .get_type(type_store, store_type_info.id)
+                    .ptr_type(AddressSpace::default());
+
+                let arr_ptr = self.builder.build_pointer_cast(
+                    array_val.into_pointer_value(),
+                    new_ptr_type,
+                    "",
+                );
+
+                (arr_ptr, store_type_info)
+            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                let struct_def = type_store.get_struct_def(array_type_id);
+                let field_name = interner.intern_lexeme("pointer");
+
+                let (field_idx, field_info) = struct_def
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, fi)| fi.name.inner == field_name)
+                    .unwrap();
+
+                let TypeKind::Pointer(store_type) = type_store.get_type_info(field_info.kind).kind else { unreachable!() };
+
+                let struct_value = array_val.into_struct_value();
+
+                let ptr_name = format!("{array_value_id}_pointer");
+                let ptr_value = self
+                    .builder
+                    .build_extract_value(struct_value, field_idx.to_u32().unwrap(), &ptr_name)
+                    .unwrap()
+                    .into_pointer_value();
+
+                (ptr_value, type_store.get_type_info(store_type))
             }
             _ => unreachable!(),
         };
 
         let offset_ptr = unsafe {
-            let zero = self.ctx.i64_type().const_int(0, false);
             self.builder
-                .build_gep(arr_ptr, &[zero, idx_val.into_int_value()], "")
+                .build_gep(arr_ptr, &[idx_val.into_int_value()], "")
         };
 
         let data_val = if let (

@@ -84,6 +84,7 @@ pub fn insert_array(
             let TypeKind::Array {  length, .. } = info.kind else { unreachable!() };
             length
         }
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
         _ => unreachable!(),
     };
 
