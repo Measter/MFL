@@ -267,7 +267,7 @@ Supported Types:
 
 ### `xtr`, `xtrd` (Extract from Array)
 
-Retrieves a value from an array at the given runtime index.
+Retrieves a value from an array or slice-like struct (a struct with a `pointer` and `length` field) at the given runtime index.
 
 Stack(`xtr`): `[a b]` to `[c d]`
 
@@ -284,6 +284,8 @@ Supported Types:
 |---|---|---|---|
 |`T[N]`|`uN`|`T[N]`|`T`|
 |`ptr(T[N])`|`uN`|`ptr(T[N])`|`T`|
+|`U`|`uN`|`U`|`T`|
+|`ptr(U)`|`uN`|`ptr(U)`|`T`|
 
 ### `ins(Field[.Field]*)`, `insd(Field[.Field]*)` (Insert into Struct)
 

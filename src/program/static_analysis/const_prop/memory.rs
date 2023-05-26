@@ -31,9 +31,13 @@ pub fn extract_array(
         TypeKind::Array { length, .. } => length,
         TypeKind::Pointer(id) => {
             let info = type_store.get_type_info(id);
-            let TypeKind::Array {  length, .. } = info.kind else { unreachable!() };
-            length
+            match info.kind {
+                TypeKind::Array { length, .. } => length,
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
+                _ => unreachable!(),
+            }
         }
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
         _ => unreachable!(),
     };
 

@@ -222,6 +222,7 @@ impl<'ctx> CodeGen<'ctx> {
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
+        function: FunctionValue<'ctx>,
         op: &Op,
         emit_array: bool,
     ) {
@@ -233,22 +234,83 @@ impl<'ctx> CodeGen<'ctx> {
         let [array_type_id] = analyzer.value_types([array_value_id]).unwrap();
         let array_type_info = type_store.get_type_info(array_type_id);
 
-        let arr_ptr = match array_type_info.kind {
-            TypeKind::Array { .. } => {
+        let (arr_ptr, length) = match array_type_info.kind {
+            TypeKind::Array { type_id, length } => {
                 // Ugh, this sucks!
                 let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
                 self.builder.build_store(store_location, array_val);
-                store_location
+
+                let new_ptr_type = self
+                    .get_type(type_store, type_id)
+                    .ptr_type(AddressSpace::default());
+
+                let arr_ptr = self
+                    .builder
+                    .build_pointer_cast(store_location, new_ptr_type, "");
+
+                let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+
+                (arr_ptr, length_value)
             }
-            TypeKind::Pointer(_) => array_val.into_pointer_value(),
+            TypeKind::Pointer(sub_type_id) => {
+                let sub_type_info = type_store.get_type_info(sub_type_id);
+                match sub_type_info.kind {
+                    TypeKind::Array {
+                        type_id: store_type_id,
+                        length,
+                    } => {
+                        let new_ptr_type = self
+                            .get_type(type_store, store_type_id)
+                            .ptr_type(AddressSpace::default());
+
+                        let arr_ptr = self.builder.build_pointer_cast(
+                            array_val.into_pointer_value(),
+                            new_ptr_type,
+                            "",
+                        );
+
+                        let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+
+                        (arr_ptr, length_value)
+                    }
+                    TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let struct_val =
+                            self.builder.build_load(array_val.into_pointer_value(), "");
+                        let (arr_ptr, _, length) = self.get_slice_like_struct_fields(
+                            interner,
+                            type_store,
+                            array_value_id,
+                            sub_type_id,
+                            struct_val.into_struct_value(),
+                        );
+                        (arr_ptr, length)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                let (arr_ptr, _, length) = self.get_slice_like_struct_fields(
+                    interner,
+                    type_store,
+                    array_value_id,
+                    array_type_id,
+                    array_val.into_struct_value(),
+                );
+
+                (arr_ptr, length)
+            }
             _ => unreachable!(),
         };
 
-        let offset_ptr = unsafe {
-            let zero = self.ctx.i64_type().const_int(0, false);
-            self.builder
-                .build_gep(arr_ptr, &[zero, idx_val.into_int_value()], "")
-        };
+        let idx_val = self.cast_int(
+            idx_val.into_int_value(),
+            self.ctx.i64_type(),
+            Signedness::Unsigned,
+        );
+
+        self.build_bounds_check(function, idx_val, length);
+
+        let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, &[idx_val], "") };
 
         let output_value_id = if emit_array {
             let output_array_id = op_io.outputs()[0];
