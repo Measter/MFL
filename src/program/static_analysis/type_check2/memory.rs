@@ -587,7 +587,7 @@ pub fn insert_struct(
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => input_struct_type_id,
         TypeKind::Pointer(sub_type) => {
             let ptr_type_info = type_store.get_type_info(sub_type);
-            if let TypeKind::Struct(_) = ptr_type_info.kind {
+            if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) = ptr_type_info.kind {
                 sub_type
             } else {
                 let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
@@ -737,7 +737,7 @@ pub fn extract_struct(
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => input_struct_type_id,
         TypeKind::Pointer(sub_type) => {
             let ptr_type_info = type_store.get_type_info(sub_type);
-            if let TypeKind::Struct(_) = ptr_type_info.kind {
+            if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) = ptr_type_info.kind {
                 sub_type
             } else {
                 let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
