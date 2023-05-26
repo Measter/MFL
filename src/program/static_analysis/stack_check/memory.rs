@@ -108,7 +108,7 @@ pub fn extract_array(
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_array {
-        let output_array = analyzer.new_value(op.token.location, None);
+        let output_array = analyzer.new_value(op.token.location, Some(array_id));
         outputs.push(output_array);
         stack.push(output_array);
     }
@@ -139,7 +139,7 @@ pub fn insert_array(
 
     if emit_array {
         // Leave the array on the stack so the user can continue using it.
-        let output = analyzer.new_value(op.token.location, None);
+        let output = analyzer.new_value(op.token.location, Some(inputs[1]));
         outputs.push(output);
         stack.push(output);
     }
@@ -165,7 +165,7 @@ pub fn insert_struct(
     let mut outputs = SmallVec::<[_; 1]>::new();
     if emit_struct {
         // Leave the struct on the stack so the user can continue using it.
-        let output = analyzer.new_value(op.token.location, None);
+        let output = analyzer.new_value(op.token.location, Some(inputs[1]));
         outputs.push(output);
         stack.push(output);
     }
@@ -189,7 +189,7 @@ pub fn extract_struct(
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_struct {
-        let output_struct = analyzer.new_value(op.token.location, None);
+        let output_struct = analyzer.new_value(op.token.location, Some(struct_id));
         outputs.push(output_struct);
         stack.push(output_struct);
     }
