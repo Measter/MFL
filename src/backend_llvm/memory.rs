@@ -1,6 +1,6 @@
 use inkwell::{
     types::BasicType,
-    values::{AggregateValue, BasicValue, FunctionValue, IntValue},
+    values::{AggregateValue, BasicValue, FunctionValue, IntValue, PointerValue, StructValue},
     AddressSpace, IntPredicate,
 };
 use intcast::IntCast;
@@ -10,9 +10,12 @@ use crate::{
     interners::Interners,
     n_ops::SliceNOps,
     opcode::Op,
-    program::{static_analysis::Analyzer, ItemId},
+    program::{
+        static_analysis::{Analyzer, ValueId},
+        ItemId,
+    },
     source_file::Spanned,
-    type_store::{Signedness, TypeKind, TypeStore},
+    type_store::{Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -161,6 +164,58 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(success_block);
     }
 
+    fn get_slice_like_struct_fields(
+        &mut self,
+        interner: &mut Interners,
+        type_store: &TypeStore,
+        struct_value_id: ValueId,
+        struct_type_id: TypeId,
+        struct_value: StructValue<'ctx>,
+    ) -> (PointerValue<'ctx>, TypeInfo, IntValue<'ctx>) {
+        let struct_def = type_store.get_struct_def(struct_type_id);
+
+        let pointer_field_name = interner.intern_lexeme("pointer");
+        let (ptr_field_idx, ptr_field_info) = struct_def
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, fi)| fi.name.inner == pointer_field_name)
+            .unwrap();
+
+        let TypeKind::Pointer(store_type) = type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
+
+        let ptr_name = format!("{struct_value_id}_pointer");
+        let ptr_value = self
+            .builder
+            .build_extract_value(struct_value, ptr_field_idx.to_u32().unwrap(), &ptr_name)
+            .unwrap()
+            .into_pointer_value();
+
+        let length_field_name = interner.intern_lexeme("length");
+        let length_field_idx = struct_def
+            .fields
+            .iter()
+            .position(|fi| fi.name.inner == length_field_name)
+            .unwrap();
+
+        let length_name = format!("{struct_value_id}_length");
+        let length_value = self
+            .builder
+            .build_extract_value(
+                struct_value,
+                length_field_idx.to_u32().unwrap(),
+                &length_name,
+            )
+            .unwrap()
+            .into_int_value();
+
+        (
+            ptr_value,
+            type_store.get_type_info(store_type),
+            length_value,
+        )
+    }
+
     pub(super) fn build_extract_array(
         &mut self,
         interner: &mut Interners,
@@ -254,68 +309,50 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Pointer(sub_type_id) => {
                 let sub_type_info = type_store.get_type_info(sub_type_id);
-                let TypeKind::Array{type_id: store_type_id, length} = sub_type_info.kind else { unreachable!() };
-                let store_type_info = type_store.get_type_info(store_type_id);
+                match sub_type_info.kind {
+                    TypeKind::Array {
+                        type_id: store_type_id,
+                        length,
+                    } => {
+                        let store_type_info = type_store.get_type_info(store_type_id);
 
-                let new_ptr_type = self
-                    .get_type(type_store, store_type_id)
-                    .ptr_type(AddressSpace::default());
+                        let new_ptr_type = self
+                            .get_type(type_store, store_type_id)
+                            .ptr_type(AddressSpace::default());
 
-                let arr_ptr = self.builder.build_pointer_cast(
-                    array_val.into_pointer_value(),
-                    new_ptr_type,
-                    "",
-                );
+                        let arr_ptr = self.builder.build_pointer_cast(
+                            array_val.into_pointer_value(),
+                            new_ptr_type,
+                            "",
+                        );
 
-                let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+                        let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
 
-                (arr_ptr, store_type_info, length_value)
+                        (arr_ptr, store_type_info, length_value)
+                    }
+                    TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let struct_val =
+                            self.builder.build_load(array_val.into_pointer_value(), "");
+                        let val = self.get_slice_like_struct_fields(
+                            interner,
+                            type_store,
+                            array_value_id,
+                            sub_type_id,
+                            struct_val.into_struct_value(),
+                        );
+                        val
+                    }
+                    _ => unreachable!(),
+                }
             }
-            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let struct_def = type_store.get_struct_def(array_type_id);
-                let struct_value = array_val.into_struct_value();
-
-                let pointer_field_name = interner.intern_lexeme("pointer");
-                let (ptr_field_idx, ptr_field_info) = struct_def
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .find(|(_, fi)| fi.name.inner == pointer_field_name)
-                    .unwrap();
-
-                let TypeKind::Pointer(store_type) = type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
-
-                let ptr_name = format!("{array_value_id}_pointer");
-                let ptr_value = self
-                    .builder
-                    .build_extract_value(struct_value, ptr_field_idx.to_u32().unwrap(), &ptr_name)
-                    .unwrap()
-                    .into_pointer_value();
-
-                let length_field_name = interner.intern_lexeme("length");
-                let length_field_idx = struct_def
-                    .fields
-                    .iter()
-                    .position(|fi| fi.name.inner == length_field_name)
-                    .unwrap();
-
-                let length_name = format!("{array_value_id}_length");
-                let length_value = self
-                    .builder
-                    .build_extract_value(
-                        struct_value,
-                        length_field_idx.to_u32().unwrap(),
-                        &length_name,
-                    )
-                    .unwrap()
-                    .into_int_value();
-
-                (
-                    ptr_value,
-                    type_store.get_type_info(store_type),
-                    length_value,
-                )
-            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => self
+                .get_slice_like_struct_fields(
+                    interner,
+                    type_store,
+                    array_value_id,
+                    array_type_id,
+                    array_val.into_struct_value(),
+                ),
             _ => unreachable!(),
         };
 

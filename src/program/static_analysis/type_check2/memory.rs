@@ -414,32 +414,53 @@ pub fn insert_array(
         analyzer.set_value_type(output_id, array_type_id);
     }
 
+    let mut make_error_for_aggr = |interner: &mut Interners, note| {
+        let value_type_name = interner.resolve_lexeme(array_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(array_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            op.token.location,
+            format!("cannot insert into a `{value_type_name}`"),
+            labels,
+            note,
+            source_store,
+        );
+
+        *had_error = true;
+    };
+
     let store_type_id = match array_type_info.kind {
         TypeKind::Array { type_id, .. } => type_id,
         TypeKind::Pointer(sub_type) => {
             let ptr_type_info = type_store.get_type_info(sub_type);
-            if let TypeKind::Array { type_id, .. } = ptr_type_info.kind {
-                type_id
-            } else {
-                let value_type_name = interner.resolve_lexeme(array_type_info.name);
-                let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
-                    [(array_value_id, 1, value_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    op.token.location,
-                    format!("cannot insert into a `{value_type_name}`"),
-                    labels,
-                    None,
-                    source_store,
-                );
-
-                *had_error = true;
-                return;
+            match ptr_type_info.kind {
+                TypeKind::Array { type_id, .. } => type_id,
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                    if let Some(store_type) =
+                        is_slice_like_struct(interner, type_store, ptr_type_info)
+                    {
+                        store_type
+                    } else {
+                        make_error_for_aggr(
+                            interner,
+                            Some(
+                                "Struct must be slice-like (must have a pointer and length field)"
+                                    .to_owned(),
+                            ),
+                        );
+                        return;
+                    }
+                }
+                _ => {
+                    make_error_for_aggr(interner, None);
+                    return;
+                }
             }
         }
 
@@ -447,47 +468,19 @@ pub fn insert_array(
             if let Some(store_type) = is_slice_like_struct(interner, type_store, array_type_info) {
                 store_type
             } else {
-                let value_type_name = interner.resolve_lexeme(array_type_info.name);
-                let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
-                    [(array_value_id, 0, value_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
+                make_error_for_aggr(
+                    interner,
+                    Some(
+                        "Struct must be slice-like (must have a pointer and length field)"
+                            .to_owned(),
+                    ),
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    op.token.location,
-                    format!("cannot insert into a `{value_type_name}`"),
-                    labels,
-                    "Struct must be slice-like (must have a pointer and length field)".to_owned(),
-                    source_store,
-                );
-
-                *had_error = true;
                 return;
             }
         }
 
         TypeKind::Integer { .. } | TypeKind::Bool | TypeKind::GenericStructBase(_) => {
-            let value_type_name = interner.resolve_lexeme(array_type_info.name);
-            let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
-                [(array_value_id, 0, value_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                op.token.location,
-                format!("cannot insert into a `{value_type_name}`"),
-                labels,
-                None,
-                source_store,
-            );
-
-            *had_error = true;
+            make_error_for_aggr(interner, None);
             return;
         }
     };

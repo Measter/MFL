@@ -263,6 +263,7 @@ Supported Types:
 |`T`|`T[N]`|`uN`|`T[N]`|
 |`T`|`ptr(T[N])`|`uN`|`ptr(T[N])`|
 |`T`|`U`|`uN`|`U`|
+|`T`|`ptr(U)`|`uN`|`ptr(U)`|
 
 ### `xtr`, `xtrd` (Extract from Array)
 
