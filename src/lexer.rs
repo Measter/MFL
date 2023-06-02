@@ -318,7 +318,7 @@ impl<'source> Scanner<'source> {
     ) -> Result<(), ()> {
         self.string_buf.clear();
         self.string_buf.push(start_char);
-        while matches!(self.peek(), Some(ch) if valid_char(ch)) && !self.is_at_end() {
+        while self.peek().is_some_and(&valid_char) && !self.is_at_end() {
             let c = self.advance();
             if c != '_' {
                 self.string_buf.push(c);
@@ -358,7 +358,7 @@ impl<'source> Scanner<'source> {
             _ if ch.is_whitespace() => None,
 
             ('/', '/') => {
-                while !matches!(self.peek(), Some('\n')) && !self.is_at_end() {
+                while self.peek() != Some('\n') && !self.is_at_end() {
                     self.advance();
                 }
 
@@ -475,7 +475,7 @@ impl<'source> Scanner<'source> {
                 self.advance(); // Consume the 'x'
 
                 let next = self.peek();
-                if !matches!(next, Some(c) if c.is_ascii_hexdigit()) || self.is_at_end() {
+                if !next.is_some_and(|c| c.is_ascii_hexdigit()) || self.is_at_end() {
                     let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                     let next_char = next.unwrap();
                     diagnostics::emit_error(
@@ -526,7 +526,7 @@ impl<'source> Scanner<'source> {
             (c, _) if is_ident_start(c) => {
                 self.string_buf.clear();
                 self.string_buf.push(ch);
-                while matches!(self.peek(), Some(c) if is_ident_continue(c)) && !self.is_at_end() {
+                while self.peek().is_some_and(is_ident_continue) && !self.is_at_end() {
                     let c = self.advance();
                     self.string_buf.push(c);
                 }

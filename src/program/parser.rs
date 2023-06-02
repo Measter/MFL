@@ -240,7 +240,10 @@ fn parse_unresolved_types(
         let mut type_span = ident.location;
 
         let mut base_path = vec![ident.map(|t| t.lexeme)];
-        while matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ColonColon) {
+        while token_iter
+            .peek()
+            .is_some_and(|(_, t)| t.inner.kind == TokenKind::ColonColon)
+        {
             let (_, colon) = token_iter.next().unwrap();
             let (_, next_seg) = expect_token(
                 &mut token_iter,
@@ -254,7 +257,9 @@ fn parse_unresolved_types(
             type_span = type_span.merge(next_seg.location);
         }
 
-        let base_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+        let base_type = if token_iter
+            .peek()
+            .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
         {
             let Ok(delim) = parse_delimited_token_list(
                 &mut token_iter,
@@ -307,7 +312,9 @@ fn parse_unresolved_types(
             UnresolvedTypeTokens::Simple(base_path)
         };
 
-        let parsed_type = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::SquareBracketOpen)
+        let parsed_type = if token_iter
+            .peek()
+            .is_some_and(|(_, t)| t.inner.kind == TokenKind::SquareBracketOpen)
         {
             // Parsing an array!
             let Ok(delim) = parse_delimited_token_list(
@@ -402,7 +409,9 @@ fn parse_integer_op<'a>(
         had_error = true;
     }
 
-    let (width, value) = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
+    let (width, value) = if token_iter
+        .peek()
+        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
     {
         let delim = parse_delimited_token_list(
             token_iter,
@@ -555,7 +564,9 @@ pub fn parse_item_body(
             | TokenKind::Reverse
             | TokenKind::Swap
             | TokenKind::SysCall => {
-                let count = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
+                let count = if token_iter
+                    .peek()
+                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok(delim) = parse_delimited_token_list(
                         &mut token_iter,
@@ -649,7 +660,9 @@ pub fn parse_item_body(
             }
             TokenKind::Unpack => OpCode::Unpack,
             TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
-                if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
+                if token_iter
+                    .peek()
+                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok(delim) = parse_delimited_token_list(
                         &mut token_iter,
@@ -686,7 +699,9 @@ pub fn parse_item_body(
                         };
                         idents.push(next.1);
 
-                        if matches!(delim_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::Dot)
+                        if delim_iter
+                            .peek()
+                            .is_some_and(|(_, t)| t.inner.kind == TokenKind::Dot)
                         {
                             prev_token = *delim_iter.next().unwrap().1;
                             continue;
@@ -953,7 +968,9 @@ pub fn parse_item_body(
                 is_c_str: false,
             },
             TokenKind::EmitStack => {
-                let emit_labels = if matches!(token_iter.peek(), Some((_,tk)) if tk.inner.kind == TokenKind::ParenthesisOpen)
+                let emit_labels = if token_iter
+                    .peek()
+                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let Ok(delim) = parse_delimited_token_list(
                         &mut token_iter,
@@ -1147,7 +1164,10 @@ fn parse_ident<'a>(
 ) -> Result<UnresolvedIdent, ()> {
     let mut path = vec![token.map(|t| t.lexeme)];
 
-    while matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ColonColon) {
+    while token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ColonColon)
+    {
         let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
         let (_, item_id) = expect_token(
             token_iter,
@@ -1161,7 +1181,9 @@ fn parse_ident<'a>(
         path.push(item_id.map(|t| t.lexeme));
     }
 
-    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+    let generic_params = if token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let Ok(delim) = parse_delimited_token_list(
             token_iter,
@@ -1576,7 +1598,9 @@ fn parse_function_header<'a>(
 ) -> Result<(Spanned<Token>, ItemId), ()> {
     let mut had_error = false;
 
-    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+    let generic_params = if token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         parse_delimited_token_list(
             token_iter,
@@ -1939,7 +1963,9 @@ fn parse_struct<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let generic_params = if matches!(token_iter.peek(), Some((_, t)) if t.inner.kind == TokenKind::ParenthesisOpen)
+    let generic_params = if token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let generic_idents = parse_delimited_token_list(
             token_iter,
