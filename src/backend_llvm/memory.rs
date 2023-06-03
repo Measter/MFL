@@ -1,3 +1,4 @@
+use ariadne::Cache;
 use inkwell::{
     types::BasicType,
     values::{AggregateValue, BasicValue, FunctionValue, IntValue, PointerValue, StructValue},
@@ -14,7 +15,7 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         ItemId,
     },
-    source_file::Spanned,
+    source_file::{SourceLocation, SourceStorage, Spanned},
     type_store::{Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
 };
 
@@ -134,7 +135,14 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_bounds_check(&mut self, function: FunctionValue, idx: IntValue, length: IntValue) {
+    fn build_bounds_check(
+        &mut self,
+        mut source_store: &SourceStorage,
+        op_loc: SourceLocation,
+        function: FunctionValue,
+        idx: IntValue,
+        length: IntValue,
+    ) {
         let current_block = self.builder.get_insert_block().unwrap();
         let success_block = self
             .ctx
@@ -151,14 +159,30 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(fail_block);
         // Crash and burn
-        // TODO: Print message for position and index/length. That is, do a Rust.
+        let file_name = source_store.name(op_loc.file_id);
+        let (_, line, column) = source_store
+            .fetch(&op_loc.file_id)
+            .unwrap()
+            .get_offset_line(op_loc.source_start.to_usize())
+            .unwrap();
+        let location_string = format!("{file_name}:{}:{}", line + 1, column + 1);
+        let string = self
+            .builder
+            .build_global_string_ptr(&location_string, "oob_loc");
+        let string_pointer = string
+            .as_pointer_value()
+            .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
         let args = vec![
-            self.ctx.i64_type().const_int(60, false).into(),
-            self.ctx.i64_type().const_int(1, false).into(),
+            string_pointer.into(),
+            self.ctx
+                .i64_type()
+                .const_int(location_string.len().to_u64(), false)
+                .into(),
+            idx.into(),
+            length.into(),
         ];
 
-        let callee = self.syscall_wrappers[1];
-        self.builder.build_call(callee, &args, "exit");
+        self.builder.build_call(self.oob_handler, &args, "oob");
         self.builder.build_unreachable();
 
         self.builder.position_at_end(success_block);
@@ -218,6 +242,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_extract_array(
         &mut self,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -308,7 +333,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(function, idx_val, length);
+        self.build_bounds_check(source_store, op.token.location, function, idx_val, length);
 
         let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, &[idx_val], "") };
 
@@ -331,6 +356,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_insert_array(
         &mut self,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -424,7 +450,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(function, idx_val, length);
+        self.build_bounds_check(source_store, op.token.location, function, idx_val, length);
 
         // And finally actually build the insert
         let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, &[idx_val], "") };

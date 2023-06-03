@@ -27,6 +27,7 @@ use crate::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
         ItemId, ItemKind, Program,
     },
+    source_file::SourceStorage,
     type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     Args,
 };
@@ -273,6 +274,7 @@ struct CodeGen<'ctx> {
     processed_functions: HashSet<ItemId>,
     item_function_map: HashMap<ItemId, FunctionValue<'ctx>>,
     syscall_wrappers: Vec<FunctionValue<'ctx>>,
+    oob_handler: FunctionValue<'ctx>,
     type_map: HashMap<TypeId, BasicTypeEnum<'ctx>>,
 }
 
@@ -287,6 +289,16 @@ impl<'ctx> CodeGen<'ctx> {
         let pass_manager = PassManager::create(());
         pm_builder.populate_module_pass_manager(&pass_manager);
 
+        let oob_args: Vec<BasicMetadataTypeEnum> = vec![
+            ctx.i8_type().ptr_type(AddressSpace::default()).into(),
+            ctx.i64_type().into(),
+            ctx.i64_type().into(),
+            ctx.i64_type().into(),
+        ];
+
+        let oob_sig = ctx.void_type().fn_type(&oob_args, false);
+        let oob_handler = module.add_function("_oob", oob_sig, Some(Linkage::External));
+
         Self {
             ctx,
             module,
@@ -296,6 +308,7 @@ impl<'ctx> CodeGen<'ctx> {
             processed_functions: HashSet::new(),
             item_function_map: HashMap::new(),
             syscall_wrappers: Vec::new(),
+            oob_handler,
             type_map: HashMap::new(),
         }
     }
@@ -445,6 +458,7 @@ impl<'ctx> CodeGen<'ctx> {
         id: ItemId,
         block: &[Op],
         function: FunctionValue<'ctx>,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         type_store: &mut TypeStore,
     ) {
@@ -566,6 +580,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::If(if_op) => {
                     self.build_if(
                         program,
+                        source_store,
                         interner,
                         type_store,
                         analyzer,
@@ -582,6 +597,7 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 OpCode::While(while_op) => self.build_while(
                     program,
+                    source_store,
                     interner,
                     type_store,
                     analyzer,
@@ -601,6 +617,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_unpack(interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::ExtractArray { emit_array } => self.build_extract_array(
+                    source_store,
                     interner,
                     analyzer,
                     value_store,
@@ -610,6 +627,7 @@ impl<'ctx> CodeGen<'ctx> {
                     *emit_array,
                 ),
                 OpCode::InsertArray { emit_array } => self.build_insert_array(
+                    source_store,
                     interner,
                     analyzer,
                     value_store,
@@ -796,6 +814,7 @@ impl<'ctx> CodeGen<'ctx> {
         program: &Program,
         id: ItemId,
         function: FunctionValue<'ctx>,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         type_store: &mut TypeStore,
     ) {
@@ -860,6 +879,7 @@ impl<'ctx> CodeGen<'ctx> {
                 id,
                 program.get_item_body(id),
                 function,
+                source_store,
                 interner,
                 type_store,
             );
@@ -878,11 +898,24 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build(&mut self, program: &Program, interner: &mut Interners, type_store: &mut TypeStore) {
+    fn build(
+        &mut self,
+        program: &Program,
+        source_store: &SourceStorage,
+        interner: &mut Interners,
+        type_store: &mut TypeStore,
+    ) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(item_id) = self.function_queue.pop() {
             let function = self.item_function_map[&item_id];
-            self.compile_procedure(program, item_id, function, interner, type_store);
+            self.compile_procedure(
+                program,
+                item_id,
+                function,
+                source_store,
+                interner,
+                type_store,
+            );
         }
 
         self.pass_manager.run_on(&self.module);
@@ -908,6 +941,7 @@ impl<'ctx> CodeGen<'ctx> {
 pub(crate) fn compile(
     program: &Program,
     top_level_items: &[ItemId],
+    source_store: &SourceStorage,
     interner: &mut Interners,
     type_store: &mut TypeStore,
     args: &Args,
@@ -969,7 +1003,7 @@ pub(crate) fn compile(
     if !args.is_library {
         codegen.build_entry(top_level_items[0]);
     }
-    codegen.build(program, interner, type_store);
+    codegen.build(program, source_store, interner, type_store);
 
     {
         let _span = trace_span!("Writing object file").entered();

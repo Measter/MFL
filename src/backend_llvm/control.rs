@@ -6,7 +6,7 @@ use crate::{
     interners::Interners,
     opcode::{If, Op, While},
     program::{static_analysis::Analyzer, ItemId, Program},
-    source_file::Spanned,
+    source_file::{SourceStorage, Spanned},
     type_store::{TypeKind, TypeStore},
 };
 
@@ -218,6 +218,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_if(
         &mut self,
         program: &Program,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
@@ -255,6 +256,7 @@ impl<'ctx> CodeGen<'ctx> {
             id,
             &if_op.condition,
             function,
+            source_store,
             interner,
             type_store,
         );
@@ -283,6 +285,7 @@ impl<'ctx> CodeGen<'ctx> {
             id,
             &if_op.then_block,
             function,
+            source_store,
             interner,
             type_store,
         );
@@ -334,6 +337,7 @@ impl<'ctx> CodeGen<'ctx> {
             id,
             &if_op.else_block,
             function,
+            source_store,
             interner,
             type_store,
         );
@@ -385,6 +389,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_while(
         &mut self,
         program: &Program,
+        source_store: &SourceStorage,
         interner: &mut Interners,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
@@ -416,6 +421,7 @@ impl<'ctx> CodeGen<'ctx> {
             id,
             &while_op.condition,
             function,
+            source_store,
             interner,
             type_store,
         );
@@ -478,6 +484,7 @@ impl<'ctx> CodeGen<'ctx> {
             id,
             &while_op.body_block,
             function,
+            source_store,
             interner,
             type_store,
         );

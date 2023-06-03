@@ -144,12 +144,13 @@ fn load_program(
 }
 
 fn run_compile(args: &Args) -> Result<()> {
-    let (program, _source_storage, mut interner, mut type_store, top_level_items) =
+    let (program, source_storage, mut interner, mut type_store, top_level_items) =
         load_program(args)?;
 
     let objects = backend_llvm::compile(
         &program,
         &top_level_items,
+        &source_storage,
         &mut interner,
         &mut type_store,
         args,
