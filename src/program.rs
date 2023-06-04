@@ -26,7 +26,6 @@ use crate::{
     Args,
 };
 
-mod parser;
 mod passes;
 pub mod static_analysis;
 use static_analysis::Analyzer;
@@ -87,8 +86,8 @@ impl ItemHeader {
 
 #[derive(Debug)]
 pub struct ItemSignatureUnresolved {
-    exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
-    entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    pub exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    pub entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
 }
 
 impl ItemSignatureUnresolved {
@@ -889,7 +888,7 @@ impl ModuleInfo {
         let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
         interner.intern_lexeme(file_stem);
 
-        parser::parse_module(
+        crate::parser::parse_file(
             program,
             module_id,
             &tokens,

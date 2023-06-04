@@ -24,6 +24,7 @@ mod lexer;
 mod n_ops;
 mod opcode;
 mod option;
+mod parser;
 mod program;
 mod simulate;
 mod source_file;
