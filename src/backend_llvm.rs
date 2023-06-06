@@ -1002,6 +1002,12 @@ pub(crate) fn compile(
     codegen.build_function_prototypes(program, interner, type_store);
     if !args.is_library {
         codegen.build_entry(top_level_items[0]);
+    } else {
+        // Top level items clearly need to be external symbols if we're a library.
+        // Pretty naff library if they're not.
+        top_level_items
+            .iter()
+            .for_each(|id| codegen.item_function_map[id].set_linkage(Linkage::External));
     }
     codegen.build(program, source_store, interner, type_store);
 
