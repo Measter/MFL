@@ -661,7 +661,7 @@ pub fn parse_item_body(
                 }
             }
 
-            TokenKind::Assert | TokenKind::Const => {
+            TokenKind::Assert => {
                 if parse_item(
                     program,
                     &mut token_iter,
@@ -669,6 +669,21 @@ pub fn parse_item_body(
                     token,
                     interner,
                     parent_id,
+                    source_store,
+                )
+                .is_err()
+                {
+                    had_error = true;
+                }
+                continue;
+            }
+            TokenKind::Const => {
+                if items::parse_const(
+                    program,
+                    &mut token_iter,
+                    token,
+                    parent_id,
+                    interner,
                     source_store,
                 )
                 .is_err()
@@ -1197,62 +1212,6 @@ fn parse_function_header<'a>(
     had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
-fn parse_const_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interners,
-    name: Spanned<Token>,
-    parent_id: ItemId,
-    source_store: &SourceStorage,
-) -> Result<(Spanned<Token>, ItemId), ()> {
-    let mut had_error = false;
-    let exit_stack = parse_delimited_token_list(
-        token_iter,
-        name,
-        None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", valid_type_token),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, Delimited::fallback(name));
-    let exit_stack_location = exit_stack.span();
-    let unresolved_exit_types =
-        parse_unresolved_types(interner, source_store, exit_stack.open, &exit_stack.list)
-            .recover(&mut had_error, Vec::new());
-
-    let sig = ItemSignatureUnresolved {
-        exit_stack: unresolved_exit_types
-            .into_iter()
-            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
-            .collect::<Vec<_>>()
-            .with_span(exit_stack_location),
-        entry_stack: Vec::new().with_span(name.location),
-    };
-
-    let new_item = program.new_item(
-        source_store,
-        &mut had_error,
-        name.map(|t| t.lexeme),
-        ItemKind::Const,
-        parent_id,
-        sig,
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    had_error.not().then_some((is_token, new_item)).ok_or(())
-}
-
 fn parse_assert_header<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -1316,7 +1275,6 @@ fn parse_item<'a>(
 
     let header_func = match keyword.inner.kind {
         TokenKind::Proc => parse_function_header,
-        TokenKind::Const => parse_const_header,
         TokenKind::Assert => parse_assert_header,
         _ => unreachable!(),
     };
@@ -1446,7 +1404,19 @@ pub(super) fn parse_file(
 
     while let Some((_, token)) = token_iter.next() {
         match token.inner.kind {
-            TokenKind::Assert | TokenKind::Const | TokenKind::Proc => {
+            TokenKind::Const => {
+                had_error |= items::parse_const(
+                    program,
+                    &mut token_iter,
+                    *token,
+                    module_id,
+                    interner,
+                    source_store,
+                )
+                .is_err();
+            }
+
+            TokenKind::Assert | TokenKind::Proc => {
                 if parse_item(
                     program,
                     &mut token_iter,

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, iter::Peekable, ops::Not};
+use std::{collections::VecDeque, iter::Peekable};
 
 use ariadne::{Color, Label};
 
@@ -6,16 +6,141 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer::{Token, TokenKind},
+    opcode::{Op, OpCode, OpId},
     program::{ItemId, ItemKind, ModuleQueueType, Program},
     source_file::{SourceStorage, Spanned, WithSpan},
     type_store::{UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
 
 use super::{
-    expect_token, parse_delimited_token_list,
-    utils::{parse_ident, parse_unresolved_types, valid_type_token},
+    expect_token, parse_delimited_token_list, parse_item_body,
+    utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
     Delimited, Recover,
 };
+
+pub fn parse_const<'a>(
+    program: &mut Program,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    keyword: Spanned<Token>,
+    parent_id: ItemId,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut had_error = false;
+    let name_token = expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, keyword);
+
+    let exit_stack = parse_stack_def(
+        token_iter,
+        &mut had_error,
+        name_token,
+        interner,
+        source_store,
+    );
+
+    let exit_stack = exit_stack.map(|st| {
+        st.into_iter()
+            .map(|t| t.map(UnresolvedType::Tokens))
+            .collect()
+    });
+
+    let item_id = program.new_const(
+        source_store,
+        &mut had_error,
+        name_token.map(|t| t.lexeme),
+        parent_id,
+        exit_stack,
+    );
+
+    let mut op_id = 0;
+    let mut op_id_gen = || {
+        let id = op_id;
+        op_id += 1;
+        OpId(id)
+    };
+
+    let body_delim = parse_delimited_token_list(
+        token_iter,
+        name_token,
+        None,
+        ("is", |t| t == TokenKind::Is),
+        ("item", |_| true),
+        ("end", |t| t == TokenKind::End),
+        interner,
+        source_store,
+    )
+    .recover(&mut had_error, Delimited::fallback(name_token));
+
+    let mut body = parse_item_body(
+        program,
+        &body_delim.list,
+        &mut op_id_gen,
+        interner,
+        parent_id,
+        source_store,
+    )
+    .recover(&mut had_error, Vec::new());
+
+    // Makes later logic easier if we always have a prologue and epilogue.
+    body.insert(
+        0,
+        Op {
+            code: OpCode::Prologue,
+            id: op_id_gen(),
+            token: body_delim.open.map(|t| t.lexeme),
+        },
+    );
+    body.push(Op {
+        code: OpCode::Epilogue,
+        id: op_id_gen(),
+        token: body_delim.close.map(|t| t.lexeme),
+    });
+
+    program.set_item_body(item_id, body);
+
+    let item_header = program.get_item_header(item_id);
+    if let Some(prev_def) = program
+        .get_visible_symbol(item_header, name_token.inner.lexeme)
+        .filter(|&f| f != item_id)
+    {
+        let prev_item = program.get_item_header(prev_def).name();
+        diagnostics::emit_error(
+            name_token.location,
+            "multiple definitions of symbol",
+            [
+                Label::new(name_token.location)
+                    .with_message("defined here")
+                    .with_color(Color::Red),
+                Label::new(prev_item.location)
+                    .with_message("also defined here")
+                    .with_color(Color::Blue),
+            ],
+            None,
+            source_store,
+        );
+        had_error = true;
+    }
+
+    let parent_kind = program.get_item_header(parent_id).kind();
+    if parent_kind == ItemKind::Function || parent_kind == ItemKind::GenericFunction {
+        let pd = program.get_function_data_mut(parent_id);
+        pd.consts.insert(name_token.inner.lexeme, item_id);
+    }
+
+    if had_error {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
 
 pub fn parse_memory<'a>(
     program: &mut Program,

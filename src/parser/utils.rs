@@ -8,7 +8,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::UnresolvedIdent,
-    source_file::{SourceLocation, SourceStorage, Spanned},
+    source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{UnresolvedType, UnresolvedTypeTokens},
 };
 
@@ -449,4 +449,29 @@ where
     };
 
     Ok(int)
+}
+
+pub fn parse_stack_def<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    had_error: &mut bool,
+    prev_token: Spanned<Token>,
+    interner: &Interners,
+    source_store: &SourceStorage,
+) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {
+    let stack = parse_delimited_token_list(
+        token_iter,
+        prev_token,
+        None,
+        ("[", |t| t == TokenKind::SquareBracketOpen),
+        ("Ident", valid_type_token),
+        ("]", |t| t == TokenKind::SquareBracketClosed),
+        interner,
+        source_store,
+    )
+    .recover(had_error, Delimited::fallback(prev_token));
+    let stack_location = stack.span();
+    let unresolved_types = parse_unresolved_types(interner, source_store, stack.open, &stack.list)
+        .recover(had_error, Vec::new());
+
+    unresolved_types.with_span(stack_location)
 }

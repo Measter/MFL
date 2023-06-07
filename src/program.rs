@@ -701,6 +701,46 @@ impl Program {
         id
     }
 
+    pub fn new_const(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: ItemId,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    ) -> ItemId {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
+
+        let item = ItemHeader {
+            name,
+            id,
+            kind: ItemKind::Const,
+            parent: Some(parent),
+        };
+
+        self.item_headers.insert(id, item);
+        self.item_signatures_unresolved.insert(
+            id,
+            ItemSignatureUnresolved {
+                exit_stack,
+                entry_stack: Vec::new().with_span(name.location),
+            },
+        );
+
+        let parent_info = self.item_headers[&parent];
+        if parent_info.kind == ItemKind::Module {
+            let module_info = self.module_info.get_mut(&parent).unwrap();
+            let res = module_info.add_child(name.inner, name.location, id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
+        }
+
+        id
+    }
+
     pub fn new_generic_function(
         &mut self,
         source_store: &SourceStorage,

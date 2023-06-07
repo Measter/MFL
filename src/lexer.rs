@@ -160,14 +160,18 @@ impl TokenKind {
     pub fn is_matched_open(self) -> bool {
         matches!(
             self,
-            TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen
+            TokenKind::ParenthesisOpen
+                | TokenKind::SquareBracketOpen
+                | TokenKind::If
+                | TokenKind::Is
+                | TokenKind::While
         )
     }
 
     pub fn is_matched_close(self) -> bool {
         matches!(
             self,
-            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed
+            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::End
         )
     }
 }
