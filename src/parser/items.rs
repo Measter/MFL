@@ -24,7 +24,7 @@ pub fn parse_memory<'a>(
     parent_id: ItemId,
     interner: &Interners,
     source_store: &SourceStorage,
-) -> Result<(Spanned<Token>, ItemId), ()> {
+) -> Result<(), ()> {
     let mut had_error = false;
     let name_token = expect_token(
         token_iter,
