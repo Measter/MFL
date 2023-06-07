@@ -294,9 +294,9 @@ pub fn parse_item_body(
                         continue;
                     }
 
-                    let (unresolved_type, _) = unresolved_types.pop().unwrap();
+                    let unresolved_type = unresolved_types.pop().unwrap();
                     OpCode::UnresolvedPackStruct {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
+                        unresolved_type: UnresolvedType::Tokens(unresolved_type.inner),
                     }
                 }
             }
@@ -558,7 +558,7 @@ pub fn parse_item_body(
                     continue;
                 }
 
-                let (unresolved_type, _) = unresolved_types.pop().unwrap();
+                let unresolved_type = unresolved_types.pop().unwrap().inner;
 
                 match token.inner.kind {
                     TokenKind::Cast => OpCode::UnresolvedCast {
@@ -1150,12 +1150,12 @@ fn parse_function_header<'a>(
     let sig = ItemSignatureUnresolved {
         exit_stack: unresolved_exit_types
             .into_iter()
-            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
+            .map(|t| t.map(UnresolvedType::Tokens))
             .collect::<Vec<_>>()
             .with_span(exit_stack_location),
         entry_stack: unresolved_entry_types
             .into_iter()
-            .map(|(t, s)| UnresolvedType::Tokens(t).with_span(s))
+            .map(|t| t.map(UnresolvedType::Tokens))
             .collect::<Vec<_>>()
             .with_span(entry_stack_location),
     };
