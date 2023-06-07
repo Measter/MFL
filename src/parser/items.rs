@@ -86,13 +86,40 @@ pub fn parse_memory<'a>(
         memory_type,
     );
 
+    let item_header = program.get_item_header(item_id);
+    if let Some(prev_def) = program
+        .get_visible_symbol(item_header, name_token.inner.lexeme)
+        .filter(|&f| f != item_id)
+    {
+        let prev_item = program.get_item_header(prev_def).name();
+        diagnostics::emit_error(
+            name_token.location,
+            "multiple definitions of symbol",
+            [
+                Label::new(name_token.location)
+                    .with_message("defined here")
+                    .with_color(Color::Red),
+                Label::new(prev_item.location)
+                    .with_message("also defined here")
+                    .with_color(Color::Blue),
+            ],
+            None,
+            source_store,
+        );
+        had_error = true;
+    }
+
     let parent_kind = program.get_item_header(parent_id).kind();
     if parent_kind == ItemKind::Function || parent_kind == ItemKind::GenericFunction {
         let pd = program.get_function_data_mut(parent_id);
         pd.allocs.insert(name_token.inner.lexeme, item_id);
     }
 
-    had_error.not().then_some((name_token, item_id)).ok_or(())
+    if had_error {
+        Err(())
+    } else {
+        Ok(())
+    }
 }
 
 pub fn parse_struct<'a>(
