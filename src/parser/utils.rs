@@ -211,9 +211,9 @@ pub fn parse_unresolved_types(
     source_store: &SourceStorage,
     prev: Spanned<Token>,
     tokens: &[Spanned<Token>],
-) -> Result<Vec<(UnresolvedTypeTokens, SourceLocation)>, ()> {
+) -> Result<Vec<Spanned<UnresolvedTypeTokens>>, ()> {
     let mut had_error = false;
-    let mut types: Vec<(UnresolvedTypeTokens, SourceLocation)> = Vec::new();
+    let mut types: Vec<Spanned<UnresolvedTypeTokens>> = Vec::new();
     let mut token_iter = tokens.iter().enumerate().peekable();
 
     while token_iter.peek().is_some() {
@@ -278,7 +278,7 @@ pub fn parse_unresolved_types(
 
             type_span = unresolved_types
                 .iter()
-                .fold(type_span, |acc, (_, span)| acc.merge(*span));
+                .fold(type_span, |acc, tokens| acc.merge(tokens.location));
 
             let lexeme = interner.resolve_lexeme(ident.inner.lexeme);
             if base_path.len() == 1 && lexeme == "ptr" {
@@ -294,11 +294,11 @@ pub fn parse_unresolved_types(
                     continue;
                 }
 
-                UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().0))
+                UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().inner))
             } else {
                 UnresolvedTypeTokens::GenericInstance {
                     type_name: base_path,
-                    params: unresolved_types.into_iter().map(|(t, _)| t).collect(),
+                    params: unresolved_types.into_iter().map(|t| t.inner).collect(),
                 }
             }
         } else {
@@ -333,7 +333,7 @@ pub fn parse_unresolved_types(
             base_type
         };
 
-        types.push((parsed_type, type_span));
+        types.push(parsed_type.with_span(type_span));
     }
 
     had_error.not().then_some(types).ok_or(())
@@ -404,7 +404,7 @@ pub fn parse_ident<'a>(
 
         unresolved_types
             .into_iter()
-            .map(|(ut, _)| UnresolvedType::Tokens(ut))
+            .map(|ut| UnresolvedType::Tokens(ut.inner))
             .collect()
     } else {
         Vec::new()

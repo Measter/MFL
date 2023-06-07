@@ -72,9 +72,10 @@ pub fn parse_memory<'a>(
         had_error = true;
     }
 
+    // TODO: Make this not crash on an empty store type
     let memory_type = unresolved_store_type
         .pop()
-        .map(|(t, _)| UnresolvedType::Tokens(t).with_span(store_type_location))
+        .map(|t| UnresolvedType::Tokens(t.inner).with_span(store_type_location))
         .unwrap();
 
     let item_id = program.new_memory(
@@ -202,7 +203,7 @@ pub fn parse_struct<'a>(
 
         fields.push(UnresolvedField {
             name: type_tokens.open.map(|t| t.lexeme),
-            kind: UnresolvedType::Tokens(unresolved_store_type.pop().unwrap().0),
+            kind: UnresolvedType::Tokens(unresolved_store_type.pop().unwrap().inner),
         });
         prev_token = type_tokens.close;
 
