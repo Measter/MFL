@@ -227,24 +227,41 @@ pub fn analyze_while(
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
+    if stack.is_empty() {
+        generate_stack_length_mismatch_diag(
+            source_store,
+            while_op.do_token,
+            while_op.do_token,
+            stack.len(),
+            1,
+            None,
+        );
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logic makes sense.
+        stack.push(analyzer.new_value(op.token.location, None));
+    }
+
+    let condition_value = stack.pop().unwrap();
+
     // The condition cannot be allowed to otherwise change the depth of the stack as it could be
     // executed an arbitrary number of times.
-    if stack.len() != initial_stack.len() + 1 {
+    if stack.len() != initial_stack.len() {
         generate_stack_length_mismatch_diag(
             source_store,
             op.token.location,
             while_op.do_token,
             stack.len(),
             initial_stack.len(),
+            Some("Does not include bool result.\nLoop condition cannot otherwise change the depth or types on the stack".to_owned()),
         );
         *had_error = true;
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        for _ in 0..(initial_stack.len() + 1).saturating_sub(stack.len()) {
+        for _ in 0..(initial_stack.len()).saturating_sub(stack.len()) {
             stack.push(analyzer.new_value(op.token.location, None));
         }
     }
-    let condition_value = stack.pop().unwrap();
 
     // Might need something smarter than this for the codegen.
     let mut condition_merges = SmallVec::new();
@@ -292,6 +309,7 @@ pub fn analyze_while(
             while_op.end_token,
             stack.len(),
             initial_stack.len(),
+            Some("Loop body cannot change the depth or types on the stack".to_owned()),
         );
         *had_error = true;
         // Pad the stack out to the expected length so the rest of the logic makes sense.
@@ -372,6 +390,7 @@ pub fn analyze_if(
             if_op.do_token,
             stack.len(),
             1,
+            None,
         );
         *had_error = true;
 
@@ -442,6 +461,7 @@ pub fn analyze_if(
                 if_op.end_token,
                 stack.len(),
                 then_block_stack.len(),
+                None,
             );
             *had_error = true;
         }

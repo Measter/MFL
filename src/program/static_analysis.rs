@@ -420,6 +420,7 @@ fn generate_stack_length_mismatch_diag(
     error_location: SourceLocation,
     actual: usize,
     expected: usize,
+    note: impl Into<Option<String>>,
 ) {
     let message = format!("expected {expected} items, found {actual}");
 
@@ -427,7 +428,8 @@ fn generate_stack_length_mismatch_diag(
         vec![
             Label::new(sample_location)
                 .with_color(Color::Cyan)
-                .with_message(format!("{expected} values here...",)),
+                .with_message(format!("{expected} values here...",))
+                .with_order(1),
             Label::new(error_location)
                 .with_color(Color::Red)
                 .with_message(format!("... but found {actual} values here")),
@@ -438,7 +440,7 @@ fn generate_stack_length_mismatch_diag(
             .with_message("here")]
     };
 
-    diagnostics::emit_error(sample_location, message, labels, None, source_store);
+    diagnostics::emit_error(sample_location, message, labels, note, source_store);
 }
 
 fn analyze_block(

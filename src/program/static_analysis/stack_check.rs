@@ -21,6 +21,7 @@ fn ensure_stack_depth(
             op.token.location,
             stack.len(),
             depth,
+            None,
         );
         *had_error = true;
 
