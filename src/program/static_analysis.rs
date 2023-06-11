@@ -425,14 +425,16 @@ fn generate_stack_length_mismatch_diag(
     let message = format!("expected {expected} items, found {actual}");
 
     let labels = if sample_location != error_location {
+        let expected_suffix = if expected == 1 { "" } else { "s" };
+        let actual_suffix = if actual == 1 { "" } else { "s" };
         vec![
             Label::new(sample_location)
                 .with_color(Color::Cyan)
-                .with_message(format!("{expected} values here...",))
+                .with_message(format!("{expected} value{expected_suffix} here...",))
                 .with_order(1),
             Label::new(error_location)
                 .with_color(Color::Red)
-                .with_message(format!("... but found {actual} values here")),
+                .with_message(format!("... but found {actual} value{actual_suffix} here")),
         ]
     } else {
         vec![Label::new(error_location)
