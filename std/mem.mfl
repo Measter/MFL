@@ -56,6 +56,44 @@ proc free(T) [MMap(T)] to [SimpleResult] is
     pack(SimpleResult)
 end
 
+proc fill(T) [
+    MMap(T)
+    T
+] to [] is
+    memory val is T end
+    memory store is MMap(T) end
+    val!
+    store!
+
+    0 while dup store xtrd(length) < do
+        val@ store over(2) insd
+        1+
+    end drop
+end
+
+proc copy(T) [
+    MMap(T) // Source
+    MMap(T) // Destination
+] to [] is
+    if xtr(length) over(2) xtrd(length) != do
+        "Mismatched length in copy - src: " std::term::write
+        swap xtrd(length) std::term::write_ui
+        " dst: " std::term::write
+        xtrd(length) std::term::write_ui_ln
+        exit
+    end
+
+    memory src is MMap(T) end
+    memory dst is MMap(T) end
+    dst! src!
+
+    0 while dup dst xtrd(length) < do
+        dup src swap xtrd
+        over dst swap insd
+        1+
+    end drop
+end
+
 proc mmap_file [
     std::io::FD
     u64 // Protection flags. Must match the FD.
