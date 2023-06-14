@@ -1,0 +1,2 @@
+- Add floats.
+- When failing to pack a generic structure, provide explanation for type failure. Point to generic paramater.
