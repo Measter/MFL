@@ -152,7 +152,7 @@ fn run_test(
     pre_args: &[&OsStr],
     test: &Test,
 ) -> Result<Output> {
-    write!(stdout, "  compile ")?;
+    write!(stdout, "  {} ", test.name)?;
     let test_command = Command::new(command)
         .args(pre_args)
         .args(&test.cfg.command_args)
