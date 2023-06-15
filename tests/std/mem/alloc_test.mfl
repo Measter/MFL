@@ -1,0 +1,15 @@
+import std::mem::alloc
+import std::mem::free
+
+proc entry[] to [] is
+    3 alloc(u32)
+    if xtr(errno) 0!= do
+        "Alloc fail" std::term::writeln exit
+    end
+    xtrd(data)
+
+    free(u32)
+    if xtrd(errno) 0!= do
+        "Free failed" std::term::writeln
+    end
+end

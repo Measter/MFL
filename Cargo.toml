@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mfl", "crates/intcast"]
+members = ["crates/mfl", "crates/intcast", "crates/tester"]
 
 [profile.release]
 debug = true

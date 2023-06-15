@@ -1,0 +1,7 @@
+[compile]
+expected = "Ok"    # Possible options are "Ok" and "Error"
+args = ["-L./std"] # Additional args to pass to the compiler
+
+[run.run]
+expected = "Ok"
+# args = []       # Command line args to pass to the program

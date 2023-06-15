@@ -1,5 +1,4 @@
 /target
-/tests
 /examples/*
 !/examples/*.mfl
 /vendor
