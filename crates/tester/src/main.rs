@@ -240,7 +240,7 @@ fn run_all_tests(
                     post_fn_result,
                 )?;
             } else {
-                writeln!(stdout, "Skipped")?;
+                writeln!(stdout, "{}", "Skipped".yellow())?;
             }
         }
     }
