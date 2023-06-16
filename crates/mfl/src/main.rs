@@ -162,6 +162,7 @@ fn run_compile(args: &Args) -> Result<()> {
     )?;
 
     if args.is_library {
+        println!(" {}", "Finished".green());
         return Ok(());
     }
 
