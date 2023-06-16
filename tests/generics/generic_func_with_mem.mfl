@@ -1,0 +1,3 @@
+proc foo(T) [T] to [] is
+    drop
+end

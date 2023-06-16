@@ -1,0 +1,4 @@
+proc foo(T) [T] to [] is
+    memory f is T end
+    drop
+end
