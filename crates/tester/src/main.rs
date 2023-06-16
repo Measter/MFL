@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    io::{StdoutLock, Write},
+    io::{Error as IoError, ErrorKind},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output},
 };
@@ -48,6 +48,14 @@ impl From<ExitStatus> for RunStatus {
             RunStatus::Error
         }
     }
+}
+
+#[derive(Debug)]
+enum PostFnResult {
+    Ok,
+    NotEqual,
+    Missing,
+    Other(IoError),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,26 +137,27 @@ fn get_tests(args: &Args) -> Result<Vec<Tests>> {
     Ok(tests)
 }
 
-fn store_streams(
-    args: &Args,
-    group_name: &Path,
-    test_name: &str,
-    output: &Output,
-) -> Result<RunStatus> {
+fn store_streams(args: &Args, group_name: &Path, test_name: &str, output: &Output) -> PostFnResult {
     let root_name = args.output_root.join(group_name);
-    std::fs::create_dir_all(root_name.parent().unwrap())?;
+    if let Err(e) = std::fs::create_dir_all(root_name.parent().unwrap()) {
+        return PostFnResult::Other(e);
+    };
 
-    std::fs::write(
+    if let Err(e) = std::fs::write(
         root_name.with_extension(format!("{test_name}.stdout")),
         &output.stdout,
-    )?;
+    ) {
+        return PostFnResult::Other(e);
+    }
 
-    std::fs::write(
+    if let Err(e) = std::fs::write(
         root_name.with_extension(format!("{test_name}.stderr")),
         &output.stderr,
-    )?;
+    ) {
+        return PostFnResult::Other(e);
+    }
 
-    Ok(RunStatus::Ok)
+    PostFnResult::Ok
 }
 
 fn compare_streams(
@@ -156,16 +165,29 @@ fn compare_streams(
     group_name: &Path,
     test_name: &str,
     output: &Output,
-) -> Result<RunStatus> {
+) -> PostFnResult {
     let root_name = args.output_root.join(group_name);
 
-    let prev_stdout = std::fs::read(root_name.with_extension(format!("{test_name}.stdout")))?;
-    let prev_stderr = std::fs::read(root_name.with_extension(format!("{test_name}.stderr")))?;
+    let prev_stdout = match std::fs::read(root_name.with_extension(format!("{test_name}.stdout"))) {
+        Ok(v) => v,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            return PostFnResult::Missing;
+        }
+        Err(e) => return PostFnResult::Other(e),
+    };
+
+    let prev_stderr = match std::fs::read(root_name.with_extension(format!("{test_name}.stderr"))) {
+        Ok(v) => v,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            return PostFnResult::Missing;
+        }
+        Err(e) => return PostFnResult::Other(e),
+    };
 
     if prev_stdout != output.stdout || prev_stderr != output.stderr {
-        Ok(RunStatus::Error)
+        PostFnResult::NotEqual
     } else {
-        Ok(RunStatus::Ok)
+        PostFnResult::Ok
     }
 }
 
@@ -179,37 +201,38 @@ fn run_test(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Res
 }
 
 fn print_result(
-    stdout: &mut StdoutLock<'_>,
     actual_result: RunStatus,
     expected_result: RunStatus,
-    post_fn_result: RunStatus,
-) -> Result<()> {
+    post_fn_result: PostFnResult,
+) {
     if actual_result != expected_result {
-        writeln!(
-            stdout,
+        println!(
             "{}: Expected {expected_result:?} got {actual_result:?}",
             "Error".red()
-        )?;
-    } else if post_fn_result == RunStatus::Error {
-        writeln!(stdout, "{}: Output streams differ", "Error".red())?;
-    } else {
-        writeln!(stdout, "{}", "Ok".green())?;
+        );
+
+        return;
     }
 
-    Ok(())
+    match post_fn_result {
+        PostFnResult::Ok => {
+            println!("{}", "Ok".green());
+        }
+        PostFnResult::NotEqual => println!("{}: Output streams differ", "Error".red()),
+        PostFnResult::Missing => println!("{}: Previous streams not found", "Error".red()),
+        PostFnResult::Other(e) => println!("{}: Stream error - {}", "Error".red(), e),
+    }
 }
 
 fn run_all_tests(
     args: &Args,
     tests: &[Tests],
-    post_test_fn: fn(&Args, &Path, &str, &Output) -> Result<RunStatus>,
+    post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
 ) -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
-    let mut stdout = std::io::stdout().lock();
-    let stdout = &mut stdout;
 
     for test in tests {
-        writeln!(stdout, "{}", test.name.display())?;
+        println!("{}", test.name.display());
 
         let test_dir = temp_dir.path().join(&test.name);
         let objdir = test_dir.join("obj");
@@ -231,36 +254,34 @@ fn run_all_tests(
             mfl_file,
         ];
 
-        write!(stdout, "  compile ")?;
+        print!("  compile ");
         let test_command = run_test(&args.mfl, &compiler_args, &test.compile)?;
-        let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command)?;
+        let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
         let command_result: RunStatus = test_command.status.into();
-
-        print_result(
-            stdout,
-            command_result,
-            test.compile.cfg.expected_result,
-            post_fn_result,
-        )?;
 
         let skip_run = command_result == RunStatus::Error
             || test.compile.cfg.expected_result == RunStatus::Error
-            || post_fn_result == RunStatus::Error;
+            || !matches!(post_fn_result, PostFnResult::Ok);
+
+        print_result(
+            command_result,
+            test.compile.cfg.expected_result,
+            post_fn_result,
+        );
 
         for run in &test.run {
-            write!(stdout, "  {} ", run.name)?;
+            print!("  {} ", run.name);
             if !skip_run {
                 let test_command = run_test(output_binary, &[], run)?;
-                let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command)?;
+                let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
 
                 print_result(
-                    stdout,
                     test_command.status.into(),
                     run.cfg.expected_result,
                     post_fn_result,
-                )?;
+                );
             } else {
-                writeln!(stdout, "{}", "Skipped".yellow())?;
+                println!("{}", "Skipped".yellow());
             }
         }
     }
