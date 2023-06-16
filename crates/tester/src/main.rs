@@ -53,7 +53,10 @@ impl From<ExitStatus> for RunStatus {
 #[derive(Debug)]
 enum PostFnResult {
     Ok,
-    NotEqual,
+    NotEqual {
+        stdout: Vec<diff::Result<String>>,
+        stderr: Vec<diff::Result<String>>,
+    },
     Missing,
     Other(IoError),
 }
@@ -185,7 +188,12 @@ fn compare_streams(
     };
 
     if prev_stdout != output.stdout || prev_stderr != output.stderr {
-        PostFnResult::NotEqual
+        let stdout_diff = build_diff(&prev_stdout, &output.stdout);
+        let stderr_diff = build_diff(&prev_stderr, &output.stderr);
+        PostFnResult::NotEqual {
+            stdout: stdout_diff,
+            stderr: stderr_diff,
+        }
     } else {
         PostFnResult::Ok
     }
@@ -200,27 +208,65 @@ fn run_test(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Res
     Ok(test_command)
 }
 
+fn build_diff(prev_stream: &[u8], new_stream: &[u8]) -> Vec<diff::Result<String>> {
+    let left = std::str::from_utf8(prev_stream).unwrap();
+    let right = std::str::from_utf8(new_stream).unwrap();
+
+    diff::lines(left, right)
+        .into_iter()
+        .map(|res| {
+            use diff::Result::*;
+            match res {
+                Left(l) => Left(l.into()),
+                Both(l, r) => Both(l.into(), r.into()),
+                Right(r) => Right(r.into()),
+            }
+        })
+        .collect()
+}
+
 fn print_result(
     actual_result: RunStatus,
     expected_result: RunStatus,
     post_fn_result: PostFnResult,
 ) {
+    let print_diffs = |stdout: Vec<diff::Result<String>>, stderr| {
+        for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
+            if !stream.is_empty() {
+                println!("    -- {name} --");
+                for d in stream {
+                    match d {
+                        diff::Result::Left(l) => println!("    {} {}", "-".bright_black(), l),
+                        diff::Result::Right(l) => println!("    {} {}", "+".bright_white(), l),
+                        diff::Result::Both(_, _) => {}
+                    }
+                }
+            }
+            println!();
+        }
+    };
+
     if actual_result != expected_result {
         println!(
             "{}: Expected {expected_result:?} got {actual_result:?}",
             "Error".red()
         );
 
+        if let PostFnResult::NotEqual { stdout, stderr } = post_fn_result {
+            print_diffs(stdout, stderr);
+        }
+
         return;
     }
 
     match post_fn_result {
-        PostFnResult::Ok => {
-            println!("{}", "Ok".green());
+        PostFnResult::Ok => println!("{}", "Ok".green()),
+        PostFnResult::NotEqual { stdout, stderr } => {
+            println!("{}: Test output changed", "Error".red());
+            print_diffs(stdout, stderr);
         }
-        PostFnResult::NotEqual => println!("{}: Output streams differ", "Error".red()),
-        PostFnResult::Missing => println!("{}: Previous streams not found", "Error".red()),
-        PostFnResult::Other(e) => println!("{}: Stream error - {}", "Error".red(), e),
+        PostFnResult::Missing => println!("{}: Previous output not found", "Error".red()),
+        PostFnResult::Other(e) => println!("{}: Output error - {}", "Error".red(), e),
     }
 }
 
