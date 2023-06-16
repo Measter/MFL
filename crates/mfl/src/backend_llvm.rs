@@ -949,7 +949,6 @@ pub(crate) fn compile(
     let _span = debug_span!(stringify!(backend_llvm::compile)).entered();
 
     if !args.obj_dir.exists() {
-        eprintln!("creating obj directory: {:?}", args.obj_dir.display());
         std::fs::create_dir_all(&args.obj_dir)
             .with_context(|| eyre!("failed to create directory `{:?}`", args.obj_dir))?;
     } else if !args.obj_dir.is_dir() {

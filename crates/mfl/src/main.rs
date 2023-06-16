@@ -8,7 +8,10 @@ use std::{
 
 use ariadne::{Color, Label};
 use clap::Parser;
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::{
+    eyre::{eyre, Context, Result},
+    owo_colors::OwoColorize,
+};
 use tracing::{debug, debug_span};
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
@@ -145,6 +148,7 @@ fn load_program(
 }
 
 fn run_compile(args: &Args) -> Result<()> {
+    print!("   Compiling...");
     let (program, source_storage, mut interner, mut type_store, top_level_items) =
         load_program(args)?;
 
@@ -163,7 +167,6 @@ fn run_compile(args: &Args) -> Result<()> {
 
     let output_path = args.output.clone().unwrap();
 
-    println!("Linking... into {}", output_path.display());
     let ld = Command::new("ld")
         .arg("-o")
         .arg(&output_path)
@@ -174,6 +177,7 @@ fn run_compile(args: &Args) -> Result<()> {
     if !ld.success() {
         std::process::exit(-3);
     }
+    println!(" {}", "Finished".green());
 
     Ok(())
 }
