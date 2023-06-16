@@ -151,6 +151,24 @@ fn store_streams(
     Ok(RunStatus::Ok)
 }
 
+fn compare_streams(
+    args: &Args,
+    group_name: &Path,
+    test_name: &str,
+    output: &Output,
+) -> Result<RunStatus> {
+    let root_name = args.output_root.join(group_name);
+
+    let prev_stdout = std::fs::read(root_name.with_extension(format!("{test_name}.stdout")))?;
+    let prev_stderr = std::fs::read(root_name.with_extension(format!("{test_name}.stderr")))?;
+
+    if prev_stdout != output.stdout || prev_stderr != output.stderr {
+        Ok(RunStatus::Error)
+    } else {
+        Ok(RunStatus::Ok)
+    }
+}
+
 fn run_test(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Result<Output> {
     let test_command = Command::new(command)
         .args(pre_args)
@@ -216,16 +234,18 @@ fn run_all_tests(
         write!(stdout, "  compile ")?;
         let test_command = run_test(&args.mfl, &compiler_args, &test.compile)?;
         let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command)?;
+        let command_result: RunStatus = test_command.status.into();
 
         print_result(
             stdout,
-            test_command.status.into(),
+            command_result,
             test.compile.cfg.expected_result,
             post_fn_result,
         )?;
 
-        let skip_run = RunStatus::Error == test_command.status.into()
-            || test.compile.cfg.expected_result == RunStatus::Error;
+        let skip_run = command_result == RunStatus::Error
+            || test.compile.cfg.expected_result == RunStatus::Error
+            || post_fn_result == RunStatus::Error;
 
         for run in &test.run {
             write!(stdout, "  {} ", run.name)?;
@@ -265,11 +285,17 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if args.generate {
+    let post_fn = if args.generate {
         println!("Generating test output");
         println!();
-        run_all_tests(&args, &tests, store_streams)?;
-    }
+        store_streams
+    } else {
+        println!("Running tests");
+        println!();
+        compare_streams
+    };
+
+    run_all_tests(&args, &tests, post_fn)?;
 
     Ok(())
 }
