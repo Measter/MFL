@@ -129,7 +129,12 @@ fn get_tests(args: &Args) -> Result<Vec<Tests>> {
     Ok(tests)
 }
 
-fn store_streams(args: &Args, group_name: &Path, test_name: &str, output: &Output) -> Result<()> {
+fn store_streams(
+    args: &Args,
+    group_name: &Path,
+    test_name: &str,
+    output: &Output,
+) -> Result<RunStatus> {
     let root_name = args.output_root.join(group_name);
     std::fs::create_dir_all(root_name.parent().unwrap())?;
 
@@ -143,42 +148,47 @@ fn store_streams(args: &Args, group_name: &Path, test_name: &str, output: &Outpu
         &output.stderr,
     )?;
 
-    Ok(())
+    Ok(RunStatus::Ok)
 }
 
-fn run_test(
-    stdout: &mut StdoutLock<'static>,
-    command: impl AsRef<OsStr>,
-    pre_args: &[&OsStr],
-    test: &Test,
-) -> Result<Output> {
-    write!(stdout, "  {} ", test.name)?;
+fn run_test(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Result<Output> {
     let test_command = Command::new(command)
         .args(pre_args)
         .args(&test.cfg.command_args)
         .output()?;
-    let actual_result: RunStatus = test_command.status.into();
-    let expected_result = test.cfg.expected_result;
 
+    Ok(test_command)
+}
+
+fn print_result(
+    stdout: &mut StdoutLock<'_>,
+    actual_result: RunStatus,
+    expected_result: RunStatus,
+    post_fn_result: RunStatus,
+) -> Result<()> {
     if actual_result != expected_result {
         writeln!(
             stdout,
             "{}: Expected {expected_result:?} got {actual_result:?}",
             "Error".red()
         )?;
+    } else if post_fn_result == RunStatus::Error {
+        writeln!(stdout, "{}: Output streams differ", "Error".red())?;
     } else {
         writeln!(stdout, "{}", "Ok".green())?;
     }
 
-    Ok(test_command)
+    Ok(())
 }
 
-fn generate_outputs(args: &Args, tests: &[Tests]) -> Result<()> {
+fn run_all_tests(
+    args: &Args,
+    tests: &[Tests],
+    post_test_fn: fn(&Args, &Path, &str, &Output) -> Result<RunStatus>,
+) -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let mut stdout = std::io::stdout().lock();
     let stdout = &mut stdout;
-    writeln!(stdout, "Generating test output")?;
-    writeln!(stdout)?;
 
     for test in tests {
         writeln!(stdout, "{}", test.name.display())?;
@@ -203,19 +213,35 @@ fn generate_outputs(args: &Args, tests: &[Tests]) -> Result<()> {
             mfl_file,
         ];
 
-        let test_command = run_test(stdout, &args.mfl, &compiler_args, &test.compile)?;
-        store_streams(args, &test.name, "compile", &test_command)?;
+        write!(stdout, "  compile ")?;
+        let test_command = run_test(&args.mfl, &compiler_args, &test.compile)?;
+        let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command)?;
 
-        if RunStatus::Error == test_command.status.into()
-            || test.compile.cfg.expected_result == RunStatus::Error
-        {
-            // Can't do run tests if we expected the compiler to fail.
-            continue;
-        }
+        print_result(
+            stdout,
+            test_command.status.into(),
+            test.compile.cfg.expected_result,
+            post_fn_result,
+        )?;
 
-        for test_run in &test.run {
-            let test_command = run_test(stdout, output_binary, &[], test_run)?;
-            store_streams(args, &test.name, &test_run.name, &test_command)?;
+        let skip_run = RunStatus::Error == test_command.status.into()
+            || test.compile.cfg.expected_result == RunStatus::Error;
+
+        for run in &test.run {
+            write!(stdout, "  {} ", run.name)?;
+            if !skip_run {
+                let test_command = run_test(output_binary, &[], run)?;
+                let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command)?;
+
+                print_result(
+                    stdout,
+                    test_command.status.into(),
+                    run.cfg.expected_result,
+                    post_fn_result,
+                )?;
+            } else {
+                writeln!(stdout, "Skipped")?;
+            }
         }
     }
 
@@ -240,7 +266,9 @@ fn main() -> Result<()> {
     }
 
     if args.generate {
-        generate_outputs(&args, &tests)?;
+        println!("Generating test output");
+        println!();
+        run_all_tests(&args, &tests, store_streams)?;
     }
 
     Ok(())
