@@ -1,0 +1,12 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+proc entry[] to [] is
+    "testing 1 2 3" std::term::writeln
+end
