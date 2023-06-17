@@ -426,7 +426,8 @@ fn run_single_test(
     }
 
     if short_output {
-        println!(" {}", "Pass".green());
+        let checks: String = "✓".repeat(1 + test.run.len());
+        println!(" {}", checks.green());
     } else {
         println!();
         for result in test_results {
