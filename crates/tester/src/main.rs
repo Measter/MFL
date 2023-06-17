@@ -90,6 +90,36 @@ struct Tests {
     run: Vec<Test>,
 }
 
+#[derive(Debug, Default)]
+struct ResultCounts {
+    total: usize,
+    passed: usize,
+    skipped: usize,
+    failed: usize,
+}
+
+impl ResultCounts {
+    fn add_result(
+        &mut self,
+        actual_result: RunStatus,
+        expected_result: RunStatus,
+        post_fn_result: &PostFnResult,
+    ) {
+        self.total += 1;
+
+        if actual_result == expected_result && matches!(post_fn_result, PostFnResult::Ok) {
+            self.passed += 1;
+        } else {
+            self.failed += 1;
+        }
+    }
+
+    fn skip(&mut self) {
+        self.total += 1;
+        self.skipped += 1;
+    }
+}
+
 fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
     let config_toml = std::fs::read_to_string(path)?;
     let config: TestConfig = toml::from_str(&config_toml)?;
@@ -226,44 +256,47 @@ fn build_diff(prev_stream: &[u8], new_stream: &[u8]) -> Vec<diff::Result<String>
 }
 
 fn print_result(
+    output: &Output,
     actual_result: RunStatus,
     expected_result: RunStatus,
     post_fn_result: PostFnResult,
 ) {
-    let print_diffs = |stdout: Vec<diff::Result<String>>, stderr| {
-        for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
-            if !stream.is_empty() {
-                println!("    -- {name} --");
-                for d in stream {
-                    match d {
-                        diff::Result::Left(l) => println!("    {} {}", "-".bright_black(), l),
-                        diff::Result::Right(l) => println!("    {} {}", "+".bright_white(), l),
-                        diff::Result::Both(_, _) => {}
-                    }
-                }
-            }
-            println!();
-        }
-    };
-
     if actual_result != expected_result {
         println!(
             "{}: Expected {expected_result:?} got {actual_result:?}",
-            "Error".red()
+            "FAIL".red()
         );
 
-        if let PostFnResult::NotEqual { stdout, stderr } = post_fn_result {
-            print_diffs(stdout, stderr);
+        for (name, stream) in [("STDOUT", &output.stdout), ("STDERR", &output.stderr)] {
+            if !stream.is_empty() {
+                println!("    -- {name} --");
+                std::str::from_utf8(stream)
+                    .unwrap()
+                    .lines()
+                    .for_each(|line| println!("    {line}",));
+            }
+            println!();
         }
-
         return;
     }
 
     match post_fn_result {
-        PostFnResult::Ok => println!("{}", "Ok".green()),
+        PostFnResult::Ok => println!("{}", "PASS".green()),
         PostFnResult::NotEqual { stdout, stderr } => {
-            println!("{}: Test output changed", "Error".red());
-            print_diffs(stdout, stderr);
+            println!("{}: Test output changed", "FAIL".red());
+            for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
+                if !stream.is_empty() {
+                    println!("    -- {name} --");
+                    for d in stream {
+                        match d {
+                            diff::Result::Left(l) => println!("    {} {}", "-".bright_black(), l),
+                            diff::Result::Right(l) => println!("    {} {}", "+".bright_white(), l),
+                            diff::Result::Both(_, _) => {}
+                        }
+                    }
+                }
+                println!();
+            }
         }
         PostFnResult::Missing => println!("{}: Previous output not found", "Error".red()),
         PostFnResult::Other(e) => println!("{}: Output error - {}", "Error".red(), e),
@@ -274,7 +307,8 @@ fn run_all_tests(
     args: &Args,
     tests: &[Tests],
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
-) -> Result<()> {
+) -> Result<ResultCounts> {
+    let mut counts = ResultCounts::default();
     let temp_dir = tempfile::tempdir()?;
 
     for test in tests {
@@ -305,11 +339,18 @@ fn run_all_tests(
         let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
         let command_result: RunStatus = test_command.status.into();
 
+        counts.add_result(
+            command_result,
+            test.compile.cfg.expected_result,
+            &post_fn_result,
+        );
+
         let skip_run = command_result == RunStatus::Error
             || test.compile.cfg.expected_result == RunStatus::Error
             || !matches!(post_fn_result, PostFnResult::Ok);
 
         print_result(
+            &test_command,
             command_result,
             test.compile.cfg.expected_result,
             post_fn_result,
@@ -321,18 +362,26 @@ fn run_all_tests(
                 let test_command = run_test(output_binary, &[], run)?;
                 let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
 
+                counts.add_result(
+                    command_result,
+                    test.compile.cfg.expected_result,
+                    &post_fn_result,
+                );
+
                 print_result(
+                    &test_command,
                     test_command.status.into(),
                     run.cfg.expected_result,
                     post_fn_result,
                 );
             } else {
                 println!("{}", "Skipped".yellow());
+                counts.skip();
             }
         }
     }
 
-    Ok(())
+    Ok(counts)
 }
 
 fn main() -> Result<()> {
@@ -357,12 +406,28 @@ fn main() -> Result<()> {
         println!();
         store_streams
     } else {
-        println!("Running tests");
+        let count: usize = tests.iter().map(|t| 1 + t.run.len()).sum();
+        println!("Running {count} tests");
         println!();
         compare_streams
     };
 
-    run_all_tests(&args, &tests, post_fn)?;
+    let counts = run_all_tests(&args, &tests, post_fn)?;
+
+    if !args.generate {
+        println!();
+        println!("------");
+        println!(
+            "Summary: {} tests run, {} {}, {} {}, {} {}",
+            counts.total.bright_white(),
+            counts.passed.bright_white(),
+            "passed".green(),
+            counts.skipped.bright_white(),
+            "skipped".yellow(),
+            counts.failed.bright_white(),
+            "failed".red()
+        );
+    }
 
     Ok(())
 }
