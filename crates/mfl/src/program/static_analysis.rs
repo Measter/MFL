@@ -908,20 +908,6 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
 
-            OpCode::ArgC => {
-                make_one(analyzer, stack, op);
-                type_check2::stack_ops::push_int(
-                    analyzer,
-                    type_store,
-                    op,
-                    IntWidth::I64,
-                    Signedness::Unsigned,
-                );
-            }
-            OpCode::ArgV => {
-                make_one(analyzer, stack, op);
-                type_check2::stack_ops::push_str(analyzer, type_store, op, true);
-            }
             OpCode::PushBool(v) => {
                 make_one(analyzer, stack, op);
                 type_check2::stack_ops::push_bool(analyzer, type_store, op);

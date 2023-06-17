@@ -28,7 +28,7 @@ use crate::{
         ItemId, ItemKind, Program,
     },
     source_file::SourceStorage,
-    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     Args,
 };
 
@@ -538,8 +538,6 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_bit_not(interner, analyzer, value_store, type_store, op)
                 }
 
-                OpCode::ArgC => todo!(),
-                OpCode::ArgV => todo!(),
                 OpCode::CallFunction {
                     item_id: callee_id, ..
                 } => self.build_function_call(
@@ -921,15 +919,43 @@ impl<'ctx> CodeGen<'ctx> {
         self.pass_manager.run_on(&self.module);
     }
 
-    fn build_entry(&mut self, entry_id: ItemId) {
-        let function_type = self.ctx.void_type().fn_type(&[], false);
+    fn build_entry(
+        &mut self,
+        program: &Program,
+        interner: &mut Interners,
+        type_store: &mut TypeStore,
+        entry_id: ItemId,
+    ) {
+        let u64_type_id = type_store.get_builtin_ptr(BuiltinTypes::U64).id;
+        let argc_type = self.get_type(type_store, u64_type_id);
+
+        let u8_ptr_type_id = type_store.get_builtin_ptr(BuiltinTypes::U8).id;
+        let argv_type_id = type_store.get_pointer(interner, u8_ptr_type_id).id;
+        let argv_type = self.get_type(type_store, argv_type_id);
+
+        let function_type = self
+            .ctx
+            .void_type()
+            .fn_type(&[argc_type.into(), argv_type.into()], false);
+
         let entry_func = self
             .module
             .add_function("entry", function_type, Some(Linkage::External));
+
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
+
+        let entry_sig = program.get_item_signature_resolved(entry_id);
+        let args = if entry_sig.entry_stack().is_empty() {
+            Vec::new()
+        } else {
+            entry_func.get_param_iter().map(Into::into).collect()
+        };
+
         let user_entry = self.item_function_map[&entry_id];
-        self.builder.build_call(user_entry, &[], "call_user_entry");
+        self.builder
+            .build_call(user_entry, &args, "call_user_entry");
+
         self.builder.build_return(None);
     }
 
@@ -1000,7 +1026,7 @@ pub(crate) fn compile(
         .for_each(|&id| codegen.enqueue_function(id));
     codegen.build_function_prototypes(program, interner, type_store);
     if !args.is_library {
-        codegen.build_entry(top_level_items[0]);
+        codegen.build_entry(program, interner, type_store, top_level_items[0]);
     } else {
         // Top level items clearly need to be external symbols if we're a library.
         // Pretty naff library if they're not.

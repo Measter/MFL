@@ -319,9 +319,7 @@ fn simulate_execute_program_block(
                 }
             }
 
-            OpCode::ArgC
-            | OpCode::ArgV
-            | OpCode::CallFunction { .. }
+            OpCode::CallFunction { .. }
             | OpCode::Memory { .. }
             | OpCode::ResolvedCast { .. }
             | OpCode::PackArray { .. }

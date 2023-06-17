@@ -639,8 +639,6 @@ pub fn parse_item_body(
 
                 OpCode::EmitStack(emit_labels)
             }
-            TokenKind::ArgC => OpCode::ArgC,
-            TokenKind::ArgV => OpCode::ArgV,
 
             TokenKind::While => {
                 match parse_while(

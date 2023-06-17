@@ -18,8 +18,6 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
-    ArgC,
-    ArgV,
     Assert,
     BitAnd,
     BitNot,
@@ -89,9 +87,7 @@ pub enum TokenKind {
 impl TokenKind {
     pub fn new_block(self) -> bool {
         match self {
-            TokenKind::ArgC
-            | TokenKind::ArgV
-            | TokenKind::Assert
+            TokenKind::Assert
             | TokenKind::BitAnd
             | TokenKind::BitNot
             | TokenKind::BitOr
@@ -538,8 +534,6 @@ impl<'source> Scanner<'source> {
                 let lexeme = self.lexeme(input);
                 let kind = match lexeme {
                     "and" => TokenKind::BitAnd,
-                    "argc" => TokenKind::ArgC,
-                    "argv" => TokenKind::ArgV,
                     "assert" => TokenKind::Assert,
                     "cast" => TokenKind::Cast,
                     "const" => TokenKind::Const,

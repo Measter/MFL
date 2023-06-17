@@ -16,9 +16,9 @@ use tracing::{debug, debug_span};
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
 use interners::Interners;
-use program::{ItemId, ItemKind, Program};
+use program::{ItemId, ItemKind, ItemSignatureResolved, Program};
 use source_file::SourceStorage;
-use type_store::TypeStore;
+use type_store::{BuiltinTypes, TypeStore};
 
 mod backend_llvm;
 mod diagnostics;
@@ -68,6 +68,28 @@ pub struct Args {
     /// Emit assembly
     #[arg(long = "emit-asm")]
     emit_asm: bool,
+}
+
+fn is_valid_entry_sig(
+    interner: &mut Interners,
+    type_store: &mut TypeStore,
+    entry_sig: &ItemSignatureResolved,
+) -> bool {
+    if !entry_sig.exit_stack().is_empty() {
+        return false;
+    }
+
+    if entry_sig.entry_stack().is_empty() {
+        return true;
+    }
+
+    let [argc_id, argv_id] = entry_sig.entry_stack() else { return false };
+
+    let expected_argc_id = type_store.get_builtin(BuiltinTypes::U64).id;
+    let u8_ptr_type = type_store.get_builtin_ptr(BuiltinTypes::U8).id;
+    let expected_argv_id = type_store.get_pointer(interner, u8_ptr_type).id;
+
+    *argc_id == expected_argc_id && *argv_id == expected_argv_id
 }
 
 fn load_program(
@@ -121,16 +143,12 @@ fn load_program(
         }
 
         let entry_sig = program.get_item_signature_resolved(entry_function_id);
-        if !entry_sig.entry_stack().is_empty() || !entry_sig.exit_stack().is_empty() {
+        if !is_valid_entry_sig(&mut interner, &mut type_store, entry_sig) {
             let name = entry_item.name();
             diagnostics::emit_error(
                 name.location,
-                "`entry` must have the signature `[] to []`",
-                Some(
-                    Label::new(name.location)
-                        .with_color(Color::Red)
-                        .with_message("defined Here"),
-                ),
+                "`entry` must have the signature `[] to []` or `[u64 ptr(ptr(u8))] to []`",
+                Some(Label::new(name.location).with_color(Color::Red)),
                 None,
                 &source_storage,
             );

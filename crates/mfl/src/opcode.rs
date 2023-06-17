@@ -90,8 +90,6 @@ pub struct UnresolvedIdent {
 #[derive(Debug, Clone)]
 pub enum OpCode {
     Add,
-    ArgC,
-    ArgV,
     BitAnd,
     BitNot,
     BitOr,
