@@ -1,0 +1,29 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.in_bounds]
+// expected = "Ok"
+// args = ["2"]
+
+// [run.out_of_bounds]
+// expected = "Error"
+// args = ["3"]
+// END
+
+proc entry [u64 ptr(ptr(u8))] to [] is
+    // We'll just assume we're being called correctly.
+    swap drop 
+
+    1+@@ '0'- // This is our index
+
+    3 std::mem::alloc(u8) xtrd(data) // We'll just assume allocation succeeds
+    // Need to fill our slice
+    0 swap 0 ins
+    0 swap 1 ins
+    0 swap 2 ins
+
+    swap
+    xtrd drop
+end

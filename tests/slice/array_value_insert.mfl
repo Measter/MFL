@@ -1,0 +1,23 @@
+// CFG
+// [compile]
+// expected = "Ok"
+
+// [run.in_bounds]
+// expected = "Ok"
+// args = ["2"]
+
+// [run.out_of_bounds]
+// expected = "Error"
+// args = ["3"]
+// END
+
+proc entry [u64 ptr(ptr(u8))] to [] is
+    // We'll just assume we're being called correctly.
+    swap drop 
+
+    1+@@ '0'- // This is our index
+
+    0 0 0 pack(3)
+    swap 0 rot(3>1)
+    insd
+end
