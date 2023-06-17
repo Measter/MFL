@@ -121,8 +121,27 @@ impl ResultCounts {
 }
 
 fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
-    let config_toml = std::fs::read_to_string(path)?;
-    let config: TestConfig = toml::from_str(&config_toml)?;
+    let test_source = std::fs::read_to_string(path)?;
+
+    let mut cfg_toml = String::new();
+    let mut is_in_cfg = false;
+    for raw_line in test_source.lines() {
+        let line = raw_line.trim().trim_start_matches("//").trim_start();
+        if line == "CFG" {
+            is_in_cfg = true;
+        } else if line == "END" {
+            break;
+        } else if is_in_cfg {
+            cfg_toml.push_str(line);
+            cfg_toml.push('\n');
+        }
+    }
+
+    if cfg_toml.is_empty() {
+        return Ok(None);
+    }
+
+    let config: TestConfig = toml::from_str(&cfg_toml)?;
 
     let test_name = path
         .strip_prefix(&args.tests_root)
@@ -156,7 +175,7 @@ fn get_tests(args: &Args) -> Result<Vec<Tests>> {
             continue;
         }
 
-        if entry.path().extension() == Some(OsStr::new("toml")) {
+        if entry.path().extension() == Some(OsStr::new("mfl")) {
             let Some(test_case) = read_test(args, entry.path())
                 .with_context(|| format!("error reading test `{}`", entry.path().display()))? else
             {

@@ -1,3 +1,9 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
 proc foo(T) [T] to [] is
     drop
 end

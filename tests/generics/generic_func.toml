@@ -1,3 +1,0 @@
-[compile]
-expected = "Ok"
-args = ["--lib"]
