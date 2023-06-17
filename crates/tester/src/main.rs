@@ -32,6 +32,10 @@ struct Args {
     /// Generate the outputs rather than read.
     #[clap(short)]
     generate: bool,
+
+    /// Run a specifically named test
+    #[clap(long)]
+    run: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -248,7 +252,7 @@ fn compare_streams(
     }
 }
 
-fn run_test(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Result<Output> {
+fn run_command(command: impl AsRef<OsStr>, pre_args: &[&OsStr], test: &Test) -> Result<Output> {
     let test_command = Command::new(command)
         .args(pre_args)
         .args(&test.cfg.command_args)
@@ -279,13 +283,9 @@ fn print_result(
     actual_result: RunStatus,
     expected_result: RunStatus,
     post_fn_result: PostFnResult,
+    force_print_full_streams: bool,
 ) {
-    if actual_result != expected_result {
-        println!(
-            "{}: Expected {expected_result:?} got {actual_result:?}",
-            "FAIL".red()
-        );
-
+    let print_streams = || {
         for (name, stream) in [("STDOUT", &output.stdout), ("STDERR", &output.stderr)] {
             if !stream.is_empty() {
                 println!("    -- {name} --");
@@ -296,6 +296,16 @@ fn print_result(
             }
             println!();
         }
+    };
+
+    if actual_result != expected_result {
+        println!(
+            "{}: Expected {expected_result:?} got {actual_result:?}",
+            "FAIL".red()
+        );
+
+        print_streams();
+
         return;
     }
 
@@ -320,6 +330,89 @@ fn print_result(
         PostFnResult::Missing => println!("{}: Previous output not found", "Error".red()),
         PostFnResult::Other(e) => println!("{}: Output error - {}", "Error".red(), e),
     }
+
+    if force_print_full_streams {
+        print_streams();
+    }
+}
+
+fn run_single_test(
+    test: &Tests,
+    temp_dir: &tempfile::TempDir,
+    args: &Args,
+    post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
+    counts: &mut ResultCounts,
+    print_full_streams: bool,
+) -> Result<(), color_eyre::Report> {
+    println!("{}", test.name.display());
+
+    let test_dir = temp_dir.path().join(&test.name);
+    let objdir = test_dir.join("obj");
+    let output_binary = test_dir.join("program");
+    let mut mfl_file = args.tests_root.join(&test.name);
+
+    mfl_file.set_extension("mfl");
+    let objdir = objdir.as_os_str();
+    let output_binary = output_binary.as_os_str();
+    let mfl_file = mfl_file.as_os_str();
+
+    let compiler_args = [
+        OsStr::new("--obj"),
+        objdir,
+        OsStr::new("-o"),
+        output_binary,
+        mfl_file,
+    ];
+
+    print!("  compile ");
+    let test_command = run_command(&args.mfl, &compiler_args, &test.compile)?;
+    let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
+    let command_result: RunStatus = test_command.status.into();
+
+    counts.add_result(
+        command_result,
+        test.compile.cfg.expected_result,
+        &post_fn_result,
+    );
+
+    let skip_run = command_result == RunStatus::Error
+        || test.compile.cfg.expected_result == RunStatus::Error
+        || !matches!(post_fn_result, PostFnResult::Ok);
+
+    print_result(
+        &test_command,
+        command_result,
+        test.compile.cfg.expected_result,
+        post_fn_result,
+        print_full_streams,
+    );
+
+    for run in &test.run {
+        print!("  {} ", run.name);
+        if !skip_run {
+            let test_command = run_command(output_binary, &[], run)?;
+            let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
+
+            counts.add_result(
+                command_result,
+                test.compile.cfg.expected_result,
+                &post_fn_result,
+            );
+
+            print_result(
+                &test_command,
+                test_command.status.into(),
+                run.cfg.expected_result,
+                post_fn_result,
+                print_full_streams,
+            );
+        } else {
+            println!("{}", "Skipped".yellow());
+            counts.skip();
+        }
+    }
+
+    Ok(())
 }
 
 fn run_all_tests(
@@ -331,73 +424,7 @@ fn run_all_tests(
     let temp_dir = tempfile::tempdir()?;
 
     for test in tests {
-        println!("{}", test.name.display());
-
-        let test_dir = temp_dir.path().join(&test.name);
-        let objdir = test_dir.join("obj");
-        let output_binary = test_dir.join("program");
-
-        let mut mfl_file = args.tests_root.join(&test.name);
-        mfl_file.set_extension("mfl");
-
-        // We need all the compile paths to be OsStr..
-        let objdir = objdir.as_os_str();
-        let output_binary = output_binary.as_os_str();
-        let mfl_file = mfl_file.as_os_str();
-
-        let compiler_args = [
-            OsStr::new("--obj"),
-            objdir,
-            OsStr::new("-o"),
-            output_binary,
-            mfl_file,
-        ];
-
-        print!("  compile ");
-        let test_command = run_test(&args.mfl, &compiler_args, &test.compile)?;
-        let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
-        let command_result: RunStatus = test_command.status.into();
-
-        counts.add_result(
-            command_result,
-            test.compile.cfg.expected_result,
-            &post_fn_result,
-        );
-
-        let skip_run = command_result == RunStatus::Error
-            || test.compile.cfg.expected_result == RunStatus::Error
-            || !matches!(post_fn_result, PostFnResult::Ok);
-
-        print_result(
-            &test_command,
-            command_result,
-            test.compile.cfg.expected_result,
-            post_fn_result,
-        );
-
-        for run in &test.run {
-            print!("  {} ", run.name);
-            if !skip_run {
-                let test_command = run_test(output_binary, &[], run)?;
-                let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
-
-                counts.add_result(
-                    command_result,
-                    test.compile.cfg.expected_result,
-                    &post_fn_result,
-                );
-
-                print_result(
-                    &test_command,
-                    test_command.status.into(),
-                    run.cfg.expected_result,
-                    post_fn_result,
-                );
-            } else {
-                println!("{}", "Skipped".yellow());
-                counts.skip();
-            }
-        }
+        run_single_test(test, &temp_dir, args, post_test_fn, &mut counts, false)?;
     }
 
     Ok(counts)
@@ -420,18 +447,33 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let post_fn = if args.generate {
+    let counts = if args.generate {
         println!("Generating test output");
         println!();
-        store_streams
+        run_all_tests(&args, &tests, store_streams)?
+    } else if let Some(name) = &args.run {
+        if let Some(found_test) = tests.iter().find(|t| &t.name == name) {
+            let mut counts = ResultCounts::default();
+            let temp_dir = tempfile::tempdir()?;
+            run_single_test(
+                found_test,
+                &temp_dir,
+                &args,
+                compare_streams,
+                &mut counts,
+                true,
+            )?;
+            counts
+        } else {
+            println!("Unable to find test named `{}`", name.display());
+            ResultCounts::default()
+        }
     } else {
         let count: usize = tests.iter().map(|t| 1 + t.run.len()).sum();
         println!("Running {count} tests");
         println!();
-        compare_streams
+        run_all_tests(&args, &tests, compare_streams)?
     };
-
-    let counts = run_all_tests(&args, &tests, post_fn)?;
 
     if !args.generate {
         println!();
