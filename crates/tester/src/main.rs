@@ -124,6 +124,18 @@ impl ResultCounts {
     }
 }
 
+enum TestRunResult<'a> {
+    Run {
+        command: Output,
+        command_result: RunStatus,
+        test: &'a Test,
+        post_fn_result: PostFnResult,
+    },
+    Skipped {
+        test: &'a Test,
+    },
+}
+
 fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
     let test_source = std::fs::read_to_string(path)?;
 
@@ -344,7 +356,10 @@ fn run_single_test(
     counts: &mut ResultCounts,
     print_full_streams: bool,
 ) -> Result<(), color_eyre::Report> {
-    println!("{}", test.name.display());
+    print!("{}", test.name.display());
+
+    let mut test_results = Vec::new();
+    let mut short_output = !print_full_streams;
 
     let test_dir = temp_dir.path().join(&test.name);
     let objdir = test_dir.join("obj");
@@ -364,10 +379,11 @@ fn run_single_test(
         mfl_file,
     ];
 
-    print!("  compile ");
     let test_command = run_command(&args.mfl, &compiler_args, &test.compile)?;
     let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
     let command_result: RunStatus = test_command.status.into();
+    short_output &= command_result == test.compile.cfg.expected_result
+        && matches!(post_fn_result, PostFnResult::Ok);
 
     counts.add_result(
         command_result,
@@ -379,36 +395,61 @@ fn run_single_test(
         || test.compile.cfg.expected_result == RunStatus::Error
         || !matches!(post_fn_result, PostFnResult::Ok);
 
-    print_result(
-        &test_command,
+    test_results.push(TestRunResult::Run {
+        command: test_command,
         command_result,
-        test.compile.cfg.expected_result,
+        test: &test.compile,
         post_fn_result,
-        print_full_streams,
-    );
+    });
 
     for run in &test.run {
-        print!("  {} ", run.name);
         if !skip_run {
             let test_command = run_command(output_binary, &[], run)?;
+            let command_result: RunStatus = test_command.status.into();
             let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
 
-            counts.add_result(
-                command_result,
-                test.compile.cfg.expected_result,
-                &post_fn_result,
-            );
+            short_output &= command_result == run.cfg.expected_result
+                && matches!(post_fn_result, PostFnResult::Ok);
 
-            print_result(
-                &test_command,
-                test_command.status.into(),
-                run.cfg.expected_result,
+            counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
+
+            test_results.push(TestRunResult::Run {
+                command: test_command,
+                command_result,
+                test: run,
                 post_fn_result,
-                print_full_streams,
-            );
+            });
         } else {
-            println!("{}", "Skipped".yellow());
             counts.skip();
+            test_results.push(TestRunResult::Skipped { test: run });
+        }
+    }
+
+    if short_output {
+        println!(" {}", "Pass".green());
+    } else {
+        println!();
+        for result in test_results {
+            match result {
+                TestRunResult::Run {
+                    command,
+                    command_result,
+                    test,
+                    post_fn_result,
+                } => {
+                    print!("  {} ", test.name);
+                    print_result(
+                        &command,
+                        command_result,
+                        test.cfg.expected_result,
+                        post_fn_result,
+                        print_full_streams,
+                    );
+                }
+                TestRunResult::Skipped { test } => {
+                    println!("  {} {}", test.name, "Skipped".yellow());
+                }
+            }
         }
     }
 
