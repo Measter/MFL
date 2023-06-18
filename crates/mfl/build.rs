@@ -18,4 +18,6 @@ fn main() {
             .success());
     }
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/asm/syscalls.s");
+    println!("cargo:rerun-if-changed=src/asm/bootstrap.s");
 }
