@@ -76,10 +76,10 @@ proc copy(T) [
     MMap(T) // Destination
 ] to [] is
     if xtr(length) over(2) xtrd(length) != do
-        "Mismatched length in copy - src: " std::term::write
-        swap xtrd(length) std::term::write_ui
-        " dst: " std::term::write
-        xtrd(length) std::term::write_ui_ln
+        "Mismatched length in copy - src: " std::term::ewrite
+        swap xtrd(length) std::term::ewrite_ui
+        " dst: " std::term::ewrite
+        xtrd(length) std::term::ewrite_ui_ln
         exit
     end
 

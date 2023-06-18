@@ -29,3 +29,28 @@ end
 proc write_ui_ln [u64] to [] is
     STDOUT swap io::write_ui_ln drop
 end
+
+proc ewrite [String] to [] is
+    STDERR swap io::write drop
+end
+
+proc ewriteln [String] to [] is
+    STDERR swap io::write drop
+    STDERR "\n" io::write drop
+end
+
+proc ewrite_si [s64] to [] is
+    STDERR swap io::write_si drop
+end
+
+proc ewrite_si_ln [s64] to [] is
+    STDERR swap io::write_si_ln drop
+end
+
+proc ewrite_ui [u64] to [] is
+    STDERR swap io::write_ui drop
+end
+
+proc ewrite_ui_ln [u64] to [] is
+    STDERR swap io::write_ui_ln drop
+end
