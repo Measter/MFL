@@ -97,11 +97,11 @@ struct Test {
 }
 
 #[derive(Debug)]
-struct Tests {
+struct TestGroup {
     path: PathBuf,
     name: String,
     compile: Test,
-    run: Vec<Test>,
+    run_tests: Vec<Test>,
 }
 
 #[derive(Debug, Default)]
@@ -146,7 +146,7 @@ enum TestRunResult<'a> {
     },
 }
 
-fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
+fn read_test(args: &Args, path: &Path) -> Result<Option<TestGroup>> {
     let test_source = std::fs::read_to_string(path)?;
 
     let mut cfg_toml = String::new();
@@ -185,15 +185,15 @@ fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
         run_tests.push(Test { cfg, name });
     }
 
-    Ok(Some(Tests {
+    Ok(Some(TestGroup {
         compile: compile_test,
         name: test_name.display().to_string(),
         path: test_name,
-        run: run_tests,
+        run_tests,
     }))
 }
 
-fn get_tests(args: &Args) -> Result<Vec<Tests>> {
+fn get_tests(args: &Args) -> Result<Vec<TestGroup>> {
     let mut tests = Vec::new();
 
     for entry in WalkDir::new(&args.tests_root) {
@@ -360,21 +360,21 @@ fn print_result(
 }
 
 fn run_single_test(
-    test: &Tests,
+    test_group: &TestGroup,
     temp_dir: &tempfile::TempDir,
     args: &Args,
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
     counts: &mut ResultCounts,
 ) -> Result<(), color_eyre::Report> {
-    print!("{}", test.name);
+    print!("{}", test_group.name);
 
     let mut test_results = Vec::new();
     let mut short_output = !args.long;
 
-    let test_dir = temp_dir.path().join(&test.path);
+    let test_dir = temp_dir.path().join(&test_group.path);
     let objdir = test_dir.join("obj");
     let output_binary = test_dir.join("program");
-    let mut mfl_file = args.tests_root.join(&test.path);
+    let mut mfl_file = args.tests_root.join(&test_group.path);
 
     mfl_file.set_extension("mfl");
     let objdir = objdir.as_os_str();
@@ -389,34 +389,34 @@ fn run_single_test(
         mfl_file,
     ];
 
-    let test_command = run_command(&args.mfl, &compiler_args, &test.compile)?;
-    let post_fn_result = post_test_fn(args, &test.path, "compile", &test_command);
+    let test_command = run_command(&args.mfl, &compiler_args, &test_group.compile)?;
+    let post_fn_result = post_test_fn(args, &test_group.path, "compile", &test_command);
     let command_result: RunStatus = test_command.status.into();
-    short_output &= command_result == test.compile.cfg.expected_result
+    short_output &= command_result == test_group.compile.cfg.expected_result
         && matches!(post_fn_result, PostFnResult::Ok);
 
     counts.add_result(
         command_result,
-        test.compile.cfg.expected_result,
+        test_group.compile.cfg.expected_result,
         &post_fn_result,
     );
 
     let skip_run = command_result == RunStatus::Error
-        || test.compile.cfg.expected_result == RunStatus::Error
+        || test_group.compile.cfg.expected_result == RunStatus::Error
         || !matches!(post_fn_result, PostFnResult::Ok);
 
     test_results.push(TestRunResult::Run {
         command: test_command,
         command_result,
-        test: &test.compile,
+        test: &test_group.compile,
         post_fn_result,
     });
 
-    for run in &test.run {
+    for run in &test_group.run_tests {
         if !skip_run {
             let test_command = run_command(output_binary, &[], run)?;
             let command_result: RunStatus = test_command.status.into();
-            let post_fn_result = post_test_fn(args, &test.path, &run.name, &test_command);
+            let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
 
             short_output &= command_result == run.cfg.expected_result
                 && matches!(post_fn_result, PostFnResult::Ok);
@@ -436,7 +436,7 @@ fn run_single_test(
     }
 
     if short_output {
-        let checks: String = "✓".repeat(1 + test.run.len());
+        let checks: String = "✓".repeat(1 + test_group.run_tests.len());
         println!(" {}", checks.green());
     } else {
         println!();
@@ -469,7 +469,7 @@ fn run_single_test(
 
 fn run_all_tests(
     args: &Args,
-    tests: &[Tests],
+    tests: &[TestGroup],
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
 ) -> Result<ResultCounts> {
     let mut counts = ResultCounts::default();
@@ -521,7 +521,7 @@ fn main() -> Result<()> {
         println!();
         run_all_tests(&args, &tests, store_streams)?
     } else {
-        let count: usize = tests.iter().map(|t| 1 + t.run.len()).sum();
+        let count: usize = tests.iter().map(|t| 1 + t.run_tests.len()).sum();
         println!("Running {count} tests");
         println!();
         run_all_tests(&args, &tests, compare_streams)?
