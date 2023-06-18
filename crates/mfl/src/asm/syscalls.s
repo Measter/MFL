@@ -56,31 +56,31 @@ _oob:
 
     mov RDX, oob_msg_len ; Msg len
     mov RSI, oob_msg ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
     mov RDX, loc_msg_len ; Msg len
     mov RSI, loc_msg ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
     mov RDX, R13 ; Msg len
     mov RSI, R12 ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
     mov RDX, new_line_len ; Msg len
     mov RSI, new_line ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
     mov RDX, idx_msg_len ; Msg len
     mov RSI, idx_msg ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
@@ -115,19 +115,19 @@ _oob:
     add RSI, 1
 
     .loop1_end:
-    mov RDI, 1
+    mov RDI, 2
     mov RAX, 1
     syscall
 
     mov RDX, new_line_len ; Msg len
     mov RSI, new_line ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
     mov RDX, len_msg_len ; Msg len
     mov RSI, len_msg ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
@@ -162,13 +162,13 @@ _oob:
     add RSI, 1
 
     .loop2_end:
-    mov RDI, 1
+    mov RDI, 2
     mov RAX, 1
     syscall
 
     mov RDX, new_line_len ; Msg len
     mov RSI, new_line ; Msg ptr
-    mov RDI, 1   ; Stdout
+    mov RDI, 2   ; Stdout
     mov RAX, 1   ; Write
     syscall
 
