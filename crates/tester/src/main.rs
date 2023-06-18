@@ -102,6 +102,7 @@ struct TestGroup {
     name: String,
     compile: Test,
     run_tests: Vec<Test>,
+    skip: bool,
 }
 
 #[derive(Debug, Default)]
@@ -190,6 +191,7 @@ fn read_test(args: &Args, path: &Path) -> Result<Option<TestGroup>> {
         name: test_name.display().to_string(),
         path: test_name,
         run_tests,
+        skip: false,
     }))
 }
 
@@ -366,8 +368,16 @@ fn run_single_test(
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
     counts: &mut ResultCounts,
 ) -> Result<(), color_eyre::Report> {
-    print!("{}", test_group.name);
+    if test_group.skip {
+        counts.skip();
+        for _ in &test_group.run_tests {
+            counts.skip();
+        }
 
+        return Ok(());
+    }
+
+    print!("{}", test_group.name);
     let mut test_results = Vec::new();
     let mut short_output = !args.long;
 
@@ -509,7 +519,11 @@ fn main() -> Result<()> {
         .collect::<Result<_, _>>()?;
 
     if !filters.is_empty() {
-        tests.retain(|test| filters.iter().any(|filter| filter.is_match(&test.name)));
+        tests.iter_mut().for_each(|test_group| {
+            test_group.skip |= filters
+                .iter()
+                .all(|filter| !filter.is_match(&test_group.name));
+        });
     }
 
     if tests.is_empty() {
@@ -521,8 +535,7 @@ fn main() -> Result<()> {
         println!();
         run_all_tests(&args, &tests, store_streams)?
     } else {
-        let count: usize = tests.iter().map(|t| 1 + t.run_tests.len()).sum();
-        println!("Running {count} tests");
+        println!("Running tests");
         println!();
         run_all_tests(&args, &tests, compare_streams)?
     };
@@ -531,7 +544,7 @@ fn main() -> Result<()> {
         println!();
         println!("------");
         println!(
-            "Summary: {} tests run, {} {}, {} {}, {} {}",
+            "Summary: {} tests, {} {}, {} {}, {} {}",
             counts.total.bright_white(),
             counts.passed.bright_white(),
             "passed".green(),
