@@ -37,6 +37,14 @@ struct Args {
     /// Filter the run tests with the given regexs.
     #[clap(short)]
     filter: Vec<String>,
+
+    /// Force long-style output.
+    #[clap(long)]
+    long: bool,
+
+    /// Always print full STDOUT and STDERR streams
+    #[clap(long)]
+    print_streams: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -357,12 +365,11 @@ fn run_single_test(
     args: &Args,
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
     counts: &mut ResultCounts,
-    print_full_streams: bool,
 ) -> Result<(), color_eyre::Report> {
     print!("{}", test.name);
 
     let mut test_results = Vec::new();
-    let mut short_output = !print_full_streams;
+    let mut short_output = !args.long;
 
     let test_dir = temp_dir.path().join(&test.path);
     let objdir = test_dir.join("obj");
@@ -447,7 +454,7 @@ fn run_single_test(
                         command_result,
                         test.cfg.expected_result,
                         post_fn_result,
-                        print_full_streams,
+                        args.print_streams,
                     );
                 }
                 TestRunResult::Skipped { test } => {
@@ -469,7 +476,7 @@ fn run_all_tests(
     let temp_dir = tempfile::tempdir()?;
 
     for test in tests {
-        run_single_test(test, &temp_dir, args, post_test_fn, &mut counts, false)?;
+        run_single_test(test, &temp_dir, args, post_test_fn, &mut counts)?;
     }
 
     Ok(counts)
@@ -477,7 +484,7 @@ fn run_all_tests(
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     if !args.mfl.exists() {
         bail!("MFL compiler not found at `{}`", args.mfl.display());
@@ -486,6 +493,9 @@ fn main() -> Result<()> {
     if !args.tests_root.exists() {
         bail!("Tests not found at `{}`", args.tests_root.display());
     }
+
+    // Print streams should imply long-style
+    args.long |= args.print_streams;
 
     let mut tests = get_tests(&args)?;
     if tests.is_empty() {
