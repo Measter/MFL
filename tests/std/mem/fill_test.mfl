@@ -1,0 +1,21 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+import std::mem::alloc
+import std::mem::fill
+import std::term::write_ui_ln
+
+proc entry[] to [] is
+    3 alloc(u32) xtrd(data)
+    dup 2 fill(u32)
+    
+    0 xtr write_ui_ln
+    1 xtr write_ui_ln
+    2 xtrd write_ui_ln
+end

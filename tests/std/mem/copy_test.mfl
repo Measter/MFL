@@ -1,0 +1,35 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.same_len]
+// expected = "Ok"
+// args = ["3"]
+
+// [run.diff_len]
+// expected = "Error"
+// args = ["4"]
+// END
+
+import std::mem::alloc
+import std::mem::copy
+import std::mem::fill
+import std::term::write_ui_ln
+
+proc entry[u64 ptr(ptr(u8))] to [] is
+    // We'll just assume we're being called correctly.
+    swap drop 
+
+    1+@@ '0'- // This is our destination length
+
+    3 alloc(u32) xtrd(data)
+    dup 2 fill(u32)
+    
+    swap alloc(u32) xtrd(data)
+    swap over copy(u32)
+
+    0 xtr write_ui_ln
+    1 xtr write_ui_ln
+    2 xtrd write_ui_ln
+end
