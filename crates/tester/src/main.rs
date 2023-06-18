@@ -12,6 +12,7 @@ use color_eyre::{
     owo_colors::OwoColorize,
     Result,
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -33,9 +34,9 @@ struct Args {
     #[clap(short)]
     generate: bool,
 
-    /// Run a specifically named test
-    #[clap(long)]
-    run: Option<PathBuf>,
+    /// Filter the run tests with the given regexs.
+    #[clap(short)]
+    filter: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -89,7 +90,8 @@ struct Test {
 
 #[derive(Debug)]
 struct Tests {
-    name: PathBuf,
+    path: PathBuf,
+    name: String,
     compile: Test,
     run: Vec<Test>,
 }
@@ -177,7 +179,8 @@ fn read_test(args: &Args, path: &Path) -> Result<Option<Tests>> {
 
     Ok(Some(Tests {
         compile: compile_test,
-        name: test_name,
+        name: test_name.display().to_string(),
+        path: test_name,
         run: run_tests,
     }))
 }
@@ -356,15 +359,15 @@ fn run_single_test(
     counts: &mut ResultCounts,
     print_full_streams: bool,
 ) -> Result<(), color_eyre::Report> {
-    print!("{}", test.name.display());
+    print!("{}", test.name);
 
     let mut test_results = Vec::new();
     let mut short_output = !print_full_streams;
 
-    let test_dir = temp_dir.path().join(&test.name);
+    let test_dir = temp_dir.path().join(&test.path);
     let objdir = test_dir.join("obj");
     let output_binary = test_dir.join("program");
-    let mut mfl_file = args.tests_root.join(&test.name);
+    let mut mfl_file = args.tests_root.join(&test.path);
 
     mfl_file.set_extension("mfl");
     let objdir = objdir.as_os_str();
@@ -380,7 +383,7 @@ fn run_single_test(
     ];
 
     let test_command = run_command(&args.mfl, &compiler_args, &test.compile)?;
-    let post_fn_result = post_test_fn(args, &test.name, "compile", &test_command);
+    let post_fn_result = post_test_fn(args, &test.path, "compile", &test_command);
     let command_result: RunStatus = test_command.status.into();
     short_output &= command_result == test.compile.cfg.expected_result
         && matches!(post_fn_result, PostFnResult::Ok);
@@ -406,7 +409,7 @@ fn run_single_test(
         if !skip_run {
             let test_command = run_command(output_binary, &[], run)?;
             let command_result: RunStatus = test_command.status.into();
-            let post_fn_result = post_test_fn(args, &test.name, &run.name, &test_command);
+            let post_fn_result = post_test_fn(args, &test.path, &run.name, &test_command);
 
             short_output &= command_result == run.cfg.expected_result
                 && matches!(post_fn_result, PostFnResult::Ok);
@@ -484,32 +487,29 @@ fn main() -> Result<()> {
         bail!("Tests not found at `{}`", args.tests_root.display());
     }
 
-    let tests = get_tests(&args)?;
+    let mut tests = get_tests(&args)?;
     if tests.is_empty() {
         return Ok(());
+    }
+
+    let filters: Vec<_> = args
+        .filter
+        .iter()
+        .map(|f| Regex::new(f))
+        .collect::<Result<_, _>>()?;
+
+    if !filters.is_empty() {
+        tests.retain(|test| filters.iter().any(|filter| filter.is_match(&test.name)));
+    }
+
+    if tests.is_empty() {
+        println!("No tests to run");
     }
 
     let counts = if args.generate {
         println!("Generating test output");
         println!();
         run_all_tests(&args, &tests, store_streams)?
-    } else if let Some(name) = &args.run {
-        if let Some(found_test) = tests.iter().find(|t| &t.name == name) {
-            let mut counts = ResultCounts::default();
-            let temp_dir = tempfile::tempdir()?;
-            run_single_test(
-                found_test,
-                &temp_dir,
-                &args,
-                compare_streams,
-                &mut counts,
-                true,
-            )?;
-            counts
-        } else {
-            println!("Unable to find test named `{}`", name.display());
-            ResultCounts::default()
-        }
     } else {
         let count: usize = tests.iter().map(|t| 1 + t.run.len()).sum();
         println!("Running {count} tests");
