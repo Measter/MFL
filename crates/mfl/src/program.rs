@@ -22,7 +22,9 @@ use crate::{
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
-    type_store::{TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType},
+    type_store::{
+        TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType, UnresolvedTypeTokens,
+    },
     Args,
 };
 
@@ -687,6 +689,52 @@ impl Program {
         if kind == ItemKind::Function {
             self.function_data.insert(id, FunctionData::default());
         }
+
+        let parent_info = self.item_headers[&parent];
+        if parent_info.kind == ItemKind::Module {
+            let module_info = self.module_info.get_mut(&parent).unwrap();
+            let res = module_info.add_child(name.inner, name.location, id);
+            if let Err(prev_loc) = res {
+                *had_error = true;
+                symbol_redef_error(name.location, prev_loc, source_store);
+            }
+        }
+
+        id
+    }
+
+    pub fn new_assert(
+        &mut self,
+        source_store: &SourceStorage,
+        interner: &mut Interners,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: ItemId,
+    ) -> ItemId {
+        let id = self.item_headers.len();
+        let id = ItemId(id.to_u16().unwrap());
+
+        let item = ItemHeader {
+            name,
+            id,
+            kind: ItemKind::Assert,
+            parent: Some(parent),
+        };
+
+        self.item_headers.insert(id, item);
+        // Such a hack.
+        let bool_symbol = interner.intern_lexeme("bool");
+        self.item_signatures_unresolved.insert(
+            id,
+            ItemSignatureUnresolved {
+                exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![
+                    bool_symbol.with_span(name.location),
+                ]))
+                .with_span(name.location)]
+                .with_span(name.location),
+                entry_stack: Vec::new().with_span(name.location),
+            },
+        );
 
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {

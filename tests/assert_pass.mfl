@@ -1,0 +1,7 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+assert FOO is 0 1 != end

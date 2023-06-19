@@ -11,7 +11,7 @@ use crate::{
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     program::{ItemSignatureUnresolved, ModuleQueueType},
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
-    type_store::{IntWidth, Signedness, UnresolvedType, UnresolvedTypeTokens},
+    type_store::{IntWidth, Signedness, UnresolvedType},
     ItemId, ItemKind, Program,
 };
 
@@ -189,7 +189,7 @@ pub fn parse_item_body(
     program: &mut Program,
     tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
-    interner: &Interners,
+    interner: &mut Interners,
     parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<Vec<Op>, ()> {
@@ -660,19 +660,16 @@ pub fn parse_item_body(
             }
 
             TokenKind::Assert => {
-                if parse_item(
+                had_error |= items::parse_assert(
                     program,
                     &mut token_iter,
-                    tokens,
                     token,
-                    interner,
                     parent_id,
+                    interner,
                     source_store,
                 )
-                .is_err()
-                {
-                    had_error = true;
-                }
+                .is_err();
+
                 continue;
             }
             TokenKind::Const => {
@@ -891,7 +888,7 @@ fn parse_if<'a>(
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
     let (condition, do_token) = get_item_body(
@@ -1049,7 +1046,7 @@ fn parse_while<'a>(
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-    interner: &Interners,
+    interner: &mut Interners,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
     let (condition, do_token) = get_item_body(
@@ -1210,52 +1207,12 @@ fn parse_function_header<'a>(
     had_error.not().then_some((is_token, new_item)).ok_or(())
 }
 
-fn parse_assert_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interners,
-    name: Spanned<Token>,
-    parent_id: ItemId,
-    source_store: &SourceStorage,
-) -> Result<(Spanned<Token>, ItemId), ()> {
-    let sig = ItemSignatureUnresolved {
-        exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![
-            name.map(|t| t.lexeme)
-        ]))
-        .with_span(name.location)]
-        .with_span(name.location),
-        entry_stack: Vec::new().with_span(name.location),
-    };
-
-    let mut had_error = false;
-    let new_item = program.new_item(
-        source_store,
-        &mut had_error,
-        name.map(|t| t.lexeme),
-        ItemKind::Assert,
-        parent_id,
-        sig,
-    );
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    had_error.not().then_some((is_token, new_item)).ok_or(())
-}
-
 fn parse_item<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     tokens: &'a [Spanned<Token>],
     keyword: Spanned<Token>,
-    interner: &Interners,
+    interner: &mut Interners,
     parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
@@ -1273,7 +1230,6 @@ fn parse_item<'a>(
 
     let header_func = match keyword.inner.kind {
         TokenKind::Proc => parse_function_header,
-        TokenKind::Assert => parse_assert_header,
         _ => unreachable!(),
     };
 
@@ -1391,7 +1347,7 @@ pub(super) fn parse_file(
     program: &mut Program,
     module_id: ItemId,
     tokens: &[Spanned<Token>],
-    interner: &Interners,
+    interner: &mut Interners,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
@@ -1402,6 +1358,18 @@ pub(super) fn parse_file(
 
     while let Some((_, token)) = token_iter.next() {
         match token.inner.kind {
+            TokenKind::Assert => {
+                had_error |= items::parse_assert(
+                    program,
+                    &mut token_iter,
+                    *token,
+                    module_id,
+                    interner,
+                    source_store,
+                )
+                .is_err();
+            }
+
             TokenKind::Const => {
                 had_error |= items::parse_const(
                     program,
@@ -1414,7 +1382,7 @@ pub(super) fn parse_file(
                 .is_err();
             }
 
-            TokenKind::Assert | TokenKind::Proc => {
+            TokenKind::Proc => {
                 if parse_item(
                     program,
                     &mut token_iter,

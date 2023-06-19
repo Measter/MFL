@@ -1,0 +1,17 @@
+[31mError:[0m assert failure
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/assert_fail.mfl:7:8[38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m7 │[0m [38;5;249ma[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[31mF[0m[31mO[0m[31mO[0m[38;5;249m [0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249m [0m[38;5;249m0[0m[38;5;249m [0m[38;5;249m1[0m[38;5;249m=[0m[38;5;249m [0m[38;5;249me[0m[38;5;249mn[0m[38;5;249md[0m
+ [38;5;240m  │[0m        [31m─[0m[31m┬[0m[31m─[0m  
+ [38;5;240m  │[0m         [31m╰[0m[31m─[0m[31m─[0m[31m─[0m evaluated to false
+[38;5;246m───╯[0m
+Error: 
+   0: [91mfailed assert check[0m
+
+Location:
+   [35mcrates/mfl/src/program.rs[0m:[35m638[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+Warning: SpanTrace capture is Unsupported.
+Ensure that you've setup a tracing-error ErrorLayer and the semver versions are compatible
