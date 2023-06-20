@@ -34,12 +34,6 @@ use static_analysis::Analyzer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
-impl ItemId {
-    // This is only used during parse failure, so it shouldn't cause problems?
-    pub fn dud() -> Self {
-        Self(u16::MAX)
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct FunctionData {
@@ -159,10 +153,6 @@ impl Program {
 
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
         self.item_headers[&id]
-    }
-
-    pub fn get_item_header_mut(&mut self, id: ItemId) -> &mut ItemHeader {
-        self.item_headers.get_mut(&id).unwrap()
     }
 
     #[track_caller]
@@ -664,14 +654,14 @@ impl Program {
         Ok(())
     }
 
-    pub fn new_item(
+    pub fn new_function(
         &mut self,
         source_store: &SourceStorage,
         had_error: &mut bool,
         name: Spanned<Spur>,
-        kind: ItemKind,
         parent: ItemId,
-        sig: ItemSignatureUnresolved,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
         let id = self.item_headers.len();
         let id = ItemId(id.to_u16().unwrap());
@@ -679,16 +669,19 @@ impl Program {
         let item = ItemHeader {
             name,
             id,
-            kind,
+            kind: ItemKind::Function,
             parent: Some(parent),
         };
 
         self.item_headers.insert(id, item);
-        self.item_signatures_unresolved.insert(id, sig);
-
-        if kind == ItemKind::Function {
-            self.function_data.insert(id, FunctionData::default());
-        }
+        self.item_signatures_unresolved.insert(
+            id,
+            ItemSignatureUnresolved {
+                exit_stack,
+                entry_stack,
+            },
+        );
+        self.function_data.insert(id, FunctionData::default());
 
         let parent_info = self.item_headers[&parent];
         if parent_info.kind == ItemKind::Module {
@@ -795,7 +788,8 @@ impl Program {
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
-        sig: ItemSignatureUnresolved,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> ItemId {
         let id = self.item_headers.len();
@@ -809,7 +803,13 @@ impl Program {
         };
 
         self.item_headers.insert(id, item);
-        self.item_signatures_unresolved.insert(id, sig);
+        self.item_signatures_unresolved.insert(
+            id,
+            ItemSignatureUnresolved {
+                entry_stack,
+                exit_stack,
+            },
+        );
 
         self.function_data.insert(
             id,

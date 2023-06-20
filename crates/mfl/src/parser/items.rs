@@ -73,6 +73,150 @@ fn parse_item_body<'a>(
     body
 }
 
+pub fn parse_function<'a>(
+    program: &mut Program,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    keyword: Spanned<Token>,
+    parent_id: ItemId,
+    interner: &mut Interners,
+    source_store: &SourceStorage,
+) -> Result<(), ()> {
+    let mut had_error = false;
+    let name_token = expect_token(
+        token_iter,
+        "ident",
+        |k| k == TokenKind::Ident,
+        keyword,
+        interner,
+        source_store,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, keyword);
+
+    let generic_params = if token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
+    {
+        parse_delimited_token_list(
+            token_iter,
+            name_token,
+            None,
+            ("(", |t| t == TokenKind::ParenthesisOpen),
+            ("ident", |t| t == TokenKind::Ident),
+            (")", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        )
+        .recover(&mut had_error, Delimited::fallback(name_token))
+    } else {
+        Delimited::fallback(name_token)
+    };
+
+    let entry_stack = parse_stack_def(
+        token_iter,
+        &mut had_error,
+        name_token,
+        interner,
+        source_store,
+    );
+
+    let entry_stack = entry_stack.map(|st| {
+        st.into_iter()
+            .map(|t| t.map(UnresolvedType::Tokens))
+            .collect()
+    });
+
+    expect_token(
+        token_iter,
+        "to",
+        |k| k == TokenKind::GoesTo,
+        name_token,
+        interner,
+        source_store,
+    )
+    .recover(&mut had_error, (0, name_token));
+
+    let exit_stack = parse_stack_def(
+        token_iter,
+        &mut had_error,
+        name_token,
+        interner,
+        source_store,
+    );
+
+    let exit_stack = exit_stack.map(|st| {
+        st.into_iter()
+            .map(|t| t.map(UnresolvedType::Tokens))
+            .collect()
+    });
+
+    let item_id = if generic_params.list.is_empty() {
+        program.new_function(
+            source_store,
+            &mut had_error,
+            name_token.map(|t| t.lexeme),
+            parent_id,
+            entry_stack,
+            exit_stack,
+        )
+    } else {
+        program.new_generic_function(
+            source_store,
+            &mut had_error,
+            name_token.map(|t| t.lexeme),
+            parent_id,
+            entry_stack,
+            exit_stack,
+            generic_params
+                .list
+                .into_iter()
+                .map(|t| t.map(|t| t.lexeme))
+                .collect(),
+        )
+    };
+
+    let body = parse_item_body(
+        token_iter,
+        name_token,
+        interner,
+        source_store,
+        &mut had_error,
+        program,
+        item_id,
+    );
+
+    program.set_item_body(item_id, body);
+
+    let item_header = program.get_item_header(item_id);
+    if let Some(prev_def) = program
+        .get_visible_symbol(item_header, name_token.inner.lexeme)
+        .filter(|&f| f != item_id)
+    {
+        let prev_item = program.get_item_header(prev_def).name();
+        diagnostics::emit_error(
+            name_token.location,
+            "multiple definitions of symbol",
+            [
+                Label::new(name_token.location)
+                    .with_message("defined here")
+                    .with_color(Color::Red),
+                Label::new(prev_item.location)
+                    .with_message("also defined here")
+                    .with_color(Color::Blue),
+            ],
+            None,
+            source_store,
+        );
+        had_error = true;
+    }
+
+    if had_error {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn parse_assert<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -108,7 +252,7 @@ pub fn parse_assert<'a>(
         source_store,
         &mut had_error,
         program,
-        parent_id,
+        item_id,
     );
 
     program.set_item_body(item_id, body);
@@ -192,7 +336,7 @@ pub fn parse_const<'a>(
         source_store,
         &mut had_error,
         program,
-        parent_id,
+        item_id,
     );
 
     program.set_item_body(item_id, body);

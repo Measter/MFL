@@ -9,10 +9,10 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
-    program::{ItemSignatureUnresolved, ModuleQueueType},
+    program::ModuleQueueType,
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{IntWidth, Signedness, UnresolvedType},
-    ItemId, ItemKind, Program,
+    ItemId, Program,
 };
 
 use self::utils::{
@@ -1087,263 +1087,6 @@ fn parse_while<'a>(
     })))
 }
 
-fn parse_function_header<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interners,
-    name: Spanned<Token>,
-    parent_id: ItemId,
-    source_store: &SourceStorage,
-) -> Result<(Spanned<Token>, ItemId), ()> {
-    let mut had_error = false;
-
-    let generic_params = if token_iter
-        .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
-    {
-        parse_delimited_token_list(
-            token_iter,
-            name,
-            None,
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("ident", |t| t == TokenKind::Ident),
-            (")", |t| t == TokenKind::ParenthesisClosed),
-            interner,
-            source_store,
-        )
-        .recover(&mut had_error, Delimited::fallback(name))
-    } else {
-        Delimited::fallback(name)
-    };
-
-    let entry_stack = parse_delimited_token_list(
-        token_iter,
-        generic_params.close,
-        None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", valid_type_token),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, Delimited::fallback(name));
-    let entry_stack_location = entry_stack.span();
-    let unresolved_entry_types =
-        parse_unresolved_types(interner, source_store, entry_stack.open, &entry_stack.list)
-            .recover(&mut had_error, Vec::new());
-
-    expect_token(
-        token_iter,
-        "to",
-        |k| k == TokenKind::GoesTo,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    let exit_stack = parse_delimited_token_list(
-        token_iter,
-        name,
-        None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", valid_type_token),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, Delimited::fallback(name));
-    let exit_stack_location = exit_stack.span();
-    let unresolved_exit_types =
-        parse_unresolved_types(interner, source_store, exit_stack.open, &exit_stack.list)
-            .recover(&mut had_error, Vec::new());
-
-    let sig = ItemSignatureUnresolved {
-        exit_stack: unresolved_exit_types
-            .into_iter()
-            .map(|t| t.map(UnresolvedType::Tokens))
-            .collect::<Vec<_>>()
-            .with_span(exit_stack_location),
-        entry_stack: unresolved_entry_types
-            .into_iter()
-            .map(|t| t.map(UnresolvedType::Tokens))
-            .collect::<Vec<_>>()
-            .with_span(entry_stack_location),
-    };
-
-    let new_item = if generic_params.list.is_empty() {
-        program.new_item(
-            source_store,
-            &mut had_error,
-            name.map(|t| t.lexeme),
-            ItemKind::Function,
-            parent_id,
-            sig,
-        )
-    } else {
-        program.new_generic_function(
-            source_store,
-            &mut had_error,
-            name.map(|t| t.lexeme),
-            parent_id,
-            sig,
-            generic_params
-                .list
-                .into_iter()
-                .map(|t| t.map(|t| t.lexeme))
-                .collect(),
-        )
-    };
-
-    let (_, is_token) = expect_token(
-        token_iter,
-        "is",
-        |k| k == TokenKind::Is,
-        name,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, name));
-
-    had_error.not().then_some((is_token, new_item)).ok_or(())
-}
-
-fn parse_item<'a>(
-    program: &mut Program,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    tokens: &'a [Spanned<Token>],
-    keyword: Spanned<Token>,
-    interner: &mut Interners,
-    parent_id: ItemId,
-    source_store: &SourceStorage,
-) -> Result<(), ()> {
-    let mut had_error = false;
-    let name_token = expect_token(
-        token_iter,
-        "ident",
-        |k| k == TokenKind::Ident,
-        keyword,
-        interner,
-        source_store,
-    )
-    .map(|(_, a)| a)
-    .recover(&mut had_error, keyword);
-
-    let header_func = match keyword.inner.kind {
-        TokenKind::Proc => parse_function_header,
-        _ => unreachable!(),
-    };
-
-    let (is_token, item_id) = header_func(
-        program,
-        token_iter,
-        interner,
-        name_token,
-        parent_id,
-        source_store,
-    )
-    .recover(&mut had_error, (name_token, ItemId::dud()));
-
-    let mut op_id = 0;
-    let mut op_id_gen = || {
-        let id = op_id;
-        op_id += 1;
-        OpId(id)
-    };
-
-    let (body, end_token) = get_item_body(
-        &mut *token_iter,
-        tokens,
-        keyword,
-        is_token,
-        |t| matches!(t, TokenKind::End),
-        source_store,
-    )
-    .recover(&mut had_error, (&[], is_token));
-
-    let mut body = parse_item_body_contents(
-        program,
-        body,
-        &mut op_id_gen,
-        interner,
-        item_id,
-        source_store,
-    )
-    .recover(&mut had_error, Vec::new());
-
-    if item_id == ItemId::dud() {
-        // We can't continue from here.
-        return Err(());
-    }
-
-    let item_header = program.get_item_header_mut(item_id);
-
-    // Makes later logic a bit easier if we always have a prologue and epilogue.
-    body.insert(
-        0,
-        Op {
-            code: OpCode::Prologue,
-            id: op_id_gen(),
-            token: name_token.map(|t| t.lexeme),
-        },
-    );
-
-    body.push(Op {
-        code: OpCode::Epilogue,
-        id: op_id_gen(),
-        token: end_token.map(|t| t.lexeme),
-    });
-
-    program.set_item_body(item_id, body);
-
-    // stupid borrow checker...
-    let _ = item_header; // Need to discard the borrow;
-    let item_header = program.get_item_header(item_id);
-
-    if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.inner.lexeme)
-        .filter(|&f| f != item_id)
-    {
-        let prev_item = program.get_item_header(prev_def).name();
-
-        diagnostics::emit_error(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_item.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
-    let parent_item = program.get_item_header(parent_id);
-    match (parent_item.kind(), keyword.inner.kind) {
-        (ItemKind::Function | ItemKind::GenericFunction, TokenKind::Const) => {
-            let pd = program.get_function_data_mut(parent_id);
-            pd.consts.insert(name_token.inner.lexeme, item_id);
-        }
-        (ItemKind::Function | ItemKind::GenericFunction, TokenKind::Memory) => {
-            let pd = program.get_function_data_mut(parent_id);
-            pd.allocs.insert(name_token.inner.lexeme, item_id);
-        }
-        // The other types aren't stored in the proc
-        _ => {}
-    }
-
-    if had_error {
-        Err(())
-    } else {
-        Ok(())
-    }
-}
-
 pub(super) fn parse_file(
     program: &mut Program,
     module_id: ItemId,
@@ -1384,19 +1127,15 @@ pub(super) fn parse_file(
             }
 
             TokenKind::Proc => {
-                if parse_item(
+                had_error |= items::parse_function(
                     program,
                     &mut token_iter,
-                    tokens,
                     *token,
-                    interner,
                     module_id,
+                    interner,
                     source_store,
                 )
-                .is_err()
-                {
-                    had_error = true;
-                }
+                .is_err();
             }
 
             TokenKind::Memory => {

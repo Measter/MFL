@@ -10,7 +10,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     opcode::{Op, OpCode},
-    program::{ItemId, ItemKind, ItemSignatureUnresolved, Program},
+    program::{ItemId, ItemKind, Program},
     source_file::{SourceStorage, WithSpan},
     type_store::{BuiltinTypes, UnresolvedType, UnresolvedTypeIds},
 };
@@ -204,19 +204,14 @@ impl Program {
             entry_stack.push(new_type.with_span(stack_item.location));
         }
 
-        let new_sig = ItemSignatureUnresolved {
-            exit_stack: exit_stack.with_span(old_sig.exit_stack.location),
-            entry_stack: entry_stack.with_span(old_sig.entry_stack.location),
-        };
-
         let new_name_spur = interner.intern_lexeme(&new_name);
-        let new_proc_id = self.new_item(
+        let new_proc_id = self.new_function(
             source_store,
             &mut false,
             new_name_spur.with_span(base_header.name.location),
-            ItemKind::Function,
             base_header.parent.unwrap(),
-            new_sig,
+            entry_stack.with_span(old_sig.entry_stack.location),
+            exit_stack.with_span(old_sig.exit_stack.location),
         );
 
         let base_allocs = self.function_data[&fn_id].allocs.clone();
