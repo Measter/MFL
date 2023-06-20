@@ -1,0 +1,10 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// END
+
+proc foo(T) [T] to [T] is end
+
+proc entry [] to [] is
+    23 foo drop
+end
