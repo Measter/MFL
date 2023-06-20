@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    expect_token, parse_delimited_token_list, parse_item_body,
+    expect_token, parse_delimited_token_list, parse_item_body_contents,
     utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
     Delimited, Recover,
 };
@@ -65,7 +65,7 @@ pub fn parse_assert<'a>(
     )
     .recover(&mut had_error, Delimited::fallback(name_token));
 
-    let mut body = parse_item_body(
+    let mut body = parse_item_body_contents(
         program,
         &body_delim.list,
         &mut op_id_gen,
@@ -183,7 +183,7 @@ pub fn parse_const<'a>(
     )
     .recover(&mut had_error, Delimited::fallback(name_token));
 
-    let mut body = parse_item_body(
+    let mut body = parse_item_body_contents(
         program,
         &body_delim.list,
         &mut op_id_gen,

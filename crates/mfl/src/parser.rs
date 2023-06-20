@@ -185,7 +185,7 @@ fn parse_integer_op<'a>(
     Ok((OpCode::PushInt { width, value }, overall_location))
 }
 
-pub fn parse_item_body(
+pub fn parse_item_body_contents(
     program: &mut Program,
     tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
@@ -900,7 +900,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let condition = parse_item_body(
+    let condition = parse_item_body_contents(
         program,
         condition,
         op_id_gen,
@@ -918,7 +918,7 @@ fn parse_if<'a>(
         source_store,
     )?;
 
-    let then_block = parse_item_body(
+    let then_block = parse_item_body_contents(
         program,
         main_block,
         op_id_gen,
@@ -940,7 +940,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let elif_condition = parse_item_body(
+        let elif_condition = parse_item_body_contents(
             program,
             elif_condition,
             op_id_gen,
@@ -958,7 +958,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let elif_block = parse_item_body(
+        let elif_block = parse_item_body_contents(
             program,
             elif_block,
             op_id_gen,
@@ -987,7 +987,7 @@ fn parse_if<'a>(
             source_store,
         )?;
 
-        let else_block = parse_item_body(
+        let else_block = parse_item_body_contents(
             program,
             else_block,
             op_id_gen,
@@ -1058,7 +1058,7 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let condition = parse_item_body(
+    let condition = parse_item_body_contents(
         program,
         condition,
         op_id_gen,
@@ -1076,7 +1076,8 @@ fn parse_while<'a>(
         source_store,
     )?;
 
-    let body_block = parse_item_body(program, body, op_id_gen, interner, parent_id, source_store)?;
+    let body_block =
+        parse_item_body_contents(program, body, op_id_gen, interner, parent_id, source_store)?;
 
     Ok(OpCode::While(Box::new(While {
         do_token: do_token.location,
@@ -1260,7 +1261,7 @@ fn parse_item<'a>(
     )
     .recover(&mut had_error, (&[], is_token));
 
-    let mut body = parse_item_body(
+    let mut body = parse_item_body_contents(
         program,
         body,
         &mut op_id_gen,
