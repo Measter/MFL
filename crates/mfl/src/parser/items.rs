@@ -17,6 +17,61 @@ use super::{
     utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
     Delimited, Recover,
 };
+fn parse_item_body<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    name_token: Spanned<Token>,
+    interner: &mut Interners,
+    source_store: &SourceStorage,
+    had_error: &mut bool,
+    program: &mut Program,
+    parent_id: ItemId,
+) -> Vec<Op> {
+    let mut op_id = 0;
+    let mut op_id_gen = || {
+        let id = op_id;
+        op_id += 1;
+        OpId(id)
+    };
+
+    let body_delim = parse_delimited_token_list(
+        token_iter,
+        name_token,
+        None,
+        ("is", |t| t == TokenKind::Is),
+        ("item", |_| true),
+        ("end", |t| t == TokenKind::End),
+        interner,
+        source_store,
+    )
+    .recover(had_error, Delimited::fallback(name_token));
+
+    let mut body = parse_item_body_contents(
+        program,
+        &body_delim.list,
+        &mut op_id_gen,
+        interner,
+        parent_id,
+        source_store,
+    )
+    .recover(had_error, Vec::new());
+
+    // Makes later logic easier if we always have a prologue and epilogue.
+    body.insert(
+        0,
+        Op {
+            code: OpCode::Prologue,
+            id: op_id_gen(),
+            token: body_delim.open.map(|t| t.lexeme),
+        },
+    );
+    body.push(Op {
+        code: OpCode::Epilogue,
+        id: op_id_gen(),
+        token: body_delim.close.map(|t| t.lexeme),
+    });
+
+    body
+}
 
 pub fn parse_assert<'a>(
     program: &mut Program,
@@ -46,49 +101,15 @@ pub fn parse_assert<'a>(
         parent_id,
     );
 
-    let mut op_id = 0;
-    let mut op_id_gen = || {
-        let id = op_id;
-        op_id += 1;
-        OpId(id)
-    };
-
-    let body_delim = parse_delimited_token_list(
+    let body = parse_item_body(
         token_iter,
         name_token,
-        None,
-        ("is", |t| t == TokenKind::Is),
-        ("item", |_| true),
-        ("end", |t| t == TokenKind::End),
         interner,
         source_store,
-    )
-    .recover(&mut had_error, Delimited::fallback(name_token));
-
-    let mut body = parse_item_body_contents(
+        &mut had_error,
         program,
-        &body_delim.list,
-        &mut op_id_gen,
-        interner,
         parent_id,
-        source_store,
-    )
-    .recover(&mut had_error, Vec::new());
-
-    // Makes later logic easier if we always have a prologue and epilogue.
-    body.insert(
-        0,
-        Op {
-            code: OpCode::Prologue,
-            id: op_id_gen(),
-            token: body_delim.open.map(|t| t.lexeme),
-        },
     );
-    body.push(Op {
-        code: OpCode::Epilogue,
-        id: op_id_gen(),
-        token: body_delim.close.map(|t| t.lexeme),
-    });
 
     program.set_item_body(item_id, body);
 
@@ -164,49 +185,15 @@ pub fn parse_const<'a>(
         exit_stack,
     );
 
-    let mut op_id = 0;
-    let mut op_id_gen = || {
-        let id = op_id;
-        op_id += 1;
-        OpId(id)
-    };
-
-    let body_delim = parse_delimited_token_list(
+    let body = parse_item_body(
         token_iter,
         name_token,
-        None,
-        ("is", |t| t == TokenKind::Is),
-        ("item", |_| true),
-        ("end", |t| t == TokenKind::End),
         interner,
         source_store,
-    )
-    .recover(&mut had_error, Delimited::fallback(name_token));
-
-    let mut body = parse_item_body_contents(
+        &mut had_error,
         program,
-        &body_delim.list,
-        &mut op_id_gen,
-        interner,
         parent_id,
-        source_store,
-    )
-    .recover(&mut had_error, Vec::new());
-
-    // Makes later logic easier if we always have a prologue and epilogue.
-    body.insert(
-        0,
-        Op {
-            code: OpCode::Prologue,
-            id: op_id_gen(),
-            token: body_delim.open.map(|t| t.lexeme),
-        },
     );
-    body.push(Op {
-        code: OpCode::Epilogue,
-        id: op_id_gen(),
-        token: body_delim.close.map(|t| t.lexeme),
-    });
 
     program.set_item_body(item_id, body);
 
