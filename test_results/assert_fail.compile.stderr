@@ -9,7 +9,7 @@ Error:
    0: [91mfailed assert check[0m
 
 Location:
-   [35mcrates/mfl/src/program.rs[0m:[35m638[0m
+   [35mcrates/mfl/src/program.rs[0m:[35m628[0m
 
 Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
 Run with RUST_BACKTRACE=full to include source snippets.
