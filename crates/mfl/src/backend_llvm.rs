@@ -330,13 +330,13 @@ impl<'ctx> CodeGen<'ctx> {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
-        for (id, item) in program.get_all_items() {
+        for item in program.get_all_items() {
             if item.kind() != ItemKind::Function {
                 continue;
             }
-            let item_sig = program.get_item_signature_resolved(id);
+            let item_sig = program.get_item_signature_resolved(item.id());
 
-            let name = interner.get_symbol_name(program, id);
+            let name = interner.get_symbol_name(program, item.id());
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
@@ -361,7 +361,7 @@ impl<'ctx> CodeGen<'ctx> {
             let function = self
                 .module
                 .add_function(name, function_type, Some(Linkage::Private));
-            self.item_function_map.insert(id, function);
+            self.item_function_map.insert(item.id(), function);
         }
         proto_span.exit();
 

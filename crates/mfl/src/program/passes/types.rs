@@ -27,8 +27,8 @@ impl Program {
         let struct_item_ids: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, hdr)| hdr.kind() == ItemKind::StructDef)
-            .map(|(id, _)| *id)
+            .filter(|i| i.kind() == ItemKind::StructDef)
+            .map(|i| i.id)
             .collect();
 
         let mut generic_structs = Vec::new();
@@ -242,18 +242,14 @@ impl Program {
         let _span = debug_span!(stringify!(Program::resolve_types)).entered();
         let mut had_error = false;
 
-        let items = self
-            .item_headers
-            .iter()
-            .filter(|(_, item)| {
-                item.kind != ItemKind::StructDef
-                    && item.kind != ItemKind::Module
-                    && item.kind != ItemKind::GenericFunction
-            })
-            .map(|(id, item)| (*id, *item));
+        let items = self.item_headers.iter().filter(|item| {
+            item.kind != ItemKind::StructDef
+                && item.kind != ItemKind::Module
+                && item.kind != ItemKind::GenericFunction
+        });
 
-        for (item_id, item) in items {
-            trace!(name = interner.get_symbol_name(self, item_id));
+        for item in items {
+            trace!(name = interner.get_symbol_name(self, item.id));
 
             if item.kind == ItemKind::Memory {
                 let parent_kind = self.get_item_header(item.parent.unwrap()).kind;
@@ -262,7 +258,7 @@ impl Program {
                     continue;
                 }
 
-                let unresolved_memory_type = &self.memory_type_unresolved[&item_id];
+                let unresolved_memory_type = &self.memory_type_unresolved[&item.id];
 
                 let info =
                     match type_store.resolve_type(interner, unresolved_memory_type.inner.as_id()) {
@@ -274,9 +270,9 @@ impl Program {
                         }
                     };
 
-                self.memory_type_resolved.insert(item_id, info.id);
+                self.memory_type_resolved.insert(item.id, info.id);
             } else {
-                let unresolved_sig = &self.item_signatures_unresolved[&item_id];
+                let unresolved_sig = &self.item_signatures_unresolved[&item.id];
                 let mut resolved_entry =
                     SmallVec::with_capacity(unresolved_sig.entry_stack.inner.len());
                 let mut resolved_exit =
@@ -307,16 +303,16 @@ impl Program {
                 }
 
                 self.item_signatures_resolved.insert(
-                    item_id,
+                    item.id,
                     ItemSignatureResolved {
                         entry_stack: resolved_entry,
                         exit_stack: resolved_exit,
                     },
                 );
 
-                let body = self.item_bodies.remove(&item_id).unwrap();
+                let body = self.item_bodies.remove(&item.id).unwrap();
                 self.item_bodies.insert(
-                    item_id,
+                    item.id,
                     self.resolve_types_in_block(
                         body,
                         &mut had_error,

@@ -1,10 +1,4 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    ffi::OsStr,
-    hash::Hash,
-    ops::Not,
-    path::Path,
-};
+use std::{collections::VecDeque, ffi::OsStr, hash::Hash, ops::Not, path::Path};
 
 use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context, Result};
@@ -122,7 +116,7 @@ pub struct Program {
     module_info: HashMap<ItemId, ModuleInfo>,
     top_level_modules: HashMap<Spur, ItemId>,
 
-    item_headers: BTreeMap<ItemId, ItemHeader>,
+    item_headers: Vec<ItemHeader>,
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
     item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
     memory_type_unresolved: HashMap<ItemId, Spanned<UnresolvedType>>,
@@ -137,8 +131,8 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn get_all_items(&self) -> impl Iterator<Item = (ItemId, ItemHeader)> + '_ {
-        self.item_headers.iter().map(|(id, item)| (*id, *item))
+    pub fn get_all_items(&self) -> impl Iterator<Item = ItemHeader> + '_ {
+        self.item_headers.iter().copied()
     }
 
     #[track_caller]
@@ -152,7 +146,7 @@ impl Program {
     }
 
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
-        self.item_headers[&id]
+        self.item_headers[id.0.to_usize()]
     }
 
     #[track_caller]
@@ -214,7 +208,7 @@ impl Program {
         Program {
             module_info: Default::default(),
             top_level_modules: Default::default(),
-            item_headers: BTreeMap::new(),
+            item_headers: Vec::new(),
             item_signatures_unresolved: HashMap::new(),
             item_signatures_resolved: HashMap::new(),
             memory_type_resolved: HashMap::new(),
@@ -228,13 +222,12 @@ impl Program {
         }
     }
 
-    fn new_module(
+    fn new_header(
         &mut self,
-        source_store: &SourceStorage,
-        had_error: &mut bool,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
-    ) -> ItemId {
+        kind: ItemKind,
+    ) -> ItemHeader {
         let new_id = self.item_headers.len();
         let new_id = ItemId(new_id.to_u16().unwrap());
 
@@ -242,27 +235,38 @@ impl Program {
             name,
             id: new_id,
             parent,
-            kind: ItemKind::Module,
+            kind,
         };
-        self.item_headers.insert(new_id, item_header);
+        self.item_headers.push(item_header);
+        item_header
+    }
+
+    fn new_module(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: Option<ItemId>,
+    ) -> ItemId {
+        let header = self.new_header(name, parent, ItemKind::Module);
 
         let module = ModuleInfo {
             child_items: HashMap::new(),
             visible_symbols: HashMap::new(),
             unresolved_imports: Vec::new(),
         };
-        self.module_info.insert(new_id, module);
+        self.module_info.insert(header.id, module);
 
         if let Some(parent_id) = parent {
             let parent_module = self.module_info.get_mut(&parent_id).unwrap();
-            let res = parent_module.add_child(name.inner, name.location, new_id);
+            let res = parent_module.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        new_id
+        header.id
     }
 
     pub fn load_program2(
@@ -449,12 +453,12 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| {
+            .filter(|i| {
                 i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
             })
-            .map(|(id, _)| *id)
+            .map(|i| i.id)
             .collect();
 
         for item_id in items {
@@ -478,13 +482,13 @@ impl Program {
         let items: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| {
+            .filter(|i| {
                 i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
                     && i.kind() != ItemKind::GenericFunction
             })
-            .map(|(id, _)| *id)
+            .map(|i| i.id)
             .collect();
 
         for id in items {
@@ -523,8 +527,8 @@ impl Program {
         let mut const_queue: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, item)| item.kind() == ItemKind::Const)
-            .map(|(id, _)| *id)
+            .filter(|item| item.kind() == ItemKind::Const)
+            .map(|i| i.id)
             .collect();
         let mut next_run_queue = Vec::with_capacity(const_queue.len());
 
@@ -586,13 +590,13 @@ impl Program {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
-        for (&id, &item) in &self.item_headers {
+        for &item in &self.item_headers {
             if item.kind() != ItemKind::Assert {
                 continue;
             }
 
             let assert_result =
-                match simulate_execute_program(self, type_store, id, interner, source_store) {
+                match simulate_execute_program(self, type_store, item.id, interner, source_store) {
                     // Type check says we'll have a value at this point.
                     Ok(mut stack) => {
                         let Some(SimulatorValue::Bool(val)) = stack.pop() else {
@@ -663,37 +667,28 @@ impl Program {
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
-
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::Function,
-            parent: Some(parent),
-        };
-
-        self.item_headers.insert(id, item);
+        let header = self.new_header(name, Some(parent), ItemKind::Function);
         self.item_signatures_unresolved.insert(
-            id,
+            header.id,
             ItemSignatureUnresolved {
                 exit_stack,
                 entry_stack,
             },
         );
-        self.function_data.insert(id, FunctionData::default());
+        self.function_data
+            .insert(header.id, FunctionData::default());
 
-        let parent_info = self.item_headers[&parent];
+        let parent_info = self.get_item_header(parent);
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        id
+        header.id
     }
 
     pub fn new_assert(
@@ -704,21 +699,11 @@ impl Program {
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> ItemId {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
-
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::Assert,
-            parent: Some(parent),
-        };
-
-        self.item_headers.insert(id, item);
+        let header = self.new_header(name, Some(parent), ItemKind::Assert);
         // Such a hack.
         let bool_symbol = interner.intern_lexeme("bool");
         self.item_signatures_unresolved.insert(
-            id,
+            header.id,
             ItemSignatureUnresolved {
                 exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![
                     bool_symbol.with_span(name.location),
@@ -729,17 +714,17 @@ impl Program {
             },
         );
 
-        let parent_info = self.item_headers[&parent];
+        let parent_info = self.get_item_header(parent);
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        id
+        header.id
     }
 
     pub fn new_const(
@@ -750,36 +735,26 @@ impl Program {
         parent: ItemId,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
-
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::Const,
-            parent: Some(parent),
-        };
-
-        self.item_headers.insert(id, item);
+        let header = self.new_header(name, Some(parent), ItemKind::Const);
         self.item_signatures_unresolved.insert(
-            id,
+            header.id,
             ItemSignatureUnresolved {
                 exit_stack,
                 entry_stack: Vec::new().with_span(name.location),
             },
         );
 
-        let parent_info = self.item_headers[&parent];
+        let parent_info = self.get_item_header(parent);
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        id
+        header.id
     }
 
     pub fn new_generic_function(
@@ -792,19 +767,9 @@ impl Program {
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> ItemId {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
-
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::GenericFunction,
-            parent: Some(parent),
-        };
-
-        self.item_headers.insert(id, item);
+        let header = self.new_header(name, Some(parent), ItemKind::GenericFunction);
         self.item_signatures_unresolved.insert(
-            id,
+            header.id,
             ItemSignatureUnresolved {
                 entry_stack,
                 exit_stack,
@@ -812,24 +777,24 @@ impl Program {
         );
 
         self.function_data.insert(
-            id,
+            header.id,
             FunctionData {
                 generic_params: params,
                 ..Default::default()
             },
         );
 
-        let parent_info = self.item_headers[&parent];
+        let parent_info = self.get_item_header(parent);
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        id
+        header.id
     }
 
     pub fn new_struct(
@@ -839,23 +804,12 @@ impl Program {
         module: ItemId,
         def: UnresolvedStruct,
     ) {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
         let name = def.name;
-
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::StructDef,
-            parent: Some(module),
-        };
-
-        self.item_headers.insert(id, item);
-        let name = def.name;
-        self.structs_unresolved.insert(id, def);
+        let header = self.new_header(name, Some(module), ItemKind::StructDef);
+        self.structs_unresolved.insert(header.id, def);
 
         let module = self.module_info.get_mut(&module).unwrap();
-        let res = module.add_child(name.inner, name.location, id);
+        let res = module.add_child(name.inner, name.location, header.id);
 
         if let Err(prev_loc) = res {
             *had_error = true;
@@ -871,30 +825,20 @@ impl Program {
         parent: ItemId,
         memory_type: Spanned<UnresolvedType>,
     ) -> ItemId {
-        let id = self.item_headers.len();
-        let id = ItemId(id.to_u16().unwrap());
+        let header = self.new_header(name, Some(parent), ItemKind::Memory);
+        self.memory_type_unresolved.insert(header.id, memory_type);
 
-        let item = ItemHeader {
-            name,
-            id,
-            kind: ItemKind::Memory,
-            parent: Some(parent),
-        };
-
-        self.item_headers.insert(id, item);
-        self.memory_type_unresolved.insert(id, memory_type);
-
-        let parent_info = self.item_headers[&parent];
+        let parent_info = self.get_item_header(parent);
         if parent_info.kind == ItemKind::Module {
             let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, id);
+            let res = module_info.add_child(name.inner, name.location, header.id);
             if let Err(prev_loc) = res {
                 *had_error = true;
                 symbol_redef_error(name.location, prev_loc, source_store);
             }
         }
 
-        id
+        header.id
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {

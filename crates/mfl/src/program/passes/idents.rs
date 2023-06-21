@@ -345,7 +345,7 @@ impl Program {
                         resolved_generic_params.push(UnresolvedType::Id(f));
                     }
 
-                    let found_item_header = self.item_headers[&item_id];
+                    let found_item_header = self.get_item_header(item_id);
                     if !matches!(
                         found_item_header.kind(),
                         ItemKind::Function
@@ -490,19 +490,15 @@ impl Program {
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
-        let items: Vec<_> = self
-            .item_headers
-            .iter()
-            .map(|(id, item)| (*id, *item))
-            .collect();
+        let items: Vec<_> = self.item_headers.clone();
 
-        for (item_id, item) in items {
-            trace!(name = interner.get_symbol_name(self, item_id));
+        for item in items {
+            trace!(name = interner.get_symbol_name(self, item.id));
 
             if item.kind() == ItemKind::StructDef {
-                let def = self.structs_unresolved.remove(&item_id).unwrap();
+                let def = self.structs_unresolved.remove(&item.id).unwrap();
                 self.structs_unresolved.insert(
-                    item_id,
+                    item.id,
                     self.resolve_idents_in_struct_def(
                         item,
                         def,
@@ -521,7 +517,7 @@ impl Program {
                     _ => None,
                 };
 
-                let mut memory_type = self.memory_type_unresolved.remove(&item_id).unwrap();
+                let mut memory_type = self.memory_type_unresolved.remove(&item.id).unwrap();
                 let UnresolvedType::Tokens(memory_type_tokens) = &memory_type.inner else {
                     unreachable!()
                 };
@@ -538,14 +534,14 @@ impl Program {
                 };
                 memory_type.inner = UnresolvedType::Id(new_kind);
 
-                self.memory_type_unresolved.insert(item_id, memory_type);
+                self.memory_type_unresolved.insert(item.id, memory_type);
             } else if item.kind() == ItemKind::Module {
                 self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
             } else {
-                let mut sig = self.item_signatures_unresolved.remove(&item_id).unwrap();
+                let mut sig = self.item_signatures_unresolved.remove(&item.id).unwrap();
 
                 let generic_params = if item.kind() == ItemKind::GenericFunction {
-                    Some(&self.function_data[&item_id].generic_params)
+                    Some(&self.function_data[&item.id].generic_params)
                 } else {
                     None
                 };
@@ -574,11 +570,11 @@ impl Program {
                     kind.inner = UnresolvedType::Id(new_kind);
                 }
 
-                self.item_signatures_unresolved.insert(item_id, sig);
-                let body = self.item_bodies.remove(&item_id).unwrap();
+                self.item_signatures_unresolved.insert(item.id, sig);
+                let body = self.item_bodies.remove(&item.id).unwrap();
 
                 self.item_bodies.insert(
-                    item_id,
+                    item.id,
                     self.resolve_idents_in_block(
                         item,
                         body,
@@ -706,7 +702,7 @@ impl Program {
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
-        for root_item in self.item_headers.values().copied() {
+        for root_item in self.item_headers.iter().copied() {
             trace!(name = interner.get_symbol_name(self, root_item.id()));
 
             let kind = match root_item.kind() {
@@ -813,12 +809,12 @@ impl Program {
                 }
 
                 OpCode::ResolvedIdent { item_id, .. } => {
-                    let found_item = self.item_headers[&item_id];
+                    let found_item = self.get_item_header(item_id);
 
                     match found_item.kind() {
                         ItemKind::Const => {
                             let Some(vals) = self.const_vals.get( &found_item.id ) else {
-                                let own_item = self.item_headers[&own_item_id];
+                                let own_item = self.get_item_header(own_item_id);
                                 let name = interner.resolve_lexeme(own_item.name.inner);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
@@ -903,13 +899,13 @@ impl Program {
         let all_item_ids: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| {
+            .filter(|i| {
                 i.kind() != ItemKind::Memory
                     && i.kind() != ItemKind::StructDef
                     && i.kind() != ItemKind::Module
                     && i.kind() != ItemKind::GenericFunction
             })
-            .map(|(id, _)| *id)
+            .map(|i| i.id)
             .collect();
 
         for own_item_id in all_item_ids {

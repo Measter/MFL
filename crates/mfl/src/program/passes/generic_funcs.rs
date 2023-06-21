@@ -167,7 +167,7 @@ impl Program {
         let base_fd = &self.function_data[&fn_id];
         assert!(base_fd.consts.is_empty());
 
-        let base_header = &self.item_headers[&fn_id];
+        let base_header = self.get_item_header(fn_id);
         assert_eq!(generic_params.len(), base_fd.generic_params.len());
 
         let new_name = build_mangled_name(interner, base_header.name.inner, generic_params);
@@ -218,7 +218,7 @@ impl Program {
 
         let mut alloc_map = HashMap::new();
         for (name, base_alloc) in base_allocs {
-            let alloc_header = self.item_headers[&base_alloc];
+            let alloc_header = self.get_item_header(base_alloc);
             let alloc_type = &self.memory_type_unresolved[&base_alloc];
             let UnresolvedType::Id(alloc_memory_type) = &alloc_type.inner else { unreachable!() };
 
@@ -362,8 +362,8 @@ impl Program {
         let mut queue: Vec<_> = self
             .item_headers
             .iter()
-            .filter(|(_, i)| i.kind() == ItemKind::Function)
-            .map(|(id, _)| *id)
+            .filter(|i| i.kind() == ItemKind::Function)
+            .map(|i| i.id)
             .collect();
         let mut seen_ids = HashSet::new();
 
