@@ -12,7 +12,7 @@ use crate::{
     diagnostics,
     interners::Interners,
     lexer,
-    opcode::{Op, OpCode},
+    opcode::{Op, OpCode, UnresolvedIdent},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
     source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
@@ -28,13 +28,6 @@ use static_analysis::Analyzer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
-
-#[derive(Debug, Default)]
-pub struct FunctionData {
-    pub allocs: HashMap<Spur, ItemId>,
-    pub consts: HashMap<Spur, ItemId>,
-    pub generic_params: Vec<Spanned<Spur>>,
-}
 
 // TODO: Add compile-time asserts
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,21 +106,22 @@ impl ItemSignatureResolved {
 }
 
 pub struct Program {
-    module_info: HashMap<ItemId, ModuleInfo>,
     top_level_modules: HashMap<Spur, ItemId>,
 
     item_headers: Vec<ItemHeader>,
+    scopes: Vec<Scope>,
+
     item_signatures_unresolved: HashMap<ItemId, ItemSignatureUnresolved>,
     item_signatures_resolved: HashMap<ItemId, ItemSignatureResolved>,
     memory_type_unresolved: HashMap<ItemId, Spanned<UnresolvedType>>,
     memory_type_resolved: HashMap<ItemId, TypeId>,
     item_bodies: HashMap<ItemId, Vec<Op>>,
-    function_data: HashMap<ItemId, FunctionData>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
     analyzers: HashMap<ItemId, Analyzer>,
 
     structs_unresolved: HashMap<ItemId, UnresolvedStruct>,
     generic_functions_map: HashMap<(ItemId, String), ItemId>,
+    generic_template_parameters: HashMap<ItemId, Vec<Spanned<Spur>>>,
 }
 
 impl Program {
@@ -136,13 +130,13 @@ impl Program {
     }
 
     #[track_caller]
-    pub fn get_module(&self, id: ItemId) -> &ModuleInfo {
-        &self.module_info[&id]
+    pub fn get_scope(&self, id: ItemId) -> &Scope {
+        &self.scopes[id.0.to_usize()]
     }
 
     #[track_caller]
-    pub fn get_module_mut(&mut self, id: ItemId) -> &mut ModuleInfo {
-        self.module_info.get_mut(&id).unwrap()
+    pub fn get_scope_mut(&mut self, id: ItemId) -> &mut Scope {
+        &mut self.scopes[id.0.to_usize()]
     }
 
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
@@ -184,20 +178,6 @@ impl Program {
         &self.analyzers[&id]
     }
 
-    #[track_caller]
-    pub fn get_function_data(&self, id: ItemId) -> &FunctionData {
-        self.function_data
-            .get(&id)
-            .expect("ICE: tried to get function data for non-function item")
-    }
-
-    #[track_caller]
-    pub fn get_function_data_mut(&mut self, id: ItemId) -> &mut FunctionData {
-        self.function_data
-            .get_mut(&id)
-            .expect("ICE: tried to get function data for non-function item")
-    }
-
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
@@ -206,67 +186,20 @@ impl Program {
 impl Program {
     pub fn new() -> Self {
         Program {
-            module_info: Default::default(),
             top_level_modules: Default::default(),
             item_headers: Vec::new(),
+            scopes: Vec::new(),
             item_signatures_unresolved: HashMap::new(),
             item_signatures_resolved: HashMap::new(),
             memory_type_resolved: HashMap::new(),
             memory_type_unresolved: HashMap::new(),
             item_bodies: HashMap::new(),
-            function_data: HashMap::new(),
             const_vals: HashMap::new(),
             analyzers: HashMap::new(),
             structs_unresolved: HashMap::new(),
             generic_functions_map: HashMap::new(),
+            generic_template_parameters: HashMap::new(),
         }
-    }
-
-    fn new_header(
-        &mut self,
-        name: Spanned<Spur>,
-        parent: Option<ItemId>,
-        kind: ItemKind,
-    ) -> ItemHeader {
-        let new_id = self.item_headers.len();
-        let new_id = ItemId(new_id.to_u16().unwrap());
-
-        let item_header = ItemHeader {
-            name,
-            id: new_id,
-            parent,
-            kind,
-        };
-        self.item_headers.push(item_header);
-        item_header
-    }
-
-    fn new_module(
-        &mut self,
-        source_store: &SourceStorage,
-        had_error: &mut bool,
-        name: Spanned<Spur>,
-        parent: Option<ItemId>,
-    ) -> ItemId {
-        let header = self.new_header(name, parent, ItemKind::Module);
-
-        let module = ModuleInfo {
-            child_items: HashMap::new(),
-            visible_symbols: HashMap::new(),
-            unresolved_imports: Vec::new(),
-        };
-        self.module_info.insert(header.id, module);
-
-        if let Some(parent_id) = parent {
-            let parent_module = self.module_info.get_mut(&parent_id).unwrap();
-            let res = parent_module.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
-
-        header.id
     }
 
     pub fn load_program2(
@@ -286,8 +219,7 @@ impl Program {
             builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
             None,
         );
-        ModuleInfo::load(
-            self,
+        self.load_module(
             builtin_module,
             source_store,
             interner,
@@ -405,8 +337,7 @@ impl Program {
 
             first_module = first_module.or(Some(module_id));
 
-            let res = ModuleInfo::load(
-                self,
+            let res = self.load_module(
                 module_id,
                 source_store,
                 interner,
@@ -421,6 +352,39 @@ impl Program {
         }
 
         Ok(first_module.unwrap())
+    }
+
+    fn load_module(
+        &mut self,
+        module_id: ItemId,
+        source_store: &mut SourceStorage,
+        interner: &mut Interners,
+        file: &Path,
+        file_contents: &str,
+        include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
+    ) -> Result<()> {
+        let file_type = format!("{file:?}");
+        let _span = debug_span!(stringify!(Module::load), file_type).entered();
+
+        let file_id = source_store.add(file, file_contents);
+
+        let tokens = lexer::lex_file(file_contents, file_id, interner, source_store)
+            .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
+
+        let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
+        interner.intern_lexeme(file_stem);
+
+        crate::parser::parse_file(
+            self,
+            module_id,
+            &tokens,
+            interner,
+            include_queue,
+            source_store,
+        )
+        .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
+
+        Ok(())
     }
 
     // The self parameter is the source of this, but it makes more sense for it to be a method.
@@ -657,6 +621,63 @@ impl Program {
 
         Ok(())
     }
+}
+
+impl Program {
+    fn add_to_parent(
+        &mut self,
+        parent_id: ItemId,
+        child_name: Spanned<Spur>,
+        child_id: ItemId,
+        had_error: &mut bool,
+        source_store: &SourceStorage,
+    ) {
+        let parent_scope = &mut self.scopes[parent_id.0.to_usize()];
+        if let Err(prev_loc) = parent_scope.add_child(child_name, child_id) {
+            *had_error = true;
+            symbol_redef_error(child_name.location, prev_loc, source_store);
+        }
+    }
+
+    fn new_header(
+        &mut self,
+        name: Spanned<Spur>,
+        parent: Option<ItemId>,
+        kind: ItemKind,
+    ) -> ItemHeader {
+        let new_id = self.item_headers.len();
+        let new_id = ItemId(new_id.to_u16().unwrap());
+
+        let item_header = ItemHeader {
+            name,
+            id: new_id,
+            parent,
+            kind,
+        };
+        self.item_headers.push(item_header);
+        self.scopes.push(Scope {
+            child_items: HashMap::new(),
+            visible_symbols: HashMap::new(),
+            unresolved_imports: Vec::new(),
+        });
+        item_header
+    }
+
+    fn new_module(
+        &mut self,
+        source_store: &SourceStorage,
+        had_error: &mut bool,
+        name: Spanned<Spur>,
+        parent: Option<ItemId>,
+    ) -> ItemId {
+        let header = self.new_header(name, parent, ItemKind::Module);
+
+        if let Some(parent_id) = parent {
+            self.add_to_parent(parent_id, name, header.id, had_error, source_store);
+        }
+
+        header.id
+    }
 
     pub fn new_function(
         &mut self,
@@ -675,18 +696,8 @@ impl Program {
                 entry_stack,
             },
         );
-        self.function_data
-            .insert(header.id, FunctionData::default());
 
-        let parent_info = self.get_item_header(parent);
-        if parent_info.kind == ItemKind::Module {
-            let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
+        self.add_to_parent(parent, name, header.id, had_error, source_store);
 
         header.id
     }
@@ -705,24 +716,21 @@ impl Program {
         self.item_signatures_unresolved.insert(
             header.id,
             ItemSignatureUnresolved {
-                exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(vec![
-                    bool_symbol.with_span(name.location),
-                ]))
+                exit_stack: vec![UnresolvedType::Tokens(UnresolvedTypeTokens::Simple(
+                    UnresolvedIdent {
+                        span: name.location,
+                        is_from_root: false,
+                        path: vec![bool_symbol.with_span(name.location)],
+                        generic_params: Vec::new(),
+                    },
+                ))
                 .with_span(name.location)]
                 .with_span(name.location),
                 entry_stack: Vec::new().with_span(name.location),
             },
         );
 
-        let parent_info = self.get_item_header(parent);
-        if parent_info.kind == ItemKind::Module {
-            let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
+        self.add_to_parent(parent, name, header.id, had_error, source_store);
 
         header.id
     }
@@ -744,15 +752,7 @@ impl Program {
             },
         );
 
-        let parent_info = self.get_item_header(parent);
-        if parent_info.kind == ItemKind::Module {
-            let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
+        self.add_to_parent(parent, name, header.id, had_error, source_store);
 
         header.id
     }
@@ -776,23 +776,8 @@ impl Program {
             },
         );
 
-        self.function_data.insert(
-            header.id,
-            FunctionData {
-                generic_params: params,
-                ..Default::default()
-            },
-        );
-
-        let parent_info = self.get_item_header(parent);
-        if parent_info.kind == ItemKind::Module {
-            let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
+        self.generic_template_parameters.insert(header.id, params);
+        self.add_to_parent(parent, name, header.id, had_error, source_store);
 
         header.id
     }
@@ -808,13 +793,7 @@ impl Program {
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
         self.structs_unresolved.insert(header.id, def);
 
-        let module = self.module_info.get_mut(&module).unwrap();
-        let res = module.add_child(name.inner, name.location, header.id);
-
-        if let Err(prev_loc) = res {
-            *had_error = true;
-            symbol_redef_error(name.location, prev_loc, source_store);
-        }
+        self.add_to_parent(module, name, header.id, had_error, source_store);
     }
 
     pub fn new_memory(
@@ -828,69 +807,50 @@ impl Program {
         let header = self.new_header(name, Some(parent), ItemKind::Memory);
         self.memory_type_unresolved.insert(header.id, memory_type);
 
-        let parent_info = self.get_item_header(parent);
-        if parent_info.kind == ItemKind::Module {
-            let module_info = self.module_info.get_mut(&parent).unwrap();
-            let res = module_info.add_child(name.inner, name.location, header.id);
-            if let Err(prev_loc) = res {
-                *had_error = true;
-                symbol_redef_error(name.location, prev_loc, source_store);
-            }
-        }
+        self.add_to_parent(parent, name, header.id, had_error, source_store);
 
         header.id
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
+        // 1. Check ourselves
         if from.name.inner == symbol {
             return Some(from.id);
         }
 
-        // Check our own children.
-        if from.kind == ItemKind::Function || from.kind == ItemKind::GenericFunction {
-            let fd = self.get_function_data(from.id);
-            if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
-                return Some(*found_id);
+        // 2. Check our children
+        let own_scope = self.get_scope(from.id);
+        if let Some(child) = own_scope.get_symbol(symbol) {
+            return Some(child);
+        }
+
+        // 3. If we're not a module traverse up the tree checking siblings until we hit a module.
+        if from.kind != ItemKind::Module {
+            let mut parent = from.parent;
+            while let Some(parent_id) = parent {
+                let parent_scope = self.get_scope(parent_id);
+                if let Some(child) = parent_scope.get_symbol(symbol) {
+                    return Some(child);
+                }
+
+                let parent_header = self.get_item_header(parent_id);
+                if parent_header.kind == ItemKind::Module {
+                    break;
+                }
+                parent = parent_header.parent;
             }
         }
-        // If we're a module, then we don't traverse up the tree.
-        if from.kind == ItemKind::Module {
-            let module = &self.module_info[&from.id];
-            return module.get_visible_symbol(symbol);
-        }
 
-        // Check our parent's children.
-        let mut prev_kind = from.kind;
-        let mut cur_id = from.parent;
-        while let Some(id) = cur_id {
-            let item = self.get_item_header(id);
-
-            if item.kind == ItemKind::Function || item.kind == ItemKind::GenericFunction {
-                let fd = self.get_function_data(item.id);
-                if let Some(found_id) = fd.allocs.get(&symbol).or_else(|| fd.consts.get(&symbol)) {
-                    return Some(*found_id);
-                }
-            } else if item.kind == ItemKind::Module && prev_kind == ItemKind::Module {
-                // Don't traverse up the module tree. We should only look within the current module.
-                return None;
-            } else if item.kind == ItemKind::Module {
-                let module = &self.module_info[&id];
-                if let Some(found_id) = module.get_visible_symbol(symbol) {
-                    return Some(found_id);
-                }
-            }
-            prev_kind = item.kind;
-            cur_id = item.parent;
-        }
-
-        None
+        // 4. Check top level modules
+        self.top_level_modules.get(&symbol).copied()
     }
 }
 
-pub struct ModuleInfo {
+#[derive(Debug, Clone)]
+pub struct Scope {
     child_items: HashMap<Spur, Spanned<ItemId>>,
     visible_symbols: HashMap<Spur, Spanned<ItemId>>,
-    unresolved_imports: Vec<Spanned<Vec<Spanned<Spur>>>>,
+    unresolved_imports: Vec<UnresolvedIdent>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -899,41 +859,8 @@ pub enum ModuleQueueType {
     Include(Spanned<Spur>),
 }
 
-impl ModuleInfo {
-    pub fn load(
-        program: &mut Program,
-        module_id: ItemId,
-        source_store: &mut SourceStorage,
-        interner: &mut Interners,
-        file: &Path,
-        file_contents: &str,
-        include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
-    ) -> Result<()> {
-        let file_type = format!("{file:?}");
-        let _span = debug_span!(stringify!(Module::load), file_type).entered();
-
-        let file_id = source_store.add(file, file_contents);
-
-        let tokens = lexer::lex_file(file_contents, file_id, interner, source_store)
-            .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
-
-        let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
-        interner.intern_lexeme(file_stem);
-
-        crate::parser::parse_file(
-            program,
-            module_id,
-            &tokens,
-            interner,
-            include_queue,
-            source_store,
-        )
-        .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
-
-        Ok(())
-    }
-
-    pub fn get_visible_symbol(&self, name: Spur) -> Option<ItemId> {
+impl Scope {
+    pub fn get_symbol(&self, name: Spur) -> Option<ItemId> {
         self.visible_symbols.get(&name).map(|id| id.inner)
     }
 
@@ -941,46 +868,35 @@ impl ModuleInfo {
         &self.child_items
     }
 
-    fn add_child(
-        &mut self,
-        name: Spur,
-        loc: SourceLocation,
-        id: ItemId,
-    ) -> Result<(), SourceLocation> {
+    fn add_child(&mut self, name: Spanned<Spur>, id: ItemId) -> Result<(), SourceLocation> {
         use hashbrown::hash_map::Entry;
-        match self.child_items.entry(name) {
+        match self.child_items.entry(name.inner) {
             Entry::Occupied(a) => return Err(a.get().location),
-            Entry::Vacant(a) => a.insert(id.with_span(loc)),
+            Entry::Vacant(a) => a.insert(id.with_span(name.location)),
         };
 
         // Children are added before imports are resolved, so this should never fail.
         self.visible_symbols
-            .insert(name, id.with_span(loc))
+            .insert(name.inner, id.with_span(name.location))
             .expect_none("ICE: Name collision when adding child");
         Ok(())
     }
 
-    pub fn add_visible_symbol(
+    fn add_visible_symbol(
         &mut self,
-        name: Spur,
-        loc: SourceLocation,
+        symbol: Spanned<Spur>,
         id: ItemId,
     ) -> Result<(), SourceLocation> {
         use hashbrown::hash_map::Entry;
-        match self.visible_symbols.entry(name) {
+        match self.visible_symbols.entry(symbol.inner) {
             Entry::Occupied(a) => return Err(a.get().location),
-            Entry::Vacant(a) => a.insert(id.with_span(loc)),
+            Entry::Vacant(a) => a.insert(id.with_span(symbol.location)),
         };
         Ok(())
     }
 
-    pub fn add_unresolved_import(&mut self, path: Vec<Spanned<Spur>>) {
-        let loc = path
-            .iter()
-            .map(|t| t.location)
-            .reduce(SourceLocation::merge)
-            .unwrap();
-        self.unresolved_imports.push(path.with_span(loc));
+    pub fn add_unresolved_import(&mut self, path: UnresolvedIdent) {
+        self.unresolved_imports.push(path);
     }
 }
 

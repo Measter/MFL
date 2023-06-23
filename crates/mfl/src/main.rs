@@ -107,8 +107,8 @@ fn load_program(
     let mut top_level_symbols = Vec::new();
 
     if args.is_library {
-        let module_info = program.get_module(entry_module_id);
-        for &item_id in module_info.get_child_items().values() {
+        let entry_scope = program.get_scope(entry_module_id);
+        for &item_id in entry_scope.get_child_items().values() {
             let item_header = program.get_item_header(item_id.inner);
             if item_header.kind() == ItemKind::Function {
                 top_level_symbols.push(item_id.inner);
@@ -116,10 +116,10 @@ fn load_program(
         }
     } else {
         let entry_symbol = interner.intern_lexeme("entry");
-        let entry_module = program.get_module(entry_module_id);
+        let entry_scope = program.get_scope(entry_module_id);
 
-        let entry_function_id = entry_module
-            .get_visible_symbol(entry_symbol)
+        let entry_function_id = entry_scope
+            .get_symbol(entry_symbol)
             .ok_or_else(|| eyre!("`entry` function not found"))?;
 
         top_level_symbols.push(entry_function_id);

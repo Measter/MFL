@@ -220,7 +220,7 @@ pub fn parse_unresolved_types(
         let Ok((_, ident)) = expect_token(
             &mut token_iter,
             "ident",
-            |t| t == TokenKind::Ident,
+            |t| t == TokenKind::Ident || t == TokenKind::ColonColon,
             prev,
             interner,
             source_store,
@@ -230,79 +230,65 @@ pub fn parse_unresolved_types(
             continue;
         };
 
-        let mut type_span = ident.location;
+        let Ok((ident, last_token)) = parse_ident(
+            &mut token_iter,
+            interner,
+            source_store,
+            &mut had_error,
+            ident,
+        ) else {
+            had_error = true;
+            continue;
+        };
 
-        let mut base_path = vec![ident.map(|t| t.lexeme)];
-        while token_iter
-            .peek()
-            .is_some_and(|(_, t)| t.inner.kind == TokenKind::ColonColon)
-        {
-            let (_, colon) = token_iter.next().unwrap();
-            let (_, next_seg) = expect_token(
-                &mut token_iter,
-                "ident",
-                |t| t == TokenKind::Ident,
-                *colon,
-                interner,
-                source_store,
-            )?;
-            base_path.push(next_seg.map(|t| t.lexeme));
-            type_span = type_span.merge(next_seg.location);
-        }
+        let mut type_span = ident.span;
+        let is_valid_for_ptr = !ident.is_from_root && ident.path.len() == 1;
 
-        let base_type = if token_iter
-            .peek()
-            .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
-        {
-            let Ok(delim) = parse_delimited_token_list(
-                &mut token_iter,
-                ident,
-                None,
-                ("(", |t| t == TokenKind::ParenthesisOpen),
-                ("Type", valid_type_token),
-                (")", |t| t == TokenKind::ParenthesisClosed),
-                interner,
-                source_store,
-            ) else {
-                had_error = true;
-                continue;
-            };
-
-            type_span = type_span.merge(delim.close.location);
-            let diag_span = delim.span();
-
-            let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
-                had_error = true;
-                continue;
-            };
-
-            type_span = unresolved_types
-                .iter()
-                .fold(type_span, |acc, tokens| acc.merge(tokens.location));
-
-            let lexeme = interner.resolve_lexeme(ident.inner.lexeme);
-            if base_path.len() == 1 && lexeme == "ptr" {
-                if unresolved_types.len() != 1 {
+        if !is_valid_for_ptr {
+            for segment in &ident.path {
+                if interner.resolve_lexeme(segment.inner) == "ptr" {
                     diagnostics::emit_error(
-                        diag_span,
-                        format!("expected 1 type, found {}", unresolved_types.len()),
-                        [Label::new(diag_span).with_color(Color::Red)],
+                        ident.span,
+                        "`ptr` cannot be in path segment",
+                        [Label::new(ident.span).with_color(Color::Red)],
                         None,
                         source_store,
                     );
                     had_error = true;
-                    continue;
-                }
-
-                UnresolvedTypeTokens::Pointer(Box::new(unresolved_types.pop().unwrap().inner))
-            } else {
-                UnresolvedTypeTokens::GenericInstance {
-                    type_name: base_path,
-                    params: unresolved_types.into_iter().map(|t| t.inner).collect(),
+                    break;
                 }
             }
+        }
+
+        let first_lexeme = interner.resolve_lexeme(ident.path[0].inner);
+        let base_type = if is_valid_for_ptr && first_lexeme == "ptr" {
+            let mut ptr_type = ident.generic_params;
+            if ptr_type.len() != 1 {
+                diagnostics::emit_error(
+                    ident.span,
+                    "`ptr` cannot be parameterized over multiple types",
+                    [Label::new(ident.span).with_color(Color::Red)],
+                    None,
+                    source_store,
+                );
+                had_error = true;
+                continue;
+            } else if ptr_type.is_empty() {
+                diagnostics::emit_error(
+                    ident.span,
+                    "`ptr` must have a type",
+                    [Label::new(ident.span).with_color(Color::Red)],
+                    None,
+                    source_store,
+                );
+                had_error = true;
+                continue;
+            }
+
+            let UnresolvedType::Tokens(ptr_type) = ptr_type.pop().unwrap() else { unreachable!() };
+            UnresolvedTypeTokens::Pointer(Box::new(ptr_type))
         } else {
-            UnresolvedTypeTokens::Simple(base_path)
+            UnresolvedTypeTokens::Simple(ident)
         };
 
         let parsed_type = if token_iter
@@ -312,7 +298,7 @@ pub fn parse_unresolved_types(
             // Parsing an array!
             let Ok(delim) = parse_delimited_token_list(
                 &mut token_iter,
-                ident,
+                last_token,
                 Some(1),
                 ("[", |t| t == TokenKind::SquareBracketOpen),
                 ("integer", |t| matches!( t, TokenKind::Integer{ .. })),
@@ -345,22 +331,59 @@ pub fn parse_ident<'a>(
     source_store: &SourceStorage,
     had_error: &mut bool,
     mut token: Spanned<Token>,
-) -> Result<UnresolvedIdent, ()> {
-    let mut path = vec![token.map(|t| t.lexeme)];
+) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
+    let mut import_span = token.location;
+    let mut last_token = token;
 
-    while token_iter
-        .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ColonColon)
-    {
+    let (is_from_root, mut path) = if token.inner.kind == TokenKind::ColonColon {
+        let ident = if token_iter.peek().is_some_and(|(_, tk)| {
+            tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(token.location)
+        }) {
+            let (_, t) = token_iter.next().unwrap();
+            *t
+        } else {
+            diagnostics::emit_error(
+                token.location,
+                "unexpected end of ident",
+                Some(Label::new(token.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            *had_error = true;
+            return Err(());
+        };
+
+        last_token = ident;
+        import_span = import_span.merge(ident.location);
+
+        (true, vec![ident.map(|t| t.lexeme)])
+    } else {
+        (false, vec![token.map(|t| t.lexeme)])
+    };
+
+    while token_iter.peek().is_some_and(|(_, t)| {
+        t.inner.kind == TokenKind::ColonColon && t.location.neighbour_of(last_token.location)
+    }) {
         let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
-        let (_, item_id) = expect_token(
-            token_iter,
-            "ident",
-            |k| k == TokenKind::Ident,
-            *colons,
-            interner,
-            source_store,
-        )?;
+        let item_id = if token_iter.peek().is_some_and(|(_, tk)| {
+            tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(colons.location)
+        }) {
+            let (_, t) = token_iter.next().unwrap();
+            *t
+        } else {
+            diagnostics::emit_error(
+                colons.location,
+                "unexpected end of ident",
+                Some(Label::new(colons.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            *had_error = true;
+            return Err(());
+        };
+
+        last_token = item_id;
+        import_span = import_span.merge(item_id.location);
 
         path.push(item_id.map(|t| t.lexeme));
     }
@@ -402,6 +425,9 @@ pub fn parse_ident<'a>(
             return Err(());
         }
 
+        import_span = import_span.merge(delim.close.location);
+        last_token = delim.close;
+
         unresolved_types
             .into_iter()
             .map(|ut| UnresolvedType::Tokens(ut.inner))
@@ -410,10 +436,15 @@ pub fn parse_ident<'a>(
         Vec::new()
     };
 
-    Ok(UnresolvedIdent {
-        path,
-        generic_params,
-    })
+    Ok((
+        UnresolvedIdent {
+            span: import_span,
+            is_from_root,
+            path,
+            generic_params,
+        },
+        last_token,
+    ))
 }
 
 pub fn parse_integer_lexeme<T>(

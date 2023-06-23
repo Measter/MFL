@@ -825,8 +825,14 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let function_data = program.get_function_data(id);
-        for &item_id in function_data.allocs.values() {
+        let scope = program.get_scope(id);
+        for &item_id in scope.get_child_items().values() {
+            let item_id = item_id.inner;
+            let item_header = program.get_item_header(item_id);
+            if item_header.kind() != ItemKind::Memory {
+                continue;
+            }
+
             let alloc_type_id = program.get_memory_type_resolved(item_id);
             let (store_type_id, alloc_size, is_array) = match type_store
                 .get_type_info(alloc_type_id)

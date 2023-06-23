@@ -1,0 +1,15 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+// Note: This needs to be the same name as the stdlib
+proc std [] to [u32] is 23 end
+
+proc entry [] to [] is
+    std ::std::term::write_ui_ln
+end

@@ -7,7 +7,7 @@ use crate::{
     interners::Interners,
     lexer::{Token, TokenKind},
     opcode::{Op, OpCode, OpId},
-    program::{ItemId, ItemKind, ModuleQueueType, Program},
+    program::{ItemId, ModuleQueueType, Program},
     source_file::{SourceStorage, Spanned, WithSpan},
     type_store::{UnresolvedField, UnresolvedStruct, UnresolvedType},
 };
@@ -187,29 +187,6 @@ pub fn parse_function<'a>(
 
     program.set_item_body(item_id, body);
 
-    let item_header = program.get_item_header(item_id);
-    if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.inner.lexeme)
-        .filter(|&f| f != item_id)
-    {
-        let prev_item = program.get_item_header(prev_def).name();
-        diagnostics::emit_error(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_item.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
     if had_error {
         Err(())
     } else {
@@ -256,29 +233,6 @@ pub fn parse_assert<'a>(
     );
 
     program.set_item_body(item_id, body);
-
-    let item_header = program.get_item_header(item_id);
-    if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.inner.lexeme)
-        .filter(|&f| f != item_id)
-    {
-        let prev_item = program.get_item_header(prev_def).name();
-        diagnostics::emit_error(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_item.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
 
     if had_error {
         Err(())
@@ -340,35 +294,6 @@ pub fn parse_const<'a>(
     );
 
     program.set_item_body(item_id, body);
-
-    let item_header = program.get_item_header(item_id);
-    if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.inner.lexeme)
-        .filter(|&f| f != item_id)
-    {
-        let prev_item = program.get_item_header(prev_def).name();
-        diagnostics::emit_error(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_item.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
-    let parent_kind = program.get_item_header(parent_id).kind();
-    if parent_kind == ItemKind::Function || parent_kind == ItemKind::GenericFunction {
-        let pd = program.get_function_data_mut(parent_id);
-        pd.consts.insert(name_token.inner.lexeme, item_id);
-    }
 
     if had_error {
         Err(())
@@ -438,42 +363,13 @@ pub fn parse_memory<'a>(
         .map(|t| UnresolvedType::Tokens(t.inner).with_span(store_type_location))
         .unwrap();
 
-    let item_id = program.new_memory(
+    program.new_memory(
         source_store,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
         memory_type,
     );
-
-    let item_header = program.get_item_header(item_id);
-    if let Some(prev_def) = program
-        .get_visible_symbol(item_header, name_token.inner.lexeme)
-        .filter(|&f| f != item_id)
-    {
-        let prev_item = program.get_item_header(prev_def).name();
-        diagnostics::emit_error(
-            name_token.location,
-            "multiple definitions of symbol",
-            [
-                Label::new(name_token.location)
-                    .with_message("defined here")
-                    .with_color(Color::Red),
-                Label::new(prev_item.location)
-                    .with_message("also defined here")
-                    .with_color(Color::Blue),
-            ],
-            None,
-            source_store,
-        );
-        had_error = true;
-    }
-
-    let parent_kind = program.get_item_header(parent_id).kind();
-    if parent_kind == ItemKind::Function || parent_kind == ItemKind::GenericFunction {
-        let pd = program.get_function_data_mut(parent_id);
-        pd.allocs.insert(name_token.inner.lexeme, item_id);
-    }
 
     if had_error {
         Err(())
@@ -651,19 +547,18 @@ pub fn parse_import<'a>(
     let (_, root_name) = expect_token(
         token_iter,
         "ident",
-        |k| k == TokenKind::Ident,
+        |k| k == TokenKind::Ident || k == TokenKind::ColonColon,
         token,
         interner,
         source_store,
     )?;
 
-    let path = parse_ident(token_iter, interner, source_store, had_error, root_name)
-        .map(|id| id.path)
-        .recover(had_error, Vec::new());
+    let Ok((path, _)) = parse_ident(token_iter, interner, source_store, had_error, root_name) else {
+        *had_error = true;
+        return Ok(());
+    };
 
-    program
-        .get_module_mut(module_id)
-        .add_unresolved_import(path);
+    program.get_scope_mut(module_id).add_unresolved_import(path);
 
     Ok(())
 }

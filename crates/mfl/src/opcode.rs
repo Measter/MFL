@@ -81,10 +81,28 @@ pub struct If {
     pub end_token: SourceLocation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct UnresolvedIdent {
+    pub span: SourceLocation,
+    pub is_from_root: bool,
     pub path: Vec<Spanned<Spur>>,
     pub generic_params: Vec<UnresolvedType>,
+}
+
+impl std::hash::Hash for UnresolvedIdent {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.is_from_root.hash(state);
+        self.path.hash(state);
+        self.generic_params.hash(state);
+    }
+}
+
+impl PartialEq for UnresolvedIdent {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_from_root == other.is_from_root
+            && self.path == other.path
+            && self.generic_params == other.generic_params
+    }
 }
 
 #[derive(Debug, Clone)]

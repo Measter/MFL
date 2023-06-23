@@ -9,6 +9,7 @@ use num::Integer;
 use crate::{
     diagnostics,
     interners::Interners,
+    opcode::UnresolvedIdent,
     program::ItemId,
     source_file::{SourceLocation, SourceStorage, Spanned},
 };
@@ -236,13 +237,9 @@ pub struct UnresolvedField {
 // Used prior to ident resolution
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedTypeTokens {
-    Simple(Vec<Spanned<Spur>>),
+    Simple(UnresolvedIdent),
     Array(Box<UnresolvedTypeTokens>, usize),
     Pointer(Box<UnresolvedTypeTokens>),
-    GenericInstance {
-        type_name: Vec<Spanned<Spur>>,
-        params: Vec<UnresolvedTypeTokens>,
-    },
 }
 
 // Used after ident resolution

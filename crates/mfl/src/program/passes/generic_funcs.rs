@@ -164,19 +164,17 @@ impl Program {
         fn_id: ItemId,
         generic_params: &[UnresolvedType],
     ) -> ItemId {
-        let base_fd = &self.function_data[&fn_id];
-        assert!(base_fd.consts.is_empty());
+        let base_fd_params = &self.generic_template_parameters[&fn_id];
 
         let base_header = self.get_item_header(fn_id);
-        assert_eq!(generic_params.len(), base_fd.generic_params.len());
+        assert_eq!(generic_params.len(), base_fd_params.len());
 
         let new_name = build_mangled_name(interner, base_header.name.inner, generic_params);
         if let Some(id) = self.generic_functions_map.get(&(fn_id, new_name.clone())) {
             return *id;
         }
 
-        let param_map: HashMap<_, _> = base_fd
-            .generic_params
+        let param_map: HashMap<_, _> = base_fd_params
             .iter()
             .zip(generic_params)
             .map(|(name, ty)| {
@@ -214,12 +212,22 @@ impl Program {
             exit_stack.with_span(old_sig.exit_stack.location),
         );
 
-        let base_allocs = self.function_data[&fn_id].allocs.clone();
+        // Ugh...
+        let base_scope = self.get_scope(fn_id).clone();
 
-        let mut alloc_map = HashMap::new();
-        for (name, base_alloc) in base_allocs {
-            let alloc_header = self.get_item_header(base_alloc);
-            let alloc_type = &self.memory_type_unresolved[&base_alloc];
+        let mut old_alloc_map = HashMap::new();
+        for (&name, &item) in base_scope.get_child_items() {
+            let item_header = self.get_item_header(item.inner);
+            if item_header.kind != ItemKind::Memory {
+                // We just reuse the existing item, so we need to add it manually.
+                let new_scope = self.get_scope_mut(new_proc_id);
+                new_scope
+                    .add_child(name.with_span(item.location), item.inner)
+                    .unwrap();
+                continue;
+            }
+
+            let alloc_type = &self.memory_type_unresolved[&item_header.id];
             let UnresolvedType::Id(alloc_memory_type) = &alloc_type.inner else { unreachable!() };
 
             let new_memory_sig = expand_generic_params_in_type(alloc_memory_type, &param_map);
@@ -228,21 +236,16 @@ impl Program {
             let new_alloc_id = self.new_memory(
                 source_store,
                 &mut false,
-                alloc_header.name,
+                item_header.name,
                 new_proc_id,
                 new_sig,
             );
 
-            self.function_data
-                .get_mut(&new_proc_id)
-                .unwrap()
-                .allocs
-                .insert(name, new_alloc_id);
-            alloc_map.insert(base_alloc, new_alloc_id);
+            old_alloc_map.insert(item_header.id, new_alloc_id);
         }
 
         let mut body = self.item_bodies[&fn_id].clone();
-        expand_generic_params_in_block(&mut body, &param_map, &alloc_map);
+        expand_generic_params_in_block(&mut body, &param_map, &old_alloc_map);
         // TODO: Need to clone allocs and consts, and then update the body with the new IDs.
         self.set_item_body(new_proc_id, body);
         self.generic_functions_map

@@ -3,18 +3,19 @@ use std::ops::Not;
 use ariadne::{Color, Label};
 use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashSet;
+use intcast::IntCast;
 use lasso::Spur;
 use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
     interners::Interners,
-    opcode::{If, Op, OpCode, While},
+    opcode::{If, Op, OpCode, UnresolvedIdent, While},
     program::{
         static_analysis::ConstVal, symbol_redef_error, ItemHeader, ItemId, ItemKind, Program,
     },
     simulate::SimulatorValue,
-    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
+    source_file::{FileId, SourceStorage, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds, UnresolvedTypeTokens,
     },
@@ -27,90 +28,79 @@ impl Program {
         interner: &Interners,
         source_store: &SourceStorage,
         had_error: &mut bool,
-        ident: &[Spanned<Spur>],
+        ident: &UnresolvedIdent,
     ) -> Result<ItemId, ()> {
-        match ident {
-            [] => panic!("ICE: empty unresolved ident"),
-            // Symbol visible from the current item.
-            [item_token] => {
-                let visible_id = if item_token.inner == item_header.name.inner {
-                    // Obviously a symbol is visible to itself.
-                    Some(item_header.id())
-                } else {
-                    self.get_visible_symbol(item_header, item_token.inner)
-                };
+        let [first_ident, rest @ ..] = ident.path.as_slice() else { unreachable!() };
 
-                if let Some(id) = visible_id {
-                    Ok(id)
-                } else {
-                    let token_lexeme = interner.resolve_lexeme(item_token.inner);
-                    *had_error = true;
-                    diagnostics::emit_error(
-                        item_token.location,
-                        format!("symbol `{token_lexeme}` not found"),
-                        Some(
-                            Label::new(item_token.location)
-                                .with_color(Color::Red)
-                                .with_message("not found"),
-                        ),
-                        None,
-                        source_store,
-                    );
+        let mut current_item = if ident.is_from_root {
+            let Some(tlm) = self.top_level_modules.get(&first_ident.inner) else {
+                let item_name = interner.resolve_lexeme(first_ident.inner);
+                diagnostics::emit_error(
+                    first_ident.location,
+                    format!("symbol `{item_name}` not found"),
+                    Some(Label::new(first_ident.location).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+                return Err(());
+            };
+            *tlm
+        } else {
+            let Some(start_item) = self.get_visible_symbol(item_header, first_ident.inner) else {
+                let item_name = interner.resolve_lexeme(first_ident.inner);
+                diagnostics::emit_error(
+                    first_ident.location,
+                    format!("symbol `{item_name}` not found"),
+                    Some(Label::new(first_ident.location).with_color(Color::Red)),
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+                return Err(());
+            };
+            start_item
+        };
 
-                    Err(())
-                }
+        let mut last_ident = *first_ident;
+
+        for sub_ident in rest {
+            let cur_item = self.get_item_header(current_item);
+            if cur_item.kind != ItemKind::Module {
+                diagnostics::emit_error(
+                    sub_ident.location,
+                    "cannot path into non-module items",
+                    [
+                        Label::new(sub_ident.location).with_color(Color::Red),
+                        Label::new(last_ident.location)
+                            .with_color(Color::Cyan)
+                            .with_message("not a module"),
+                    ],
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+                return Err(());
             }
-            // Path from the top level module.
-            [top_level_ident, sub_idents @ .., last_ident] => {
-                let Some(start) =  self.get_visible_symbol(item_header, top_level_ident.inner) else {
-                    let item_name = interner.resolve_lexeme(top_level_ident.inner);
-                    diagnostics::emit_error(
-                        top_level_ident.location,
-                        format!("symbol `{item_name}` not found"),
-                        Some(Label::new(top_level_ident.location).with_color(Color::Red)),
-                        None,
-                        source_store,
-                    );
-                    *had_error = true;
-                    return Err(());
-                };
 
-                // We know this is a multi-part ident, so the start must be a module.
-                let mut cur_module = &self.module_info[&start];
-                for sm in sub_idents {
-                    let Some(next_module) =  cur_module.get_visible_symbol(sm.inner) else {
-                        let module_name = interner.resolve_lexeme(sm.inner);
-                        diagnostics::emit_error(
-                            sm.location,
-                            format!("module `{module_name}` not found"),
-                            Some(Label::new(sm.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        *had_error = true;
-                        return Err(());
-                    };
+            let scope = self.get_scope(cur_item.id);
+            let Some(sub_item) = scope.get_symbol(sub_ident.inner) else {
+                diagnostics::emit_error(
+                    sub_ident.location,
+                    "symbol not found",
+                    [Label::new(sub_ident.location).with_color(Color::Red)],
+                    None,
+                    source_store,
+                );
+                *had_error = true;
+                return Err(());
+            };
 
-                    cur_module = &self.module_info[&next_module];
-                }
-
-                match cur_module.get_visible_symbol(last_ident.inner) {
-                    Some(item_id) => Ok(item_id),
-                    None => {
-                        let item_name = interner.resolve_lexeme(last_ident.inner);
-                        diagnostics::emit_error(
-                            last_ident.location,
-                            format!("symbol `{item_name}` not found in module"),
-                            Some(Label::new(last_ident.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        *had_error = true;
-                        Err(())
-                    }
-                }
-            }
+            last_ident = *sub_ident;
+            current_item = sub_item;
         }
+
+        Ok(current_item)
     }
 
     fn resolve_idents_in_type(
@@ -125,24 +115,23 @@ impl Program {
         let res = match unresolved_type {
             UnresolvedTypeTokens::Simple(unresolved_ident) => {
                 let item_name = unresolved_ident
+                    .path
                     .last()
                     .expect("ICE: empty unresolved ident");
-
-                let path_location = unresolved_ident
-                    .iter()
-                    .map(|t| t.location)
-                    .reduce(SourceLocation::merge)
-                    .unwrap();
 
                 let name = interner.resolve_lexeme(item_name.inner);
                 let builtin_name = BuiltinTypes::from_name(name);
 
-                if unresolved_ident.len() > 1 && builtin_name.is_some() {
+                if (unresolved_ident.path.len() > 1
+                    || unresolved_ident.is_from_root
+                    || !unresolved_ident.generic_params.is_empty())
+                    && builtin_name.is_some()
+                {
                     // Emit error
                     diagnostics::emit_error(
-                        path_location,
-                        "cannot name builtin with a module",
-                        [Label::new(path_location).with_color(Color::Red)],
+                        unresolved_ident.span,
+                        "cannot name builtin with a path",
+                        [Label::new(unresolved_ident.span).with_color(Color::Red)],
                         None,
                         source_store,
                     );
@@ -150,7 +139,9 @@ impl Program {
                     return Err(());
                 } else if let Some(builtin) = builtin_name {
                     UnresolvedTypeIds::SimpleBuiltin(builtin)
-                } else if unresolved_ident.len() == 1
+                } else if unresolved_ident.path.len() == 1
+                    && !unresolved_ident.is_from_root
+                    && unresolved_ident.generic_params.is_empty()
                     && generic_params
                         .and_then(|t| t.iter().find(|tp| tp.inner == item_name.inner))
                         .is_some()
@@ -165,9 +156,33 @@ impl Program {
                         unresolved_ident,
                     )?;
 
-                    UnresolvedTypeIds::SimpleCustom {
-                        id: ident,
-                        token: item_name.inner.with_span(path_location),
+                    if unresolved_ident.generic_params.is_empty() {
+                        UnresolvedTypeIds::SimpleCustom {
+                            id: ident,
+                            token: item_name.inner.with_span(unresolved_ident.span),
+                        }
+                    } else {
+                        let params: Vec<_> = unresolved_ident
+                            .generic_params
+                            .iter()
+                            .map(|p| {
+                                let UnresolvedType::Tokens(p) = p else { unreachable!() };
+                                self.resolve_idents_in_type(
+                                    item_header,
+                                    interner,
+                                    source_store,
+                                    had_error,
+                                    p,
+                                    generic_params,
+                                )
+                            })
+                            .collect::<Result<_, _>>()?;
+
+                        UnresolvedTypeIds::GenericInstance {
+                            id: ident,
+                            id_token: item_name.inner.with_span(unresolved_ident.span),
+                            params,
+                        }
                     }
                 }
             }
@@ -194,70 +209,6 @@ impl Program {
                 )?;
 
                 UnresolvedTypeIds::Pointer(Box::new(sub_type))
-            }
-
-            UnresolvedTypeTokens::GenericInstance {
-                type_name: unresolved_ident,
-                params,
-            } => {
-                let item_name = unresolved_ident
-                    .last()
-                    .expect("ICE: empty unresolved ident");
-
-                let path_location = unresolved_ident
-                    .iter()
-                    .map(|t| t.location)
-                    .reduce(SourceLocation::merge)
-                    .unwrap();
-
-                let name = interner.resolve_lexeme(item_name.inner);
-                let builtin_name = BuiltinTypes::from_name(name);
-
-                if unresolved_ident.len() > 1 && builtin_name.is_some() {
-                    // Emit error
-                    diagnostics::emit_error(
-                        path_location,
-                        "cannot name builtin with a module",
-                        [Label::new(path_location).with_color(Color::Red)],
-                        None,
-                        source_store,
-                    );
-                    *had_error = true;
-                    return Err(());
-                } else if let Some(builtin) = builtin_name {
-                    assert!(generic_params.is_none());
-                    UnresolvedTypeIds::SimpleBuiltin(builtin)
-                } else {
-                    let Ok(ident) = self.resolve_single_ident(
-                        item_header,
-                        interner,
-                        source_store,
-                        had_error,
-                        unresolved_ident,
-                    ) else {
-                        return Err(());
-                    };
-
-                    let params: Vec<_> = params
-                        .iter()
-                        .map(|p| {
-                            self.resolve_idents_in_type(
-                                item_header,
-                                interner,
-                                source_store,
-                                had_error,
-                                p,
-                                generic_params,
-                            )
-                        })
-                        .collect::<Result<_, _>>()?;
-
-                    UnresolvedTypeIds::GenericInstance {
-                        id: ident,
-                        id_token: item_name.inner.with_span(path_location),
-                        params,
-                    }
-                }
             }
         };
 
@@ -327,7 +278,7 @@ impl Program {
                 }
 
                 OpCode::UnresolvedIdent(ident) => {
-                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, &ident.path) else {
+                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, ident) else {
                         continue;
                     };
 
@@ -440,45 +391,24 @@ impl Program {
         had_error: &mut bool,
         item: ItemHeader,
     ) {
-        // Top level modules are visible from every module, so let's make sure those are imported.
-        let module_info = self.module_info.get_mut(&item.id()).unwrap();
-        for (name, id) in &self.top_level_modules {
-            let res = module_info.add_visible_symbol(
-                *name,
-                SourceLocation::new(FileId::dud(), 0..0),
-                *id,
-            );
+        let imports = self.get_scope(item.id).unresolved_imports.clone();
 
-            if let Err(prev_loc) = res {
-                diagnostics::emit_error(
-                    prev_loc,
-                    "item has same name as top-level module",
-                    [Label::new(prev_loc).with_color(Color::Red)],
-                    None,
-                    source_store,
-                );
-                *had_error = true;
-            }
-        }
-
-        let module_imports = module_info.unresolved_imports.clone();
-
-        for import in module_imports {
+        for import in imports {
             let Ok(resolved_item) = self.resolve_single_ident(
                         item,
                         interner,
                         source_store,
                         had_error,
-                        &import.inner,
+                        &import,
                     ) else { continue };
             let item_name = self.get_item_header(resolved_item).name;
-            let module_info = self.module_info.get_mut(&item.id()).unwrap();
+            let scope = &mut self.scopes[item.id.0.to_usize()];
 
-            let res =
-                module_info.add_visible_symbol(item_name.inner, import.location, resolved_item);
-            if let Err(prev_loc) = res {
+            if let Err(prev_loc) =
+                scope.add_visible_symbol(item_name.inner.with_span(import.span), resolved_item)
+            {
                 *had_error = true;
-                symbol_redef_error(import.location, prev_loc, source_store);
+                symbol_redef_error(import.span, prev_loc, source_store);
             }
         }
     }
@@ -512,7 +442,7 @@ impl Program {
                     Some(parent_id)
                         if self.get_item_header(parent_id).kind == ItemKind::GenericFunction =>
                     {
-                        Some(&self.function_data[&parent_id].generic_params)
+                        self.generic_template_parameters.get(&parent_id)
                     }
                     _ => None,
                 };
@@ -541,7 +471,7 @@ impl Program {
                 let mut sig = self.item_signatures_unresolved.remove(&item.id).unwrap();
 
                 let generic_params = if item.kind() == ItemKind::GenericFunction {
-                    Some(&self.function_data[&item.id].generic_params)
+                    self.generic_template_parameters.get(&item.id)
                 } else {
                     None
                 };

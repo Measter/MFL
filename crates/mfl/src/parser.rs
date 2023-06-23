@@ -587,8 +587,8 @@ pub fn parse_item_body_contents(
                 width: IntWidth::I8,
                 value: IntKind::Unsigned((ch as u8).to_u64()),
             },
-            TokenKind::Ident => {
-                let Ok(ident) = parse_ident(&mut token_iter, interner, source_store, &mut had_error, token) else {
+            TokenKind::Ident | TokenKind::ColonColon => {
+                let Ok((ident,_)) = parse_ident(&mut token_iter, interner, source_store, &mut had_error, token) else {
                     had_error = true;
                     continue;
                 };
@@ -772,8 +772,7 @@ pub fn parse_item_body_contents(
 
             // These are only used as part of a sub-block. If they're found anywhere else,
             // it's an error.
-            TokenKind::ColonColon
-            | TokenKind::GoesTo
+            TokenKind::GoesTo
             | TokenKind::Is
             | TokenKind::Import
             | TokenKind::Do
