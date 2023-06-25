@@ -48,7 +48,7 @@ fn parse_integer_op<'a>(
             None,
             source_store,
         );
-        had_error = true;
+        return Err(());
     }
 
     let (width, value) = if token_iter
