@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use tracing::trace;
 
 use crate::{
-    diagnostics,
+    diagnostics::{self, build_creator_label_chain},
     interners::Interners,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
@@ -58,14 +58,13 @@ pub fn epilogue_return(
                 }
             }
             Ordering::Greater => {
-                for &value_id in &stack[..stack.len() - item_sig.exit_stack().len()] {
-                    let [value] = analyzer.values([value_id]);
-                    labels.push(
-                        Label::new(value.source_location)
-                            .with_color(Color::Green)
-                            .with_message("unused value created here"),
-                    );
-                }
+                let unused_values = stack[..stack.len() - item_sig.exit_stack().len()]
+                    .iter()
+                    .zip(0..)
+                    .map(|(&id, idx)| (id, idx, "unused value"));
+                let unused_value_labels =
+                    build_creator_label_chain(analyzer, unused_values, Color::Green, Color::Cyan);
+                labels.extend(unused_value_labels);
             }
             Ordering::Equal => unreachable!(),
         }
