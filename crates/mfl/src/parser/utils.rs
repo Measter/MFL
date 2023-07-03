@@ -1,7 +1,7 @@
 use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
 
 use ariadne::{Color, Label};
-use num::{PrimInt, Unsigned};
+use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,

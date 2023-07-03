@@ -4,7 +4,6 @@ use ariadne::{Color, Label};
 use hashbrown::{HashMap, HashSet};
 use intcast::IntCast;
 use lasso::Spur;
-use num::Integer;
 
 use crate::{
     diagnostics,
@@ -728,7 +727,7 @@ impl TypeStore {
             TypeKind::Array { type_id, length } => {
                 let mut inner_size = self.get_size_info(type_id);
                 inner_size.byte_width =
-                    Integer::next_multiple_of(&inner_size.byte_width, &inner_size.alignement)
+                    next_multiple_of(inner_size.byte_width, inner_size.alignement)
                         * length.to_u64();
                 inner_size
             }
@@ -755,7 +754,7 @@ impl TypeStore {
                     let field_size = self.get_size_info(field.kind);
                     size_info.alignement = size_info.alignement.max(field_size.alignement);
                     size_info.byte_width =
-                        Integer::next_multiple_of(&size_info.byte_width, &field_size.alignement)
+                        next_multiple_of(size_info.byte_width, field_size.alignement)
                             + field_size.byte_width;
                 }
 
@@ -834,4 +833,9 @@ pub fn emit_type_error_diag(
         None,
         source_store,
     );
+}
+
+fn next_multiple_of(a: u64, b: u64) -> u64 {
+    let m = a & b;
+    a + if m == 0 { 0 } else { b - m }
 }

@@ -1,6 +1,6 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
-use tracing::error;
+use tracing::info;
 
 use crate::{
     diagnostics,
@@ -365,7 +365,7 @@ pub(crate) fn simulate_execute_program(
     interner: &Interners,
     source_store: &SourceStorage,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {
-    error!("Make simulator type representation better.");
+    info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     simulate_execute_program_block(

@@ -12,8 +12,7 @@ use color_eyre::{
     eyre::{eyre, Context, Result},
     owo_colors::OwoColorize,
 };
-use tracing::{debug, debug_span};
-use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+use tracing::{debug, debug_span, Level};
 
 use interners::Interners;
 use program::{ItemId, ItemKind, ItemSignatureResolved, Program};
@@ -205,18 +204,16 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let mut args = Args::parse();
 
-    // let max_log_level = match args.verbose {
-    //     0 => Level::WARN,
-    //     1 => Level::INFO,
-    //     2 => Level::DEBUG,
-    //     _ => Level::TRACE,
-    // };
+    let max_log_level = match args.verbose {
+        0 => Level::WARN,
+        1 => Level::INFO,
+        2 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
 
-    let tracer = opentelemetry_jaeger::new_agent_pipeline()
-        .with_service_name("mfl")
-        .install_simple()?;
-    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-    let subscriber = tracing_subscriber::Registry::default().with(telemetry);
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(max_log_level)
+        .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
 
@@ -230,8 +227,6 @@ fn main() -> Result<()> {
         });
         run_compile(&args)?;
     }
-
-    opentelemetry::global::shutdown_tracer_provider();
 
     Ok(())
 }
