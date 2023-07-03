@@ -1,5 +1,6 @@
 const N [u32] is 50 end
 assert ValidBoardSize is N 3>= end
+assert UpdateArrayLengths is N 50 = end
 
 proc render [ptr(u8[50])] to [] is
     // memory render_buf is u8[N] end
@@ -24,7 +25,6 @@ proc step [ptr(u8[50])] to [] is
 
     1 while dup N 2- < do
         swap 1 shl 7 and // Only want the lower two bits from last run.
-        stktrc
         over(2) over(2) 1+ xtrd or
 
         // Use the three bits as a lookup for the bit in the integer 110.
