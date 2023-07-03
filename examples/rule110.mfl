@@ -1,0 +1,51 @@
+const N [u32] is 50 end
+assert ValidBoardSize is N 3>= end
+
+proc render [ptr(u8[50])] to [] is
+    // memory render_buf is u8[N] end
+    memory render_buf is u8[50] end
+
+    0 while dup N< do
+        if swap over xtr 1= do '*' else ' ' end
+        render_buf over(3) insd
+
+        swap
+        1+
+    end drop(2)
+
+    50 render_buf cast(ptr(u8)) pack(String)
+    std::term::writeln
+end
+
+proc step [ptr(u8[50])] to [] is
+    // We keep track of the last two bits so we can modify in place
+    0 xtr 1 shl
+    swap 1 xtr rot(3<1) or
+
+    1 while dup N 2- < do
+        swap 1 shl 7 and // Only want the lower two bits from last run.
+        stktrc
+        over(2) over(2) 1+ xtrd or
+
+        // Use the three bits as a lookup for the bit in the integer 110.
+        dup 110 swap shr 1 and
+        rot(4<2) dup(2) rot(6>2) insd
+
+        swap
+        1+
+    end drop(3)
+end
+
+proc entry [] to [] is
+    // memory buf is u8[N] end
+    memory buf is u8[50] end
+
+    1 buf N 2- insd
+
+    0 while dup N 2- < do
+        buf render
+        buf step
+
+        1+
+    end drop
+end
