@@ -67,6 +67,10 @@ pub struct Args {
     /// Emit assembly
     #[arg(long = "emit-asm")]
     emit_asm: bool,
+
+    /// Emit LLIR
+    #[arg(long = "emit-llir")]
+    emit_llir: bool,
 }
 
 fn is_valid_entry_sig(

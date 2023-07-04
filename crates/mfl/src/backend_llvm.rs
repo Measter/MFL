@@ -995,6 +995,10 @@ pub(crate) fn compile(
     let mut syscalls_obj = args.obj_dir.clone();
     syscalls_obj.push("syscalls.o");
 
+    let mut output_llir = args.obj_dir.clone();
+    output_llir.push(args.file.file_stem().unwrap());
+    output_llir.set_extension("llir");
+
     let mut output_asm = args.obj_dir.clone();
     output_asm.push(args.file.file_stem().unwrap());
     output_asm.set_extension("s");
@@ -1053,6 +1057,14 @@ pub(crate) fn compile(
         let _span = trace_span!("Writing assembly file").entered();
         target_machine
             .write_to_file(codegen.module(), FileType::Assembly, &output_asm)
+            .map_err(|e| eyre!("Error writing object: {e}"))?;
+    }
+
+    if args.emit_llir {
+        let _span = trace_span!("Writing LLIR file").entered();
+        codegen
+            .module()
+            .print_to_file(&output_llir)
             .map_err(|e| eyre!("Error writing object: {e}"))?;
     }
 
