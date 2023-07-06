@@ -654,16 +654,28 @@ pub fn insert_struct(
         *had_error = true;
         let unknown_field_name = interner.resolve_lexeme(field_name.inner);
         let struct_name = interner.resolve_lexeme(struct_type_info.name.inner);
+
+        let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_struct_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan
+        );
+
+        labels.extend([
+                Label::new(field_name.location).with_color(Color::Red),
+                Label::new(struct_type_info.name.location).with_color(Color::Cyan).with_message("struct defined here"),
+        ]);
+
         diagnostics::emit_error(
             field_name.location,
             format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
-            [
-                Label::new(field_name.location).with_color(Color::Red),
-                Label::new(struct_type_info.name.location).with_color(Color::Cyan).with_message("in this struct"),
-            ],
+            labels,
             None,
             source_store,
         );
+
         return;
     };
 
@@ -804,13 +816,24 @@ pub fn extract_struct(
         *had_error = true;
         let unknown_field_name = interner.resolve_lexeme(field_name.inner);
         let struct_name = interner.resolve_lexeme(struct_def.name.inner);
+
+        let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_struct_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan
+        );
+
+        labels.extend([
+                Label::new(field_name.location).with_color(Color::Red),
+                Label::new(struct_def.name.location).with_color(Color::Cyan).with_message("struct defined here"),
+        ]);
+
         diagnostics::emit_error(
             field_name.location,
             format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
-            [
-                Label::new(field_name.location).with_color(Color::Red),
-                Label::new(struct_def.name.location).with_color(Color::Cyan).with_message("in this struct"),
-            ],
+            labels,
             None,
             source_store,
         );
