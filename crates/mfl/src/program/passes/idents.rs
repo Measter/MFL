@@ -9,7 +9,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     opcode::{If, Op, OpCode, UnresolvedIdent, While},
     program::{
         static_analysis::ConstVal, symbol_redef_error, ItemHeader, ItemId, ItemKind, Program,
@@ -25,7 +25,7 @@ impl Program {
     fn resolve_single_ident(
         &self,
         item_header: ItemHeader,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         had_error: &mut bool,
         ident: &UnresolvedIdent,
@@ -34,7 +34,7 @@ impl Program {
 
         let mut current_item = if ident.is_from_root {
             let Some(tlm) = self.top_level_modules.get(&first_ident.inner) else {
-                let item_name = interner.resolve_lexeme(first_ident.inner);
+                let item_name = interner.resolve(first_ident.inner);
                 diagnostics::emit_error(
                     first_ident.location,
                     format!("symbol `{item_name}` not found"),
@@ -48,7 +48,7 @@ impl Program {
             *tlm
         } else {
             let Some(start_item) = self.get_visible_symbol(item_header, first_ident.inner) else {
-                let item_name = interner.resolve_lexeme(first_ident.inner);
+                let item_name = interner.resolve(first_ident.inner);
                 diagnostics::emit_error(
                     first_ident.location,
                     format!("symbol `{item_name}` not found"),
@@ -106,7 +106,7 @@ impl Program {
     fn resolve_idents_in_type(
         &self,
         item_header: ItemHeader,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         had_error: &mut bool,
         unresolved_type: &UnresolvedTypeTokens,
@@ -119,7 +119,7 @@ impl Program {
                     .last()
                     .expect("ICE: empty unresolved ident");
 
-                let name = interner.resolve_lexeme(item_name.inner);
+                let name = interner.resolve(item_name.inner);
                 let builtin_name = BuiltinTypes::from_name(name);
 
                 if (unresolved_ident.path.len() > 1
@@ -220,7 +220,7 @@ impl Program {
         item: ItemHeader,
         mut body: Vec<Op>,
         had_error: &mut bool,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         generic_params: Option<&Vec<Spanned<Spur>>>,
     ) -> Vec<Op> {
@@ -318,7 +318,7 @@ impl Program {
                             );
                             String::new()
                         } else {
-                            let name = interner.resolve_lexeme(found_item_header.name.inner);
+                            let name = interner.resolve(found_item_header.name.inner);
                             format!("`{name}` is a top-level module")
                         };
 
@@ -360,7 +360,7 @@ impl Program {
         item: ItemHeader,
         mut def: UnresolvedStruct,
         had_error: &mut bool,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
     ) -> UnresolvedStruct {
         for field in &mut def.fields {
@@ -386,7 +386,7 @@ impl Program {
 
     fn resolve_idents_in_module_imports(
         &mut self,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         had_error: &mut bool,
         item: ItemHeader,
@@ -415,7 +415,7 @@ impl Program {
 
     pub fn resolve_idents(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
@@ -624,7 +624,7 @@ impl Program {
 
     pub fn check_invalid_cyclic_refs(
         &self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::check_invalid_cyclic_refs)).entered();
@@ -674,7 +674,7 @@ impl Program {
         own_item_id: ItemId,
         block: Vec<Op>,
         had_error: &mut bool,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
     ) -> Vec<Op> {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
@@ -745,7 +745,7 @@ impl Program {
                         ItemKind::Const => {
                             let Some(vals) = self.const_vals.get( &found_item.id ) else {
                                 let own_item = self.get_item_header(own_item_id);
-                                let name = interner.resolve_lexeme(own_item.name.inner);
+                                let name = interner.resolve(own_item.name.inner);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (_, val) in vals {
@@ -819,7 +819,7 @@ impl Program {
 
     pub fn process_idents(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::process_idents)).entered();

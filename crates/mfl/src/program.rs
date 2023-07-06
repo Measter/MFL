@@ -10,7 +10,7 @@ use tracing::{debug_span, trace, trace_span};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     lexer,
     opcode::{Op, OpCode, UnresolvedIdent},
     option::OptionExt,
@@ -204,7 +204,7 @@ impl Program {
 
     pub fn load_program2(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &mut SourceStorage,
         type_store: &mut TypeStore,
         args: &Args,
@@ -212,7 +212,7 @@ impl Program {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
         let mut had_error = false;
 
-        let builtin_structs_module_name = interner.intern_lexeme("builtins");
+        let builtin_structs_module_name = interner.intern("builtins");
         let builtin_module = self.new_module(
             source_store,
             &mut had_error,
@@ -266,7 +266,7 @@ impl Program {
 
     fn load_library(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &mut SourceStorage,
         had_error: &mut bool,
         lib_name: &str,
@@ -296,7 +296,7 @@ impl Program {
                     (
                         contents,
                         interner
-                            .intern_lexeme(lib_name)
+                            .intern(lib_name)
                             .with_span(SourceLocation::new(FileId::dud(), 0..0)),
                     )
                 }
@@ -306,7 +306,7 @@ impl Program {
                     }
                     loaded_modules.insert(token.inner);
 
-                    let name = interner.resolve_lexeme(token.inner);
+                    let name = interner.resolve(token.inner);
                     root.push(name);
                     root.set_extension("mfl");
 
@@ -358,7 +358,7 @@ impl Program {
         &mut self,
         module_id: ItemId,
         source_store: &mut SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         file: &Path,
         file_contents: &str,
         include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
@@ -372,7 +372,7 @@ impl Program {
             .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
 
         let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
-        interner.intern_lexeme(file_stem);
+        interner.intern(file_stem);
 
         crate::parser::parse_file(
             self,
@@ -412,7 +412,7 @@ impl Program {
         false
     }
 
-    fn determine_terminal_blocks(&mut self, interner: &mut Interners) {
+    fn determine_terminal_blocks(&mut self, interner: &mut Interner) {
         let _span = debug_span!(stringify!(Program::determine_terminal_blocks)).entered();
         let items: Vec<_> = self
             .item_headers
@@ -436,7 +436,7 @@ impl Program {
 
     fn analyze_data_flow(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
         print_stack_depths: bool,
@@ -481,7 +481,7 @@ impl Program {
 
     fn evaluate_const_items(
         &mut self,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
     ) -> Result<()> {
@@ -547,7 +547,7 @@ impl Program {
 
     fn check_asserts(
         &self,
-        interner: &Interners,
+        interner: &Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
     ) -> Result<()> {
@@ -598,7 +598,7 @@ impl Program {
 
     fn post_process_items(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
         print_stack_depths: bool,
@@ -705,14 +705,14 @@ impl Program {
     pub fn new_assert(
         &mut self,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::Assert);
         // Such a hack.
-        let bool_symbol = interner.intern_lexeme("bool");
+        let bool_symbol = interner.intern("bool");
         self.item_signatures_unresolved.insert(
             header.id,
             ItemSignatureUnresolved {

@@ -3,7 +3,7 @@ use intcast::IntCast;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::static_analysis::{Analyzer, ConstVal, PtrId},
@@ -13,7 +13,7 @@ use crate::{
 
 pub fn extract_array(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -43,7 +43,7 @@ pub fn extract_array(
 
     if idx.to_usize() >= array_length {
         *had_error = true;
-        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+        let array_type_name = interner.resolve(array_type_info.name);
 
         let idx_value = format!("{idx}");
         let mut labels = diagnostics::build_creator_label_chain(
@@ -67,7 +67,7 @@ pub fn extract_array(
 
 pub fn insert_array(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -97,7 +97,7 @@ pub fn insert_array(
 
     if idx.to_usize() >= array_length {
         *had_error = true;
-        let array_type_name = interner.resolve_lexeme(array_type_info.name);
+        let array_type_name = interner.resolve(array_type_info.name);
 
         let idx_value = format!("{idx}");
         let mut labels = diagnostics::build_creator_label_chain(
@@ -122,7 +122,7 @@ pub fn insert_array(
 pub fn load(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -138,7 +138,7 @@ pub fn load(
             src_op_loc,
             offset: Some(offset),
         } => {
-            let string = interner.resolve_literal(spur);
+            let string = interner.resolve(spur);
             // Remember that string literals are always null-terminated.
             let bare_string = string.strip_suffix('\0').unwrap_or(string);
 

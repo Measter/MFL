@@ -4,7 +4,7 @@ use ariadne::{Color, Label};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     lexer::{Token, TokenKind},
     opcode::{Op, OpCode, OpId},
     program::{ItemId, ModuleQueueType, Program},
@@ -20,7 +20,7 @@ use super::{
 fn parse_item_body<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     name_token: Spanned<Token>,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     had_error: &mut bool,
     program: &mut Program,
@@ -78,7 +78,7 @@ pub fn parse_function<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
     parent_id: ItemId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -199,7 +199,7 @@ pub fn parse_assert<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
     parent_id: ItemId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -246,7 +246,7 @@ pub fn parse_const<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
     parent_id: ItemId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -307,7 +307,7 @@ pub fn parse_memory<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
     parent_id: ItemId,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -383,7 +383,7 @@ pub fn parse_struct<'a>(
     module_id: ItemId,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let mut had_error = false;
@@ -511,7 +511,7 @@ pub fn parse_struct<'a>(
 }
 
 pub fn parse_module<'a>(
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -537,7 +537,7 @@ pub fn parse_module<'a>(
 
 pub fn parse_import<'a>(
     program: &mut Program,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     had_error: &mut bool,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,

@@ -7,7 +7,7 @@ use tracing::trace;
 
 use crate::{
     diagnostics::{self, build_creator_label_chain},
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
@@ -28,7 +28,7 @@ pub fn epilogue_return(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     had_error: &mut bool,
     op: &Op,
     item_id: ItemId,
@@ -73,7 +73,7 @@ pub fn epilogue_return(
             op.token.location,
             format!(
                 "function `{}` returns {} values, found {}",
-                interner.resolve_lexeme(item.name().inner),
+                interner.resolve(item.name().inner),
                 item_sig.exit_stack().len(),
                 stack.len()
             ),
@@ -201,7 +201,7 @@ pub fn analyze_while(
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
     had_error: &mut bool,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     op: &Op,
@@ -357,7 +357,7 @@ pub fn analyze_if(
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
     had_error: &mut bool,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     op: &Op,

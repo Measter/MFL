@@ -4,7 +4,7 @@ use tracing::info;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::{SliceNOps, VecNOps},
     opcode::{Direction, IntKind, Op, OpCode},
     program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
@@ -112,7 +112,7 @@ fn simulate_execute_program_block(
     block: &[Op],
     value_stack: &mut Vec<SimulatorValue>,
     type_store: &mut TypeStore,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
@@ -168,7 +168,7 @@ fn simulate_execute_program_block(
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
             OpCode::PushStr { id, is_c_str } => {
-                let literal = interner.resolve_literal(*id);
+                let literal = interner.resolve(*id);
                 if !is_c_str {
                     // Strings are null-terminated during parsing, but the MFL-style strings shouldn't
                     // include that character.
@@ -362,7 +362,7 @@ pub(crate) fn simulate_execute_program(
     program: &Program,
     type_store: &mut TypeStore,
     item_id: ItemId,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {
     info!("Make simulator type representation better.");

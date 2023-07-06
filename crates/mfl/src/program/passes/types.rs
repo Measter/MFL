@@ -7,7 +7,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     opcode::{Op, OpCode},
     program::{ItemKind, ItemSignatureResolved, Program},
     source_file::SourceStorage,
@@ -17,7 +17,7 @@ use crate::{
 impl Program {
     pub fn resolve_struct_defs(
         &self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
     ) -> Result<()> {
@@ -131,7 +131,7 @@ impl Program {
         &self,
         mut body: Vec<Op>,
         had_error: &mut bool,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
     ) -> Vec<Op> {
@@ -235,7 +235,7 @@ impl Program {
 
     pub fn resolve_types(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         type_store: &mut TypeStore,
     ) -> Result<()> {

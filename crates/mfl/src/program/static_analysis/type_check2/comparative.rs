@@ -2,7 +2,7 @@ use ariadne::{Color, Label};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{
@@ -15,7 +15,7 @@ use crate::{
 pub fn compare(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -43,7 +43,7 @@ pub fn compare(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -64,7 +64,7 @@ pub fn compare(
 pub fn equal(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -95,7 +95,7 @@ pub fn equal(
             *had_error = true;
             // Don't emit an diagnostic here if any are Unknown, as it's a result of
             // an earlier error.
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -116,7 +116,7 @@ pub fn equal(
 pub fn is_null(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -128,7 +128,7 @@ pub fn is_null(
 
     if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {
         *had_error = true;
-        let type_name = interner.resolve_lexeme(input_type_info.name);
+        let type_name = interner.resolve(input_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(input_id, 0, type_name)],

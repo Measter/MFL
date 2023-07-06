@@ -7,7 +7,7 @@ use lasso::Spur;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     opcode::UnresolvedIdent,
     program::ItemId,
     source_file::{SourceLocation, SourceStorage, Spanned},
@@ -312,7 +312,7 @@ pub struct TypeStore {
 }
 
 impl TypeStore {
-    pub fn new(interner: &mut Interners) -> Self {
+    pub fn new(interner: &mut Interner) -> Self {
         let mut s = Self {
             kinds: HashMap::new(),
             pointer_map: HashMap::new(),
@@ -329,7 +329,7 @@ impl TypeStore {
         s
     }
 
-    fn init_builtins(&mut self, interner: &mut Interners) {
+    fn init_builtins(&mut self, interner: &mut Interner) {
         let builtins = [
             (
                 "u8",
@@ -399,7 +399,7 @@ impl TypeStore {
         ];
 
         for (name_str, builtin, kind) in builtins {
-            let name = interner.intern_lexeme(name_str);
+            let name = interner.intern(name_str);
             let id = self.add_type(name, None, kind);
             self.builtins[builtin as usize] = id;
 
@@ -441,7 +441,7 @@ impl TypeStore {
 
     pub fn resolve_type(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         tp: &UnresolvedTypeIds,
     ) -> Result<TypeInfo, Spanned<Spur>> {
         match tp {
@@ -472,15 +472,15 @@ impl TypeStore {
         }
     }
 
-    pub fn get_pointer(&mut self, interner: &mut Interners, pointee_id: TypeId) -> TypeInfo {
+    pub fn get_pointer(&mut self, interner: &mut Interner, pointee_id: TypeId) -> TypeInfo {
         let pointee = self.get_type_info(pointee_id);
 
         if let Some(pi) = self.pointer_map.get(&pointee.id) {
             self.kinds[&pi.ptr_id]
         } else {
-            let pointee_name = interner.resolve_lexeme(pointee.name);
+            let pointee_name = interner.resolve(pointee.name);
             let name = format!("ptr({pointee_name})");
-            let name = interner.intern_lexeme(&name);
+            let name = interner.intern(&name);
 
             let pointer_info = self.add_type(name, None, TypeKind::Pointer(pointee.id));
             self.pointer_map.insert(
@@ -496,7 +496,7 @@ impl TypeStore {
 
     pub fn get_array(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         content_type_id: TypeId,
         length: usize,
     ) -> TypeInfo {
@@ -505,9 +505,9 @@ impl TypeStore {
         if let Some(&array_id) = self.array_map.get(&(kind_info.id, length)) {
             self.kinds[&array_id]
         } else {
-            let pointee_name = interner.resolve_lexeme(kind_info.name);
+            let pointee_name = interner.resolve(kind_info.name);
             let name = format!("{pointee_name}[{length}]");
-            let name = interner.intern_lexeme(&name);
+            let name = interner.intern(&name);
 
             let array_info = self.add_type(
                 name,
@@ -525,7 +525,7 @@ impl TypeStore {
 
     fn partially_resolve_generic_field(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         kind: &UnresolvedTypeIds,
     ) -> GenericPartiallyResolvedFieldKind {
         match kind {
@@ -559,7 +559,7 @@ impl TypeStore {
 
     pub fn partially_resolve_generic_struct(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         base_item_id: ItemId,
         def: &UnresolvedStruct,
     ) {
@@ -591,7 +591,7 @@ impl TypeStore {
 
     fn resolve_generic_field(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         kind: &GenericPartiallyResolvedFieldKind,
         type_params: &HashMap<Spur, TypeId>,
     ) -> TypeId {
@@ -627,7 +627,7 @@ impl TypeStore {
 
     pub fn instantiate_generic_struct(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         base_item_id: ItemId,
         base_type_id: TypeId,
         type_params: Vec<TypeId>,
@@ -664,25 +664,25 @@ impl TypeStore {
             fields: resolved_fields,
         };
 
-        let mut name = interner.resolve_lexeme(base_def.name.inner).to_owned();
+        let mut name = interner.resolve(base_def.name.inner).to_owned();
         name += "(";
 
         match type_params.as_slice() {
             [] => unreachable!(),
             [n] => {
                 let ti = self.get_type_info(*n);
-                let t_name = interner.resolve_lexeme(ti.name);
+                let t_name = interner.resolve(ti.name);
                 name += t_name;
             }
             [n, xs @ ..] => {
                 use std::fmt::Write;
                 let ti = self.get_type_info(*n);
-                let t_name = interner.resolve_lexeme(ti.name);
+                let t_name = interner.resolve(ti.name);
                 let _ = write!(&mut name, "{t_name}");
 
                 for t in xs {
                     let ti = self.get_type_info(*t);
-                    let t_name = interner.resolve_lexeme(ti.name);
+                    let t_name = interner.resolve(ti.name);
                     let _ = write!(&mut name, " {t_name}");
                 }
             }
@@ -690,7 +690,7 @@ impl TypeStore {
 
         name += ")";
 
-        let name = interner.intern_lexeme(&name);
+        let name = interner.intern(&name);
 
         let type_id = self.add_type(
             name,
@@ -771,7 +771,7 @@ impl TypeStore {
 
     pub fn define_fixed_struct(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         struct_id: ItemId,
         def: &UnresolvedStruct,
     ) -> Result<TypeId, Spanned<Spur>> {
@@ -799,7 +799,7 @@ impl TypeStore {
 
         let type_id = self.struct_id_map[&struct_id];
 
-        if interner.resolve_lexeme(def.name.inner) == "String"
+        if interner.resolve(def.name.inner) == "String"
             && self.builtin_struct_item_ids.contains(&struct_id)
         {
             self.builtins[BuiltinTypes::String as usize] = type_id;
@@ -823,12 +823,12 @@ impl TypeStore {
 
 pub fn emit_type_error_diag(
     token: Spanned<Spur>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) {
     diagnostics::emit_error(
         token.location,
-        format!("unknown type `{}`", interner.resolve_lexeme(token.inner)),
+        format!("unknown type `{}`", interner.resolve(token.inner)),
         [Label::new(token.location).with_color(Color::Red)],
         None,
         source_store,

@@ -4,7 +4,7 @@ use prettytable::{row, Table};
 
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
@@ -15,7 +15,7 @@ use crate::{
 pub fn emit_stack(
     stack: &[ValueId],
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     op: &Op,
@@ -30,7 +30,7 @@ pub fn emit_stack(
     for (idx, value_id) in stack.iter().enumerate().rev() {
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
-            interner.resolve_lexeme(type_info.name)
+            interner.resolve(type_info.name)
         });
 
         let value_idx = stack.len() - idx - 1;
@@ -59,7 +59,7 @@ pub fn emit_stack(
 pub fn cast_to_int(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -76,7 +76,7 @@ pub fn cast_to_int(
         TypeKind::Pointer(_) => {
             if (width, sign) != (IntWidth::I64, Signedness::Unsigned) {
                 *had_error = true;
-                let input_type_name = interner.resolve_lexeme(input_type_info.name);
+                let input_type_name = interner.resolve(input_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
@@ -100,7 +100,7 @@ pub fn cast_to_int(
             signed: from_sign,
         } => {
             if (from_width, from_sign) == (width, sign) {
-                let input_type_name = interner.resolve_lexeme(input_type_info.name);
+                let input_type_name = interner.resolve(input_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
@@ -125,7 +125,7 @@ pub fn cast_to_int(
         #[allow(unreachable_patterns)]
         _ => {
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -148,7 +148,7 @@ pub fn cast_to_int(
 pub fn cast_to_ptr(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &mut Interners,
+    interner: &mut Interner,
     type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -162,7 +162,7 @@ pub fn cast_to_ptr(
     match input_type_info.kind {
         TypeKind::Pointer(from_kind) if from_kind == to_kind => {
             let ptr_info = type_store.get_pointer(interner, from_kind);
-            let ptr_type_name = interner.resolve_lexeme(ptr_info.name);
+            let ptr_type_name = interner.resolve(ptr_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -188,7 +188,7 @@ pub fn cast_to_ptr(
 
         TypeKind::Integer { .. } => {
             *had_error = true;
-            let value_type_name = interner.resolve_lexeme(input_type_info.name);
+            let value_type_name = interner.resolve(input_type_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -210,7 +210,7 @@ pub fn cast_to_ptr(
         _ => {
             // Type mismatch.
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,

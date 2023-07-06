@@ -21,7 +21,7 @@ use lasso::Spur;
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
-    interners::Interners,
+    interners::Interner,
     opcode::{IntKind, Op, OpCode},
     program::{
         static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
@@ -164,13 +164,13 @@ impl<'ctx> ValueStore<'ctx> {
     fn get_string_literal(
         &mut self,
         cg: &CodeGen<'ctx>,
-        interner: &Interners,
+        interner: &Interner,
         id: Spur,
     ) -> PointerValue<'ctx> {
         match self.string_map.get(&id) {
             Some(&ptr) => ptr,
             None => {
-                let string = interner.resolve_literal(id);
+                let string = interner.resolve(id);
                 let name = format!("SId{}", id.into_inner());
                 let global = cg.builder.build_global_string_ptr(string, &name);
 
@@ -190,7 +190,7 @@ impl<'ctx> ValueStore<'ctx> {
         const_val: ConstVal,
         analyzer: &Analyzer,
         type_store: &TypeStore,
-        interner: &Interners,
+        interner: &Interner,
     ) -> BasicValueEnum<'ctx> {
         trace!("Fetching const {id:?}");
         match const_val {
@@ -236,7 +236,7 @@ impl<'ctx> ValueStore<'ctx> {
         id: ValueId,
         analyzer: &Analyzer,
         type_store: &TypeStore,
-        interner: &Interners,
+        interner: &Interner,
     ) -> BasicValueEnum<'ctx> {
         if let Some([const_val]) = analyzer.value_consts([id]) {
             self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
@@ -324,7 +324,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_function_prototypes(
         &mut self,
         program: &Program,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
@@ -459,7 +459,7 @@ impl<'ctx> CodeGen<'ctx> {
         block: &[Op],
         function: FunctionValue<'ctx>,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
     ) {
         let analyzer = program.get_analyzer(id);
@@ -813,7 +813,7 @@ impl<'ctx> CodeGen<'ctx> {
         id: ItemId,
         function: FunctionValue<'ctx>,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
     ) {
         let name = interner.get_symbol_name(program, id);
@@ -906,7 +906,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
@@ -928,7 +928,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_entry(
         &mut self,
         program: &Program,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
         entry_id: ItemId,
     ) {
@@ -974,7 +974,7 @@ pub(crate) fn compile(
     program: &Program,
     top_level_items: &[ItemId],
     source_store: &SourceStorage,
-    interner: &mut Interners,
+    interner: &mut Interner,
     type_store: &mut TypeStore,
     args: &Args,
 ) -> Result<Vec<PathBuf>> {

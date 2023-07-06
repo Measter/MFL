@@ -3,7 +3,7 @@ use intcast::IntCast;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
@@ -20,7 +20,7 @@ use crate::{
 pub fn epilogue_return(
     program: &Program,
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -73,7 +73,7 @@ pub fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatureResolv
 pub fn resolved_ident(
     program: &Program,
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -143,7 +143,7 @@ pub fn resolved_ident(
 
 pub fn syscall(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -158,7 +158,7 @@ pub fn syscall(
             TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {}
 
             _ => {
-                let type_name = interner.resolve_lexeme(type_info.name);
+                let type_name = interner.resolve(type_info.name);
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
                     [(*input_value, idx.to_u64(), type_name)],
@@ -191,7 +191,7 @@ pub fn syscall(
 pub fn analyze_while(
     had_error: &mut bool,
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     op: &Op,
@@ -212,7 +212,7 @@ pub fn analyze_while(
     if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
         *had_error = true;
         let condition_info = type_store.get_type_info(condition_type);
-        let condition_type_name = interner.resolve_lexeme(condition_info.name);
+        let condition_type_name = interner.resolve(condition_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -245,7 +245,7 @@ pub fn analyze_while(
         {
             let [pre_type_name, condition_type_name] = input_type_ids.map(|id| {
                 let info = type_store.get_type_info(id);
-                interner.resolve_lexeme(info.name)
+                interner.resolve(info.name)
             });
 
             let labels = diagnostics::build_creator_label_chain(
@@ -273,7 +273,7 @@ pub fn analyze_while(
 pub fn analyze_if(
     had_error: &mut bool,
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     op: &Op,
@@ -288,7 +288,7 @@ pub fn analyze_if(
         if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
             *had_error = true;
             let condition_type_info = type_store.get_type_info(condition_type);
-            let condition_type_name = interner.resolve_lexeme(condition_type_info.name);
+            let condition_type_name = interner.resolve(condition_type_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -350,7 +350,7 @@ pub fn analyze_if(
                 if then_type != else_type {
                     let [then_type_name, else_type_name] = input_type_ids.map(|id| {
                         let info = type_store.get_type_info(id);
-                        interner.resolve_lexeme(info.name)
+                        interner.resolve(info.name)
                     });
 
                     let labels = diagnostics::build_creator_label_chain(

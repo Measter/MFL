@@ -1,5 +1,5 @@
 use crate::{
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{
@@ -13,7 +13,7 @@ use crate::{
 pub fn add(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -65,7 +65,7 @@ pub fn add(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -86,7 +86,7 @@ pub fn add(
 pub fn subtract(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -125,7 +125,7 @@ pub fn subtract(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -146,7 +146,7 @@ pub fn subtract(
 pub fn bitnot(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -162,7 +162,7 @@ pub fn bitnot(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -184,7 +184,7 @@ pub fn bitnot(
 pub fn bitand_bitor_bitxor(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -216,7 +216,7 @@ pub fn bitand_bitor_bitxor(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,
@@ -237,7 +237,7 @@ pub fn bitand_bitor_bitxor(
 pub fn multiply_div_rem_shift(
     analyzer: &mut Analyzer,
     source_store: &SourceStorage,
-    interner: &Interners,
+    interner: &Interner,
     type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
@@ -267,7 +267,7 @@ pub fn multiply_div_rem_shift(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve_lexeme(op.token.inner);
+            let lexeme = interner.resolve(op.token.inner);
             generate_type_mismatch_diag(
                 analyzer,
                 interner,

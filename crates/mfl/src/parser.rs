@@ -6,7 +6,7 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     lexer::{Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     program::ModuleQueueType,
@@ -27,7 +27,7 @@ fn parse_integer_op<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     token: Spanned<Token>,
     is_known_negative: bool,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<(OpCode, SourceLocation), ()> {
     let mut had_error = false;
@@ -68,7 +68,7 @@ fn parse_integer_op<'a>(
         let ident_token = delim.list[0];
         overall_location = overall_location.merge(delim.close.location);
 
-        let (width, is_signed_kind) = match interner.resolve_lexeme(ident_token.inner.lexeme) {
+        let (width, is_signed_kind) = match interner.resolve(ident_token.inner.lexeme) {
             "u8" => (IntWidth::I8, Signedness::Unsigned),
             "s8" => (IntWidth::I8, Signedness::Signed),
             "u16" => (IntWidth::I16, Signedness::Unsigned),
@@ -189,7 +189,7 @@ pub fn parse_item_body_contents(
     program: &mut Program,
     tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     parent_id: ItemId,
     source_store: &SourceStorage,
 ) -> Result<Vec<Op>, ()> {
@@ -463,7 +463,7 @@ pub fn parse_item_body_contents(
                             item_count_token.location,
                             format!(
                                 "expected `integer`, found `{}`",
-                                interner.resolve_lexeme(item_count_token.inner.lexeme)
+                                interner.resolve(item_count_token.inner.lexeme)
                             ),
                             Some(Label::new(item_count_token.location).with_color(Color::Red)),
                             None,
@@ -481,7 +481,7 @@ pub fn parse_item_body_contents(
                             shift_count_token.location,
                             format!(
                                 "expected `integer`, found `{}`",
-                                interner.resolve_lexeme(shift_count_token.inner.lexeme)
+                                interner.resolve(shift_count_token.inner.lexeme)
                             ),
                             Some(Label::new(shift_count_token.location).with_color(Color::Red)),
                             None,
@@ -501,7 +501,7 @@ pub fn parse_item_body_contents(
                             direction_token.location,
                             format!(
                                 "expected `<` or `>`, found `{}`",
-                                interner.resolve_lexeme(direction_token.inner.lexeme)
+                                interner.resolve(direction_token.inner.lexeme)
                             ),
                             Some(Label::new(direction_token.location).with_color(Color::Red)),
                             None,
@@ -788,7 +788,7 @@ pub fn parse_item_body_contents(
                     token.location,
                     format!(
                         "unexpected token `{}` in input",
-                        interner.resolve_lexeme(token.inner.lexeme)
+                        interner.resolve(token.inner.lexeme)
                     ),
                     Some(Label::new(token.location)),
                     None,
@@ -887,7 +887,7 @@ fn parse_if<'a>(
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
     let (condition, do_token) = get_item_body(
@@ -1045,7 +1045,7 @@ fn parse_while<'a>(
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
     let (condition, do_token) = get_item_body(
@@ -1090,7 +1090,7 @@ pub(super) fn parse_file(
     program: &mut Program,
     module_id: ItemId,
     tokens: &[Spanned<Token>],
-    interner: &mut Interners,
+    interner: &mut Interner,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     source_store: &SourceStorage,
 ) -> Result<(), ()> {

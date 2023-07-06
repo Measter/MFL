@@ -8,17 +8,17 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     opcode::{Op, OpCode},
     program::{ItemId, ItemKind, Program},
     source_file::{SourceStorage, WithSpan},
     type_store::{BuiltinTypes, UnresolvedType, UnresolvedTypeIds},
 };
 
-fn mangle_type_name(interner: &mut Interners, ty: &UnresolvedTypeIds, name: &mut String) {
+fn mangle_type_name(interner: &mut Interner, ty: &UnresolvedTypeIds, name: &mut String) {
     match ty {
         UnresolvedTypeIds::SimpleCustom { token, .. } => {
-            let t_name = interner.resolve_lexeme(token.inner);
+            let t_name = interner.resolve(token.inner);
             name.push_str(t_name);
         }
         UnresolvedTypeIds::SimpleBuiltin(t) => {
@@ -49,7 +49,7 @@ fn mangle_type_name(interner: &mut Interners, ty: &UnresolvedTypeIds, name: &mut
         UnresolvedTypeIds::GenericInstance {
             id_token, params, ..
         } => {
-            let t_name = interner.resolve_lexeme(id_token.inner);
+            let t_name = interner.resolve(id_token.inner);
             write!(name, "{t_name}$GO$").unwrap();
             let [first, rest @ ..] = params.as_slice() else { unreachable!() };
             mangle_type_name(interner, first, name);
@@ -63,8 +63,8 @@ fn mangle_type_name(interner: &mut Interners, ty: &UnresolvedTypeIds, name: &mut
     }
 }
 
-fn build_mangled_name(interner: &mut Interners, base: Spur, params: &[UnresolvedType]) -> String {
-    let mut name = interner.resolve_lexeme(base).to_owned();
+fn build_mangled_name(interner: &mut Interner, base: Spur, params: &[UnresolvedType]) -> String {
+    let mut name = interner.resolve(base).to_owned();
     name.push_str("$GO$");
 
     let [UnresolvedType::Id(first), rest @ ..] = params else { unreachable!() };
@@ -159,7 +159,7 @@ fn expand_generic_params_in_block(
 impl Program {
     fn get_generic_function_instance(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         fn_id: ItemId,
         generic_params: &[UnresolvedType],
@@ -202,7 +202,7 @@ impl Program {
             entry_stack.push(new_type.with_span(stack_item.location));
         }
 
-        let new_name_spur = interner.intern_lexeme(&new_name);
+        let new_name_spur = interner.intern(&new_name);
         let new_proc_id = self.new_function(
             source_store,
             &mut false,
@@ -256,7 +256,7 @@ impl Program {
 
     fn instantiate_generic_functions_in_block(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
         had_error: &mut bool,
         queue: &mut Vec<ItemId>,
@@ -356,7 +356,7 @@ impl Program {
 
     pub fn instantiate_generic_functions(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
     ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::instantiate_generic_functions)).entered();

@@ -3,7 +3,7 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    interners::Interners,
+    interners::Interner,
     opcode::{If, Op, While},
     program::{static_analysis::Analyzer, ItemId, Program},
     source_file::{SourceStorage, Spanned},
@@ -16,7 +16,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_function_call(
         &mut self,
         program: &Program,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -88,7 +88,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_epilogue_return(
         &mut self,
         program: &Program,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -169,7 +169,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_syscall(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -219,7 +219,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -390,7 +390,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &mut TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,

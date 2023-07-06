@@ -1,7 +1,7 @@
 use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
 
 use crate::{
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::{Op, OpCode},
     program::static_analysis::{promote_int_type_bidirectional, Analyzer},
@@ -13,7 +13,7 @@ use super::{CodeGen, ValueStore};
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_add_sub(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -112,7 +112,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_multiply_and_or_xor(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -159,7 +159,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_div_rem(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -207,7 +207,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_shift_left_right(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -261,7 +261,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_bit_not(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -281,7 +281,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_compare(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -335,7 +335,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_is_null(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,

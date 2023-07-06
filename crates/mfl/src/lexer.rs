@@ -12,7 +12,7 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
 };
 
@@ -348,7 +348,7 @@ impl<'source> Scanner<'source> {
     fn scan_token(
         &mut self,
         input: &str,
-        interner: &mut Interners,
+        interner: &mut Interner,
         source_store: &SourceStorage,
     ) -> Result<Option<Spanned<Token>>, ()> {
         let ch = self.advance();
@@ -375,7 +375,7 @@ impl<'source> Scanner<'source> {
 
                 self.advance(); // Consume the '='
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -406,7 +406,7 @@ impl<'source> Scanner<'source> {
                     _ => unreachable!(),
                 };
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -423,8 +423,8 @@ impl<'source> Scanner<'source> {
                     false
                 };
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
-                let literal = interner.intern_literal(&self.string_buf);
+                let lexeme = interner.intern(self.lexeme(input));
+                let literal = interner.intern(&self.string_buf);
 
                 Some(
                     Token::new(
@@ -453,7 +453,7 @@ impl<'source> Scanner<'source> {
                     return Err(());
                 }
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 let ch = self.string_buf.chars().next().unwrap();
 
                 Some(
@@ -464,7 +464,7 @@ impl<'source> Scanner<'source> {
 
             (':', ':') => {
                 self.advance(); // Consume the second ':'
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(TokenKind::ColonColon, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -495,13 +495,13 @@ impl<'source> Scanner<'source> {
                     source_store,
                 )?;
 
-                let stripped_id = interner.intern_literal(&self.string_buf);
+                let stripped_id = interner.intern(&self.string_buf);
                 let kind = TokenKind::Integer {
                     lexeme: stripped_id,
                     is_hex: true,
                 };
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -510,13 +510,13 @@ impl<'source> Scanner<'source> {
 
             ('0'..='9', _) => {
                 self.consume_integer_literal(ch, |c| c == '_' || c.is_ascii_digit(), source_store)?;
-                let stripped_id = interner.intern_literal(&self.string_buf);
+                let stripped_id = interner.intern(&self.string_buf);
                 let kind = TokenKind::Integer {
                     lexeme: stripped_id,
                     is_hex: false,
                 };
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -560,7 +560,7 @@ impl<'source> Scanner<'source> {
                             filename, self.line, self.cur_token_column
                         )
                         .unwrap();
-                        let id = interner.intern_literal(&self.string_buf);
+                        let id = interner.intern(&self.string_buf);
                         TokenKind::Here(id)
                     }
                     "if" => TokenKind::If,
@@ -594,7 +594,7 @@ impl<'source> Scanner<'source> {
                     _ => TokenKind::Ident,
                 };
 
-                let lexeme = interner.intern_lexeme(self.lexeme(input));
+                let lexeme = interner.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -621,7 +621,7 @@ impl<'source> Scanner<'source> {
 pub(crate) fn lex_file(
     contents: &str,
     file_id: FileId,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<Vec<Spanned<Token>>, ()> {
     let _span = debug_span!(stringify!(lexer::lex_file)).entered();

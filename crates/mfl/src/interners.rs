@@ -4,33 +4,25 @@ use lasso::{Rodeo, Spur};
 
 use crate::program::{ItemId, Program};
 
-pub struct Interners {
+pub struct Interner {
     lexemes: Rodeo,
 
     symbols: HashMap<ItemId, Spur>,
 }
 
-impl Interners {
+impl Interner {
     pub fn new() -> Self {
-        Interners {
+        Interner {
             lexemes: Rodeo::default(),
             symbols: HashMap::new(),
         }
     }
 
-    pub fn intern_literal(&mut self, literal: &str) -> Spur {
-        self.lexemes.get_or_intern(literal)
-    }
-
-    pub fn intern_lexeme(&mut self, lexeme: &str) -> Spur {
+    pub fn intern(&mut self, lexeme: &str) -> Spur {
         self.lexemes.get_or_intern(lexeme)
     }
 
-    pub fn resolve_literal(&self, id: Spur) -> &str {
-        self.lexemes.resolve(&id)
-    }
-
-    pub fn resolve_lexeme(&self, id: Spur) -> &str {
+    pub fn resolve(&self, id: Spur) -> &str {
         self.lexemes.resolve(&id)
     }
 
@@ -59,9 +51,9 @@ impl Interners {
             name.push_str(part);
         }
 
-        let spur = self.intern_lexeme(&name);
+        let spur = self.intern(&name);
         self.symbols.insert(id, spur);
 
-        self.resolve_lexeme(spur)
+        self.resolve(spur)
     }
 }

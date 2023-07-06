@@ -8,7 +8,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::{
@@ -42,7 +42,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_pack(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -109,7 +109,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_unpack(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -195,7 +195,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn get_slice_like_struct_fields(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &TypeStore,
         struct_value_id: ValueId,
         struct_type_id: TypeId,
@@ -203,7 +203,7 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> (PointerValue<'ctx>, TypeInfo, IntValue<'ctx>) {
         let struct_def = type_store.get_struct_def(struct_type_id);
 
-        let pointer_field_name = interner.intern_lexeme("pointer");
+        let pointer_field_name = interner.intern("pointer");
         let (ptr_field_idx, ptr_field_info) = struct_def
             .fields
             .iter()
@@ -220,7 +220,7 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        let length_field_name = interner.intern_lexeme("length");
+        let length_field_name = interner.intern("length");
         let length_field_idx = struct_def
             .fields
             .iter()
@@ -248,7 +248,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_extract_array(
         &mut self,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -351,7 +351,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_insert_array(
         &mut self,
         source_store: &SourceStorage,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -493,7 +493,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_insert_struct(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -594,7 +594,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_extract_struct(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -654,7 +654,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_load(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -673,7 +673,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_store(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,

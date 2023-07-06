@@ -4,7 +4,7 @@ use lasso::Spur;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::{
@@ -16,15 +16,15 @@ use crate::{
 };
 
 fn is_slice_like_struct(
-    interner: &mut Interners,
+    interner: &mut Interner,
     type_store: &TypeStore,
     struct_info: TypeInfo,
 ) -> Option<TypeId> {
     let mut has_valid_length_field = false;
     let mut store_type_id = None;
 
-    let length_spur = interner.intern_lexeme("length");
-    let pointer_spur = interner.intern_lexeme("pointer");
+    let length_spur = interner.intern("length");
+    let pointer_spur = interner.intern("pointer");
 
     let struct_def = type_store.get_struct_def(struct_info.id);
 
@@ -52,7 +52,7 @@ fn is_slice_like_struct(
 
 pub fn pack_array(
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -89,8 +89,8 @@ pub fn pack_array(
             )
         {
             let type_info = type_store.get_type_info(value_type_id);
-            let other_value_name = interner.resolve_lexeme(type_info.name);
-            let expected_value_name = interner.resolve_lexeme(expected_store_type.name);
+            let other_value_name = interner.resolve(type_info.name);
+            let expected_value_name = interner.resolve(expected_store_type.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [
@@ -122,7 +122,7 @@ pub fn pack_array(
 
 pub fn pack_struct(
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -195,8 +195,8 @@ pub fn pack_struct(
             )
         {
             let type_info = type_store.get_type_info(input_type_id);
-            let other_value_type_name = interner.resolve_lexeme(type_info.name);
-            let expected_value_type_name = interner.resolve_lexeme(expected_store_type.name);
+            let other_value_type_name = interner.resolve(type_info.name);
+            let expected_value_type_name = interner.resolve(expected_store_type.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_id, val_id, other_value_type_name)],
@@ -237,7 +237,7 @@ pub fn pack_struct(
 
 pub fn unpack(
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -262,7 +262,7 @@ pub fn unpack(
             }
         }
         _ => {
-            let input_type_name = interner.resolve_lexeme(aggr_info.name);
+            let input_type_name = interner.resolve(aggr_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -287,7 +287,7 @@ pub fn unpack(
 
 pub fn extract_array(
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -307,8 +307,8 @@ pub fn extract_array(
         op_data.outputs()[0]
     };
 
-    let mut make_error_for_aggr = |interner: &mut Interners, note| {
-        let value_type_name = interner.resolve_lexeme(array_type_info.name);
+    let mut make_error_for_aggr = |interner: &mut Interner, note| {
+        let value_type_name = interner.resolve(array_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(array_value_id, 0, value_type_name)],
@@ -385,7 +385,7 @@ pub fn extract_array(
             ..
         }
     ) {
-        let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
+        let idx_type_name = interner.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(idx_value_id, 1, idx_type_name)],
@@ -411,7 +411,7 @@ pub fn extract_array(
 
 pub fn insert_array(
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -429,8 +429,8 @@ pub fn insert_array(
         analyzer.set_value_type(output_id, array_type_id);
     }
 
-    let mut make_error_for_aggr = |interner: &mut Interners, note| {
-        let value_type_name = interner.resolve_lexeme(array_type_info.name);
+    let mut make_error_for_aggr = |interner: &mut Interner, note| {
+        let value_type_name = interner.resolve(array_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(array_value_id, 1, value_type_name)],
@@ -509,7 +509,7 @@ pub fn insert_array(
             ..
         }
     ) {
-        let idx_type_name = interner.resolve_lexeme(idx_type_info.name);
+        let idx_type_name = interner.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(idx_value_id, 2, idx_type_name)],
@@ -538,12 +538,12 @@ pub fn insert_array(
             ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
         )
     {
-        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let data_type_name = interner.resolve(data_type_info.name);
         let array_type_name = match array_type_info.kind {
-            TypeKind::Array { .. } => interner.resolve_lexeme(array_type_info.name),
+            TypeKind::Array { .. } => interner.resolve(array_type_info.name),
             TypeKind::Pointer(subtype_id) => {
                 let sub_type_info = type_store.get_type_info(subtype_id);
-                interner.resolve_lexeme(sub_type_info.name)
+                interner.resolve(sub_type_info.name)
             }
             _ => unreachable!(),
         };
@@ -573,7 +573,7 @@ pub fn insert_array(
 
 pub fn insert_struct(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -598,7 +598,7 @@ pub fn insert_struct(
             if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) = ptr_type_info.kind {
                 sub_type
             } else {
-                let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+                let value_type_name = interner.resolve(input_struct_type_info.name);
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
                     [(input_struct_value_id, 1, value_type_name)],
@@ -624,7 +624,7 @@ pub fn insert_struct(
         | TypeKind::Bool
         | TypeKind::Array { .. }
         | TypeKind::GenericStructBase(_) => {
-            let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+            let value_type_name = interner.resolve(input_struct_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_struct_value_id, 0, value_type_name)],
@@ -652,10 +652,10 @@ pub fn insert_struct(
         .iter()
         .find(|fi| fi.name.inner == field_name.inner) else {
         *had_error = true;
-        let unknown_field_name = interner.resolve_lexeme(field_name.inner);
-        let struct_name = interner.resolve_lexeme(struct_type_info.name.inner);
+        let unknown_field_name = interner.resolve(field_name.inner);
+        let struct_name = interner.resolve(struct_type_info.name.inner);
 
-        let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+        let value_type_name = interner.resolve(input_struct_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(input_struct_value_id, 1, value_type_name)],
@@ -690,14 +690,14 @@ pub fn insert_struct(
             ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
         )
     {
-        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let data_type_name = interner.resolve(data_type_info.name);
         let struct_type_name = match input_struct_type_info.kind {
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                interner.resolve_lexeme(input_struct_type_info.name)
+                interner.resolve(input_struct_type_info.name)
             }
             TypeKind::Pointer(subtype_id) => {
                 let sub_type_info = type_store.get_type_info(subtype_id);
-                interner.resolve_lexeme(sub_type_info.name)
+                interner.resolve(sub_type_info.name)
             }
             _ => unreachable!(),
         };
@@ -732,7 +732,7 @@ pub fn insert_struct(
 
 pub fn extract_struct(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -760,7 +760,7 @@ pub fn extract_struct(
             if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) = ptr_type_info.kind {
                 sub_type
             } else {
-                let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+                let value_type_name = interner.resolve(input_struct_type_info.name);
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
                     [(input_struct_value_id, 1, value_type_name)],
@@ -786,7 +786,7 @@ pub fn extract_struct(
         | TypeKind::Bool
         | TypeKind::Array { .. }
         | TypeKind::GenericStructBase(_) => {
-            let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+            let value_type_name = interner.resolve(input_struct_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_struct_value_id, 0, value_type_name)],
@@ -814,10 +814,10 @@ pub fn extract_struct(
         .iter()
         .find(|fi| fi.name.inner == field_name.inner) else {
         *had_error = true;
-        let unknown_field_name = interner.resolve_lexeme(field_name.inner);
-        let struct_name = interner.resolve_lexeme(struct_def.name.inner);
+        let unknown_field_name = interner.resolve(field_name.inner);
+        let struct_name = interner.resolve(struct_def.name.inner);
 
-        let value_type_name = interner.resolve_lexeme(input_struct_type_info.name);
+        let value_type_name = interner.resolve(input_struct_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
             [(input_struct_value_id, 1, value_type_name)],
@@ -845,7 +845,7 @@ pub fn extract_struct(
 
 pub fn load(
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -860,7 +860,7 @@ pub fn load(
         *had_error = true;
 
         let ptr_type_info = type_store.get_type_info(ptr_type);
-        let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
+        let ptr_type_name = interner.resolve(ptr_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -886,7 +886,7 @@ pub fn load(
 pub fn store(
     program: &Program,
     analyzer: &mut Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     had_error: &mut bool,
@@ -899,10 +899,10 @@ pub fn store(
 
     let TypeKind::Pointer(pointee_type) = ptr_type_info.kind else {
         *had_error = true;
-        let ptr_type_name = interner.resolve_lexeme(ptr_type_info.name);
+        let ptr_type_name = interner.resolve(ptr_type_info.name);
 
         let data_type_info = type_store.get_type_info(data_type);
-        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let data_type_name = interner.resolve(data_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -941,10 +941,10 @@ pub fn store(
     if data_type != pointee_type && !can_promote_int {
         *had_error = true;
         let data_type_info = type_store.get_type_info(data_type);
-        let data_type_name = interner.resolve_lexeme(data_type_info.name);
+        let data_type_name = interner.resolve(data_type_info.name);
 
         let kind_type_info = type_store.get_type_info(pointee_type);
-        let kind_type_name = interner.resolve_lexeme(kind_type_info.name);
+        let kind_type_name = interner.resolve(kind_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,

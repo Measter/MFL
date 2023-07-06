@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     n_ops::{SliceNOps, VecNOps},
     opcode::Op,
     source_file::SourceStorage,
@@ -204,7 +204,7 @@ pub fn extract_struct(
 pub fn unpack(
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     had_error: &mut bool,
@@ -229,7 +229,7 @@ pub fn unpack(
         }
         _ => {
             *had_error = true;
-            let value_type_name = interner.resolve_lexeme(input_type_info.name);
+            let value_type_name = interner.resolve(input_type_info.name);
             let labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_id, 0, value_type_name)],

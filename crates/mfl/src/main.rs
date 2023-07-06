@@ -14,7 +14,7 @@ use color_eyre::{
 };
 use tracing::{debug, debug_span, Level};
 
-use interners::Interners;
+use interners::Interner;
 use program::{ItemId, ItemKind, ItemSignatureResolved, Program};
 use source_file::SourceStorage;
 use type_store::{BuiltinTypes, TypeStore};
@@ -74,7 +74,7 @@ pub struct Args {
 }
 
 fn is_valid_entry_sig(
-    interner: &mut Interners,
+    interner: &mut Interner,
     type_store: &mut TypeStore,
     entry_sig: &ItemSignatureResolved,
 ) -> bool {
@@ -95,12 +95,10 @@ fn is_valid_entry_sig(
     *argc_id == expected_argc_id && *argv_id == expected_argv_id
 }
 
-fn load_program(
-    args: &Args,
-) -> Result<(Program, SourceStorage, Interners, TypeStore, Vec<ItemId>)> {
+fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeStore, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut source_storage = SourceStorage::new();
-    let mut interner = Interners::new();
+    let mut interner = Interner::new();
     let mut type_store = TypeStore::new(&mut interner);
 
     let mut program = Program::new();
@@ -118,7 +116,7 @@ fn load_program(
             }
         }
     } else {
-        let entry_symbol = interner.intern_lexeme("entry");
+        let entry_symbol = interner.intern("entry");
         let entry_scope = program.get_scope(entry_module_id);
 
         let entry_function_id = entry_scope

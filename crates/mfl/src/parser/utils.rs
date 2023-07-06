@@ -5,7 +5,7 @@ use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
-    interners::Interners,
+    interners::Interner,
     lexer::{Token, TokenKind},
     opcode::UnresolvedIdent,
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
@@ -46,7 +46,7 @@ pub fn expect_token<'a>(
     kind_str: &str,
     mut expected: impl FnMut(TokenKind) -> bool,
     prev: Spanned<Token>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<(usize, Spanned<Token>), ()> {
     match tokens.peek() {
@@ -59,7 +59,7 @@ pub fn expect_token<'a>(
                 format!(
                     "expected `{}`, found `{}`",
                     kind_str,
-                    interner.resolve_lexeme(ident.inner.lexeme)
+                    interner.resolve(ident.inner.lexeme)
                 ),
                 Some(Label::new(ident.location).with_color(Color::Red)),
                 None,
@@ -107,7 +107,7 @@ pub fn parse_delimited_token_list<'a>(
     (open_delim_str, open_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
     (token_str, mut token_fn): (&'static str, impl FnMut(TokenKind) -> bool),
     (close_delim_str, mut close_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<Delimited, ()> {
     let mut had_error = false;
@@ -207,7 +207,7 @@ pub fn parse_delimited_token_list<'a>(
 }
 
 pub fn parse_unresolved_types(
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     prev: Spanned<Token>,
     tokens: &[Spanned<Token>],
@@ -246,7 +246,7 @@ pub fn parse_unresolved_types(
 
         if !is_valid_for_ptr {
             for segment in &ident.path {
-                if interner.resolve_lexeme(segment.inner) == "ptr" {
+                if interner.resolve(segment.inner) == "ptr" {
                     diagnostics::emit_error(
                         ident.span,
                         "`ptr` cannot be in path segment",
@@ -260,7 +260,7 @@ pub fn parse_unresolved_types(
             }
         }
 
-        let first_lexeme = interner.resolve_lexeme(ident.path[0].inner);
+        let first_lexeme = interner.resolve(ident.path[0].inner);
         let base_type = if is_valid_for_ptr && first_lexeme == "ptr" {
             let mut ptr_type = ident.generic_params;
             if ptr_type.len() != 1 {
@@ -327,7 +327,7 @@ pub fn parse_unresolved_types(
 
 pub fn parse_ident<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     had_error: &mut bool,
     mut token: Spanned<Token>,
@@ -449,14 +449,14 @@ pub fn parse_ident<'a>(
 
 pub fn parse_integer_lexeme<T>(
     int_token: Spanned<Token>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<T, ()>
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
     let TokenKind::Integer{ lexeme, is_hex } = int_token.inner.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
-    let string = interner.resolve_lexeme(lexeme);
+    let string = interner.resolve(lexeme);
     let res = if is_hex {
         T::from_str_radix(string, 16)
     } else {
@@ -486,7 +486,7 @@ pub fn parse_stack_def<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     had_error: &mut bool,
     prev_token: Spanned<Token>,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
 ) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {
     let stack = parse_delimited_token_list(

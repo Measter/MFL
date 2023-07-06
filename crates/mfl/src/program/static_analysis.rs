@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
-    interners::Interners,
+    interners::Interner,
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpCode, OpId},
     option::OptionExt,
@@ -306,7 +306,7 @@ impl Analyzer {
 
 fn failed_compare_stack_types(
     analyzer: &Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     actual_stack: &[ValueId],
@@ -324,13 +324,13 @@ fn failed_compare_stack_types(
     for (idx, (expected, actual_id)) in pairs {
         let value_type = analyzer.value_types([*actual_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
-            interner.resolve_lexeme(type_info.name)
+            interner.resolve(type_info.name)
         });
 
         bad_values.push((*actual_id, idx.to_u64(), value_type));
 
         let expected_type_info = type_store.get_type_info(*expected);
-        let expected_name = interner.resolve_lexeme(expected_type_info.name);
+        let expected_name = interner.resolve(expected_type_info.name);
         note.add_row(row!(
             (actual_stack.len() - idx - 1).to_string(),
             expected_name,
@@ -354,7 +354,7 @@ fn failed_compare_stack_types(
 
 fn generate_type_mismatch_diag(
     analyzer: &Analyzer,
-    interner: &Interners,
+    interner: &Interner,
     source_store: &SourceStorage,
     type_store: &TypeStore,
     operator_str: &str,
@@ -367,7 +367,7 @@ fn generate_type_mismatch_diag(
         [a] => {
             let kind = analyzer.value_types([*a]).map_or("Unknown", |[v]| {
                 let type_info = type_store.get_type_info(v);
-                interner.resolve_lexeme(type_info.name)
+                interner.resolve(type_info.name)
             });
             write!(&mut message, "`{kind}`").unwrap();
         }
@@ -377,7 +377,7 @@ fn generate_type_mismatch_diag(
                 .map_or(["Unknown", "Unknown"], |k| {
                     k.map(|id| {
                         let type_info = type_store.get_type_info(id);
-                        interner.resolve_lexeme(type_info.name)
+                        interner.resolve(type_info.name)
                     })
                 });
             write!(&mut message, "`{a}` and `{b}`").unwrap();
@@ -386,14 +386,14 @@ fn generate_type_mismatch_diag(
             for x in xs {
                 let kind = analyzer.value_types([*x]).map_or("Unknown", |[v]| {
                     let type_info = type_store.get_type_info(v);
-                    interner.resolve_lexeme(type_info.name)
+                    interner.resolve(type_info.name)
                 });
                 write!(&mut message, "`{kind}`, ").unwrap();
             }
 
             let kind = analyzer.value_types([*last]).map_or("Unknown", |[v]| {
                 let type_info = type_store.get_type_info(v);
-                interner.resolve_lexeme(type_info.name)
+                interner.resolve(type_info.name)
             });
             write!(&mut message, "and `{kind}`").unwrap();
         }
@@ -403,7 +403,7 @@ fn generate_type_mismatch_diag(
     for (value_id, order) in types.iter().rev().zip(1..) {
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
             let type_info = type_store.get_type_info(v);
-            interner.resolve_lexeme(type_info.name)
+            interner.resolve(type_info.name)
         });
         bad_values.push((*value_id, order, value_type));
     }
@@ -453,7 +453,7 @@ fn analyze_block(
     max_stack_depth: &mut usize,
     had_error: &mut bool,
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     emit_traces: bool,
@@ -1188,10 +1188,7 @@ fn analyze_block(
                         | TypeKind::GenericStructInstance(_) => {
                             diagnostics::emit_error(
                                 op.token.location,
-                                format!(
-                                    "cannot cast to {}",
-                                    interner.resolve_lexeme(type_info.name)
-                                ),
+                                format!("cannot cast to {}", interner.resolve(type_info.name)),
                                 [Label::new(op.token.location).with_color(Color::Red)],
                                 None,
                                 source_store,
@@ -1296,7 +1293,7 @@ pub fn analyze_item(
     program: &Program,
     item_id: ItemId,
     analyzer: &mut Analyzer,
-    interner: &mut Interners,
+    interner: &mut Interner,
     source_store: &SourceStorage,
     type_store: &mut TypeStore,
     print_stack_depth: bool,

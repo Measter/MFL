@@ -3,7 +3,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    interners::Interners,
+    interners::Interner,
     opcode::{IntKind, Op},
     program::static_analysis::Analyzer,
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
@@ -14,7 +14,7 @@ use super::{CodeGen, ValueStore};
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
         type_store: &TypeStore,
@@ -120,7 +120,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_dup_over(
         &mut self,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &TypeStore,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -174,7 +174,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_push_str(
         &mut self,
         analyzer: &Analyzer,
-        interner: &mut Interners,
+        interner: &mut Interner,
         type_store: &TypeStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
@@ -187,7 +187,7 @@ impl<'ctx> CodeGen<'ctx> {
         let store_value = if is_c_str {
             str_ptr.as_basic_value_enum()
         } else {
-            let string = interner.resolve_literal(str_id);
+            let string = interner.resolve(str_id);
             let len = string.len() - 1; // It's null-terminated.
             let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
