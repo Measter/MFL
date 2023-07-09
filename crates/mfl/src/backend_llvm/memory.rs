@@ -16,7 +16,7 @@ use crate::{
         ItemId,
     },
     source_file::{SourceLocation, SourceStorage, Spanned},
-    type_store::{Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
 };
 
 use super::{CodeGen, ValueStore};
@@ -143,6 +143,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_bounds_check(
         &mut self,
         mut source_store: &SourceStorage,
+        type_store: &TypeStore,
         op_loc: SourceLocation,
         function: FunctionValue,
         idx: IntValue,
@@ -177,15 +178,19 @@ impl<'ctx> CodeGen<'ctx> {
         let string_pointer = string
             .as_pointer_value()
             .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
-        let args = vec![
-            string_pointer.into(),
+
+        let str_type = self
+            .get_type(type_store, type_store.get_builtin(BuiltinTypes::String).id)
+            .into_struct_type();
+        let str_value = str_type.const_named_struct(&[
             self.ctx
                 .i64_type()
                 .const_int(location_string.len().to_u64(), false)
                 .into(),
-            idx.into(),
-            length.into(),
-        ];
+            string_pointer.into(),
+        ]);
+
+        let args = [str_value.into(), idx.into(), length.into()];
 
         self.builder.build_call(self.oob_handler, &args, "oob");
         self.builder.build_unreachable();
@@ -321,7 +326,14 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(source_store, op.token.location, function, idx_val, length);
+        self.build_bounds_check(
+            source_store,
+            type_store,
+            op.token.location,
+            function,
+            idx_val,
+            length,
+        );
 
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
         let offset_idxs: &[IntValue] = match ptr_kind {
@@ -439,7 +451,14 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(source_store, op.token.location, function, idx_val, length);
+        self.build_bounds_check(
+            source_store,
+            type_store,
+            op.token.location,
+            function,
+            idx_val,
+            length,
+        );
 
         // And finally actually build the insert
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];

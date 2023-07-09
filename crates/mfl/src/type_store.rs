@@ -13,13 +13,6 @@ use crate::{
     source_file::{SourceLocation, SourceStorage, Spanned},
 };
 
-pub const STRING_DEF: &str = "
-struct String is
-    field length u64
-    field pointer ptr(u8)
-end
-";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);
 

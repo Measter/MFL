@@ -292,22 +292,12 @@ impl<'ctx> CodeGen<'ctx> {
         let pass_manager = PassManager::create(());
         pm_builder.populate_module_pass_manager(&pass_manager);
 
-        const ATTRIBUTE_COLD: u32 = 4;
         const ATTRIBUTE_ALIGNSTACK: u32 = 77;
 
-        let attrib_cold = ctx.create_enum_attribute(ATTRIBUTE_COLD, 0);
         let attrib_align_stack = ctx.create_enum_attribute(ATTRIBUTE_ALIGNSTACK, 32);
 
-        let oob_args: Vec<BasicMetadataTypeEnum> = vec![
-            ctx.i8_type().ptr_type(AddressSpace::default()).into(),
-            ctx.i64_type().into(),
-            ctx.i64_type().into(),
-            ctx.i64_type().into(),
-        ];
-
-        let oob_sig = ctx.void_type().fn_type(&oob_args, false);
-        let oob_handler = module.add_function("_oob", oob_sig, Some(Linkage::External));
-        oob_handler.add_attribute(AttributeLoc::Function, attrib_cold);
+        let oob_sig = ctx.void_type().fn_type(&[], false);
+        let oob_handler = module.add_function("_oob", oob_sig, Some(Linkage::Private));
 
         Self {
             ctx,
@@ -373,6 +363,11 @@ impl<'ctx> CodeGen<'ctx> {
                 .module
                 .add_function(name, function_type, Some(Linkage::Private));
             function.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
+            if name == "builtins$oob_handler" {
+                self.oob_handler = function;
+                // Because the OoB handle isn't called like a regular function, we'll enqueue it here.
+                self.enqueue_function(item.id());
+            }
             self.item_function_map.insert(item.id(), function);
         }
         proto_span.exit();

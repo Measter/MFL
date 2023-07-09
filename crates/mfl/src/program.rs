@@ -26,6 +26,8 @@ mod passes;
 pub mod static_analysis;
 use static_analysis::Analyzer;
 
+const BUILTINS: &str = include_str!("builtins/builtins.mfl");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
 
@@ -219,12 +221,14 @@ impl Program {
             builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
             None,
         );
+        self.top_level_modules
+            .insert(builtin_structs_module_name, builtin_module);
         self.load_module(
             builtin_module,
             source_store,
             interner,
-            Path::new("builtin"),
-            crate::type_store::STRING_DEF,
+            Path::new("builtins"),
+            BUILTINS,
             &mut VecDeque::new(),
         )?;
         type_store.update_builtins(&self.structs_unresolved);
