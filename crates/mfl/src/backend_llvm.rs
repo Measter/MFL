@@ -6,6 +6,7 @@ use color_eyre::{
 };
 use hashbrown::{HashMap, HashSet};
 use inkwell::{
+    attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
@@ -276,6 +277,8 @@ struct CodeGen<'ctx> {
     syscall_wrappers: Vec<FunctionValue<'ctx>>,
     oob_handler: FunctionValue<'ctx>,
     type_map: HashMap<TypeId, BasicTypeEnum<'ctx>>,
+
+    attrib_align_stack: Attribute,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -289,6 +292,12 @@ impl<'ctx> CodeGen<'ctx> {
         let pass_manager = PassManager::create(());
         pm_builder.populate_module_pass_manager(&pass_manager);
 
+        const ATTRIBUTE_COLD: u32 = 4;
+        const ATTRIBUTE_ALIGNSTACK: u32 = 77;
+
+        let attrib_cold = ctx.create_enum_attribute(ATTRIBUTE_COLD, 0);
+        let attrib_align_stack = ctx.create_enum_attribute(ATTRIBUTE_ALIGNSTACK, 32);
+
         let oob_args: Vec<BasicMetadataTypeEnum> = vec![
             ctx.i8_type().ptr_type(AddressSpace::default()).into(),
             ctx.i64_type().into(),
@@ -298,6 +307,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let oob_sig = ctx.void_type().fn_type(&oob_args, false);
         let oob_handler = module.add_function("_oob", oob_sig, Some(Linkage::External));
+        oob_handler.add_attribute(AttributeLoc::Function, attrib_cold);
 
         Self {
             ctx,
@@ -310,6 +320,7 @@ impl<'ctx> CodeGen<'ctx> {
             syscall_wrappers: Vec::new(),
             oob_handler,
             type_map: HashMap::new(),
+            attrib_align_stack,
         }
     }
 
@@ -361,6 +372,7 @@ impl<'ctx> CodeGen<'ctx> {
             let function = self
                 .module
                 .add_function(name, function_type, Some(Linkage::Private));
+            function.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
             self.item_function_map.insert(item.id(), function);
         }
         proto_span.exit();
@@ -947,6 +959,7 @@ impl<'ctx> CodeGen<'ctx> {
         let entry_func = self
             .module
             .add_function("entry", function_type, Some(Linkage::External));
+        entry_func.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
 
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
