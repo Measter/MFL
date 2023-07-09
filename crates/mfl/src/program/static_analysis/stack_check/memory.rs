@@ -230,12 +230,15 @@ pub fn unpack(
         _ => {
             *had_error = true;
             let value_type_name = interner.resolve(input_type_info.name);
-            let labels = diagnostics::build_creator_label_chain(
+            let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_id, 0, value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
+
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
             diagnostics::emit_error(
                 op.token.location,
                 format!("unable to unpack a `{value_type_name}`",),
