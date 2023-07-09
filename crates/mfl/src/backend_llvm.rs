@@ -932,7 +932,7 @@ impl<'ctx> CodeGen<'ctx> {
         type_store: &mut TypeStore,
         entry_id: ItemId,
     ) {
-        let u64_type_id = type_store.get_builtin_ptr(BuiltinTypes::U64).id;
+        let u64_type_id = type_store.get_builtin(BuiltinTypes::U64).id;
         let argc_type = self.get_type(type_store, u64_type_id);
 
         let u8_ptr_type_id = type_store.get_builtin_ptr(BuiltinTypes::U8).id;
