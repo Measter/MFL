@@ -186,12 +186,13 @@ impl<'ctx> ValueStore<'ctx> {
 
     fn load_const_value(
         &mut self,
-        cg: &CodeGen<'ctx>,
+        cg: &mut CodeGen<'ctx>,
         id: ValueId,
         const_val: ConstVal,
         analyzer: &Analyzer,
         type_store: &TypeStore,
         interner: &Interner,
+        program: &Program,
     ) -> BasicValueEnum<'ctx> {
         trace!("Fetching const {id:?}");
         match const_val {
@@ -215,15 +216,21 @@ impl<'ctx> ValueStore<'ctx> {
             }
             ConstVal::Bool(val) => cg.ctx.bool_type().const_int(val as u64, false).into(),
             ConstVal::Ptr { id, offset, .. } => {
-                let ptr = match id {
-                    PtrId::Mem(id) => self.variable_map[&id],
-                    PtrId::Str(id) => self.get_string_literal(cg, interner, id),
+                let (ptr, ptee_type) = match id {
+                    PtrId::Mem(id) => (
+                        self.variable_map[&id],
+                        cg.get_type(type_store, program.get_memory_type_resolved(id)),
+                    ),
+                    PtrId::Str(id) => (
+                        self.get_string_literal(cg, interner, id),
+                        cg.get_type(type_store, type_store.get_builtin(BuiltinTypes::U8).id),
+                    ),
                 };
 
                 if let Some(offset) = offset {
                     let offset = cg.ctx.i64_type().const_int(offset, false);
                     let name = ptr.get_name().to_str().unwrap();
-                    unsafe { cg.builder.build_gep(ptr, &[offset], name) }.into()
+                    unsafe { cg.builder.build_gep(ptee_type, ptr, &[offset], name) }.into()
                 } else {
                     ptr.into()
                 }
@@ -233,18 +240,21 @@ impl<'ctx> ValueStore<'ctx> {
 
     fn load_value(
         &mut self,
-        cg: &CodeGen<'ctx>,
+        cg: &mut CodeGen<'ctx>,
         id: ValueId,
         analyzer: &Analyzer,
         type_store: &TypeStore,
         interner: &Interner,
+        program: &Program,
     ) -> BasicValueEnum<'ctx> {
         if let Some([const_val]) = analyzer.value_consts([id]) {
-            self.load_const_value(cg, id, const_val, analyzer, type_store, interner)
+            self.load_const_value(cg, id, const_val, analyzer, type_store, interner, program)
         } else if let Some(&ptr) = self.merge_pair_map.get(&id) {
             let name = ptr.get_name().to_str().unwrap();
             trace!(name, "Fetching variable {id:?}");
-            cg.builder.build_load(ptr, name)
+            let [ty_id] = analyzer.value_types([id]).unwrap();
+            let val_type = cg.get_type(type_store, ty_id);
+            cg.builder.build_load(val_type, ptr, name)
         } else {
             trace!("Fetching live value {id:?}");
             self.value_map[&id]
@@ -292,7 +302,7 @@ impl<'ctx> CodeGen<'ctx> {
         let pass_manager = PassManager::create(());
         pm_builder.populate_module_pass_manager(&pass_manager);
 
-        const ATTRIBUTE_ALIGNSTACK: u32 = 77;
+        const ATTRIBUTE_ALIGNSTACK: u32 = 81;
 
         let attrib_align_stack = ctx.create_enum_attribute(ATTRIBUTE_ALIGNSTACK, 32);
 
@@ -516,13 +526,19 @@ impl<'ctx> CodeGen<'ctx> {
 
             match &op.code {
                 OpCode::Add | OpCode::Subtract => {
-                    self.build_add_sub(interner, analyzer, value_store, type_store, op)
+                    self.build_add_sub(program, interner, analyzer, value_store, type_store, op)
                 }
-                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
-                    self.build_multiply_and_or_xor(interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => self
+                    .build_multiply_and_or_xor(
+                        program,
+                        interner,
+                        analyzer,
+                        value_store,
+                        type_store,
+                        op,
+                    ),
                 OpCode::Div | OpCode::Rem => {
-                    self.build_div_rem(interner, analyzer, value_store, type_store, op)
+                    self.build_div_rem(program, interner, analyzer, value_store, type_store, op)
                 }
 
                 OpCode::Equal
@@ -531,18 +547,23 @@ impl<'ctx> CodeGen<'ctx> {
                 | OpCode::GreaterEqual
                 | OpCode::Less
                 | OpCode::LessEqual => {
-                    self.build_compare(interner, analyzer, value_store, type_store, op)
+                    self.build_compare(program, interner, analyzer, value_store, type_store, op)
                 }
 
                 OpCode::IsNull => {
-                    self.build_is_null(interner, analyzer, value_store, type_store, op)
+                    self.build_is_null(program, interner, analyzer, value_store, type_store, op)
                 }
 
-                OpCode::ShiftLeft | OpCode::ShiftRight => {
-                    self.build_shift_left_right(interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::ShiftLeft | OpCode::ShiftRight => self.build_shift_left_right(
+                    program,
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                ),
                 OpCode::BitNot => {
-                    self.build_bit_not(interner, analyzer, value_store, type_store, op)
+                    self.build_bit_not(program, interner, analyzer, value_store, type_store, op)
                 }
 
                 OpCode::CallFunction {
@@ -557,12 +578,18 @@ impl<'ctx> CodeGen<'ctx> {
                     *callee_id,
                 ),
 
-                OpCode::ResolvedCast { id: type_id } => {
-                    self.build_cast(interner, analyzer, value_store, type_store, op, *type_id)
-                }
+                OpCode::ResolvedCast { id: type_id } => self.build_cast(
+                    program,
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                    *type_id,
+                ),
 
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
-                    self.build_dup_over(interner, type_store, analyzer, value_store, op)
+                    self.build_dup_over(program, interner, type_store, analyzer, value_store, op)
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
@@ -613,15 +640,20 @@ impl<'ctx> CodeGen<'ctx> {
                     while_op,
                 ),
 
-                OpCode::Load => self.build_load(interner, analyzer, value_store, type_store, op),
-                OpCode::Store => self.build_store(interner, analyzer, value_store, type_store, op),
+                OpCode::Load => {
+                    self.build_load(program, interner, analyzer, value_store, type_store, op)
+                }
+                OpCode::Store => {
+                    self.build_store(program, interner, analyzer, value_store, type_store, op)
+                }
                 OpCode::PackArray { .. } | OpCode::PackStruct { .. } => {
-                    self.build_pack(interner, analyzer, value_store, type_store, op)
+                    self.build_pack(program, interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::Unpack { .. } => {
-                    self.build_unpack(interner, analyzer, value_store, type_store, op)
+                    self.build_unpack(program, interner, analyzer, value_store, type_store, op)
                 }
                 OpCode::ExtractArray { emit_array } => self.build_extract_array(
+                    program,
                     source_store,
                     interner,
                     analyzer,
@@ -632,6 +664,7 @@ impl<'ctx> CodeGen<'ctx> {
                     *emit_array,
                 ),
                 OpCode::InsertArray { emit_array } => self.build_insert_array(
+                    program,
                     source_store,
                     interner,
                     analyzer,
@@ -645,6 +678,7 @@ impl<'ctx> CodeGen<'ctx> {
                     emit_struct,
                     field_name,
                 } => self.build_extract_struct(
+                    program,
                     interner,
                     analyzer,
                     value_store,
@@ -657,6 +691,7 @@ impl<'ctx> CodeGen<'ctx> {
                     emit_struct,
                     field_name,
                 } => self.build_insert_struct(
+                    program,
                     interner,
                     analyzer,
                     value_store,
@@ -697,9 +732,15 @@ impl<'ctx> CodeGen<'ctx> {
                     *is_c_str,
                 ),
 
-                OpCode::SysCall { arg_count } => {
-                    self.build_syscall(interner, analyzer, value_store, type_store, op, *arg_count)
-                }
+                OpCode::SysCall { arg_count } => self.build_syscall(
+                    program,
+                    interner,
+                    analyzer,
+                    value_store,
+                    type_store,
+                    op,
+                    *arg_count,
+                ),
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop { .. }

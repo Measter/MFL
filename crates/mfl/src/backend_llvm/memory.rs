@@ -13,7 +13,7 @@ use crate::{
     opcode::Op,
     program::{
         static_analysis::{Analyzer, ValueId},
-        ItemId,
+        ItemId, Program,
     },
     source_file::{SourceLocation, SourceStorage, Spanned},
     type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
@@ -42,6 +42,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_pack(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -77,7 +78,8 @@ impl<'ctx> CodeGen<'ctx> {
                 _ => unreachable!(),
             };
 
-            let value = value_store.load_value(self, *value_id, analyzer, type_store, interner);
+            let value =
+                value_store.load_value(self, *value_id, analyzer, type_store, interner, program);
             let value = if let (
                 TypeKind::Integer {
                     width: to_width, ..
@@ -109,6 +111,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_unpack(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -120,7 +123,14 @@ impl<'ctx> CodeGen<'ctx> {
         let [input_type_id] = analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = type_store.get_type_info(input_type_id);
 
-        let aggr = value_store.load_value(self, input_value_id, analyzer, type_store, interner);
+        let aggr = value_store.load_value(
+            self,
+            input_value_id,
+            analyzer,
+            type_store,
+            interner,
+            program,
+        );
 
         let aggr = match input_type_info.kind {
             TypeKind::Array { .. } => aggr.into_array_value().as_aggregate_value_enum(),
@@ -252,6 +262,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_extract_array(
         &mut self,
+        program: &Program,
         source_store: &SourceStorage,
         interner: &mut Interner,
         analyzer: &Analyzer,
@@ -263,51 +274,75 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [array_value_id, _] = *op_io.inputs().as_arr();
-        let [array_val, idx_val] =
-            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+        let [array_val, idx_val] = inputs
+            .map(|id| value_store.load_value(self, id, analyzer, type_store, interner, program));
 
         let [array_type_id] = analyzer.value_types([array_value_id]).unwrap();
         let array_type_info = type_store.get_type_info(array_type_id);
 
-        let (arr_ptr, length, ptr_kind) = match array_type_info.kind {
-            TypeKind::Array { length, .. } => {
+        let (arr_ptr, length, ptr_kind, arr_ptee_type, stored_ptee_type) = match array_type_info
+            .kind
+        {
+            TypeKind::Array {
+                length,
+                type_id: stored_ptee_type,
+            } => {
                 // Ugh, this sucks!
                 let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
                 self.builder.build_store(store_location, array_val);
 
                 let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
 
-                (store_location, length_value, ArrayPtrKind::Array)
+                (
+                    store_location,
+                    length_value,
+                    ArrayPtrKind::Array,
+                    array_type_id,
+                    stored_ptee_type,
+                )
             }
             TypeKind::Pointer(sub_type_id) => {
                 let sub_type_info = type_store.get_type_info(sub_type_id);
                 match sub_type_info.kind {
-                    TypeKind::Array { length, .. } => {
+                    TypeKind::Array {
+                        length,
+                        type_id: stored_ptee_type,
+                    } => {
                         let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
 
                         (
                             array_val.into_pointer_value(),
                             length_value,
                             ArrayPtrKind::Array,
+                            sub_type_id,
+                            stored_ptee_type,
                         )
                     }
                     TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let ptee_type = self.get_type(type_store, sub_type_id);
                         let struct_val =
-                            self.builder.build_load(array_val.into_pointer_value(), "");
-                        let (arr_ptr, _, length) = self.get_slice_like_struct_fields(
+                            self.builder
+                                .build_load(ptee_type, array_val.into_pointer_value(), "");
+                        let (arr_ptr, store_ptee_info, length) = self.get_slice_like_struct_fields(
                             interner,
                             type_store,
                             array_value_id,
                             sub_type_id,
                             struct_val.into_struct_value(),
                         );
-                        (arr_ptr, length, ArrayPtrKind::Direct)
+                        (
+                            arr_ptr,
+                            length,
+                            ArrayPtrKind::Direct,
+                            sub_type_id,
+                            store_ptee_info.id,
+                        )
                     }
                     _ => unreachable!(),
                 }
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let (arr_ptr, _, length) = self.get_slice_like_struct_fields(
+                let (arr_ptr, store_ptee_info, length) = self.get_slice_like_struct_fields(
                     interner,
                     type_store,
                     array_value_id,
@@ -315,7 +350,13 @@ impl<'ctx> CodeGen<'ctx> {
                     array_val.into_struct_value(),
                 );
 
-                (arr_ptr, length, ArrayPtrKind::Direct)
+                (
+                    arr_ptr,
+                    length,
+                    ArrayPtrKind::Direct,
+                    array_type_id,
+                    store_ptee_info.id,
+                )
             }
             _ => unreachable!(),
         };
@@ -341,7 +382,11 @@ impl<'ctx> CodeGen<'ctx> {
             ArrayPtrKind::Direct => &idxs[1..],
         };
 
-        let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, offset_idxs, "") };
+        let offset_ptr = unsafe {
+            let ptee_type = self.get_type(type_store, arr_ptee_type);
+            self.builder
+                .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")
+        };
 
         let output_value_id = if emit_array {
             let output_array_id = op_io.outputs()[0];
@@ -352,7 +397,10 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let output_value_name = format!("{output_value_id}");
-        let loaded_value = self.builder.build_load(offset_ptr, &output_value_name);
+        let ptee_type = self.get_type(type_store, stored_ptee_type);
+        let loaded_value = self
+            .builder
+            .build_load(ptee_type, offset_ptr, &output_value_name);
         value_store.store_value(self, output_value_id, loaded_value);
 
         if let TypeKind::Array { .. } = array_type_info.kind {
@@ -362,6 +410,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_insert_array(
         &mut self,
+        program: &Program,
         source_store: &SourceStorage,
         interner: &mut Interner,
         analyzer: &Analyzer,
@@ -373,8 +422,8 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [data_value_id, array_value_id, _] = *op_io.inputs().as_arr();
-        let [data_val, array_val, idx_val] =
-            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+        let [data_val, array_val, idx_val] = inputs
+            .map(|id| value_store.load_value(self, id, analyzer, type_store, interner, program));
 
         let [data_type_id, array_type_id] = analyzer
             .value_types([data_value_id, array_value_id])
@@ -382,7 +431,7 @@ impl<'ctx> CodeGen<'ctx> {
         let array_type_info = type_store.get_type_info(array_type_id);
         let data_type_info = type_store.get_type_info(data_type_id);
 
-        let (arr_ptr, store_type_info, length, ptr_kind) = match array_type_info.kind {
+        let (arr_ptr, store_type_info, length, ptr_kind, ptee_kind) = match array_type_info.kind {
             TypeKind::Array { type_id, length } => {
                 // Ugh, this sucks!
                 let store_location = value_store.get_temp_alloca(self, type_store, array_type_id);
@@ -396,6 +445,7 @@ impl<'ctx> CodeGen<'ctx> {
                     store_type_info,
                     length_value,
                     ArrayPtrKind::Array,
+                    array_type_id,
                 )
             }
             TypeKind::Pointer(sub_type_id) => {
@@ -414,11 +464,14 @@ impl<'ctx> CodeGen<'ctx> {
                             store_type_info,
                             length_value,
                             ArrayPtrKind::Array,
+                            sub_type_id,
                         )
                     }
                     TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let ptee_type = self.get_type(type_store, sub_type_id);
                         let struct_val =
-                            self.builder.build_load(array_val.into_pointer_value(), "");
+                            self.builder
+                                .build_load(ptee_type, array_val.into_pointer_value(), "");
                         let (ptr_field, store_type_info, length) = self
                             .get_slice_like_struct_fields(
                                 interner,
@@ -427,7 +480,13 @@ impl<'ctx> CodeGen<'ctx> {
                                 sub_type_id,
                                 struct_val.into_struct_value(),
                             );
-                        (ptr_field, store_type_info, length, ArrayPtrKind::Direct)
+                        (
+                            ptr_field,
+                            store_type_info,
+                            length,
+                            ArrayPtrKind::Direct,
+                            sub_type_id,
+                        )
                     }
                     _ => unreachable!(),
                 }
@@ -440,7 +499,13 @@ impl<'ctx> CodeGen<'ctx> {
                     array_type_id,
                     array_val.into_struct_value(),
                 );
-                (ptr_field, store_type_info, length, ArrayPtrKind::Direct)
+                (
+                    ptr_field,
+                    store_type_info,
+                    length,
+                    ArrayPtrKind::Direct,
+                    array_type_id,
+                )
             }
             _ => unreachable!(),
         };
@@ -467,7 +532,11 @@ impl<'ctx> CodeGen<'ctx> {
             ArrayPtrKind::Direct => &idxs[1..],
         };
 
-        let offset_ptr = unsafe { self.builder.build_in_bounds_gep(arr_ptr, offset_idxs, "") };
+        let offset_ptr = unsafe {
+            let ptee_type = self.get_type(type_store, ptee_kind);
+            self.builder
+                .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")
+        };
 
         let data_val = if let (
             TypeKind::Integer {
@@ -499,7 +568,7 @@ impl<'ctx> CodeGen<'ctx> {
                     array_type.ptr_type(AddressSpace::default()),
                     "",
                 );
-                let array_value = self.builder.build_load(cast_ptr, "");
+                let array_value = self.builder.build_load(array_type, cast_ptr, "");
                 value_store.release_temp_alloca(array_type_id, arr_ptr);
                 value_store.store_value(self, op_io.outputs()[0], array_value);
             } else {
@@ -512,6 +581,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_insert_struct(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -522,8 +592,8 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let inputs @ [data_value_id, input_struct_value_id] = *op_io.inputs().as_arr();
-        let [data_val, input_struct_val] =
-            inputs.map(|id| value_store.load_value(self, id, analyzer, type_store, interner));
+        let [data_val, input_struct_val] = inputs
+            .map(|id| value_store.load_value(self, id, analyzer, type_store, interner, program));
 
         let [data_type_id, input_struct_type_id] = analyzer
             .value_types([data_value_id, input_struct_value_id])
@@ -538,9 +608,10 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Pointer(sub_type_id) => {
                 let struct_def = type_store.get_struct_def(sub_type_id);
+                let ptee_type = self.get_type(type_store, sub_type_id);
                 let struct_value = self
                     .builder
-                    .build_load(input_struct_val.into_pointer_value(), "")
+                    .build_load(ptee_type, input_struct_val.into_pointer_value(), "")
                     .into_struct_value();
 
                 (struct_value, struct_def)
@@ -613,6 +684,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_extract_struct(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -623,8 +695,14 @@ impl<'ctx> CodeGen<'ctx> {
     ) {
         let op_io = analyzer.get_op_io(op.id);
         let [input_struct_value_id] = *op_io.inputs().as_arr();
-        let input_struct_val =
-            value_store.load_value(self, input_struct_value_id, analyzer, type_store, interner);
+        let input_struct_val = value_store.load_value(
+            self,
+            input_struct_value_id,
+            analyzer,
+            type_store,
+            interner,
+            program,
+        );
 
         let [input_struct_type_id] = analyzer.value_types([input_struct_value_id]).unwrap();
         let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
@@ -636,9 +714,10 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Pointer(sub_type_id) => {
                 let struct_def = type_store.get_struct_def(sub_type_id);
+                let ptee_type = self.get_type(type_store, sub_type_id);
                 let struct_value = self
                     .builder
-                    .build_load(input_struct_val.into_pointer_value(), "")
+                    .build_load(ptee_type, input_struct_val.into_pointer_value(), "")
                     .into_struct_value();
 
                 (struct_value, struct_def)
@@ -673,6 +752,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_load(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -682,16 +762,22 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = analyzer.get_op_io(op.id);
 
         let ptr_value_id = op_io.inputs()[0];
+        let [ptr_type_id] = analyzer.value_types([ptr_value_id]).unwrap();
+        let ptr_type_info = type_store.get_type_info(ptr_type_id);
+        let TypeKind::Pointer(ptee_id) = ptr_type_info.kind else { unreachable!() };
+
         let ptr = value_store
-            .load_value(self, ptr_value_id, analyzer, type_store, interner)
+            .load_value(self, ptr_value_id, analyzer, type_store, interner, program)
             .into_pointer_value();
 
-        let value = self.builder.build_load(ptr, "load");
+        let ptee_type = self.get_type(type_store, ptee_id);
+        let value = self.builder.build_load(ptee_type, ptr, "load");
         value_store.store_value(self, op_io.outputs()[0], value);
     }
 
     pub(super) fn build_store(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -707,7 +793,7 @@ impl<'ctx> CodeGen<'ctx> {
         let TypeKind::Pointer(pointee_type_id) = ptr_type_kind else { unreachable!() };
         let pointee_type_kind = type_store.get_type_info(pointee_type_id).kind;
 
-        let data = value_store.load_value(self, data, analyzer, type_store, interner);
+        let data = value_store.load_value(self, data, analyzer, type_store, interner, program);
 
         let data = match [data_type_kind, pointee_type_kind] {
             [TypeKind::Integer {
@@ -724,7 +810,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let ptr = value_store
-            .load_value(self, ptr, analyzer, type_store, interner)
+            .load_value(self, ptr, analyzer, type_store, interner, program)
             .into_pointer_value();
 
         self.builder.build_store(ptr, data);

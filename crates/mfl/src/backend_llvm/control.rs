@@ -30,7 +30,8 @@ impl<'ctx> CodeGen<'ctx> {
             .iter()
             .zip(program.get_item_signature_resolved(callee_id).entry_stack())
             .map(|(&value_id, &expected_type)| {
-                let value = value_store.load_value(self, value_id, analyzer, type_store, interner);
+                let value =
+                    value_store.load_value(self, value_id, analyzer, type_store, interner, program);
                 let [input_type_id] = analyzer.value_types([value_id]).unwrap();
 
                 match (
@@ -109,7 +110,8 @@ impl<'ctx> CodeGen<'ctx> {
             .iter()
             .zip(sig.exit_stack())
             .map(|(value_id, expected_type_id)| {
-                let value = value_store.load_value(self, *value_id, analyzer, type_store, interner);
+                let value = value_store
+                    .load_value(self, *value_id, analyzer, type_store, interner, program);
                 let [value_type_id] = analyzer.value_types([*value_id]).unwrap();
 
                 let value_type_info = type_store.get_type_info(value_type_id);
@@ -169,6 +171,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_syscall(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -182,8 +185,8 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .map(
-                |id| match value_store.load_value(self, *id, analyzer, type_store, interner) {
+            .map(|id| {
+                match value_store.load_value(self, *id, analyzer, type_store, interner, program) {
                     BasicValueEnum::PointerValue(v) => {
                         self.builder
                             .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")
@@ -197,8 +200,8 @@ impl<'ctx> CodeGen<'ctx> {
                         self.cast_int(i, self.ctx.i64_type(), signed)
                     }
                     t => panic!("ICE: Unexected type: {t:?}"),
-                },
-            )
+                }
+            })
             .map(Into::into)
             .collect();
 
@@ -268,13 +271,18 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Compiling jump for {:?}", op.id);
         // Make conditional jump.
         let op_io = analyzer.get_op_io(op.id);
-        self.builder.build_conditional_branch(
-            value_store
-                .load_value(self, op_io.inputs()[0], analyzer, type_store, interner)
-                .into_int_value(),
-            then_basic_block,
-            else_basic_block,
-        );
+        let bool_value = value_store
+            .load_value(
+                self,
+                op_io.inputs()[0],
+                analyzer,
+                type_store,
+                interner,
+                program,
+            )
+            .into_int_value();
+        self.builder
+            .build_conditional_branch(bool_value, then_basic_block, else_basic_block);
 
         // Compile Then
         self.builder.position_at_end(then_basic_block);
@@ -301,8 +309,14 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
 
-                let data =
-                    value_store.load_value(self, merge.then_value, analyzer, type_store, interner);
+                let data = value_store.load_value(
+                    self,
+                    merge.then_value,
+                    analyzer,
+                    type_store,
+                    interner,
+                    program,
+                );
 
                 let data = if let [TypeKind::Integer {
                     signed: then_signed,
@@ -353,8 +367,14 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
 
-                let data =
-                    value_store.load_value(self, merge.else_value, analyzer, type_store, interner);
+                let data = value_store.load_value(
+                    self,
+                    merge.else_value,
+                    analyzer,
+                    type_store,
+                    interner,
+                    program,
+                );
 
                 let data = if let [TypeKind::Integer {
                     signed: else_signed,
@@ -443,6 +463,7 @@ impl<'ctx> CodeGen<'ctx> {
                     analyzer,
                     type_store,
                     interner,
+                    program,
                 );
 
                 let data = if let [TypeKind::Integer {
@@ -467,13 +488,19 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Compiling jump for {:?}", op.id);
         // Make conditional jump.
         let op_io = analyzer.get_op_io(op.id);
-        self.builder.build_conditional_branch(
-            value_store
-                .load_value(self, op_io.inputs()[0], analyzer, type_store, interner)
-                .into_int_value(),
-            body_block,
-            post_block,
-        );
+
+        let bool_value = value_store
+            .load_value(
+                self,
+                op_io.inputs()[0],
+                analyzer,
+                type_store,
+                interner,
+                program,
+            )
+            .into_int_value();
+        self.builder
+            .build_conditional_branch(bool_value, body_block, post_block);
 
         // Compile body
         self.builder.position_at_end(body_block);
@@ -506,6 +533,7 @@ impl<'ctx> CodeGen<'ctx> {
                     analyzer,
                     type_store,
                     interner,
+                    program,
                 );
 
                 let data = if let [TypeKind::Integer {

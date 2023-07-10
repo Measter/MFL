@@ -5,7 +5,7 @@ use lasso::Spur;
 use crate::{
     interners::Interner,
     opcode::{IntKind, Op},
-    program::static_analysis::Analyzer,
+    program::{static_analysis::Analyzer, Program},
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
 };
 
@@ -14,6 +14,7 @@ use super::{CodeGen, ValueStore};
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         analyzer: &Analyzer,
         value_store: &mut ValueStore<'ctx>,
@@ -34,7 +35,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_type_info = type_store.get_type_info(input_type_id);
 
                 let input_data =
-                    value_store.load_value(self, input_id, analyzer, type_store, interner);
+                    value_store.load_value(self, input_id, analyzer, type_store, interner, program);
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -71,7 +72,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = type_store.get_type_info(input_type_id);
                 let input_data =
-                    value_store.load_value(self, input_id, analyzer, type_store, interner);
+                    value_store.load_value(self, input_id, analyzer, type_store, interner, program);
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -120,6 +121,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_dup_over(
         &mut self,
+        program: &Program,
         interner: &mut Interner,
         type_store: &TypeStore,
         analyzer: &Analyzer,
@@ -129,7 +131,8 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = analyzer.get_op_io(op.id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-            let value = value_store.load_value(self, input_id, analyzer, type_store, interner);
+            let value =
+                value_store.load_value(self, input_id, analyzer, type_store, interner, program);
             value_store.store_value(self, output_id, value);
         }
     }
