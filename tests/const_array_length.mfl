@@ -1,0 +1,12 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+const LEN [u64] is 5 end
+proc foo [u8[LEN]] to [] is
+    memory V is u8[LEN] end
+    drop
+end
+
