@@ -8,12 +8,11 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::{static_analysis::ValueId, ItemId},
-    source_file::{SourceLocation, SourceStorage, Spanned},
-    type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind, TypeStore},
+    source_file::{SourceLocation, Spanned},
+    type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
 };
 
 use super::{CodeGen, DataStore, ValueStore};
@@ -135,8 +134,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_bounds_check(
         &mut self,
-        mut source_store: &SourceStorage,
-        type_store: &TypeStore,
+        ds: &mut DataStore,
         op_loc: SourceLocation,
         function: FunctionValue,
         idx: IntValue,
@@ -158,8 +156,9 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(fail_block);
         // Crash and burn
-        let file_name = source_store.name(op_loc.file_id);
-        let (_, line, column) = source_store
+        let file_name = ds.source_store.name(op_loc.file_id);
+        let (_, line, column) = ds
+            .source_store
             .fetch(&op_loc.file_id)
             .unwrap()
             .get_offset_line(op_loc.source_start.to_usize())
@@ -173,7 +172,10 @@ impl<'ctx> CodeGen<'ctx> {
             .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
 
         let str_type = self
-            .get_type(type_store, type_store.get_builtin(BuiltinTypes::String).id)
+            .get_type(
+                ds.type_store,
+                ds.type_store.get_builtin(BuiltinTypes::String).id,
+            )
             .into_struct_type();
         let str_value = str_type.const_named_struct(&[
             self.ctx
@@ -193,15 +195,14 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn get_slice_like_struct_fields(
         &mut self,
-        interner: &mut Interner,
-        type_store: &TypeStore,
+        ds: &mut DataStore,
         struct_value_id: ValueId,
         struct_type_id: TypeId,
         struct_value: StructValue<'ctx>,
     ) -> (PointerValue<'ctx>, TypeInfo, IntValue<'ctx>) {
-        let struct_def = type_store.get_struct_def(struct_type_id);
+        let struct_def = ds.type_store.get_struct_def(struct_type_id);
 
-        let pointer_field_name = interner.intern("pointer");
+        let pointer_field_name = ds.interner.intern("pointer");
         let (ptr_field_idx, ptr_field_info) = struct_def
             .fields
             .iter()
@@ -209,7 +210,7 @@ impl<'ctx> CodeGen<'ctx> {
             .find(|(_, fi)| fi.name.inner == pointer_field_name)
             .unwrap();
 
-        let TypeKind::Pointer(store_type) = type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
+        let TypeKind::Pointer(store_type) = ds.type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
 
         let ptr_name = format!("{struct_value_id}_pointer");
         let ptr_value = self
@@ -218,7 +219,7 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        let length_field_name = interner.intern("length");
+        let length_field_name = ds.interner.intern("length");
         let length_field_idx = struct_def
             .fields
             .iter()
@@ -238,7 +239,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         (
             ptr_value,
-            type_store.get_type_info(store_type),
+            ds.type_store.get_type_info(store_type),
             length_value,
         )
     }
@@ -303,8 +304,7 @@ impl<'ctx> CodeGen<'ctx> {
                             self.builder
                                 .build_load(ptee_type, array_val.into_pointer_value(), "");
                         let (arr_ptr, store_ptee_info, length) = self.get_slice_like_struct_fields(
-                            ds.interner,
-                            ds.type_store,
+                            ds,
                             array_value_id,
                             sub_type_id,
                             struct_val.into_struct_value(),
@@ -322,8 +322,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let (arr_ptr, store_ptee_info, length) = self.get_slice_like_struct_fields(
-                    ds.interner,
-                    ds.type_store,
+                    ds,
                     array_value_id,
                     array_type_id,
                     array_val.into_struct_value(),
@@ -346,14 +345,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(
-            ds.source_store,
-            ds.type_store,
-            op.token.location,
-            function,
-            idx_val,
-            length,
-        );
+        self.build_bounds_check(ds, op.token.location, function, idx_val, length);
 
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
         let offset_idxs: &[IntValue] = match ptr_kind {
@@ -450,8 +442,7 @@ impl<'ctx> CodeGen<'ctx> {
                                 .build_load(ptee_type, array_val.into_pointer_value(), "");
                         let (ptr_field, store_type_info, length) = self
                             .get_slice_like_struct_fields(
-                                ds.interner,
-                                ds.type_store,
+                                ds,
                                 array_value_id,
                                 sub_type_id,
                                 struct_val.into_struct_value(),
@@ -469,8 +460,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let (ptr_field, store_type_info, length) = self.get_slice_like_struct_fields(
-                    ds.interner,
-                    ds.type_store,
+                    ds,
                     array_value_id,
                     array_type_id,
                     array_val.into_struct_value(),
@@ -492,14 +482,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         );
 
-        self.build_bounds_check(
-            ds.source_store,
-            ds.type_store,
-            op.token.location,
-            function,
-            idx_val,
-            length,
-        );
+        self.build_bounds_check(ds, op.token.location, function, idx_val, length);
 
         // And finally actually build the insert
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
