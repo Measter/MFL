@@ -3,39 +3,33 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    interners::Interner,
     opcode::{IntKind, Op},
-    program::{static_analysis::Analyzer, Program},
-    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind},
 };
 
-use super::{CodeGen, ValueStore};
+use super::{CodeGen, DataStore, ValueStore};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
         &mut self,
-        program: &Program,
-        interner: &mut Interner,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        type_store: &TypeStore,
         op: &Op,
         to_type_id: TypeId,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
-        let to_type_info = type_store.get_type_info(to_type_id);
+        let to_type_info = ds.type_store.get_type_info(to_type_id);
         match to_type_info.kind {
             TypeKind::Integer {
                 width: output_width,
                 ..
             } => {
                 let input_id = op_io.inputs()[0];
-                let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
-                let input_type_info = type_store.get_type_info(input_type_id);
+                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.type_store.get_type_info(input_type_id);
 
-                let input_data =
-                    value_store.load_value(self, input_id, analyzer, type_store, interner, program);
+                let input_data = value_store.load_value(self, input_id, ds);
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -69,10 +63,9 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Pointer(to_ptr_type) => {
                 let input_id = op_io.inputs()[0];
-                let input_type_id = analyzer.value_types([input_id]).unwrap()[0];
-                let input_type_info = type_store.get_type_info(input_type_id);
-                let input_data =
-                    value_store.load_value(self, input_id, analyzer, type_store, interner, program);
+                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.type_store.get_type_info(input_type_id);
+                let input_data = value_store.load_value(self, input_id, ds);
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -80,7 +73,7 @@ impl<'ctx> CodeGen<'ctx> {
                         signed: Signedness::Unsigned,
                     } => {
                         let ptr_type = self
-                            .get_type(type_store, to_ptr_type)
+                            .get_type(ds.type_store, to_ptr_type)
                             .ptr_type(AddressSpace::default());
                         self.builder.build_int_to_ptr(
                             input_data.into_int_value(),
@@ -90,7 +83,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                     TypeKind::Pointer(_) => {
                         let to_ptr_type = self
-                            .get_type(type_store, to_ptr_type)
+                            .get_type(ds.type_store, to_ptr_type)
                             .ptr_type(AddressSpace::default());
                         self.builder.build_pointer_cast(
                             input_data.into_pointer_value(),
@@ -121,31 +114,27 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_dup_over(
         &mut self,
-        program: &Program,
-        interner: &mut Interner,
-        type_store: &TypeStore,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-            let value =
-                value_store.load_value(self, input_id, analyzer, type_store, interner, program);
+            let value = value_store.load_value(self, input_id, ds);
             value_store.store_value(self, output_id, value);
         }
     }
 
     pub(super) fn build_push_int(
         &mut self,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         width: IntWidth,
         value: IntKind,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         let int_type = width.get_int_type(self.ctx);
         let value = match value {
@@ -163,12 +152,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_push_bool(
         &mut self,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         value: bool,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         let value = self.ctx.bool_type().const_int(value as _, false).into();
         value_store.store_value(self, op_io.outputs()[0], value);
@@ -176,26 +165,26 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_push_str(
         &mut self,
-        analyzer: &Analyzer,
-        interner: &mut Interner,
-        type_store: &TypeStore,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         str_id: Spur,
         is_c_str: bool,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
-        let str_ptr = value_store.get_string_literal(self, interner, str_id);
+        let op_io = ds.analyzer.get_op_io(op.id);
+        let str_ptr = value_store.get_string_literal(self, ds.interner, str_id);
 
         let store_value = if is_c_str {
             str_ptr.as_basic_value_enum()
         } else {
-            let string = interner.resolve(str_id);
+            let string = ds.interner.resolve(str_id);
             let len = string.len() - 1; // It's null-terminated.
             let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
-            let struct_type =
-                self.get_type(type_store, type_store.get_builtin(BuiltinTypes::String).id);
+            let struct_type = self.get_type(
+                ds.type_store,
+                ds.type_store.get_builtin(BuiltinTypes::String).id,
+            );
 
             struct_type
                 .into_struct_type()

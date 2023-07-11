@@ -3,40 +3,39 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    interners::Interner,
     opcode::{If, Op, While},
-    program::{static_analysis::Analyzer, ItemId, Program},
-    source_file::{SourceStorage, Spanned},
-    type_store::{TypeKind, TypeStore},
+    program::ItemId,
+    source_file::Spanned,
+    type_store::TypeKind,
 };
 
-use super::{CodeGen, ValueStore};
+use super::{CodeGen, DataStore, ValueStore};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_function_call(
         &mut self,
-        program: &Program,
-        interner: &mut Interner,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        type_store: &TypeStore,
         op: &Op,
         callee_id: ItemId,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(program.get_item_signature_resolved(callee_id).entry_stack())
+            .zip(
+                ds.program
+                    .get_item_signature_resolved(callee_id)
+                    .entry_stack(),
+            )
             .map(|(&value_id, &expected_type)| {
-                let value =
-                    value_store.load_value(self, value_id, analyzer, type_store, interner, program);
-                let [input_type_id] = analyzer.value_types([value_id]).unwrap();
+                let value = value_store.load_value(self, value_id, ds);
+                let [input_type_id] = ds.analyzer.value_types([value_id]).unwrap();
 
                 match (
-                    type_store.get_type_info(expected_type).kind,
-                    type_store.get_type_info(input_type_id).kind,
+                    ds.type_store.get_type_info(expected_type).kind,
+                    ds.type_store.get_type_info(input_type_id).kind,
                 ) {
                     (
                         TypeKind::Integer {
@@ -60,7 +59,7 @@ impl<'ctx> CodeGen<'ctx> {
             .map(Into::into)
             .collect();
 
-        let callee_name = interner.get_symbol_name(program, callee_id);
+        let callee_name = ds.interner.get_symbol_name(ds.program, callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
         let result = self
@@ -88,34 +87,30 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_epilogue_return(
         &mut self,
-        program: &Program,
-        interner: &mut Interner,
-        type_store: &mut TypeStore,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         self_id: ItemId,
         op: &Op,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         if op_io.inputs().is_empty() {
             self.builder.build_return(None);
             return;
         }
 
-        let sig = program.get_item_signature_resolved(self_id);
+        let sig = ds.program.get_item_signature_resolved(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()
             .iter()
             .zip(sig.exit_stack())
             .map(|(value_id, expected_type_id)| {
-                let value = value_store
-                    .load_value(self, *value_id, analyzer, type_store, interner, program);
-                let [value_type_id] = analyzer.value_types([*value_id]).unwrap();
+                let value = value_store.load_value(self, *value_id, ds);
+                let [value_type_id] = ds.analyzer.value_types([*value_id]).unwrap();
 
-                let value_type_info = type_store.get_type_info(value_type_id);
-                let expected_type_info = type_store.get_type_info(*expected_type_id);
+                let value_type_info = ds.type_store.get_type_info(value_type_id);
+                let expected_type_info = ds.type_store.get_type_info(*expected_type_id);
 
                 let value = match (value_type_info.kind, expected_type_info.kind) {
                     (
@@ -156,12 +151,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_prologue(
         &mut self,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         function: FunctionValue<'ctx>,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         let params = function.get_param_iter();
         for (id, param) in op_io.outputs().iter().zip(params) {
@@ -171,36 +166,31 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_syscall(
         &mut self,
-        program: &Program,
-        interner: &mut Interner,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        type_store: &TypeStore,
         op: &Op,
         arg_count: Spanned<u8>,
     ) {
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
         let callee_value = self.syscall_wrappers[arg_count.inner.to_usize() - 1];
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .map(|id| {
-                match value_store.load_value(self, *id, analyzer, type_store, interner, program) {
-                    BasicValueEnum::PointerValue(v) => {
-                        self.builder
-                            .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")
-                    }
-                    BasicValueEnum::IntValue(i) => {
-                        let [type_id] = analyzer.value_types([*id]).unwrap();
-                        let TypeKind::Integer { signed, .. } =
-                            type_store.get_type_info(type_id).kind else {
+            .map(|id| match value_store.load_value(self, *id, ds) {
+                BasicValueEnum::PointerValue(v) => {
+                    self.builder
+                        .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")
+                }
+                BasicValueEnum::IntValue(i) => {
+                    let [type_id] = ds.analyzer.value_types([*id]).unwrap();
+                    let TypeKind::Integer { signed, .. } =
+                            ds.type_store.get_type_info(type_id).kind else {
                                 unreachable!()
                             };
-                        self.cast_int(i, self.ctx.i64_type(), signed)
-                    }
-                    t => panic!("ICE: Unexected type: {t:?}"),
+                    self.cast_int(i, self.ctx.i64_type(), signed)
                 }
+                t => panic!("ICE: Unexected type: {t:?}"),
             })
             .map(Into::into)
             .collect();
@@ -220,11 +210,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_if(
         &mut self,
-        program: &Program,
-        source_store: &SourceStorage,
-        interner: &mut Interner,
-        type_store: &mut TypeStore,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
@@ -253,16 +239,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(current_block);
         // Compile condition
         trace!("Compiling condition for {:?}", op.id);
-        self.compile_block(
-            program,
-            value_store,
-            id,
-            &if_op.condition,
-            function,
-            source_store,
-            interner,
-            type_store,
-        );
+        self.compile_block(ds, value_store, id, &if_op.condition, function);
 
         if if_op.is_condition_terminal {
             return;
@@ -270,16 +247,9 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling jump for {:?}", op.id);
         // Make conditional jump.
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
         let bool_value = value_store
-            .load_value(
-                self,
-                op_io.inputs()[0],
-                analyzer,
-                type_store,
-                interner,
-                program,
-            )
+            .load_value(self, op_io.inputs()[0], ds)
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, then_basic_block, else_basic_block);
@@ -287,36 +257,21 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Then
         self.builder.position_at_end(then_basic_block);
         trace!("Compiling then-block for {:?}", op.id);
-        self.compile_block(
-            program,
-            value_store,
-            id,
-            &if_op.then_block,
-            function,
-            source_store,
-            interner,
-            type_store,
-        );
+        self.compile_block(ds, value_store, id, &if_op.then_block, function);
 
         trace!("Transfering to merge vars for {:?}", op.id);
         if !if_op.is_then_terminal {
-            let Some(merges) = analyzer.get_if_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
-                let type_ids = analyzer
+                let type_ids = ds
+                    .analyzer
                     .value_types([merge.then_value, merge.output_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.then_value,
-                    analyzer,
-                    type_store,
-                    interner,
-                    program,
-                );
+                let data = value_store.load_value(self, merge.then_value, ds);
 
                 let data = if let [TypeKind::Integer {
                     signed: then_signed,
@@ -345,36 +300,21 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Else
         self.builder.position_at_end(else_basic_block);
         trace!("Compiling else-block for {:?}", op.id);
-        self.compile_block(
-            program,
-            value_store,
-            id,
-            &if_op.else_block,
-            function,
-            source_store,
-            interner,
-            type_store,
-        );
+        self.compile_block(ds, value_store, id, &if_op.else_block, function);
 
         trace!("Transfering to merge vars for {:?}", op.id);
         if !if_op.is_else_terminal {
-            let Some(merges) = analyzer.get_if_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
-                let type_ids = analyzer
+                let type_ids = ds
+                    .analyzer
                     .value_types([merge.else_value, merge.output_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.else_value,
-                    analyzer,
-                    type_store,
-                    interner,
-                    program,
-                );
+                let data = value_store.load_value(self, merge.else_value, ds);
 
                 let data = if let [TypeKind::Integer {
                     signed: else_signed,
@@ -408,11 +348,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_while(
         &mut self,
-        program: &Program,
-        source_store: &SourceStorage,
-        interner: &mut Interner,
-        type_store: &mut TypeStore,
-        analyzer: &Analyzer,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
@@ -435,36 +371,21 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling condition for {:?}", op.id);
         self.builder.position_at_end(condition_block);
-        self.compile_block(
-            program,
-            value_store,
-            id,
-            &while_op.condition,
-            function,
-            source_store,
-            interner,
-            type_store,
-        );
+        self.compile_block(ds, value_store, id, &while_op.condition, function);
 
         trace!("Transfering to merge vars for {:?}", op.id);
         {
-            let Some(merges) = analyzer.get_while_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_while_merges(op.id) else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.condition {
-                let type_ids = analyzer
+                let type_ids = ds
+                    .analyzer
                     .value_types([merge.condition_value, merge.pre_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.condition_value,
-                    analyzer,
-                    type_store,
-                    interner,
-                    program,
-                );
+                let data = value_store.load_value(self, merge.condition_value, ds);
 
                 let data = if let [TypeKind::Integer {
                     signed: condition_signed,
@@ -487,17 +408,10 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling jump for {:?}", op.id);
         // Make conditional jump.
-        let op_io = analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op.id);
 
         let bool_value = value_store
-            .load_value(
-                self,
-                op_io.inputs()[0],
-                analyzer,
-                type_store,
-                interner,
-                program,
-            )
+            .load_value(self, op_io.inputs()[0], ds)
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, body_block, post_block);
@@ -505,36 +419,21 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile body
         self.builder.position_at_end(body_block);
         trace!("Compiling body-block for {:?}", op.id);
-        self.compile_block(
-            program,
-            value_store,
-            id,
-            &while_op.body_block,
-            function,
-            source_store,
-            interner,
-            type_store,
-        );
+        self.compile_block(ds, value_store, id, &while_op.body_block, function);
 
         trace!("Transfering to merge vars for {:?}", op.id);
         {
-            let Some(merges) = analyzer.get_while_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_while_merges(op.id) else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.body {
-                let type_ids = analyzer
+                let type_ids = ds
+                    .analyzer
                     .value_types([merge.condition_value, merge.pre_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.condition_value,
-                    analyzer,
-                    type_store,
-                    interner,
-                    program,
-                );
+                let data = value_store.load_value(self, merge.condition_value, ds);
 
                 let data = if let [TypeKind::Integer {
                     signed: condition_signed,

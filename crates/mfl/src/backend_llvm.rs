@@ -113,6 +113,14 @@ fn is_fully_const(id: ValueId, analyzer: &Analyzer) -> bool {
     )
 }
 
+struct DataStore<'a> {
+    program: &'a Program,
+    interner: &'a mut Interner,
+    analyzer: &'a Analyzer,
+    type_store: &'a mut TypeStore,
+    source_store: &'a SourceStorage,
+}
+
 #[derive(Debug)]
 struct ValueStore<'ctx> {
     value_map: HashMap<ValueId, BasicValueEnum<'ctx>>,
@@ -189,16 +197,13 @@ impl<'ctx> ValueStore<'ctx> {
         cg: &mut CodeGen<'ctx>,
         id: ValueId,
         const_val: ConstVal,
-        analyzer: &Analyzer,
-        type_store: &TypeStore,
-        interner: &Interner,
-        program: &Program,
+        ds: &mut DataStore,
     ) -> BasicValueEnum<'ctx> {
         trace!("Fetching const {id:?}");
         match const_val {
             ConstVal::Int(val) => {
-                let [type_id] = analyzer.value_types([id]).unwrap();
-                let type_info = type_store.get_type_info(type_id);
+                let [type_id] = ds.analyzer.value_types([id]).unwrap();
+                let type_info = ds.type_store.get_type_info(type_id);
                 let TypeKind::Integer{ width: target_width, .. } = type_info.kind else {
                     panic!("ICE: ConstInt for non-int type");
                 };
@@ -219,11 +224,14 @@ impl<'ctx> ValueStore<'ctx> {
                 let (ptr, ptee_type) = match id {
                     PtrId::Mem(id) => (
                         self.variable_map[&id],
-                        cg.get_type(type_store, program.get_memory_type_resolved(id)),
+                        cg.get_type(ds.type_store, ds.program.get_memory_type_resolved(id)),
                     ),
                     PtrId::Str(id) => (
-                        self.get_string_literal(cg, interner, id),
-                        cg.get_type(type_store, type_store.get_builtin(BuiltinTypes::U8).id),
+                        self.get_string_literal(cg, ds.interner, id),
+                        cg.get_type(
+                            ds.type_store,
+                            ds.type_store.get_builtin(BuiltinTypes::U8).id,
+                        ),
                     ),
                 };
 
@@ -242,18 +250,15 @@ impl<'ctx> ValueStore<'ctx> {
         &mut self,
         cg: &mut CodeGen<'ctx>,
         id: ValueId,
-        analyzer: &Analyzer,
-        type_store: &TypeStore,
-        interner: &Interner,
-        program: &Program,
+        ds: &mut DataStore,
     ) -> BasicValueEnum<'ctx> {
-        if let Some([const_val]) = analyzer.value_consts([id]) {
-            self.load_const_value(cg, id, const_val, analyzer, type_store, interner, program)
+        if let Some([const_val]) = ds.analyzer.value_consts([id]) {
+            self.load_const_value(cg, id, const_val, ds)
         } else if let Some(&ptr) = self.merge_pair_map.get(&id) {
             let name = ptr.get_name().to_str().unwrap();
             trace!(name, "Fetching variable {id:?}");
-            let [ty_id] = analyzer.value_types([id]).unwrap();
-            let val_type = cg.get_type(type_store, ty_id);
+            let [ty_id] = ds.analyzer.value_types([id]).unwrap();
+            let val_type = cg.get_type(ds.type_store, ty_id);
             cg.builder.build_load(val_type, ptr, name)
         } else {
             trace!("Fetching live value {id:?}");
@@ -470,17 +475,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_block(
         &mut self,
-        program: &Program,
+        ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         id: ItemId,
         block: &[Op],
         function: FunctionValue<'ctx>,
-        source_store: &SourceStorage,
-        interner: &mut Interner,
-        type_store: &mut TypeStore,
     ) {
-        let analyzer = program.get_analyzer(id);
-
         for op in block {
             match op.code {
                 OpCode::If(_) => trace!(?op.id, "If"),
@@ -511,13 +511,13 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let op_io = analyzer.get_op_io(op.id);
+            let op_io = ds.analyzer.get_op_io(op.id);
 
             if !op_io.outputs().is_empty()
                 && op_io
                     .outputs()
                     .iter()
-                    .all(|id| is_fully_const(*id, analyzer))
+                    .all(|id| is_fully_const(*id, ds.analyzer))
             {
                 op_io.outputs().iter().for_each(|id| trace!("{id:?}"));
                 trace!("Op is fully const");
@@ -525,83 +525,40 @@ impl<'ctx> CodeGen<'ctx> {
             }
 
             match &op.code {
-                OpCode::Add | OpCode::Subtract => {
-                    self.build_add_sub(program, interner, analyzer, value_store, type_store, op)
+                OpCode::Add | OpCode::Subtract => self.build_add_sub(ds, value_store, op),
+                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
+                    self.build_multiply_and_or_xor(ds, value_store, op)
                 }
-                OpCode::Multiply | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => self
-                    .build_multiply_and_or_xor(
-                        program,
-                        interner,
-                        analyzer,
-                        value_store,
-                        type_store,
-                        op,
-                    ),
-                OpCode::Div | OpCode::Rem => {
-                    self.build_div_rem(program, interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::Div | OpCode::Rem => self.build_div_rem(ds, value_store, op),
 
                 OpCode::Equal
                 | OpCode::NotEq
                 | OpCode::Greater
                 | OpCode::GreaterEqual
                 | OpCode::Less
-                | OpCode::LessEqual => {
-                    self.build_compare(program, interner, analyzer, value_store, type_store, op)
-                }
+                | OpCode::LessEqual => self.build_compare(ds, value_store, op),
 
-                OpCode::IsNull => {
-                    self.build_is_null(program, interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::IsNull => self.build_is_null(ds, value_store, op),
 
-                OpCode::ShiftLeft | OpCode::ShiftRight => self.build_shift_left_right(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                ),
-                OpCode::BitNot => {
-                    self.build_bit_not(program, interner, analyzer, value_store, type_store, op)
+                OpCode::ShiftLeft | OpCode::ShiftRight => {
+                    self.build_shift_left_right(ds, value_store, op)
                 }
+                OpCode::BitNot => self.build_bit_not(ds, value_store, op),
 
                 OpCode::CallFunction {
                     item_id: callee_id, ..
-                } => self.build_function_call(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *callee_id,
-                ),
+                } => self.build_function_call(ds, value_store, op, *callee_id),
 
-                OpCode::ResolvedCast { id: type_id } => self.build_cast(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *type_id,
-                ),
+                OpCode::ResolvedCast { id: type_id } => {
+                    self.build_cast(ds, value_store, op, *type_id)
+                }
 
                 OpCode::Dup { .. } | OpCode::Over { .. } => {
-                    self.build_dup_over(program, interner, type_store, analyzer, value_store, op)
+                    self.build_dup_over(ds, value_store, op)
                 }
 
                 OpCode::Epilogue | OpCode::Return => {
-                    self.build_epilogue_return(
-                        program,
-                        interner,
-                        type_store,
-                        analyzer,
-                        value_store,
-                        id,
-                        op,
-                    );
+                    self.build_epilogue_return(ds, value_store, id, op);
                     break;
                 }
                 OpCode::Exit => {
@@ -610,137 +567,65 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 OpCode::If(if_op) => {
-                    self.build_if(
-                        program,
-                        source_store,
-                        interner,
-                        type_store,
-                        analyzer,
-                        value_store,
-                        function,
-                        id,
-                        op,
-                        if_op,
-                    );
+                    self.build_if(ds, value_store, function, id, op, if_op);
                     if if_op.is_else_terminal && if_op.is_then_terminal {
                         // Nothing else to codegen here.
                         break;
                     }
                 }
-                OpCode::While(while_op) => self.build_while(
-                    program,
-                    source_store,
-                    interner,
-                    type_store,
-                    analyzer,
-                    value_store,
-                    function,
-                    id,
-                    op,
-                    while_op,
-                ),
+                OpCode::While(while_op) => {
+                    self.build_while(ds, value_store, function, id, op, while_op)
+                }
 
-                OpCode::Load => {
-                    self.build_load(program, interner, analyzer, value_store, type_store, op)
-                }
-                OpCode::Store => {
-                    self.build_store(program, interner, analyzer, value_store, type_store, op)
-                }
+                OpCode::Load => self.build_load(ds, value_store, op),
+                OpCode::Store => self.build_store(ds, value_store, op),
                 OpCode::PackArray { .. } | OpCode::PackStruct { .. } => {
-                    self.build_pack(program, interner, analyzer, value_store, type_store, op)
+                    self.build_pack(ds, value_store, op)
                 }
-                OpCode::Unpack { .. } => {
-                    self.build_unpack(program, interner, analyzer, value_store, type_store, op)
+                OpCode::Unpack { .. } => self.build_unpack(ds, value_store, op),
+                OpCode::ExtractArray { emit_array } => {
+                    self.build_extract_array(ds, value_store, function, op, *emit_array)
                 }
-                OpCode::ExtractArray { emit_array } => self.build_extract_array(
-                    program,
-                    source_store,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    function,
-                    op,
-                    *emit_array,
-                ),
-                OpCode::InsertArray { emit_array } => self.build_insert_array(
-                    program,
-                    source_store,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    function,
-                    op,
-                    *emit_array,
-                ),
+                OpCode::InsertArray { emit_array } => {
+                    self.build_insert_array(ds, value_store, function, op, *emit_array)
+                }
                 OpCode::ExtractStruct {
                     emit_struct,
                     field_name,
-                } => self.build_extract_struct(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *field_name,
-                    *emit_struct,
-                ),
+                } => self.build_extract_struct(ds, value_store, op, *field_name, *emit_struct),
                 OpCode::InsertStruct {
                     emit_struct,
                     field_name,
-                } => self.build_insert_struct(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *field_name,
-                    *emit_struct,
-                ),
+                } => self.build_insert_struct(ds, value_store, op, *field_name, *emit_struct),
                 OpCode::Memory {
                     item_id,
                     global: false,
                     ..
-                } => self.build_memory_local(analyzer, value_store, op, *item_id),
+                } => self.build_memory_local(ds, value_store, op, *item_id),
                 OpCode::Memory { global: true, .. } => todo!(),
-                OpCode::Prologue => self.build_prologue(analyzer, value_store, op, function),
+                OpCode::Prologue => self.build_prologue(ds, value_store, op, function),
 
-                OpCode::PushBool(val) => self.build_push_bool(analyzer, value_store, op, *val),
+                OpCode::PushBool(val) => self.build_push_bool(ds, value_store, op, *val),
                 OpCode::PushInt { width, value } => {
-                    self.build_push_int(analyzer, value_store, op, *width, *value)
+                    self.build_push_int(ds, value_store, op, *width, *value)
                 }
                 OpCode::SizeOf(kind) => {
-                    let size_info = type_store.get_size_info(*kind);
+                    let size_info = ds.type_store.get_size_info(*kind);
                     self.build_push_int(
-                        analyzer,
+                        ds,
                         value_store,
                         op,
                         IntWidth::I64,
                         IntKind::Unsigned(size_info.byte_width),
                     );
                 }
-                OpCode::PushStr { id, is_c_str } => self.build_push_str(
-                    analyzer,
-                    interner,
-                    type_store,
-                    value_store,
-                    op,
-                    *id,
-                    *is_c_str,
-                ),
+                OpCode::PushStr { id, is_c_str } => {
+                    self.build_push_str(ds, value_store, op, *id, *is_c_str)
+                }
 
-                OpCode::SysCall { arg_count } => self.build_syscall(
-                    program,
-                    interner,
-                    analyzer,
-                    value_store,
-                    type_store,
-                    op,
-                    *arg_count,
-                ),
+                OpCode::SysCall { arg_count } => {
+                    self.build_syscall(ds, value_store, op, *arg_count)
+                }
 
                 // These are no-ops as far as codegen is concerned.
                 OpCode::Drop { .. }
@@ -924,16 +809,21 @@ impl<'ctx> CodeGen<'ctx> {
         );
 
         {
+            let mut data_store = DataStore {
+                program,
+                interner,
+                analyzer: program.get_analyzer(id),
+                type_store,
+                source_store,
+            };
+
             let _span = trace_span!("compile_block").entered();
             self.compile_block(
-                program,
+                &mut data_store,
                 &mut value_store,
                 id,
                 program.get_item_body(id),
                 function,
-                source_store,
-                interner,
-                type_store,
             );
 
             self.builder
