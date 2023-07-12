@@ -100,13 +100,18 @@ impl Delimited {
     }
 }
 
+pub struct Terminated {
+    pub close: Spanned<Token>,
+    pub list: Vec<Spanned<Token>>,
+}
+
 pub fn get_delimited_tokens<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev: Spanned<Token>,
     expected_len: Option<usize>,
     (open_delim_str, open_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
-    (token_str, mut token_fn): (&'static str, impl FnMut(TokenKind) -> bool),
-    (close_delim_str, mut close_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
+    inner_tokens: (&'static str, impl FnMut(TokenKind) -> bool),
+    close_token: (&'static str, impl FnMut(TokenKind) -> bool),
     interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<Delimited, ()> {
@@ -121,25 +126,55 @@ pub fn get_delimited_tokens<'a>(
     )
     .recover(&mut had_error, (0, prev));
 
-    let mut tokens = Vec::new();
+    let terminated = get_terminated_tokens(
+        token_iter,
+        open_token,
+        expected_len,
+        inner_tokens,
+        close_token,
+        interner,
+        source_store,
+    )?;
 
-    let mut prev = open_token;
+    if had_error {
+        Err(())
+    } else {
+        Ok(Delimited {
+            open: open_token,
+            close: terminated.close,
+            list: terminated.list,
+        })
+    }
+}
+
+pub fn get_terminated_tokens<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    open_token: Spanned<Token>,
+    expected_len: Option<usize>,
+    (token_str, mut token_fn): (&'static str, impl FnMut(TokenKind) -> bool),
+    (close_delim_str, mut close_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> Result<Terminated, ()> {
+    let mut had_error = false;
+    let mut tokens = Vec::new();
     let mut depth = 0;
+    let mut prev = open_token;
 
     loop {
         let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
-                diagnostics::emit_error(
-                    prev.location,
-                    "unexpected end of tokens",
-                    Some(
-                        Label::new(prev.location)
-                            .with_color(Color::Red)
-                    ),
-                    None,
-                    source_store,
-                );
-                return Err(());
-            };
+            diagnostics::emit_error(
+                prev.location,
+                "unexpected end of tokens",
+                Some(
+                    Label::new(prev.location)
+                        .with_color(Color::Red)
+                ),
+                None,
+                source_store,
+            );
+            return Err(());
+        };
 
         if depth == 0 && close_delim_fn(next_token.inner.kind) {
             break; // The end of the list, so break the loop.
@@ -152,22 +187,22 @@ pub fn get_delimited_tokens<'a>(
         }
 
         let Ok((_, item_token)) = expect_token(
-                token_iter,
-                token_str,
-                &mut token_fn,
-                prev,
-                interner,
-                source_store,
-            ) else {
-                had_error = true;
+            token_iter,
+            token_str,
+            &mut token_fn,
+            prev,
+            interner,
+            source_store,
+        ) else {
+            had_error = true;
 
-                // If it's not the close token, we should consume it so we can continue.
-                if !close_delim_fn(next_token.inner.kind) {
-                    token_iter.next();
-                }
+            // If it's not the close token, we should consume it so we can continue.
+            if !close_delim_fn(next_token.inner.kind) {
+                token_iter.next();
+            }
 
-                continue;
-            };
+            continue;
+        };
         tokens.push(item_token);
         prev = item_token;
     }
@@ -196,14 +231,14 @@ pub fn get_delimited_tokens<'a>(
         }
     }
 
-    had_error
-        .not()
-        .then_some(Delimited {
-            open: open_token,
-            list: tokens,
+    if had_error {
+        Err(())
+    } else {
+        Ok(Terminated {
             close: close_token,
+            list: tokens,
         })
-        .ok_or(())
+    }
 }
 
 pub fn parse_unresolved_types(
