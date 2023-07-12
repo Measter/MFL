@@ -100,7 +100,7 @@ impl Delimited {
     }
 }
 
-pub fn parse_delimited_token_list<'a>(
+pub fn get_delimited_tokens<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev: Spanned<Token>,
     expected_len: Option<usize>,
@@ -296,7 +296,7 @@ pub fn parse_unresolved_types(
             .is_some_and(|(_, t)| t.inner.kind == TokenKind::SquareBracketOpen)
         {
             // Parsing an array!
-            let Ok(delim) = parse_delimited_token_list(
+            let Ok(delim) = get_delimited_tokens(
                 &mut token_iter,
                 last_token,
                 Some(1),
@@ -392,7 +392,7 @@ pub fn parse_ident<'a>(
         .peek()
         .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
-        let Ok(delim) = parse_delimited_token_list(
+        let Ok(delim) = get_delimited_tokens(
             token_iter,
             token,
             None,
@@ -489,7 +489,7 @@ pub fn parse_stack_def<'a>(
     interner: &Interner,
     source_store: &SourceStorage,
 ) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {
-    let stack = parse_delimited_token_list(
+    let stack = get_delimited_tokens(
         token_iter,
         prev_token,
         None,

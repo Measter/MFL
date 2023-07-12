@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    expect_token, parse_delimited_token_list, parse_item_body_contents,
+    expect_token, get_delimited_tokens, parse_item_body_contents,
     utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
     Delimited, Recover,
 };
@@ -33,7 +33,7 @@ fn parse_item_body<'a>(
         OpId(id)
     };
 
-    let body_delim = parse_delimited_token_list(
+    let body_delim = get_delimited_tokens(
         token_iter,
         name_token,
         None,
@@ -97,7 +97,7 @@ pub fn parse_function<'a>(
         .peek()
         .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
-        parse_delimited_token_list(
+        get_delimited_tokens(
             token_iter,
             name_token,
             None,
@@ -322,7 +322,7 @@ pub fn parse_memory<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let store_type = parse_delimited_token_list(
+    let store_type = get_delimited_tokens(
         token_iter,
         name_token,
         None,
@@ -402,7 +402,7 @@ pub fn parse_struct<'a>(
         .peek()
         .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
-        let generic_idents = parse_delimited_token_list(
+        let generic_idents = get_delimited_tokens(
             token_iter,
             name_token,
             None,
@@ -449,7 +449,7 @@ pub fn parse_struct<'a>(
     .recover(&mut had_error, is_token);
 
     loop {
-        let type_tokens = parse_delimited_token_list(
+        let type_tokens = get_delimited_tokens(
             token_iter,
             prev_token,
             None,

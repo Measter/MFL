@@ -16,8 +16,8 @@ use crate::{
 };
 
 use self::utils::{
-    expect_token, parse_delimited_token_list, parse_ident, parse_integer_lexeme,
-    parse_unresolved_types, valid_type_token, Delimited, Recover,
+    expect_token, get_delimited_tokens, parse_ident, parse_integer_lexeme, parse_unresolved_types,
+    valid_type_token, Delimited, Recover,
 };
 
 mod items;
@@ -56,7 +56,7 @@ fn parse_integer_op<'a>(
         .peek()
         .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
     {
-        let delim = parse_delimited_token_list(
+        let delim = get_delimited_tokens(
             token_iter,
             token,
             Some(1),
@@ -211,7 +211,7 @@ pub fn parse_item_body_contents(
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let Ok(delim) = parse_delimited_token_list(
+                    let Ok(delim) = get_delimited_tokens(
                         &mut token_iter,
                         token,
                         Some(1),
@@ -252,7 +252,7 @@ pub fn parse_item_body_contents(
             }
 
             TokenKind::Pack => {
-                let Ok(delim) = parse_delimited_token_list(
+                let Ok(delim) = get_delimited_tokens(
                     &mut token_iter,
                     token,
                     None,
@@ -307,7 +307,7 @@ pub fn parse_item_body_contents(
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let Ok(delim) = parse_delimited_token_list(
+                    let Ok(delim) = get_delimited_tokens(
                         &mut token_iter,
                         token,
                         None,
@@ -438,7 +438,7 @@ pub fn parse_item_body_contents(
             }
 
             TokenKind::Rot => {
-                let Ok(delim) = parse_delimited_token_list(&mut token_iter,
+                let Ok(delim) = get_delimited_tokens(&mut token_iter,
                     token,
                     Some(3),
                     ("(", |t| t == TokenKind::ParenthesisOpen),
@@ -526,7 +526,7 @@ pub fn parse_item_body_contents(
             }
 
             TokenKind::Cast | TokenKind::SizeOf => {
-                let Ok(delim) = parse_delimited_token_list(
+                let Ok(delim) = get_delimited_tokens(
                     &mut token_iter,
                     token,
                     None,
@@ -615,7 +615,7 @@ pub fn parse_item_body_contents(
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let Ok(delim) = parse_delimited_token_list(
+                    let Ok(delim) = get_delimited_tokens(
                         &mut token_iter,
                         token,
                         Some(1),
