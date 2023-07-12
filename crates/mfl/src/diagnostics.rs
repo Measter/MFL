@@ -105,13 +105,3 @@ pub fn emit<Labels>(
 
     diag.finish().eprint(&mut sources).unwrap();
 }
-
-pub fn end_of_file(loc: SourceLocation, sources: &SourceStorage) {
-    emit_error(
-        loc,
-        "unexpected end of file",
-        Some(Label::new(loc).with_color(Color::Red)),
-        None,
-        sources,
-    );
-}

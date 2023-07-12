@@ -645,7 +645,6 @@ pub fn parse_item_body_contents(
                 match ops::parse_while(
                     program,
                     &mut token_iter,
-                    tokens,
                     token,
                     op_id_gen,
                     parent_id,
@@ -723,7 +722,6 @@ pub fn parse_item_body_contents(
                 match ops::parse_if(
                     program,
                     &mut token_iter,
-                    tokens,
                     token,
                     op_id_gen,
                     parent_id,
@@ -805,80 +803,6 @@ pub fn parse_item_body_contents(
     }
 
     had_error.not().then_some(ops).ok_or(())
-}
-
-fn get_item_body<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    tokens: &'a [Spanned<Token>],
-    keyword: Spanned<Token>,
-    mut last_token: Spanned<Token>,
-    target_token_type: fn(TokenKind) -> bool,
-    source_store: &SourceStorage,
-) -> Result<(&'a [Spanned<Token>], Spanned<Token>), ()> {
-    let body_start_idx = match token_iter.peek() {
-        Some((idx, _)) => *idx,
-        None => {
-            diagnostics::end_of_file(last_token.location, source_store);
-            return Err(());
-        }
-    };
-
-    // We need to keep track of block depth so we know which token is ending the block.
-    // We've already consumed the token that opened the block.
-    let mut block_depth = 1;
-    let mut end_idx = body_start_idx;
-    let mut had_error = false;
-
-    for (idx, token) in token_iter {
-        use TokenKind::*;
-        #[allow(clippy::match_like_matches_macro)]
-        let is_nested_err = match (keyword.inner.kind, token.inner.kind) {
-            (Proc, Module | Proc) => true,
-            (Memory | Const, Proc | Const | Memory | Module) => true,
-            _ => false,
-        };
-
-        if is_nested_err {
-            diagnostics::emit_error(
-                token.location,
-                format!(
-                    "cannot use {:?} inside a {:?}",
-                    token.inner.kind, keyword.inner.kind
-                ),
-                Some(Label::new(token.location).with_color(Color::Red)),
-                None,
-                source_store,
-            );
-            had_error = true;
-        }
-
-        // If the block_depth is greater than 1, it means we're in a sub-block. All sub-blocks
-        // will always close with an End token, so if we are in a sub-block only look for End.
-        if token.inner.kind.new_block() {
-            block_depth += 1;
-        } else if (block_depth > 1 && token.inner.kind == TokenKind::End)
-            || (block_depth == 1 && target_token_type(token.inner.kind))
-        {
-            block_depth -= 1;
-        }
-
-        end_idx = idx;
-        last_token = *token;
-
-        if block_depth == 0 {
-            break;
-        }
-    }
-
-    if !target_token_type(last_token.inner.kind) {
-        diagnostics::end_of_file(last_token.location, source_store);
-        return Err(());
-    }
-
-    had_error
-        .not()
-        .then(|| (&tokens[body_start_idx..end_idx], last_token))
-        .ok_or(())
 }
 
 pub(super) fn parse_file(

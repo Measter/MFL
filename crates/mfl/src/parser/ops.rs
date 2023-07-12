@@ -8,48 +8,52 @@ use crate::{
     source_file::{SourceStorage, Spanned},
 };
 
-use super::{get_item_body, parse_item_body_contents};
+use super::{parse_item_body_contents, utils::get_terminated_tokens};
 
 pub fn parse_if<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    tokens: &'a [Spanned<Token>],
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
     interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (condition, do_token) = get_item_body(
+    let condition_tokens = get_terminated_tokens(
         token_iter,
-        tokens,
         keyword,
-        keyword,
-        |t| matches!(t, TokenKind::Do),
+        None,
+        ("any", |_| true),
+        ("do", |t| t == TokenKind::Do),
+        interner,
         source_store,
     )?;
 
     let condition = parse_item_body_contents(
         program,
-        condition,
+        &condition_tokens.list,
         op_id_gen,
         interner,
         parent_id,
         source_store,
     )?;
 
-    let (main_block, mut close_token) = get_item_body(
+    let then_block_tokens = get_terminated_tokens(
         token_iter,
-        tokens,
-        keyword,
-        keyword,
-        |t| matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif),
+        condition_tokens.close,
+        None,
+        ("any", |_| true),
+        ("end`, `else` or `elif", |t| {
+            matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif)
+        }),
+        interner,
         source_store,
     )?;
+    let mut close_token = then_block_tokens.close;
 
     let then_block = parse_item_body_contents(
         program,
-        main_block,
+        &then_block_tokens.list,
         op_id_gen,
         interner,
         parent_id,
@@ -60,36 +64,40 @@ pub fn parse_if<'a>(
     let mut elif_blocks = Vec::new();
 
     while close_token.inner.kind == TokenKind::Elif {
-        let (elif_condition, do_token) = get_item_body(
+        let elif_condition_tokens = get_terminated_tokens(
             token_iter,
-            tokens,
-            keyword,
-            keyword,
-            |t| matches!(t, TokenKind::Do),
+            close_token,
+            None,
+            ("any", |_| true),
+            ("do", |t| t == TokenKind::Do),
+            interner,
             source_store,
         )?;
 
         let elif_condition = parse_item_body_contents(
             program,
-            elif_condition,
+            &elif_condition_tokens.list,
             op_id_gen,
             interner,
             parent_id,
             source_store,
         )?;
 
-        let (elif_block, cur_close_token) = get_item_body(
+        let elif_block_tokens = get_terminated_tokens(
             token_iter,
-            tokens,
-            keyword,
-            keyword,
-            |t| matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif),
+            elif_condition_tokens.close,
+            None,
+            ("any", |_| true),
+            ("end`, `else`, or `elif", |t| {
+                matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif)
+            }),
+            interner,
             source_store,
         )?;
 
         let elif_block = parse_item_body_contents(
             program,
-            elif_block,
+            &elif_block_tokens.list,
             op_id_gen,
             interner,
             parent_id,
@@ -99,33 +107,34 @@ pub fn parse_if<'a>(
         elif_blocks.push((
             close_token,
             elif_condition,
-            do_token,
+            elif_condition_tokens.close,
             elif_block,
-            cur_close_token,
+            elif_block_tokens.close,
         ));
-        close_token = cur_close_token;
+        close_token = elif_block_tokens.close;
     }
 
     let mut else_block = if close_token.inner.kind == TokenKind::Else {
-        let (else_block, end_token) = get_item_body(
+        let else_block_tokens = get_terminated_tokens(
             token_iter,
-            tokens,
-            keyword,
-            keyword,
-            |t| matches!(t, TokenKind::End),
+            close_token,
+            None,
+            ("any", |_| true),
+            ("end", |t| t == TokenKind::End),
+            interner,
             source_store,
         )?;
 
         let else_block = parse_item_body_contents(
             program,
-            else_block,
+            &else_block_tokens.list,
             op_id_gen,
             interner,
             parent_id,
             source_store,
         )?;
 
-        close_token = end_token;
+        close_token = else_block_tokens.close;
 
         else_block
     } else {
@@ -158,7 +167,7 @@ pub fn parse_if<'a>(
         open_token: keyword.location,
         condition,
         is_condition_terminal: false,
-        do_token: do_token.location,
+        do_token: condition_tokens.close.location,
         then_block,
         is_then_terminal: false,
         else_token: else_token.location,
@@ -171,47 +180,54 @@ pub fn parse_if<'a>(
 pub fn parse_while<'a>(
     program: &mut Program,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    tokens: &'a [Spanned<Token>],
     keyword: Spanned<Token>,
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
     interner: &mut Interner,
     source_store: &SourceStorage,
 ) -> Result<OpCode, ()> {
-    let (condition, do_token) = get_item_body(
+    let condition_tokens = get_terminated_tokens(
         token_iter,
-        tokens,
         keyword,
-        keyword,
-        |t| matches!(t, TokenKind::Do),
+        None,
+        ("any", |_| true),
+        ("do", |t| t == TokenKind::Do),
+        interner,
         source_store,
     )?;
 
     let condition = parse_item_body_contents(
         program,
-        condition,
+        &condition_tokens.list,
         op_id_gen,
         interner,
         parent_id,
         source_store,
     )?;
 
-    let (body, end_token) = get_item_body(
+    let body_tokens = get_terminated_tokens(
         token_iter,
-        tokens,
-        keyword,
-        do_token,
-        |t| matches!(t, TokenKind::End),
+        condition_tokens.close,
+        None,
+        ("any", |_| true),
+        ("end", |t| t == TokenKind::End),
+        interner,
         source_store,
     )?;
 
-    let body_block =
-        parse_item_body_contents(program, body, op_id_gen, interner, parent_id, source_store)?;
+    let body_block = parse_item_body_contents(
+        program,
+        &body_tokens.list,
+        op_id_gen,
+        interner,
+        parent_id,
+        source_store,
+    )?;
 
     Ok(OpCode::While(Box::new(While {
-        do_token: do_token.location,
+        do_token: condition_tokens.close.location,
         condition,
         body_block,
-        end_token: end_token.location,
+        end_token: body_tokens.close.location,
     })))
 }
