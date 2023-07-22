@@ -1,0 +1,46 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+drop(3)
+drop
+
+pack(2)
+pack(Foo)
+unpack
+rot(3<2)
+cast(ptr(Foo))
+!
+@
+isnull
+=
+>
+>=
+<
+<=
+!=
+true
+'t'
+Foo
+Foo::Bar
+::Foo::Bar
+123
+"Hello"
+here
+stktrc(true)
+-
+-123
++
+*
+/
+%
+and
+not
+or
+xor
+shl
+shr
+return
+exit

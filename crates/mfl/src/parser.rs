@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, iter::Peekable, ops::Not};
+use std::{collections::VecDeque, ops::Not};
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
@@ -8,183 +8,20 @@ use crate::{
     diagnostics,
     interners::Interner,
     lexer::{Token, TokenKind},
-    opcode::{Direction, IntKind, Op, OpCode, OpId},
+    opcode::{Direction, Op, OpCode, OpId},
     program::ModuleQueueType,
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
-    type_store::{IntWidth, Signedness, UnresolvedType},
     ItemId, Program,
 };
 
-use self::utils::{
-    expect_token, get_delimited_tokens, parse_ident, parse_integer_lexeme, parse_unresolved_types,
-    valid_type_token, Delimited, Recover,
+use self::{
+    ops::parse_simple_op,
+    utils::{expect_token, get_delimited_tokens, Delimited, Recover},
 };
 
 mod items;
 mod ops;
 mod utils;
-
-fn parse_integer_op<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    token: Spanned<Token>,
-    is_known_negative: bool,
-    interner: &Interner,
-    source_store: &SourceStorage,
-) -> Result<(OpCode, SourceLocation), ()> {
-    let mut had_error = false;
-    let mut overall_location = token.location;
-    let literal_value: u64 = match parse_integer_lexeme(token, interner, source_store) {
-        Ok(lit) => lit,
-        Err(_) => {
-            had_error = true;
-            0
-        }
-    };
-
-    if is_known_negative && literal_value.to_i64().is_none() {
-        diagnostics::emit_error(
-            token.location,
-            "literal out of range of signed integer",
-            [Label::new(token.location).with_color(Color::Red)],
-            None,
-            source_store,
-        );
-        return Err(());
-    }
-
-    let (width, value) = if token_iter
-        .peek()
-        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
-    {
-        let delim = get_delimited_tokens(
-            token_iter,
-            token,
-            Some(1),
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("Ident", |t| t == TokenKind::Ident),
-            (")", |t| t == TokenKind::ParenthesisClosed),
-            interner,
-            source_store,
-        )?;
-        let ident_token = delim.list[0];
-        overall_location = overall_location.merge(delim.close.location);
-
-        let (width, is_signed_kind) = match interner.resolve(ident_token.inner.lexeme) {
-            "u8" => (IntWidth::I8, Signedness::Unsigned),
-            "s8" => (IntWidth::I8, Signedness::Signed),
-            "u16" => (IntWidth::I16, Signedness::Unsigned),
-            "s16" => (IntWidth::I16, Signedness::Signed),
-            "u32" => (IntWidth::I32, Signedness::Unsigned),
-            "s32" => (IntWidth::I32, Signedness::Signed),
-            "u64" => (IntWidth::I64, Signedness::Unsigned),
-            "s64" => (IntWidth::I64, Signedness::Signed),
-
-            _ => {
-                diagnostics::emit_error(
-                    ident_token.location,
-                    "invalid integer type",
-                    [Label::new(ident_token.location)
-                        .with_color(Color::Red)
-                        .with_message("unknown type")],
-                    None,
-                    source_store,
-                );
-                return Err(());
-            }
-        };
-
-        // The user specified an unsigned type, but gave a negative literal.
-        if is_signed_kind == Signedness::Unsigned && is_known_negative {
-            diagnostics::emit_error(
-                ident_token.location,
-                "signed integer literal with unsigned type kind",
-                [Label::new(token.location).with_color(Color::Red)],
-                None,
-                source_store,
-            );
-            return Err(());
-        }
-
-        let int_value = match is_signed_kind {
-            Signedness::Signed => {
-                // FIXME: Need to check bounds before cast
-                let value: i64 = literal_value as i64;
-                let value = if is_known_negative { -value } else { value };
-
-                if !width.bounds_signed().contains(&value) {
-                    diagnostics::emit_error(
-                        token.location,
-                        "literal out of bounds",
-                        [Label::new(token.location)
-                            .with_color(Color::Red)
-                            .with_message(format!(
-                                "valid range for {} is {:?}",
-                                width.name(is_signed_kind),
-                                width.bounds_signed(),
-                            ))],
-                        None,
-                        source_store,
-                    );
-                    return Err(());
-                }
-                IntKind::Signed(value)
-            }
-            Signedness::Unsigned => {
-                if !width.bounds_unsigned().contains(&literal_value) {
-                    diagnostics::emit_error(
-                        token.location,
-                        "literal out of bounds",
-                        [Label::new(token.location)
-                            .with_color(Color::Red)
-                            .with_message(format!(
-                                "valid range for {} is {:?}",
-                                width.name(is_signed_kind),
-                                width.bounds_unsigned(),
-                            ))],
-                        None,
-                        source_store,
-                    );
-                    return Err(());
-                }
-                IntKind::Unsigned(literal_value)
-            }
-        };
-
-        (width, int_value)
-    } else if is_known_negative {
-        let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
-        let mut width = IntWidth::I64;
-        let literal_value = -literal_value.to_i64().unwrap();
-
-        for size in sizes {
-            if size.bounds_signed().contains(&literal_value) {
-                width = size;
-                break;
-            }
-        }
-
-        (width, IntKind::Signed(literal_value))
-    } else {
-        let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
-        let mut width = IntWidth::I64;
-
-        for size in sizes {
-            if size.bounds_unsigned().contains(&literal_value) {
-                width = size;
-                break;
-            }
-        }
-
-        (width, IntKind::Unsigned(literal_value))
-    };
-
-    // Return down here so that we consume any given parameters.
-    if had_error {
-        return Err(());
-    }
-
-    Ok((OpCode::PushInt { width, value }, overall_location))
-}
 
 pub fn parse_item_body_contents(
     program: &mut Program,
@@ -200,114 +37,13 @@ pub fn parse_item_body_contents(
     let mut token_iter = tokens.iter().enumerate().peekable();
     while let Some((_, token)) = token_iter.next() {
         let mut token = *token;
-        let kind = match token.inner.kind {
-            TokenKind::Drop
-            | TokenKind::Dup
-            | TokenKind::Over
-            | TokenKind::Reverse
-            | TokenKind::Swap
-            | TokenKind::SysCall => {
-                let count = if token_iter
-                    .peek()
-                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
-                {
-                    let Ok(delim) = get_delimited_tokens(
-                        &mut token_iter,
-                        token,
-                        Some(1),
-                        ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("Integer", |t| matches!(t, TokenKind::Integer{ .. })),
-                        (")", |t| t == TokenKind::ParenthesisClosed),
-                        interner,
-                        source_store,
-                    ) else {
-                        had_error = true;
-                        continue;
-                    };
-
-                    token.location = token.location.merge(delim.close.location);
-
-                    let count_token = delim.list[0];
-                    let count: u8 = parse_integer_lexeme(count_token, interner, source_store)?;
-                    count.with_span(count_token.location)
-                } else {
-                    let default_amount = if token.inner.kind == TokenKind::Reverse {
-                        2
-                    } else {
-                        1
-                    };
-                    default_amount.with_span(token.location)
-                };
-
-                match token.inner.kind {
-                    TokenKind::Drop => OpCode::Drop { count },
-                    TokenKind::Dup => OpCode::Dup { count },
-                    TokenKind::Over => OpCode::Over { depth: count },
-                    TokenKind::Reverse => OpCode::Reverse { count },
-                    TokenKind::Swap => OpCode::Swap { count },
-                    TokenKind::SysCall => OpCode::SysCall { arg_count: count },
-
-                    _ => unreachable!(),
-                }
-            }
-
-            TokenKind::Pack => {
-                let Ok(delim) = get_delimited_tokens(
-                    &mut token_iter,
-                    token,
-                    None,
-                    ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("integer or type", valid_type_token),
-                    (")", |t| t == TokenKind::ParenthesisClosed),
-                    interner,
-                    source_store,
-                ) else {
-                    had_error = true;
-                    continue;
-                };
-
-                token.location = token.location.merge(delim.close.location);
-
-                if delim.list.len() == 1
-                    && matches!(delim.list[0].inner.kind, TokenKind::Integer { .. })
-                {
-                    let count_token = delim.list[0];
-                    let count = parse_integer_lexeme(count_token, interner, source_store)?;
-
-                    OpCode::PackArray { count }
-                } else {
-                    let span = delim.span();
-
-                    let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
-                        had_error = true;
-                        continue;
-                    };
-
-                    if unresolved_types.len() != 1 {
-                        diagnostics::emit_error(
-                            span,
-                            format!("expected 1 type, found {}", unresolved_types.len()),
-                            [Label::new(span).with_color(Color::Red)],
-                            None,
-                            source_store,
-                        );
-                        had_error = true;
-                        continue;
-                    }
-
-                    let unresolved_type = unresolved_types.pop().unwrap();
-                    OpCode::UnresolvedPackStruct {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type.inner),
-                    }
-                }
-            }
-            TokenKind::Unpack => OpCode::Unpack,
+        let (kind, op_end) = match token.inner.kind {
             TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                 if token_iter
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let Ok(delim) = get_delimited_tokens(
+                    let delim = get_delimited_tokens(
                         &mut token_iter,
                         token,
                         None,
@@ -316,10 +52,7 @@ pub fn parse_item_body_contents(
                         (")", |t| t == TokenKind::ParenthesisClosed),
                         interner,
                         source_store,
-                    ) else {
-                        had_error = true;
-                        continue;
-                    };
+                    )?;
 
                     token.location = token.location.merge(delim.close.location);
                     let mut delim_iter = delim.list.iter().enumerate().peekable();
@@ -353,8 +86,7 @@ pub fn parse_item_body_contents(
                     }
 
                     if local_had_error {
-                        had_error = true;
-                        continue;
+                        return Err(());
                     }
 
                     match token.inner.kind {
@@ -418,231 +150,35 @@ pub fn parse_item_body_contents(
                             continue;
                             // todo!()
                         }
-                        TokenKind::Insert { emit_struct } => OpCode::InsertStruct {
-                            emit_struct,
-                            field_name: idents[0].map(|t| t.lexeme),
-                        },
+                        TokenKind::Insert { emit_struct } => (
+                            OpCode::InsertStruct {
+                                emit_struct,
+                                field_name: idents[0].map(|t| t.lexeme),
+                            },
+                            token.location,
+                        ),
                         _ => unreachable!(),
                     }
                 } else {
                     match token.inner.kind {
-                        TokenKind::Extract { emit_struct } => OpCode::ExtractArray {
-                            emit_array: emit_struct,
-                        },
-                        TokenKind::Insert { emit_struct } => OpCode::InsertArray {
-                            emit_array: emit_struct,
-                        },
+                        TokenKind::Extract { emit_struct } => (
+                            OpCode::ExtractArray {
+                                emit_array: emit_struct,
+                            },
+                            token.location,
+                        ),
+                        TokenKind::Insert { emit_struct } => (
+                            OpCode::InsertArray {
+                                emit_array: emit_struct,
+                            },
+                            token.location,
+                        ),
                         _ => unreachable!(),
                     }
                 }
             }
-
-            TokenKind::Rot => {
-                let Ok(delim) = get_delimited_tokens(&mut token_iter,
-                    token,
-                    Some(3),
-                    ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("", |_| true),
-                    (")", |t| t == TokenKind::ParenthesisClosed),
-                    interner,
-                    source_store
-                )
-                else {
-                    had_error = true;
-                    continue;
-                };
-                token.location = token.location.merge(delim.close.location);
-
-                let mut local_error = false;
-                let [item_count_token, direction_token, shift_count_token] = &*delim.list else { unreachable!() };
-                let item_count_token = *item_count_token;
-                let shift_count_token = *shift_count_token;
-
-                let item_count =
-                    if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {
-                        diagnostics::emit_error(
-                            item_count_token.location,
-                            format!(
-                                "expected `integer`, found `{}`",
-                                interner.resolve(item_count_token.inner.lexeme)
-                            ),
-                            Some(Label::new(item_count_token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        local_error = true;
-                        1
-                    } else {
-                        parse_integer_lexeme(item_count_token, interner, source_store)?
-                    };
-
-                let shift_count =
-                    if !matches!(shift_count_token.inner.kind, TokenKind::Integer { .. }) {
-                        diagnostics::emit_error(
-                            shift_count_token.location,
-                            format!(
-                                "expected `integer`, found `{}`",
-                                interner.resolve(shift_count_token.inner.lexeme)
-                            ),
-                            Some(Label::new(shift_count_token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        local_error = true;
-                        1
-                    } else {
-                        parse_integer_lexeme(shift_count_token, interner, source_store)?
-                    };
-
-                let direction = match direction_token.inner.kind {
-                    TokenKind::Less => Direction::Left,
-                    TokenKind::Greater => Direction::Right,
-                    _ => {
-                        diagnostics::emit_error(
-                            direction_token.location,
-                            format!(
-                                "expected `<` or `>`, found `{}`",
-                                interner.resolve(direction_token.inner.lexeme)
-                            ),
-                            Some(Label::new(direction_token.location).with_color(Color::Red)),
-                            None,
-                            source_store,
-                        );
-                        local_error = true;
-                        Direction::Left
-                    }
-                };
-
-                if local_error {
-                    had_error = true;
-                    continue;
-                }
-
-                OpCode::Rot {
-                    item_count: item_count.with_span(item_count_token.location),
-                    direction,
-                    shift_count: shift_count.with_span(shift_count_token.location),
-                }
-            }
-
-            TokenKind::Cast | TokenKind::SizeOf => {
-                let Ok(delim) = get_delimited_tokens(
-                    &mut token_iter,
-                    token,
-                    None,
-                    ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("Ident", valid_type_token),
-                    (")", |t| t == TokenKind::ParenthesisClosed),
-                    interner,
-                    source_store,
-                ) else {
-                    had_error = true;
-                    continue;
-                };
-                token.location = token.location.merge(delim.close.location);
-
-                let span = delim.span();
-                let Ok(mut unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
-                    had_error = true;
-                    continue;
-                };
-
-                if unresolved_types.len() != 1 {
-                    diagnostics::emit_error(
-                        span,
-                        format!("expected 1 type, found {}", unresolved_types.len()),
-                        [Label::new(span).with_color(Color::Red)],
-                        None,
-                        source_store,
-                    );
-                    had_error = true;
-                    continue;
-                }
-
-                let unresolved_type = unresolved_types.pop().unwrap().inner;
-
-                match token.inner.kind {
-                    TokenKind::Cast => OpCode::UnresolvedCast {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
-                    },
-                    TokenKind::SizeOf => OpCode::UnresolvedSizeOf {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
-                    },
-                    _ => unreachable!(),
-                }
-            }
-
-            TokenKind::Load => OpCode::Load,
-            TokenKind::Store => OpCode::Store,
-
-            TokenKind::IsNull => OpCode::IsNull,
-            TokenKind::Equal => OpCode::Equal,
-            TokenKind::Greater => OpCode::Greater,
-            TokenKind::GreaterEqual => OpCode::GreaterEqual,
-            TokenKind::Less => OpCode::Less,
-            TokenKind::LessEqual => OpCode::LessEqual,
-            TokenKind::NotEqual => OpCode::NotEq,
-
-            TokenKind::Boolean(b) => OpCode::PushBool(b),
-            TokenKind::Char(ch) => OpCode::PushInt {
-                width: IntWidth::I8,
-                value: IntKind::Unsigned((ch as u8).to_u64()),
-            },
-            TokenKind::Ident | TokenKind::ColonColon => {
-                let Ok((ident,_)) = parse_ident(&mut token_iter, interner, source_store, &mut had_error, token) else {
-                    had_error = true;
-                    continue;
-                };
-
-                OpCode::UnresolvedIdent(ident)
-            }
-            TokenKind::Integer { .. } => {
-                let Ok((int, location)) = parse_integer_op(&mut token_iter, token, false, interner, source_store) else {
-                    had_error = true;
-                    continue;
-                };
-
-                token.location = location;
-                int
-            }
-            TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
-            TokenKind::Here(id) => OpCode::PushStr {
-                id,
-                is_c_str: false,
-            },
-            TokenKind::EmitStack => {
-                let emit_labels = if token_iter
-                    .peek()
-                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
-                {
-                    let Ok(delim) = get_delimited_tokens(
-                        &mut token_iter,
-                        token,
-                        Some(1),
-                        ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("bool", |t| matches!(t, TokenKind::Boolean(_))),
-                        (")", |t| t == TokenKind::ParenthesisClosed),
-                        interner,
-                        source_store,
-                    ) else {
-                        had_error = true;
-                        continue;
-                    };
-
-                    token.location = token.location.merge(delim.close.location);
-
-                    let emit_token = delim.list[0];
-                    let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else { unreachable!() };
-                    emit_labels
-                } else {
-                    false
-                };
-
-                OpCode::EmitStack(emit_labels)
-            }
-
             TokenKind::While => {
-                match ops::parse_while(
+                let Ok(code) = ops::parse_while(
                     program,
                     &mut token_iter,
                     token,
@@ -650,13 +186,26 @@ pub fn parse_item_body_contents(
                     parent_id,
                     interner,
                     source_store,
-                ) {
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
-                    Ok(code) => code,
-                }
+                ) else {
+                    had_error = true;
+                    continue;
+                };
+                code
+            }
+            TokenKind::If => {
+                let Ok(code) = ops::parse_if(
+                    program,
+                    &mut token_iter,
+                    token,
+                    op_id_gen,
+                    parent_id,
+                    interner,
+                    source_store,
+                ) else {
+                    had_error = true;
+                    continue;
+                };
+                code
             }
 
             TokenKind::Assert => {
@@ -718,58 +267,7 @@ pub fn parse_item_body_contents(
                 continue;
             }
 
-            TokenKind::If => {
-                match ops::parse_if(
-                    program,
-                    &mut token_iter,
-                    token,
-                    op_id_gen,
-                    parent_id,
-                    interner,
-                    source_store,
-                ) {
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
-                    Ok(code) => code,
-                }
-            }
-
-            TokenKind::Minus => match token_iter.peek().copied() {
-                Some((_, int_token))
-                    if int_token.location.neighbour_of(token.location)
-                        && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
-                {
-                    token_iter.next();
-                    let mut int_token = *int_token;
-                    int_token.location = int_token.location.merge(token.location);
-                    let Ok((int, location)) = parse_integer_op(&mut token_iter, int_token, true, interner, source_store) else {
-                        had_error = true;
-                        continue;
-                    };
-
-                    token.location = token.location.merge(location);
-                    int
-                }
-                _ => OpCode::Subtract,
-            },
-            TokenKind::Plus => OpCode::Add,
-            TokenKind::Star => OpCode::Multiply,
-            TokenKind::Div => OpCode::Div,
-            TokenKind::Rem => OpCode::Rem,
-
-            TokenKind::BitAnd => OpCode::BitAnd,
-            TokenKind::BitNot => OpCode::BitNot,
-            TokenKind::BitOr => OpCode::BitOr,
-            TokenKind::BitXor => OpCode::BitXor,
-            TokenKind::ShiftLeft => OpCode::ShiftLeft,
-            TokenKind::ShiftRight => OpCode::ShiftRight,
-
-            TokenKind::Return => OpCode::Return,
-            TokenKind::Exit => OpCode::Exit,
-
-            // These are only used as part of a sub-block. If they're found anywhere else,
+            // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
             // it's an error.
             TokenKind::GoesTo
             | TokenKind::Is
@@ -794,12 +292,14 @@ pub fn parse_item_body_contents(
                     source_store,
                 );
 
-                had_error = true;
-                continue;
+                return Err(());
             }
+
+            _ => parse_simple_op(&mut token_iter, token, interner, source_store)?,
         };
 
-        ops.push(Op::new(op_id_gen(), kind, token.map(|t| t.lexeme)));
+        let token = token.inner.lexeme.with_span(token.location.merge(op_end));
+        ops.push(Op::new(op_id_gen(), kind, token));
     }
 
     had_error.not().then_some(ops).ok_or(())
@@ -905,14 +405,53 @@ pub(super) fn parse_file(
                 .is_err();
             }
 
-            _ => {
+            TokenKind::Extract { .. }
+            | TokenKind::Insert { .. }
+            | TokenKind::If
+            | TokenKind::While => {
+                emit_top_level_op_error(token.location, token.inner.kind, source_store);
+                had_error = true;
+                continue;
+            }
+
+            // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
+            // it's an error.
+            TokenKind::GoesTo
+            | TokenKind::Is
+            | TokenKind::Do
+            | TokenKind::Dot
+            | TokenKind::Elif
+            | TokenKind::Else
+            | TokenKind::End
+            | TokenKind::ParenthesisClosed
+            | TokenKind::ParenthesisOpen
+            | TokenKind::SquareBracketClosed
+            | TokenKind::SquareBracketOpen => {
                 diagnostics::emit_error(
                     token.location,
-                    format!("top-level can only declared `const`, `include`, `macro` `memory` or `proc`, found `{:?}`", token.inner.kind),
-                    Some(Label::new(token.location).with_color(Color::Red).with_message("here")),
+                    format!(
+                        "unexpected token `{}` in input",
+                        interner.resolve(token.inner.lexeme)
+                    ),
+                    Some(Label::new(token.location)),
                     None,
-                    source_store
+                    source_store,
                 );
+
+                had_error = true;
+                continue;
+            }
+
+            // These are invalid in top level position, but we should properly parse them anyway.
+            _ => {
+                let location = if let Ok((_, loc)) =
+                    parse_simple_op(&mut token_iter, *token, interner, source_store)
+                {
+                    token.location.merge(loc)
+                } else {
+                    token.location
+                };
+                emit_top_level_op_error(location, token.inner.kind, source_store);
 
                 had_error = true;
                 continue;
@@ -921,4 +460,18 @@ pub(super) fn parse_file(
     }
 
     had_error.not().then_some(()).ok_or(())
+}
+
+fn emit_top_level_op_error(
+    location: SourceLocation,
+    kind: TokenKind,
+    source_store: &SourceStorage,
+) {
+    diagnostics::emit_error(
+        location,
+        format!("top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `{:?}`", kind),
+        Some(Label::new(location).with_color(Color::Red)),
+        None,
+        source_store
+    );
 }

@@ -7,10 +7,12 @@ use crate::{
     diagnostics,
     interners::Interner,
     lexer::{Token, TokenKind},
-    opcode::UnresolvedIdent,
+    opcode::{OpCode, UnresolvedIdent},
     source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
     type_store::{UnresolvedType, UnresolvedTypeTokens},
 };
+
+pub type ParseOpResult = Result<(OpCode, SourceLocation), ()>;
 
 pub trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;
@@ -515,6 +517,28 @@ where
     };
 
     Ok(int)
+}
+
+pub fn parse_integer_param<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> Result<(Spanned<u8>, SourceLocation), ()> {
+    let delim = get_delimited_tokens(
+        token_iter,
+        token,
+        Some(1),
+        ("(", |t| t == TokenKind::ParenthesisOpen),
+        ("Integer", |t| matches!(t, TokenKind::Integer { .. })),
+        (")", |t| t == TokenKind::ParenthesisClosed),
+        interner,
+        source_store,
+    )?;
+
+    let count_token = delim.list[0];
+    let count: u8 = parse_integer_lexeme(count_token, interner, source_store)?;
+    Ok((count.with_span(count_token.location), delim.close.location))
 }
 
 pub fn parse_stack_def<'a>(
