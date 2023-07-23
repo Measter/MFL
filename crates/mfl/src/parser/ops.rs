@@ -34,242 +34,67 @@ pub fn parse_simple_op<'a>(
         | TokenKind::Reverse
         | TokenKind::Swap
         | TokenKind::SysCall => {
-            parse_drop_dup_over_reverse_swap_syscall(token_iter, token, interner, source_store)?
-        }
-
-        TokenKind::Pack => parse_pack(token_iter, token, interner, source_store)?,
-        TokenKind::Unpack => (OpCode::Unpack, token.location),
-        TokenKind::Rot => {
-            let delim = get_delimited_tokens(
+            return parse_drop_dup_over_reverse_swap_syscall(
                 token_iter,
                 token,
-                Some(3),
-                ("(", |t| t == TokenKind::ParenthesisOpen),
-                ("", |_| true),
-                (")", |t| t == TokenKind::ParenthesisClosed),
                 interner,
                 source_store,
-            )?;
-
-            let mut local_error = false;
-            let [item_count_token, direction_token, shift_count_token] = &*delim.list else { unreachable!() };
-            let item_count_token = *item_count_token;
-            let shift_count_token = *shift_count_token;
-
-            let item_count = if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {
-                diagnostics::emit_error(
-                    item_count_token.location,
-                    format!(
-                        "expected `integer`, found `{}`",
-                        interner.resolve(item_count_token.inner.lexeme)
-                    ),
-                    Some(Label::new(item_count_token.location).with_color(Color::Red)),
-                    None,
-                    source_store,
-                );
-                local_error = true;
-                1
-            } else {
-                parse_integer_lexeme(item_count_token, interner, source_store)?
-            };
-
-            let shift_count = if !matches!(shift_count_token.inner.kind, TokenKind::Integer { .. })
-            {
-                diagnostics::emit_error(
-                    shift_count_token.location,
-                    format!(
-                        "expected `integer`, found `{}`",
-                        interner.resolve(shift_count_token.inner.lexeme)
-                    ),
-                    Some(Label::new(shift_count_token.location).with_color(Color::Red)),
-                    None,
-                    source_store,
-                );
-                local_error = true;
-                1
-            } else {
-                parse_integer_lexeme(shift_count_token, interner, source_store)?
-            };
-
-            let direction = match direction_token.inner.kind {
-                TokenKind::Less => Direction::Left,
-                TokenKind::Greater => Direction::Right,
-                _ => {
-                    diagnostics::emit_error(
-                        direction_token.location,
-                        format!(
-                            "expected `<` or `>`, found `{}`",
-                            interner.resolve(direction_token.inner.lexeme)
-                        ),
-                        Some(Label::new(direction_token.location).with_color(Color::Red)),
-                        None,
-                        source_store,
-                    );
-                    local_error = true;
-                    Direction::Left
-                }
-            };
-
-            if local_error {
-                return Err(());
-            }
-
-            (
-                OpCode::Rot {
-                    item_count: item_count.with_span(item_count_token.location),
-                    direction,
-                    shift_count: shift_count.with_span(shift_count_token.location),
-                },
-                delim.close.location,
-            )
+            );
         }
+
+        TokenKind::Pack => return parse_pack(token_iter, token, interner, source_store),
+        TokenKind::Unpack => OpCode::Unpack,
+        TokenKind::Rot => return parse_rot(token_iter, token, interner, source_store),
 
         TokenKind::Cast | TokenKind::SizeOf => {
-            let delim = get_delimited_tokens(
-                token_iter,
-                token,
-                None,
-                ("(", |t| t == TokenKind::ParenthesisOpen),
-                ("Ident", valid_type_token),
-                (")", |t| t == TokenKind::ParenthesisClosed),
-                interner,
-                source_store,
-            )?;
-
-            let span = delim.span();
-            let mut unresolved_types =
-                parse_unresolved_types(interner, source_store, delim.open, &delim.list)?;
-
-            if unresolved_types.len() != 1 {
-                diagnostics::emit_error(
-                    span,
-                    format!("expected 1 type, found {}", unresolved_types.len()),
-                    [Label::new(span).with_color(Color::Red)],
-                    None,
-                    source_store,
-                );
-                return Err(());
-            }
-
-            let unresolved_type = unresolved_types.pop().unwrap().inner;
-
-            match token.inner.kind {
-                TokenKind::Cast => (
-                    OpCode::UnresolvedCast {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
-                    },
-                    delim.close.location,
-                ),
-                TokenKind::SizeOf => (
-                    OpCode::UnresolvedSizeOf {
-                        unresolved_type: UnresolvedType::Tokens(unresolved_type),
-                    },
-                    delim.close.location,
-                ),
-                _ => unreachable!(),
-            }
+            return parse_cast_sizeof(token_iter, token, interner, source_store)
         }
 
-        TokenKind::Load => (OpCode::Load, token.location),
-        TokenKind::Store => (OpCode::Store, token.location),
+        TokenKind::Load => OpCode::Load,
+        TokenKind::Store => OpCode::Store,
 
-        TokenKind::IsNull => (OpCode::IsNull, token.location),
-        TokenKind::Equal => (OpCode::Equal, token.location),
-        TokenKind::Greater => (OpCode::Greater, token.location),
-        TokenKind::GreaterEqual => (OpCode::GreaterEqual, token.location),
-        TokenKind::Less => (OpCode::Less, token.location),
-        TokenKind::LessEqual => (OpCode::LessEqual, token.location),
-        TokenKind::NotEqual => (OpCode::NotEq, token.location),
+        TokenKind::IsNull => OpCode::IsNull,
+        TokenKind::Equal => OpCode::Equal,
+        TokenKind::Greater => OpCode::Greater,
+        TokenKind::GreaterEqual => OpCode::GreaterEqual,
+        TokenKind::Less => OpCode::Less,
+        TokenKind::LessEqual => OpCode::LessEqual,
+        TokenKind::NotEqual => OpCode::NotEq,
 
-        TokenKind::Boolean(b) => (OpCode::PushBool(b), token.location),
-        TokenKind::Char(ch) => (
-            OpCode::PushInt {
-                width: IntWidth::I8,
-                value: IntKind::Unsigned((ch as u8).to_u64()),
-            },
-            token.location,
-        ),
+        TokenKind::Boolean(b) => OpCode::PushBool(b),
+        TokenKind::Char(ch) => OpCode::PushInt {
+            width: IntWidth::I8,
+            value: IntKind::Unsigned((ch as u8).to_u64()),
+        },
+
         TokenKind::Ident | TokenKind::ColonColon => {
-            let mut local_had_error = false;
-            let (ident, last_token) = parse_ident(
-                token_iter,
-                interner,
-                source_store,
-                &mut local_had_error,
-                token,
-            )?;
-            if local_had_error {
-                return Err(());
-            }
-
-            (
-                OpCode::UnresolvedIdent(ident),
-                token.location.merge(last_token.location),
-            )
+            return parse_ident_op(token_iter, interner, source_store, token)
         }
         TokenKind::Integer { .. } => {
-            parse_integer_op(token_iter, token, false, interner, source_store)?
+            return parse_integer_op(token_iter, token, false, interner, source_store)
         }
-        TokenKind::String { id, is_c_str } => (OpCode::PushStr { id, is_c_str }, token.location),
-        TokenKind::Here(id) => (
-            OpCode::PushStr {
-                id,
-                is_c_str: false,
-            },
-            token.location,
-        ),
-        TokenKind::EmitStack => {
-            let (emit_labels, loc) = if token_iter
-                .peek()
-                .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
-            {
-                let delim = get_delimited_tokens(
-                    token_iter,
-                    token,
-                    Some(1),
-                    ("(", |t| t == TokenKind::ParenthesisOpen),
-                    ("bool", |t| matches!(t, TokenKind::Boolean(_))),
-                    (")", |t| t == TokenKind::ParenthesisClosed),
-                    interner,
-                    source_store,
-                )?;
-
-                let emit_token = delim.list[0];
-                let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else { unreachable!() };
-                (emit_labels, delim.close.location)
-            } else {
-                (false, token.location)
-            };
-
-            (OpCode::EmitStack(emit_labels), loc)
-        }
-
-        TokenKind::Minus => match token_iter.peek().copied() {
-            Some((_, int_token))
-                if int_token.location.neighbour_of(token.location)
-                    && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
-            {
-                token_iter.next();
-                let mut int_token = *int_token;
-                int_token.location = int_token.location.merge(token.location);
-                parse_integer_op(token_iter, int_token, true, interner, source_store)?
-            }
-            _ => (OpCode::Subtract, token.location),
+        TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
+        TokenKind::Here(id) => OpCode::PushStr {
+            id,
+            is_c_str: false,
         },
-        TokenKind::Plus => (OpCode::Add, token.location),
-        TokenKind::Star => (OpCode::Multiply, token.location),
-        TokenKind::Div => (OpCode::Div, token.location),
-        TokenKind::Rem => (OpCode::Rem, token.location),
+        TokenKind::EmitStack => return parse_emit_stack(token_iter, token, interner, source_store),
 
-        TokenKind::BitAnd => (OpCode::BitAnd, token.location),
-        TokenKind::BitNot => (OpCode::BitNot, token.location),
-        TokenKind::BitOr => (OpCode::BitOr, token.location),
-        TokenKind::BitXor => (OpCode::BitXor, token.location),
-        TokenKind::ShiftLeft => (OpCode::ShiftLeft, token.location),
-        TokenKind::ShiftRight => (OpCode::ShiftRight, token.location),
+        TokenKind::Minus => return parse_minus(token_iter, token, interner, source_store),
+        TokenKind::Plus => OpCode::Add,
+        TokenKind::Star => OpCode::Multiply,
+        TokenKind::Div => OpCode::Div,
+        TokenKind::Rem => OpCode::Rem,
 
-        TokenKind::Return => (OpCode::Return, token.location),
-        TokenKind::Exit => (OpCode::Exit, token.location),
+        TokenKind::BitAnd => OpCode::BitAnd,
+        TokenKind::BitNot => OpCode::BitNot,
+        TokenKind::BitOr => OpCode::BitOr,
+        TokenKind::BitXor => OpCode::BitXor,
+        TokenKind::ShiftLeft => OpCode::ShiftLeft,
+        TokenKind::ShiftRight => OpCode::ShiftRight,
+
+        TokenKind::Return => OpCode::Return,
+        TokenKind::Exit => OpCode::Exit,
 
         _ => {
             panic!(
@@ -279,7 +104,224 @@ pub fn parse_simple_op<'a>(
         }
     };
 
-    Ok(code)
+    Ok((code, token.location))
+}
+
+fn parse_ident_op<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+    token: Spanned<Token>,
+) -> Result<(OpCode, crate::source_file::SourceLocation), ()> {
+    let mut local_had_error = false;
+
+    let (ident, last_token) = parse_ident(
+        token_iter,
+        interner,
+        source_store,
+        &mut local_had_error,
+        token,
+    )?;
+
+    if local_had_error {
+        return Err(());
+    }
+
+    Ok((
+        OpCode::UnresolvedIdent(ident),
+        token.location.merge(last_token.location),
+    ))
+}
+
+fn parse_minus<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> ParseOpResult {
+    Ok(match token_iter.peek().copied() {
+        Some((_, int_token))
+            if int_token.location.neighbour_of(token.location)
+                && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
+        {
+            token_iter.next();
+            let mut int_token = *int_token;
+            int_token.location = int_token.location.merge(token.location);
+            parse_integer_op(token_iter, int_token, true, interner, source_store)?
+        }
+        _ => (OpCode::Subtract, token.location),
+    })
+}
+
+fn parse_emit_stack<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> ParseOpResult {
+    let (emit_labels, loc) = if token_iter
+        .peek()
+        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
+    {
+        let delim = get_delimited_tokens(
+            token_iter,
+            token,
+            Some(1),
+            ("(", |t| t == TokenKind::ParenthesisOpen),
+            ("bool", |t| matches!(t, TokenKind::Boolean(_))),
+            (")", |t| t == TokenKind::ParenthesisClosed),
+            interner,
+            source_store,
+        )?;
+
+        let emit_token = delim.list[0];
+        let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else { unreachable!() };
+
+        (emit_labels, delim.close.location)
+    } else {
+        (false, token.location)
+    };
+
+    Ok((OpCode::EmitStack(emit_labels), loc))
+}
+
+fn parse_cast_sizeof<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> ParseOpResult {
+    let delim = get_delimited_tokens(
+        token_iter,
+        token,
+        None,
+        ("(", |t| t == TokenKind::ParenthesisOpen),
+        ("Ident", valid_type_token),
+        (")", |t| t == TokenKind::ParenthesisClosed),
+        interner,
+        source_store,
+    )?;
+
+    let span = delim.span();
+    let mut unresolved_types =
+        parse_unresolved_types(interner, source_store, delim.open, &delim.list)?;
+
+    if unresolved_types.len() != 1 {
+        diagnostics::emit_error(
+            span,
+            format!("expected 1 type, found {}", unresolved_types.len()),
+            [Label::new(span).with_color(Color::Red)],
+            None,
+            source_store,
+        );
+        return Err(());
+    }
+
+    let unresolved_type = unresolved_types.pop().unwrap().inner;
+
+    Ok(match token.inner.kind {
+        TokenKind::Cast => (
+            OpCode::UnresolvedCast {
+                unresolved_type: UnresolvedType::Tokens(unresolved_type),
+            },
+            delim.close.location,
+        ),
+        TokenKind::SizeOf => (
+            OpCode::UnresolvedSizeOf {
+                unresolved_type: UnresolvedType::Tokens(unresolved_type),
+            },
+            delim.close.location,
+        ),
+        _ => unreachable!(),
+    })
+}
+
+fn parse_rot<'a>(
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token: Spanned<Token>,
+    interner: &Interner,
+    source_store: &SourceStorage,
+) -> ParseOpResult {
+    let delim = get_delimited_tokens(
+        token_iter,
+        token,
+        Some(3),
+        ("(", |t| t == TokenKind::ParenthesisOpen),
+        ("", |_| true),
+        (")", |t| t == TokenKind::ParenthesisClosed),
+        interner,
+        source_store,
+    )?;
+
+    let mut local_error = false;
+    let [item_count_token, direction_token, shift_count_token] = &*delim.list else { unreachable!() };
+    let item_count_token = *item_count_token;
+    let shift_count_token = *shift_count_token;
+    let item_count = if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {
+        diagnostics::emit_error(
+            item_count_token.location,
+            format!(
+                "expected `integer`, found `{}`",
+                interner.resolve(item_count_token.inner.lexeme)
+            ),
+            Some(Label::new(item_count_token.location).with_color(Color::Red)),
+            None,
+            source_store,
+        );
+        local_error = true;
+        1
+    } else {
+        parse_integer_lexeme(item_count_token, interner, source_store)?
+    };
+
+    let shift_count = if !matches!(shift_count_token.inner.kind, TokenKind::Integer { .. }) {
+        diagnostics::emit_error(
+            shift_count_token.location,
+            format!(
+                "expected `integer`, found `{}`",
+                interner.resolve(shift_count_token.inner.lexeme)
+            ),
+            Some(Label::new(shift_count_token.location).with_color(Color::Red)),
+            None,
+            source_store,
+        );
+        local_error = true;
+        1
+    } else {
+        parse_integer_lexeme(shift_count_token, interner, source_store)?
+    };
+
+    let direction = match direction_token.inner.kind {
+        TokenKind::Less => Direction::Left,
+        TokenKind::Greater => Direction::Right,
+        _ => {
+            diagnostics::emit_error(
+                direction_token.location,
+                format!(
+                    "expected `<` or `>`, found `{}`",
+                    interner.resolve(direction_token.inner.lexeme)
+                ),
+                Some(Label::new(direction_token.location).with_color(Color::Red)),
+                None,
+                source_store,
+            );
+            local_error = true;
+            Direction::Left
+        }
+    };
+
+    if local_error {
+        return Err(());
+    }
+
+    Ok((
+        OpCode::Rot {
+            item_count: item_count.with_span(item_count_token.location),
+            direction,
+            shift_count: shift_count.with_span(shift_count_token.location),
+        },
+        delim.close.location,
+    ))
 }
 
 fn parse_integer_op<'a>(
