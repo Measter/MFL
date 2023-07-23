@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    io::{Error as IoError, ErrorKind},
+    io::{Error as IoError, ErrorKind, StdoutLock, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output},
 };
@@ -38,13 +38,9 @@ struct Args {
     #[clap(short)]
     filter: Vec<String>,
 
-    /// Force long-style output.
-    #[clap(long)]
-    long: bool,
-
-    /// Always print full STDOUT and STDERR streams
-    #[clap(long)]
-    print_streams: bool,
+    /// Set the output style. 0 = check list, 1 = short, 2 = long, 3 = print streams
+    #[clap(short = 's', action = clap::ArgAction::Count)]
+    output_style: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -303,65 +299,136 @@ fn build_diff(prev_stream: &[u8], new_stream: &[u8]) -> Vec<diff::Result<String>
         .collect()
 }
 
-fn print_result(
-    output: &Output,
-    actual_result: RunStatus,
-    expected_result: RunStatus,
-    post_fn_result: PostFnResult,
-    force_print_full_streams: bool,
-) {
-    let print_streams = || {
-        for (name, stream) in [("STDOUT", &output.stdout), ("STDERR", &output.stderr)] {
-            if !stream.is_empty() {
-                println!("    -- {name} --");
-                std::str::from_utf8(stream)
-                    .unwrap()
-                    .lines()
-                    .for_each(|line| println!("    {line}",));
+fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u8) -> Result<()> {
+    let print_subtest_name = output_style > 1;
+    let post_subtest_new_line = output_style > 1;
+    let verbose_result_mark = output_style > 1;
+    let print_diff_streams = output_style > 1;
+    let print_streams = output_style > 2;
+
+    match result {
+        TestRunResult::Skipped { test } => {
+            if print_subtest_name {
+                write!(stdout, "  {} ", test.name)?;
             }
-            println!();
+            let mark = if verbose_result_mark { "SKIPPED" } else { "o" };
+            write!(stdout, "{}", mark.yellow())?;
+            if post_subtest_new_line {
+                writeln!(stdout)?;
+            }
         }
-    };
+        TestRunResult::Run {
+            command,
+            command_result,
+            test,
+            post_fn_result,
+        } => {
+            if print_subtest_name {
+                write!(stdout, "  {} ", test.name)?;
+            }
 
-    if actual_result != expected_result {
-        println!(
-            "{}: Expected {expected_result:?} got {actual_result:?}",
-            "FAIL".red()
-        );
+            let mut diffs = Vec::new();
 
-        print_streams();
+            let mark = if *command_result != test.cfg.expected_result {
+                if verbose_result_mark {
+                    format!(
+                        "{}: Expected {:?} got {:?}",
+                        "FAIL".red(),
+                        test.cfg.expected_result,
+                        command_result
+                    )
+                } else {
+                    "x".red().to_string()
+                }
+            } else {
+                match post_fn_result {
+                    PostFnResult::Ok => {
+                        if verbose_result_mark {
+                            "PASS".green().to_string()
+                        } else {
+                            "✓".green().to_string()
+                        }
+                    }
+                    PostFnResult::NotEqual { stdout, stderr } => {
+                        for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
+                            if !stream.is_empty() {
+                                diffs.push(format!("    -- {name} --"));
+                                for d in stream {
+                                    match d {
+                                        diff::Result::Left(l) => {
+                                            diffs.push(format!("    {} {}", "-".bright_black(), l));
+                                        }
+                                        diff::Result::Right(l) => {
+                                            diffs.push(format!("    {} {}", "+".bright_white(), l));
+                                        }
+                                        diff::Result::Both(_, _) => {}
+                                    }
+                                }
+                            }
+                            diffs.push(String::new());
+                        }
+                        if verbose_result_mark {
+                            format!("{}: Test output changed", "FAIL".red())
+                        } else {
+                            "x".red().to_string()
+                        }
+                    }
 
-        return;
-    }
-
-    match post_fn_result {
-        PostFnResult::Ok => println!("{}", "PASS".green()),
-        PostFnResult::NotEqual { stdout, stderr } => {
-            println!("{}: Test output changed", "FAIL".red());
-            for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
-                if !stream.is_empty() {
-                    println!("    -- {name} --");
-                    for d in stream {
-                        match d {
-                            diff::Result::Left(l) => println!("    {} {}", "-".bright_black(), l),
-                            diff::Result::Right(l) => println!("    {} {}", "+".bright_white(), l),
-                            diff::Result::Both(_, _) => {}
+                    PostFnResult::Missing => {
+                        if verbose_result_mark {
+                            format!("{}: Previous output not found", "Error".red())
+                        } else {
+                            "x".red().to_string()
+                        }
+                    }
+                    PostFnResult::Other(e) => {
+                        if verbose_result_mark {
+                            format!("{}: Output error - {}", "Error".red(), e)
+                        } else {
+                            "x".red().to_string()
                         }
                     }
                 }
-                println!();
+            };
+
+            write!(stdout, "{mark}",)?;
+
+            if print_diff_streams {
+                for line in diffs {
+                    writeln!(stdout, "{line}")?;
+                }
+            }
+
+            if print_streams {
+                for (name, stream) in [("STDOUT", &command.stdout), ("STDERR", &command.stderr)] {
+                    if !stream.is_empty() {
+                        writeln!(stdout, "    -- {name} --")?;
+                        std::str::from_utf8(stream).unwrap().lines().try_for_each(
+                            |line| -> Result<()> {
+                                writeln!(stdout, "    {line}")?;
+                                Ok(())
+                            },
+                        )?;
+                    }
+                    writeln!(stdout)?;
+                }
+            }
+
+            if post_subtest_new_line {
+                writeln!(stdout)?;
             }
         }
-        PostFnResult::Missing => println!("{}: Previous output not found", "Error".red()),
-        PostFnResult::Other(e) => println!("{}: Output error - {}", "Error".red(), e),
     }
 
-    if force_print_full_streams {
-        print_streams();
-    }
+    Ok(())
+
+    // if force_print_full_streams {
+    //     print_streams();
+    // }
 }
 
 fn run_single_test(
+    stdout: &mut StdoutLock,
     test_group: &TestGroup,
     temp_dir: &tempfile::TempDir,
     args: &Args,
@@ -377,9 +444,11 @@ fn run_single_test(
         return Ok(());
     }
 
-    print!("{}", test_group.name);
+    if args.output_style > 0 {
+        let newline = if args.output_style > 1 { "\n" } else { "" };
+        write!(stdout, "{} {}", test_group.name, newline)?;
+    }
     let mut test_results = Vec::new();
-    let mut short_output = !args.long;
 
     let test_dir = temp_dir.path().join(&test_group.path);
     let objdir = test_dir.join("obj");
@@ -402,8 +471,6 @@ fn run_single_test(
     let test_command = run_command(&args.mfl, &compiler_args, &test_group.compile)?;
     let post_fn_result = post_test_fn(args, &test_group.path, "compile", &test_command);
     let command_result: RunStatus = test_command.status.into();
-    short_output &= command_result == test_group.compile.cfg.expected_result
-        && matches!(post_fn_result, PostFnResult::Ok);
 
     counts.add_result(
         command_result,
@@ -428,9 +495,6 @@ fn run_single_test(
             let command_result: RunStatus = test_command.status.into();
             let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
 
-            short_output &= command_result == run.cfg.expected_result
-                && matches!(post_fn_result, PostFnResult::Ok);
-
             counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
 
             test_results.push(TestRunResult::Run {
@@ -445,33 +509,12 @@ fn run_single_test(
         }
     }
 
-    if short_output {
-        let checks: String = "✓".repeat(1 + test_group.run_tests.len());
-        println!(" {}", checks.green());
-    } else {
-        println!();
-        for result in test_results {
-            match result {
-                TestRunResult::Run {
-                    command,
-                    command_result,
-                    test,
-                    post_fn_result,
-                } => {
-                    print!("  {} ", test.name);
-                    print_result(
-                        &command,
-                        command_result,
-                        test.cfg.expected_result,
-                        post_fn_result,
-                        args.print_streams,
-                    );
-                }
-                TestRunResult::Skipped { test } => {
-                    println!("  {} {}", test.name, "Skipped".yellow());
-                }
-            }
-        }
+    for result in test_results {
+        print_result(stdout, &result, args.output_style)?;
+    }
+
+    if args.output_style > 0 {
+        writeln!(stdout)?;
     }
 
     Ok(())
@@ -484,9 +527,17 @@ fn run_all_tests(
 ) -> Result<ResultCounts> {
     let mut counts = ResultCounts::default();
     let temp_dir = tempfile::tempdir()?;
+    let mut stdout = std::io::stdout().lock();
 
     for test in tests {
-        run_single_test(test, &temp_dir, args, post_test_fn, &mut counts)?;
+        run_single_test(
+            &mut stdout,
+            test,
+            &temp_dir,
+            args,
+            post_test_fn,
+            &mut counts,
+        )?;
     }
 
     Ok(counts)
@@ -494,7 +545,7 @@ fn run_all_tests(
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let mut args = Args::parse();
+    let args = Args::parse();
 
     if !args.mfl.exists() {
         bail!("MFL compiler not found at `{}`", args.mfl.display());
@@ -503,9 +554,6 @@ fn main() -> Result<()> {
     if !args.tests_root.exists() {
         bail!("Tests not found at `{}`", args.tests_root.display());
     }
-
-    // Print streams should imply long-style
-    args.long |= args.print_streams;
 
     let mut tests = get_tests(&args)?;
     if tests.is_empty() {
