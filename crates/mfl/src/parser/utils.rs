@@ -46,7 +46,7 @@ pub fn valid_type_token(t: TokenKind) -> bool {
 pub fn expect_token<'a>(
     tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     kind_str: &str,
-    mut expected: impl FnMut(TokenKind) -> bool,
+    expected: fn(TokenKind) -> bool,
     prev: Spanned<Token>,
     interner: &Interner,
     source_store: &SourceStorage,
@@ -111,9 +111,9 @@ pub fn get_delimited_tokens<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev: Spanned<Token>,
     expected_len: Option<usize>,
-    (open_delim_str, open_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
-    inner_tokens: (&'static str, impl FnMut(TokenKind) -> bool),
-    close_token: (&'static str, impl FnMut(TokenKind) -> bool),
+    (open_delim_str, open_delim_fn): (&'static str, fn(TokenKind) -> bool),
+    inner_tokens: (&'static str, fn(TokenKind) -> bool),
+    close_token: (&'static str, fn(TokenKind) -> bool),
     interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<Delimited, ()> {
@@ -153,8 +153,8 @@ pub fn get_terminated_tokens<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     open_token: Spanned<Token>,
     expected_len: Option<usize>,
-    (token_str, mut token_fn): (&'static str, impl FnMut(TokenKind) -> bool),
-    (close_delim_str, mut close_delim_fn): (&'static str, impl FnMut(TokenKind) -> bool),
+    (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
+    (close_delim_str, close_delim_fn): (&'static str, fn(TokenKind) -> bool),
     interner: &Interner,
     source_store: &SourceStorage,
 ) -> Result<Terminated, ()> {
@@ -191,7 +191,7 @@ pub fn get_terminated_tokens<'a>(
         let Ok((_, item_token)) = expect_token(
             token_iter,
             token_str,
-            &mut token_fn,
+            token_fn,
             prev,
             interner,
             source_store,
