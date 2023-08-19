@@ -124,7 +124,7 @@ impl Program {
 
                 if (unresolved_ident.path.len() > 1
                     || unresolved_ident.is_from_root
-                    || !unresolved_ident.generic_params.is_empty())
+                    || unresolved_ident.generic_params.is_some())
                     && builtin_name.is_some()
                 {
                     // Emit error
@@ -141,7 +141,7 @@ impl Program {
                     UnresolvedTypeIds::SimpleBuiltin(builtin)
                 } else if unresolved_ident.path.len() == 1
                     && !unresolved_ident.is_from_root
-                    && unresolved_ident.generic_params.is_empty()
+                    && unresolved_ident.generic_params.is_none()
                     && generic_params
                         .and_then(|t| t.iter().find(|tp| tp.inner == item_name.inner))
                         .is_some()
@@ -156,33 +156,33 @@ impl Program {
                         unresolved_ident,
                     )?;
 
-                    if unresolved_ident.generic_params.is_empty() {
-                        UnresolvedTypeIds::SimpleCustom {
+                    match &unresolved_ident.generic_params {
+                        Some(params) => {
+                            let params: Vec<_> = params
+                                .iter()
+                                .map(|p| {
+                                    let UnresolvedType::Tokens(p) = p else { unreachable!() };
+                                    self.resolve_idents_in_type(
+                                        item_header,
+                                        interner,
+                                        source_store,
+                                        had_error,
+                                        p,
+                                        generic_params,
+                                    )
+                                })
+                                .collect::<Result<_, _>>()?;
+
+                            UnresolvedTypeIds::GenericInstance {
+                                id: ident,
+                                id_token: item_name.inner.with_span(unresolved_ident.span),
+                                params,
+                            }
+                        }
+                        None => UnresolvedTypeIds::SimpleCustom {
                             id: ident,
                             token: item_name.inner.with_span(unresolved_ident.span),
-                        }
-                    } else {
-                        let params: Vec<_> = unresolved_ident
-                            .generic_params
-                            .iter()
-                            .map(|p| {
-                                let UnresolvedType::Tokens(p) = p else { unreachable!() };
-                                self.resolve_idents_in_type(
-                                    item_header,
-                                    interner,
-                                    source_store,
-                                    had_error,
-                                    p,
-                                    generic_params,
-                                )
-                            })
-                            .collect::<Result<_, _>>()?;
-
-                        UnresolvedTypeIds::GenericInstance {
-                            id: ident,
-                            id_token: item_name.inner.with_span(unresolved_ident.span),
-                            params,
-                        }
+                        },
                     }
                 }
             }
@@ -282,19 +282,23 @@ impl Program {
                         continue;
                     };
 
-                    let mut resolved_generic_params = Vec::new();
-                    for param in &ident.generic_params {
-                        let UnresolvedType::Tokens(param) = param else { unreachable!() };
-                        let Ok(f) = self.resolve_idents_in_type(
-                            item,
-                            interner,
-                            source_store,
-                            had_error,
-                            param,
-                            generic_params,
-                        ) else { continue; };
-                        resolved_generic_params.push(UnresolvedType::Id(f));
-                    }
+                    let resolved_generic_params = ident.generic_params.as_ref().map(|v| {
+                        let mut resolved_generic_params = Vec::new();
+
+                        for param in v {
+                            let UnresolvedType::Tokens(param) = param else { unreachable!() };
+                            let Ok(f) = self.resolve_idents_in_type(
+                                item,
+                                interner,
+                                source_store,
+                                had_error,
+                                param,
+                                generic_params,
+                            ) else { continue; };
+                            resolved_generic_params.push(UnresolvedType::Id(f));
+                        }
+                        resolved_generic_params
+                    });
 
                     let found_item_header = self.get_item_header(item_id);
                     if !matches!(

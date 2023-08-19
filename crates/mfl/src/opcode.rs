@@ -86,7 +86,7 @@ pub struct UnresolvedIdent {
     pub span: SourceLocation,
     pub is_from_root: bool,
     pub path: Vec<Spanned<Spur>>,
-    pub generic_params: Vec<UnresolvedType>,
+    pub generic_params: Option<Vec<UnresolvedType>>,
 }
 
 impl std::hash::Hash for UnresolvedIdent {
@@ -177,7 +177,7 @@ pub enum OpCode {
     },
     ResolvedIdent {
         item_id: ItemId,
-        generic_params: Vec<UnresolvedType>,
+        generic_params: Option<Vec<UnresolvedType>>,
     },
     Rem,
     Return,

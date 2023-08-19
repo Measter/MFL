@@ -299,28 +299,32 @@ pub fn parse_unresolved_types(
 
         let first_lexeme = interner.resolve(ident.path[0].inner);
         let base_type = if is_valid_for_ptr && first_lexeme == "ptr" {
-            let mut ptr_type = ident.generic_params;
-            if ptr_type.len() != 1 {
-                diagnostics::emit_error(
-                    ident.span,
-                    "`ptr` cannot be parameterized over multiple types",
-                    [Label::new(ident.span).with_color(Color::Red)],
-                    None,
-                    source_store,
-                );
-                had_error = true;
-                continue;
-            } else if ptr_type.is_empty() {
-                diagnostics::emit_error(
-                    ident.span,
-                    "`ptr` must have a type",
-                    [Label::new(ident.span).with_color(Color::Red)],
-                    None,
-                    source_store,
-                );
-                had_error = true;
-                continue;
-            }
+            let ptr_type = ident.generic_params;
+            let mut ptr_type = match ptr_type {
+                Some(v) if v.len() == 1 => v,
+                Some(_) => {
+                    diagnostics::emit_error(
+                        ident.span,
+                        "`ptr` cannot be parameterized over multiple types",
+                        [Label::new(ident.span).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    had_error = true;
+                    continue;
+                }
+                None => {
+                    diagnostics::emit_error(
+                        ident.span,
+                        "`ptr` must have a type",
+                        [Label::new(ident.span).with_color(Color::Red)],
+                        None,
+                        source_store,
+                    );
+                    had_error = true;
+                    continue;
+                }
+            };
 
             let UnresolvedType::Tokens(ptr_type) = ptr_type.pop().unwrap() else { unreachable!() };
             UnresolvedTypeTokens::Pointer(Box::new(ptr_type))
@@ -465,12 +469,14 @@ pub fn parse_ident<'a>(
         import_span = import_span.merge(delim.close.location);
         last_token = delim.close;
 
-        unresolved_types
-            .into_iter()
-            .map(|ut| UnresolvedType::Tokens(ut.inner))
-            .collect()
+        Some(
+            unresolved_types
+                .into_iter()
+                .map(|ut| UnresolvedType::Tokens(ut.inner))
+                .collect(),
+        )
     } else {
-        Vec::new()
+        None
     };
 
     Ok((

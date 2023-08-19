@@ -741,7 +741,7 @@ impl Program {
                         span: name.location,
                         is_from_root: false,
                         path: vec![bool_symbol.with_span(name.location)],
-                        generic_params: Vec::new(),
+                        generic_params: None,
                     },
                 ))
                 .with_span(name.location)]

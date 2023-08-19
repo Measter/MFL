@@ -136,9 +136,11 @@ fn expand_generic_params_in_block(
                 generic_params,
                 item_id,
             } => {
-                for p in generic_params {
-                    let UnresolvedType::Id(p) = p else { unreachable!() };
-                    *p = expand_generic_params_in_type(p, param_map);
+                if let Some(gp) = generic_params.as_mut() {
+                    for p in gp {
+                        let UnresolvedType::Id(p) = p else { unreachable!() };
+                        *p = expand_generic_params_in_type(p, param_map);
+                    }
                 }
                 if let Some(new_id) = alloc_map.get(item_id) {
                     *item_id = *new_id;
@@ -321,7 +323,7 @@ impl Program {
                     item_id,
                     generic_params,
                 } if self.get_item_header(*item_id).kind == ItemKind::GenericFunction => {
-                    if generic_params.is_empty() {
+                    let Some(generic_params) = generic_params.as_ref() else {
                         *had_error = true;
                         diagnostics::emit_error(
                             op.token.location,
@@ -332,7 +334,7 @@ impl Program {
                         );
 
                         continue;
-                    }
+                    };
 
                     let new_id = self.get_generic_function_instance(
                         interner,
