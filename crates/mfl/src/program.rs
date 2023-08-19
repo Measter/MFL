@@ -52,18 +52,22 @@ pub struct ItemHeader {
 }
 
 impl ItemHeader {
+    #[inline]
     pub fn name(&self) -> Spanned<Spur> {
         self.name
     }
 
+    #[inline]
     pub fn id(&self) -> ItemId {
         self.id
     }
 
+    #[inline]
     pub fn parent(&self) -> Option<ItemId> {
         self.parent
     }
 
+    #[inline]
     pub fn kind(&self) -> ItemKind {
         self.kind
     }
@@ -127,35 +131,42 @@ pub struct Program {
 }
 
 impl Program {
+    #[inline]
     pub fn get_all_items(&self) -> impl Iterator<Item = ItemHeader> + '_ {
         self.item_headers.iter().copied()
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_scope(&self, id: ItemId) -> &Scope {
         &self.scopes[id.0.to_usize()]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_scope_mut(&mut self, id: ItemId) -> &mut Scope {
         &mut self.scopes[id.0.to_usize()]
     }
 
+    #[inline]
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
         self.item_headers[id.0.to_usize()]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_item_signature_unresolved(&self, id: ItemId) -> &ItemSignatureUnresolved {
         &self.item_signatures_unresolved[&id]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_item_signature_resolved(&self, id: ItemId) -> &ItemSignatureResolved {
         &self.item_signatures_resolved[&id]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_memory_type_unresolved(&self, id: ItemId) -> Spanned<&UnresolvedType> {
         let v = &self.memory_type_unresolved[&id];
 
@@ -163,23 +174,28 @@ impl Program {
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_memory_type_resolved(&self, id: ItemId) -> TypeId {
         self.memory_type_resolved[&id]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_item_body(&self, id: ItemId) -> &[Op] {
         &self.item_bodies[&id]
     }
 
+    #[inline]
     pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op>) {
         self.item_bodies.insert(id, body);
     }
 
+    #[inline]
     pub fn get_analyzer(&self, id: ItemId) -> &Analyzer {
         &self.analyzers[&id]
     }
 
+    #[inline]
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
@@ -864,10 +880,12 @@ pub enum ModuleQueueType {
 }
 
 impl Scope {
+    #[inline]
     pub fn get_symbol(&self, name: Spur) -> Option<ItemId> {
         self.visible_symbols.get(&name).map(|id| id.inner)
     }
 
+    #[inline]
     pub fn get_child_items(&self) -> &HashMap<Spur, Spanned<ItemId>> {
         &self.child_items
     }

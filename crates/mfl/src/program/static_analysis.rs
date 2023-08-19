@@ -147,10 +147,12 @@ pub struct OpData {
 }
 
 impl OpData {
+    #[inline]
     pub fn inputs(&self) -> &[ValueId] {
         self.inputs.as_ref()
     }
 
+    #[inline]
     pub fn outputs(&self) -> &[ValueId] {
         self.outputs.as_ref()
     }

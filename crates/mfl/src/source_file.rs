@@ -24,20 +24,24 @@ pub struct SourceLocation {
 impl Span for SourceLocation {
     type SourceId = FileId;
 
+    #[inline]
     fn source(&self) -> &Self::SourceId {
         &self.file_id
     }
 
+    #[inline]
     fn start(&self) -> usize {
         self.source_start.to_usize()
     }
 
+    #[inline]
     fn end(&self) -> usize {
         self.source_start.to_usize() + self.len.to_usize()
     }
 }
 
 impl SourceLocation {
+    #[inline]
     pub fn new(file_id: FileId, range: Range<u32>) -> Self {
         Self {
             file_id,
@@ -60,6 +64,7 @@ impl SourceLocation {
         }
     }
 
+    #[inline]
     pub fn neighbour_of(self, other: Self) -> bool {
         self.source_start + self.len.to_u32() == other.source_start
             || other.source_start + other.len.to_u32() == self.source_start
@@ -85,6 +90,7 @@ pub trait WithSpan {
 }
 
 impl<T> WithSpan for T {
+    #[inline]
     fn with_span(self, location: SourceLocation) -> Spanned<Self>
     where
         Self: Sized,
@@ -123,20 +129,24 @@ impl SourceStorage {
         FileId(id.to_u16().unwrap())
     }
 
+    #[inline]
     pub fn name(&self, id: FileId) -> &str {
         &self.files[id.0.to_usize()].name
     }
 
+    #[inline]
     pub fn source(&self, id: FileId) -> &str {
         &self.files[id.0.to_usize()].contents
     }
 }
 
 impl Cache<FileId> for &SourceStorage {
+    #[inline]
     fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
         Ok(&self.files[id.0.to_usize()].source)
     }
 
+    #[inline]
     fn display<'a>(&self, id: &'a FileId) -> Option<Box<dyn std::fmt::Display + 'a>> {
         let name = &self.files[id.0.to_usize()].name;
 

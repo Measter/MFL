@@ -197,7 +197,7 @@ Error:
    0: [91mError loading program[0m
 
 Location:
-   [35mcrates/mfl/src/program.rs[0m:[35m263[0m
+   [35mcrates/mfl/src/program.rs[0m:[35m279[0m
 
 Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
 Run with RUST_BACKTRACE=full to include source snippets.

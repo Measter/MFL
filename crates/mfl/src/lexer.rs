@@ -162,14 +162,17 @@ impl<'source> Scanner<'source> {
 
     // We need mutable access here because we're peeking the iterator.
     #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
     fn is_at_end(&mut self) -> bool {
         self.peek().is_none()
     }
 
+    #[inline(always)]
     fn lexeme<'a>(&self, input: &'a str) -> &'a str {
         &input[self.cur_token_start.to_usize()..self.next_token_start.to_usize()]
     }
 
+    #[inline(always)]
     fn lexeme_range(&self) -> Range<u32> {
         self.cur_token_start..self.next_token_start
     }

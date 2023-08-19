@@ -18,10 +18,12 @@ impl Interner {
         }
     }
 
+    #[inline]
     pub fn intern(&mut self, lexeme: &str) -> Spur {
         self.lexemes.get_or_intern(lexeme)
     }
 
+    #[inline]
     pub fn resolve(&self, id: Spur) -> &str {
         self.lexemes.resolve(&id)
     }

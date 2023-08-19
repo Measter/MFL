@@ -697,10 +697,12 @@ impl TypeStore {
         self.kinds[&type_id]
     }
 
+    #[inline]
     pub fn get_type_info(&self, id: TypeId) -> TypeInfo {
         self.kinds[&id]
     }
 
+    #[inline]
     pub fn get_builtin(&self, id: BuiltinTypes) -> TypeInfo {
         self.kinds[&self.builtins[id as usize]]
     }
@@ -804,11 +806,13 @@ impl TypeStore {
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_struct_def(&self, id: TypeId) -> &FixedResolvedStruct {
         &self.fixed_struct_defs[&id]
     }
 
     #[track_caller]
+    #[inline]
     pub fn get_generic_base_def(&self, id: TypeId) -> &GenericPartiallyResolvedStruct {
         &self.generic_struct_id_map[&id]
     }

@@ -108,6 +108,8 @@ fn generate_impls(
                 )?;
             }
 
+            writeln!(impl_file, "#[inline(always)]")?;
+
             writeln!(
                 impl_file,
                 "    fn to_{to_sign}{to_width}(self) -> Self::{to_sign:#}{to_width} {{"
