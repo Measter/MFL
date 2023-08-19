@@ -1,0 +1,10 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+
+proc make_foo [] to [s32] is
+    s32
+end

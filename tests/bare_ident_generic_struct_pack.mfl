@@ -1,0 +1,14 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+struct Foo(T) is
+    field a s32
+    field b T
+end
+
+proc make_foo [] to [Foo(String)] is
+    3 "Hello" Foo(String)
+end

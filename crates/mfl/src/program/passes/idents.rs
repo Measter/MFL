@@ -48,6 +48,7 @@ impl Program {
             *tlm
         } else {
             let Some(start_item) = self.get_visible_symbol(item_header, first_ident.inner) else {
+                // TODO: Handle naming builtins here
                 let item_name = interner.resolve(first_ident.inner);
                 diagnostics::emit_error(
                     first_ident.location,
@@ -301,45 +302,57 @@ impl Program {
                     });
 
                     let found_item_header = self.get_item_header(item_id);
-                    if !matches!(
-                        found_item_header.kind(),
+                    match found_item_header.kind() {
                         ItemKind::Function
-                            | ItemKind::GenericFunction
-                            | ItemKind::Const
-                            | ItemKind::Memory
-                    ) {
-                        *had_error = true;
-                        let mut labels = vec![Label::new(op.token.location).with_color(Color::Red)];
-                        // This would be the case if the item was a top-level module.
-                        let note = if found_item_header.name.location.file_id != FileId::dud() {
-                            labels.push(
-                                Label::new(found_item_header.name.location)
-                                    .with_color(Color::Cyan)
-                                    .with_message(format!(
-                                        "item is a {:?}",
-                                        found_item_header.kind()
-                                    )),
+                        | ItemKind::GenericFunction
+                        | ItemKind::Const
+                        | ItemKind::Memory => {
+                            op.code = OpCode::ResolvedIdent {
+                                item_id,
+                                generic_params: resolved_generic_params,
+                            };
+                        }
+                        ItemKind::StructDef => {
+                            let ty = UnresolvedTypeTokens::Simple(ident.clone());
+                            let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, &ty, generic_params) else {
+                                *had_error = true;
+                                continue;
+                            };
+
+                            op.code = OpCode::UnresolvedPackStruct {
+                                unresolved_type: UnresolvedType::Id(new_ty),
+                            }
+                        }
+                        ItemKind::Assert | ItemKind::Module => {
+                            *had_error = true;
+                            let mut labels =
+                                vec![Label::new(op.token.location).with_color(Color::Red)];
+                            // This would be the case if the item was a top-level module.
+                            let note = if found_item_header.name.location.file_id != FileId::dud() {
+                                labels.push(
+                                    Label::new(found_item_header.name.location)
+                                        .with_color(Color::Cyan)
+                                        .with_message(format!(
+                                            "item is a {:?}",
+                                            found_item_header.kind()
+                                        )),
+                                );
+                                String::new()
+                            } else {
+                                let name = interner.resolve(found_item_header.name.inner);
+                                format!("`{name}` is a top-level module")
+                            };
+
+                            diagnostics::emit_error(
+                                op.token.location,
+                                format!("cannot refer to a {:?} here", found_item_header.kind()),
+                                labels,
+                                note,
+                                source_store,
                             );
-                            String::new()
-                        } else {
-                            let name = interner.resolve(found_item_header.name.inner);
-                            format!("`{name}` is a top-level module")
-                        };
-
-                        diagnostics::emit_error(
-                            op.token.location,
-                            format!("cannot refer to a {:?} here", found_item_header.kind()),
-                            labels,
-                            note,
-                            source_store,
-                        );
-                        continue;
+                            continue;
+                        }
                     }
-
-                    op.code = OpCode::ResolvedIdent {
-                        item_id,
-                        generic_params: resolved_generic_params,
-                    };
                 }
                 OpCode::UnresolvedCast { unresolved_type }
                 | OpCode::UnresolvedPackStruct { unresolved_type }

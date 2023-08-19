@@ -1,0 +1,9 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+proc make_string [] to [String] is
+    "Hello" unpack String
+end
