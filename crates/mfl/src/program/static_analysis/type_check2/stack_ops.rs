@@ -68,7 +68,9 @@ pub fn cast_to_int(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([input_type_id]) = analyzer.value_types(input_ids) else { return };
+    let Some([input_type_id]) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = type_store.get_type_info(input_type_id);
 
     match input_type_info.kind {
@@ -156,7 +158,9 @@ pub fn cast_to_ptr(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
-    let Some([input]) = analyzer.value_types(input_ids) else { return };
+    let Some([input]) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = type_store.get_type_info(input);
 
     match input_type_info.kind {
@@ -236,7 +240,9 @@ pub fn dup(analyzer: &mut Analyzer, op: &Op) {
     let outputs = op_data.outputs().to_owned();
 
     for (input, output) in inputs.into_iter().zip(outputs) {
-        let Some([input_type]) = analyzer.value_types([input]) else { continue };
+        let Some([input_type]) = analyzer.value_types([input]) else {
+            continue;
+        };
         analyzer.set_value_type(output, input_type);
     }
 }
@@ -246,7 +252,9 @@ pub fn over(analyzer: &mut Analyzer, op: &Op) {
     let input = op_data.inputs()[0];
     let output = op_data.outputs()[0];
 
-    let Some([input_type])  = analyzer.value_types([input]) else { return };
+    let Some([input_type]) = analyzer.value_types([input]) else {
+        return;
+    };
     analyzer.set_value_type(output, input_type);
 }
 

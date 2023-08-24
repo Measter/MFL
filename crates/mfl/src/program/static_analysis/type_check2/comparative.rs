@@ -22,7 +22,9 @@ pub fn compare(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
@@ -71,7 +73,9 @@ pub fn equal(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
@@ -123,7 +127,9 @@ pub fn is_null(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs()[0];
-    let Some([input_type_id]) = analyzer.value_types([input_id]) else { return };
+    let Some([input_type_id]) = analyzer.value_types([input_id]) else {
+        return;
+    };
     let input_type_info = type_store.get_type_info(input_type_id);
 
     if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {

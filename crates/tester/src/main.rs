@@ -202,8 +202,8 @@ fn get_tests(args: &Args) -> Result<Vec<TestGroup>> {
 
         if entry.path().extension() == Some(OsStr::new("mfl")) {
             let Some(test_case) = read_test(args, entry.path())
-                .with_context(|| format!("error reading test `{}`", entry.path().display()))? else
-            {
+                .with_context(|| format!("error reading test `{}`", entry.path().display()))?
+            else {
                 continue;
             };
 

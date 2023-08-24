@@ -51,7 +51,9 @@ fn mangle_type_name(interner: &mut Interner, ty: &UnresolvedTypeIds, name: &mut 
         } => {
             let t_name = interner.resolve(id_token.inner);
             write!(name, "{t_name}$GO$").unwrap();
-            let [first, rest @ ..] = params.as_slice() else { unreachable!() };
+            let [first, rest @ ..] = params.as_slice() else {
+                unreachable!()
+            };
             mangle_type_name(interner, first, name);
             for r in rest {
                 name.push('_');
@@ -67,12 +69,16 @@ fn build_mangled_name(interner: &mut Interner, base: Spur, params: &[UnresolvedT
     let mut name = interner.resolve(base).to_owned();
     name.push_str("$GO$");
 
-    let [UnresolvedType::Id(first), rest @ ..] = params else { unreachable!() };
+    let [UnresolvedType::Id(first), rest @ ..] = params else {
+        unreachable!()
+    };
     mangle_type_name(interner, first, &mut name);
 
     for tn in rest {
         name.push('_');
-        let UnresolvedType::Id(tn) = tn else { unreachable!() };
+        let UnresolvedType::Id(tn) = tn else {
+            unreachable!()
+        };
         mangle_type_name(interner, tn, &mut name);
     }
 
@@ -138,7 +144,9 @@ fn expand_generic_params_in_block(
             } => {
                 if let Some(gp) = generic_params.as_mut() {
                     for p in gp {
-                        let UnresolvedType::Id(p) = p else { unreachable!() };
+                        let UnresolvedType::Id(p) = p else {
+                            unreachable!()
+                        };
                         *p = expand_generic_params_in_type(p, param_map);
                     }
                 }
@@ -149,7 +157,9 @@ fn expand_generic_params_in_block(
             OpCode::UnresolvedCast { unresolved_type }
             | OpCode::UnresolvedPackStruct { unresolved_type }
             | OpCode::UnresolvedSizeOf { unresolved_type } => {
-                let UnresolvedType::Id(p) = unresolved_type else { unreachable!() };
+                let UnresolvedType::Id(p) = unresolved_type else {
+                    unreachable!()
+                };
                 *p = expand_generic_params_in_type(p, param_map);
             }
 
@@ -180,7 +190,9 @@ impl Program {
             .iter()
             .zip(generic_params)
             .map(|(name, ty)| {
-                let UnresolvedType::Id(ty) = ty else {unreachable!()};
+                let UnresolvedType::Id(ty) = ty else {
+                    unreachable!()
+                };
                 (name.inner, ty)
             })
             .collect();
@@ -191,14 +203,18 @@ impl Program {
         let old_sig = &self.item_signatures_unresolved[&fn_id];
 
         for stack_item in &old_sig.exit_stack.inner {
-            let UnresolvedType::Id(stack_type) = &stack_item.inner else { unreachable!() };
+            let UnresolvedType::Id(stack_type) = &stack_item.inner else {
+                unreachable!()
+            };
             let new_id = expand_generic_params_in_type(stack_type, &param_map);
             let new_type = UnresolvedType::Id(new_id);
             exit_stack.push(new_type.with_span(stack_item.location));
         }
 
         for stack_item in &old_sig.entry_stack.inner {
-            let UnresolvedType::Id(stack_type) = &stack_item.inner else { unreachable!() };
+            let UnresolvedType::Id(stack_type) = &stack_item.inner else {
+                unreachable!()
+            };
             let new_id = expand_generic_params_in_type(stack_type, &param_map);
             let new_type = UnresolvedType::Id(new_id);
             entry_stack.push(new_type.with_span(stack_item.location));
@@ -230,7 +246,9 @@ impl Program {
             }
 
             let alloc_type = &self.memory_type_unresolved[&item_header.id];
-            let UnresolvedType::Id(alloc_memory_type) = &alloc_type.inner else { unreachable!() };
+            let UnresolvedType::Id(alloc_memory_type) = &alloc_type.inner else {
+                unreachable!()
+            };
 
             let new_memory_sig = expand_generic_params_in_type(alloc_memory_type, &param_map);
             let new_sig = UnresolvedType::Id(new_memory_sig).with_span(alloc_type.location);

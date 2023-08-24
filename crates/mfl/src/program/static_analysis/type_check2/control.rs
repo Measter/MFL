@@ -32,7 +32,9 @@ pub fn epilogue_return(
     let op_data = analyzer.get_op_io(op.id);
 
     for (&expected, actual_id) in item_sig.exit_stack().iter().zip(&op_data.inputs) {
-        let Some([actual_type]) = analyzer.value_types([*actual_id]) else {continue};
+        let Some([actual_type]) = analyzer.value_types([*actual_id]) else {
+            continue;
+        };
 
         if actual_type != expected {
             let actual_type_info = type_store.get_type_info(actual_type);
@@ -152,7 +154,9 @@ pub fn syscall(
     let op_data = analyzer.get_op_io(op.id);
 
     for (idx, input_value) in op_data.inputs().iter().enumerate() {
-        let Some([type_id]) = analyzer.value_types([*input_value]) else { continue };
+        let Some([type_id]) = analyzer.value_types([*input_value]) else {
+            continue;
+        };
         let type_info = type_store.get_type_info(type_id);
         match type_info.kind {
             TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {}
@@ -207,7 +211,9 @@ pub fn analyze_while(
     // We expect a boolean to be the result of evaluating the condition.
     let op_data = analyzer.get_op_io(op.id);
     let condition_inputs = *op_data.inputs.as_arr::<1>();
-    let Some([condition_type]) = analyzer.value_types(condition_inputs) else { return };
+    let Some([condition_type]) = analyzer.value_types(condition_inputs) else {
+        return;
+    };
 
     if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
         *had_error = true;
@@ -233,7 +239,11 @@ pub fn analyze_while(
 
     for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
         let [condition_value] = analyzer.values([merge_pair.condition_value]);
-        let Some(input_type_ids @ [pre_type, condition_type]) = analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value,]) else { continue };
+        let Some(input_type_ids @ [pre_type, condition_type]) =
+            analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value])
+        else {
+            continue;
+        };
         let pre_type_info = type_store.get_type_info(pre_type);
         let condition_type_info = type_store.get_type_info(condition_type);
 
@@ -315,7 +325,11 @@ pub fn analyze_if(
 
     for merge_pair in merges {
         let [then_value] = analyzer.values([merge_pair.then_value]);
-        let Some(input_type_ids @ [then_type, else_type]) = analyzer.value_types([merge_pair.then_value, merge_pair.else_value]) else { continue };
+        let Some(input_type_ids @ [then_type, else_type]) =
+            analyzer.value_types([merge_pair.then_value, merge_pair.else_value])
+        else {
+            continue;
+        };
         let then_type_info = type_store.get_type_info(then_type);
         let else_type_info = type_store.get_type_info(else_type);
 

@@ -107,7 +107,9 @@ pub fn parse_item_body_contents(
                         }
                         TokenKind::Insert { emit_struct } if idents.len() > 1 => {
                             // Hang on to your seat, this'll be a good one!
-                            let [prev @ .., _] = idents.as_slice() else { unreachable!() };
+                            let [prev @ .., _] = idents.as_slice() else {
+                                unreachable!()
+                            };
 
                             for &ident in prev {
                                 let xtr = OpCode::ExtractStruct {
@@ -125,7 +127,9 @@ pub fn parse_item_body_contents(
                             };
                             ops.push(Op::new(op_id_gen(), rot, token.map(|t| t.lexeme)));
 
-                            let [first, prev @ ..] = idents.as_slice() else { unreachable!() };
+                            let [first, prev @ ..] = idents.as_slice() else {
+                                unreachable!()
+                            };
                             for ident in prev.iter().rev() {
                                 let swap = OpCode::Swap {
                                     count: 1.with_span(token.location),

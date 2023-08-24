@@ -12,13 +12,23 @@ use crate::{
 pub fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
+        return;
+    };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let Some(input_const_vals) = analyzer.value_consts(val_ids) else { return };
+    let Some(input_const_vals) = analyzer.value_consts(val_ids) else {
+        return;
+    };
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
+            let TypeKind::Integer {
+                width: output_width,
+                signed: output_signed,
+            } = output_type_info.kind
+            else {
+                unreachable!()
+            };
 
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_signed);
@@ -73,13 +83,23 @@ pub fn subtract(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some(input_const_vals) = analyzer.value_consts(input_ids) else {
+        return;
+    };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
+        unreachable!()
+    };
     let output_type_info = type_store.get_type_info(output_type_id);
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer{ width: output_width , signed: output_signed } = output_type_info.kind else { unreachable!() };
+            let TypeKind::Integer {
+                width: output_width,
+                signed: output_signed,
+            } = output_type_info.kind
+            else {
+                unreachable!()
+            };
 
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_signed);
@@ -195,10 +215,20 @@ pub fn subtract(
 pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
-    let Some([types]) = analyzer.value_consts([input_id]) else { return };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { unreachable!() };
+    let Some([types]) = analyzer.value_consts([input_id]) else {
+        return;
+    };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
+        unreachable!()
+    };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer{ width: output_width, .. } = output_type_info.kind else { unreachable!() };
+    let TypeKind::Integer {
+        width: output_width,
+        ..
+    } = output_type_info.kind
+    else {
+        unreachable!()
+    };
 
     let new_const_val = match types {
         ConstVal::Int(IntKind::Unsigned(a)) => {
@@ -218,13 +248,23 @@ pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
 pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = analyzer.value_consts(input_ids) else { return };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
+    let Some(input_const_vals) = analyzer.value_consts(input_ids) else {
+        return;
+    };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
+        return;
+    };
     let output_type_info = type_store.get_type_info(output_type_id);
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else { unreachable!() };
+            let TypeKind::Integer {
+                width: output_width,
+                signed: output_signed,
+            } = output_type_info.kind
+            else {
+                unreachable!()
+            };
 
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_signed);
@@ -261,11 +301,23 @@ pub fn multiply_div_rem_shift(
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
 
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else { return };
+    let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
+        return;
+    };
     let output_type_info = type_store.get_type_info(output_type_id);
-    let TypeKind::Integer{ width: output_width, signed: output_sign } = output_type_info.kind else { unreachable!() };
+    let TypeKind::Integer {
+        width: output_width,
+        signed: output_sign,
+    } = output_type_info.kind
+    else {
+        unreachable!()
+    };
 
-    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) = analyzer.value_consts(input_ids) else { return };
+    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) =
+        analyzer.value_consts(input_ids)
+    else {
+        return;
+    };
 
     if matches!(&op.code, OpCode::ShiftLeft | OpCode::ShiftRight) {
         let shift_amount = match b_const_val {

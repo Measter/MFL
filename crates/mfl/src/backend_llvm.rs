@@ -99,8 +99,8 @@ impl OpCode {
 
 fn is_fully_const(id: ValueId, analyzer: &Analyzer) -> bool {
     let Some([const_val]) = analyzer.value_consts([id]) else {
-            return false;
-        };
+        return false;
+    };
 
     matches!(
         const_val,
@@ -204,7 +204,11 @@ impl<'ctx> ValueStore<'ctx> {
             ConstVal::Int(val) => {
                 let [type_id] = ds.analyzer.value_types([id]).unwrap();
                 let type_info = ds.type_store.get_type_info(type_id);
-                let TypeKind::Integer{ width: target_width, .. } = type_info.kind else {
+                let TypeKind::Integer {
+                    width: target_width,
+                    ..
+                } = type_info.kind
+                else {
                     panic!("ICE: ConstInt for non-int type");
                 };
                 let target_type = target_width.get_int_type(cg.ctx);

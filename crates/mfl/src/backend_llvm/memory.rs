@@ -210,7 +210,10 @@ impl<'ctx> CodeGen<'ctx> {
             .find(|(_, fi)| fi.name.inner == pointer_field_name)
             .unwrap();
 
-        let TypeKind::Pointer(store_type) = ds.type_store.get_type_info(ptr_field_info.kind).kind else { unreachable!() };
+        let TypeKind::Pointer(store_type) = ds.type_store.get_type_info(ptr_field_info.kind).kind
+        else {
+            unreachable!()
+        };
 
         let ptr_name = format!("{struct_value_id}_pointer");
         let ptr_value = self
@@ -707,7 +710,9 @@ impl<'ctx> CodeGen<'ctx> {
         let ptr_value_id = op_io.inputs()[0];
         let [ptr_type_id] = ds.analyzer.value_types([ptr_value_id]).unwrap();
         let ptr_type_info = ds.type_store.get_type_info(ptr_type_id);
-        let TypeKind::Pointer(ptee_id) = ptr_type_info.kind else { unreachable!() };
+        let TypeKind::Pointer(ptee_id) = ptr_type_info.kind else {
+            unreachable!()
+        };
 
         let ptr = value_store
             .load_value(self, ptr_value_id, ds)
@@ -730,7 +735,9 @@ impl<'ctx> CodeGen<'ctx> {
         let input_type_ids = ds.analyzer.value_types(input_ids).unwrap();
         let [data_type_kind, ptr_type_kind] =
             input_type_ids.map(|id| ds.type_store.get_type_info(id).kind);
-        let TypeKind::Pointer(pointee_type_id) = ptr_type_kind else { unreachable!() };
+        let TypeKind::Pointer(pointee_type_id) = ptr_type_kind else {
+            unreachable!()
+        };
         let pointee_type_kind = ds.type_store.get_type_info(pointee_type_id).kind;
 
         let data = value_store.load_value(self, data, ds);

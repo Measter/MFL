@@ -30,7 +30,9 @@ impl Program {
         had_error: &mut bool,
         ident: &UnresolvedIdent,
     ) -> Result<ItemId, ()> {
-        let [first_ident, rest @ ..] = ident.path.as_slice() else { unreachable!() };
+        let [first_ident, rest @ ..] = ident.path.as_slice() else {
+            unreachable!()
+        };
 
         let mut current_item = if ident.is_from_root {
             let Some(tlm) = self.top_level_modules.get(&first_ident.inner) else {
@@ -162,7 +164,9 @@ impl Program {
                             let params: Vec<_> = params
                                 .iter()
                                 .map(|p| {
-                                    let UnresolvedType::Tokens(p) = p else { unreachable!() };
+                                    let UnresolvedType::Tokens(p) = p else {
+                                        unreachable!()
+                                    };
                                     self.resolve_idents_in_type(
                                         item_header,
                                         interner,
@@ -279,7 +283,9 @@ impl Program {
                 }
 
                 OpCode::UnresolvedIdent(ident) => {
-                    let Ok(item_id) = self.resolve_single_ident(item, interner, source_store, had_error, ident) else {
+                    let Ok(item_id) =
+                        self.resolve_single_ident(item, interner, source_store, had_error, ident)
+                    else {
                         continue;
                     };
 
@@ -287,7 +293,9 @@ impl Program {
                         let mut resolved_generic_params = Vec::new();
 
                         for param in v {
-                            let UnresolvedType::Tokens(param) = param else { unreachable!() };
+                            let UnresolvedType::Tokens(param) = param else {
+                                unreachable!()
+                            };
                             let Ok(f) = self.resolve_idents_in_type(
                                 item,
                                 interner,
@@ -295,7 +303,9 @@ impl Program {
                                 had_error,
                                 param,
                                 generic_params,
-                            ) else { continue; };
+                            ) else {
+                                continue;
+                            };
                             resolved_generic_params.push(UnresolvedType::Id(f));
                         }
                         resolved_generic_params
@@ -314,7 +324,14 @@ impl Program {
                         }
                         ItemKind::StructDef => {
                             let ty = UnresolvedTypeTokens::Simple(ident.clone());
-                            let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, &ty, generic_params) else {
+                            let Ok(new_ty) = self.resolve_idents_in_type(
+                                item,
+                                interner,
+                                source_store,
+                                had_error,
+                                &ty,
+                                generic_params,
+                            ) else {
                                 *had_error = true;
                                 continue;
                             };
@@ -357,9 +374,18 @@ impl Program {
                 OpCode::UnresolvedCast { unresolved_type }
                 | OpCode::UnresolvedPackStruct { unresolved_type }
                 | OpCode::UnresolvedSizeOf { unresolved_type } => {
-                    let UnresolvedType::Tokens(ty) = unresolved_type else { panic!("ICE: tried to resolve type on resolved type") };
+                    let UnresolvedType::Tokens(ty) = unresolved_type else {
+                        panic!("ICE: tried to resolve type on resolved type")
+                    };
 
-                    let Ok(new_ty) = self.resolve_idents_in_type(item, interner, source_store, had_error, ty, generic_params) else {
+                    let Ok(new_ty) = self.resolve_idents_in_type(
+                        item,
+                        interner,
+                        source_store,
+                        had_error,
+                        ty,
+                        generic_params,
+                    ) else {
                         *had_error = true;
                         continue;
                     };
@@ -381,7 +407,9 @@ impl Program {
         source_store: &SourceStorage,
     ) -> UnresolvedStruct {
         for field in &mut def.fields {
-            let UnresolvedType::Tokens(field_kind) = &field.kind else { unreachable!() };
+            let UnresolvedType::Tokens(field_kind) = &field.kind else {
+                unreachable!()
+            };
 
             let Ok(new_kind) = self.resolve_idents_in_type(
                 item,
@@ -411,13 +439,11 @@ impl Program {
         let imports = self.get_scope(item.id).unresolved_imports.clone();
 
         for import in imports {
-            let Ok(resolved_item) = self.resolve_single_ident(
-                        item,
-                        interner,
-                        source_store,
-                        had_error,
-                        &import,
-                    ) else { continue };
+            let Ok(resolved_item) =
+                self.resolve_single_ident(item, interner, source_store, had_error, &import)
+            else {
+                continue;
+            };
             let item_name = self.get_item_header(resolved_item).name;
             let scope = &mut self.scopes[item.id.0.to_usize()];
 
@@ -760,7 +786,7 @@ impl Program {
 
                     match found_item.kind() {
                         ItemKind::Const => {
-                            let Some(vals) = self.const_vals.get( &found_item.id ) else {
+                            let Some(vals) = self.const_vals.get(&found_item.id) else {
                                 let own_item = self.get_item_header(own_item_id);
                                 let name = interner.resolve(own_item.name.inner);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");

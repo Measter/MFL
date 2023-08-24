@@ -68,7 +68,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.enqueue_function(callee_id);
 
-        let Some(BasicValueEnum::StructValue(result)) = result.try_as_basic_value().left()  else {
+        let Some(BasicValueEnum::StructValue(result)) = result.try_as_basic_value().left() else {
             // It was a void-type, so nothing to do.
             return;
         };
@@ -185,9 +185,10 @@ impl<'ctx> CodeGen<'ctx> {
                 BasicValueEnum::IntValue(i) => {
                     let [type_id] = ds.analyzer.value_types([*id]).unwrap();
                     let TypeKind::Integer { signed, .. } =
-                            ds.type_store.get_type_info(type_id).kind else {
-                                unreachable!()
-                            };
+                        ds.type_store.get_type_info(type_id).kind
+                    else {
+                        unreachable!()
+                    };
                     self.cast_int(i, self.ctx.i64_type(), signed)
                 }
                 t => panic!("ICE: Unexected type: {t:?}"),
@@ -202,8 +203,8 @@ impl<'ctx> CodeGen<'ctx> {
         );
 
         let Some(BasicValueEnum::IntValue(ret_val)) = result.try_as_basic_value().left() else {
-                        panic!("ICE: All syscalls return a value");
-                    };
+            panic!("ICE: All syscalls return a value");
+        };
 
         value_store.store_value(self, op_io.outputs()[0], ret_val.into());
     }

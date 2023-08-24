@@ -22,7 +22,9 @@ pub fn extract_array(
     let op_io = analyzer.get_op_io(op.id);
     let [array_id, idx_id] = *op_io.inputs().as_arr();
 
-    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else { return };
+    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else {
+        return;
+    };
 
     let [array_type_id] = analyzer.value_types([array_id]).unwrap();
     let array_type_info = type_store.get_type_info(array_type_id);
@@ -76,7 +78,9 @@ pub fn insert_array(
     let op_io = analyzer.get_op_io(op.id);
     let [_, array_id, idx_id] = *op_io.inputs().as_arr();
 
-    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else { return };
+    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_id]) else {
+        return;
+    };
 
     let [array_type_id] = analyzer.value_types([array_id]).unwrap();
     let array_type_info = type_store.get_type_info(array_type_id);
@@ -128,7 +132,9 @@ pub fn load(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
-    let Some([types]) = analyzer.value_consts([input_id]) else { return };
+    let Some([types]) = analyzer.value_consts([input_id]) else {
+        return;
+    };
 
     let new_const_val = match types {
         // We can't do memory allocation checks yet, as we haven't evaluated sizes yet.

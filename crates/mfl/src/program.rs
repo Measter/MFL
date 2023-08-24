@@ -528,12 +528,19 @@ impl Program {
                                 let expected_type = type_store.get_type_info(*ty);
                                 let val = match val {
                                     SimulatorValue::Int { kind, .. } => {
-                                        let TypeKind::Integer { width: to_width, signed: to_signed } = expected_type.kind else {
+                                        let TypeKind::Integer {
+                                            width: to_width,
+                                            signed: to_signed,
+                                        } = expected_type.kind
+                                        else {
                                             unreachable!()
                                         };
 
-                                        SimulatorValue::Int { width: to_width, kind: kind.cast(to_width, to_signed) }
-                                    },
+                                        SimulatorValue::Int {
+                                            width: to_width,
+                                            kind: kind.cast(to_width, to_signed),
+                                        }
+                                    }
                                     SimulatorValue::Bool(_) => val,
                                 };
 
@@ -584,8 +591,8 @@ impl Program {
                     // Type check says we'll have a value at this point.
                     Ok(mut stack) => {
                         let Some(SimulatorValue::Bool(val)) = stack.pop() else {
-                        panic!("ICE: Simulated assert returned non-bool");
-                    };
+                            panic!("ICE: Simulated assert returned non-bool");
+                        };
                         val
                     }
                     Err(_) => {

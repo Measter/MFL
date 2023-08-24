@@ -168,10 +168,7 @@ pub fn get_terminated_tokens<'a>(
             diagnostics::emit_error(
                 prev.location,
                 "unexpected end of tokens",
-                Some(
-                    Label::new(prev.location)
-                        .with_color(Color::Red)
-                ),
+                Some(Label::new(prev.location).with_color(Color::Red)),
                 None,
                 source_store,
             );
@@ -326,7 +323,9 @@ pub fn parse_unresolved_types(
                 }
             };
 
-            let UnresolvedType::Tokens(ptr_type) = ptr_type.pop().unwrap() else { unreachable!() };
+            let UnresolvedType::Tokens(ptr_type) = ptr_type.pop().unwrap() else {
+                unreachable!()
+            };
             UnresolvedTypeTokens::Pointer(Box::new(ptr_type))
         } else {
             UnresolvedTypeTokens::Simple(ident)
@@ -342,7 +341,7 @@ pub fn parse_unresolved_types(
                 last_token,
                 Some(1),
                 ("[", |t| t == TokenKind::SquareBracketOpen),
-                ("integer", |t| matches!( t, TokenKind::Integer{ .. })),
+                ("integer", |t| matches!(t, TokenKind::Integer { .. })),
                 ("]", |t| t == TokenKind::SquareBracketClosed),
                 interner,
                 source_store,
@@ -449,7 +448,9 @@ pub fn parse_ident<'a>(
         token.location = token.location.merge(delim.close.location);
 
         let span = delim.span();
-        let Ok( unresolved_types) = parse_unresolved_types(interner, source_store, delim.open, &delim.list) else {
+        let Ok(unresolved_types) =
+            parse_unresolved_types(interner, source_store, delim.open, &delim.list)
+        else {
             *had_error = true;
             return Err(());
         };
@@ -498,7 +499,9 @@ pub fn parse_integer_lexeme<T>(
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer{ lexeme, is_hex } = int_token.inner.kind else { panic!("ICE: called parse_integer_lexeme with a non-integer token") };
+    let TokenKind::Integer { lexeme, is_hex } = int_token.inner.kind else {
+        panic!("ICE: called parse_integer_lexeme with a non-integer token")
+    };
     let string = interner.resolve(lexeme);
     let res = if is_hex {
         T::from_str_radix(string, 16)

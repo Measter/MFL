@@ -175,7 +175,9 @@ fn parse_emit_stack<'a>(
         )?;
 
         let emit_token = delim.list[0];
-        let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else { unreachable!() };
+        let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else {
+            unreachable!()
+        };
 
         (emit_labels, delim.close.location)
     } else {
@@ -254,7 +256,9 @@ fn parse_rot<'a>(
     )?;
 
     let mut local_error = false;
-    let [item_count_token, direction_token, shift_count_token] = &*delim.list else { unreachable!() };
+    let [item_count_token, direction_token, shift_count_token] = &*delim.list else {
+        unreachable!()
+    };
     let item_count_token = *item_count_token;
     let shift_count_token = *shift_count_token;
     let item_count = if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {

@@ -86,7 +86,9 @@ fn is_valid_entry_sig(
         return true;
     }
 
-    let [argc_id, argv_id] = entry_sig.entry_stack() else { return false };
+    let [argc_id, argv_id] = entry_sig.entry_stack() else {
+        return false;
+    };
 
     let expected_argc_id = type_store.get_builtin(BuiltinTypes::U64).id;
     let u8_ptr_type = type_store.get_builtin_ptr(BuiltinTypes::U8).id;

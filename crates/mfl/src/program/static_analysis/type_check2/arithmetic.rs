@@ -20,7 +20,9 @@ pub fn add(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| (ti.id, ti.kind)) {
@@ -93,7 +95,9 @@ pub fn subtract(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
@@ -153,7 +157,9 @@ pub fn bitnot(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
-    let Some([input]) = analyzer.value_types([input_id]) else { return };
+    let Some([input]) = analyzer.value_types([input_id]) else {
+        return;
+    };
     let input_type_info = type_store.get_type_info(input);
 
     let new_type = match input_type_info.kind {
@@ -191,7 +197,9 @@ pub fn bitand_bitor_bitxor(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
@@ -244,7 +252,9 @@ pub fn multiply_div_rem_shift(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else { return };
+    let Some(inputs) = analyzer.value_types(input_ids) else {
+        return;
+    };
     let input_type_info = inputs.map(|id| type_store.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {

@@ -553,7 +553,8 @@ pub fn parse_import<'a>(
         source_store,
     )?;
 
-    let Ok((path, _)) = parse_ident(token_iter, interner, source_store, had_error, root_name) else {
+    let Ok((path, _)) = parse_ident(token_iter, interner, source_store, had_error, root_name)
+    else {
         *had_error = true;
         return Ok(());
     };

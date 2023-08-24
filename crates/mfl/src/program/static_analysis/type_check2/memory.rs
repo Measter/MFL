@@ -72,12 +72,18 @@ pub fn pack_array(
     }
 
     let op_data = analyzer.get_op_io(op.id);
-    let [first, rest @ ..] = op_data.inputs() else { unreachable!() };
-    let Some([first_value_id]) = analyzer.value_types([*first]) else { return };
+    let [first, rest @ ..] = op_data.inputs() else {
+        unreachable!()
+    };
+    let Some([first_value_id]) = analyzer.value_types([*first]) else {
+        return;
+    };
     let expected_store_type = type_store.get_type_info(first_value_id);
 
     for (&other_id, id) in rest.iter().zip(1..) {
-        let Some([value_type_id]) = analyzer.value_types([other_id]) else { continue };
+        let Some([value_type_id]) = analyzer.value_types([other_id]) else {
+            continue;
+        };
         let value_type_info = type_store.get_type_info(value_type_id);
         if value_type_id != expected_store_type.id
             && !matches!(
@@ -133,55 +139,61 @@ pub fn pack_struct(
     let inputs = op_data.inputs();
 
     // Let's see if we can determine the field types from our inputs.
-    let type_id = if let TypeKind::GenericStructBase(item_id) =
-        type_store.get_type_info(type_id).kind
-    {
-        let generic_def = type_store.get_generic_base_def(type_id);
+    let type_id =
+        if let TypeKind::GenericStructBase(item_id) = type_store.get_type_info(type_id).kind {
+            let generic_def = type_store.get_generic_base_def(type_id);
 
-        let mut param_types = Vec::new();
+            let mut param_types = Vec::new();
 
-        for param in &generic_def.generic_params {
-            let mut found_field = false;
-            for (field, input_id) in generic_def.fields.iter().zip(inputs) {
-                let Some([input_type]) = analyzer.value_types([*input_id]) else { continue };
-                let input_type_kind = type_store.get_type_info(input_type).kind;
+            for param in &generic_def.generic_params {
+                let mut found_field = false;
+                for (field, input_id) in generic_def.fields.iter().zip(inputs) {
+                    let Some([input_type]) = analyzer.value_types([*input_id]) else {
+                        continue;
+                    };
+                    let input_type_kind = type_store.get_type_info(input_type).kind;
 
-                let Some(type_id) =
+                    let Some(type_id) =
                         field
                             .kind
-                            .match_generic_type(param.inner, input_type, input_type_kind) else { continue };
+                            .match_generic_type(param.inner, input_type, input_type_kind)
+                    else {
+                        continue;
+                    };
 
-                param_types.push(type_id);
-                found_field = true;
-                break;
+                    param_types.push(type_id);
+                    found_field = true;
+                    break;
+                }
+
+                if !found_field {
+                    *had_error = true;
+                    diagnostics::emit_error(
+                        op.token.location,
+                        "Unable to infer type parameter",
+                        [
+                            Label::new(op.token.location).with_color(Color::Red),
+                            Label::new(param.location).with_color(Color::Cyan),
+                        ],
+                        None,
+                        source_store,
+                    );
+                }
             }
 
-            if !found_field {
-                *had_error = true;
-                diagnostics::emit_error(
-                    op.token.location,
-                    "Unable to infer type parameter",
-                    [
-                        Label::new(op.token.location).with_color(Color::Red),
-                        Label::new(param.location).with_color(Color::Cyan),
-                    ],
-                    None,
-                    source_store,
-                );
-            }
-        }
-
-        type_store
-            .instantiate_generic_struct(interner, item_id, type_id, param_types)
-            .id
-    } else {
-        type_id
-    };
+            type_store
+                .instantiate_generic_struct(interner, item_id, type_id, param_types)
+                .id
+        } else {
+            type_id
+        };
 
     let struct_info = type_store.get_struct_def(type_id);
 
     for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
-        let Some([input_type_id]) = analyzer.value_types([input_id]) else { continue };
+        let Some([input_type_id]) = analyzer.value_types([input_id]) else {
+            continue;
+        };
         let expected_store_type = type_store.get_type_info(field_def.kind);
         let value_type_info = type_store.get_type_info(input_type_id);
 
@@ -246,7 +258,9 @@ pub fn unpack(
     let op_data = analyzer.get_op_io(op.id);
     let outputs = op_data.outputs().to_owned();
     let aggr_id = op_data.inputs()[0];
-    let Some([aggr_type_id]) = analyzer.value_types([aggr_id]) else { return };
+    let Some([aggr_type_id]) = analyzer.value_types([aggr_id]) else {
+        return;
+    };
     let aggr_info = type_store.get_type_info(aggr_type_id);
 
     match aggr_info.kind {
@@ -296,7 +310,9 @@ pub fn extract_array(
 ) {
     let op_data = analyzer.get_op_io(op.id).clone();
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs().as_arr();
-    let Some(type_ids) = analyzer.value_types(inputs) else { return };
+    let Some(type_ids) = analyzer.value_types(inputs) else {
+        return;
+    };
     let [array_type_info, idx_type_info] = type_ids.map(|id| type_store.get_type_info(id));
 
     let output_value_id = if emit_array {
@@ -420,7 +436,9 @@ pub fn insert_array(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs().as_arr();
-    let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else { return };
+    let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else {
+        return;
+    };
     let [data_type_info, array_type_info, idx_type_info] =
         type_ids.map(|id| type_store.get_type_info(id));
 
@@ -583,7 +601,9 @@ pub fn insert_struct(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs().as_arr();
-    let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else { return };
+    let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else {
+        return;
+    };
     let [data_type_info, input_struct_type_info] = type_ids.map(|id| type_store.get_type_info(id));
 
     if emit_struct {
@@ -650,7 +670,8 @@ pub fn insert_struct(
     let Some(field_info) = struct_type_info
         .fields
         .iter()
-        .find(|fi| fi.name.inner == field_name.inner) else {
+        .find(|fi| fi.name.inner == field_name.inner)
+    else {
         *had_error = true;
         let unknown_field_name = interner.resolve(field_name.inner);
         let struct_name = interner.resolve(struct_type_info.name.inner);
@@ -660,12 +681,14 @@ pub fn insert_struct(
             analyzer,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
-            Color::Cyan
+            Color::Cyan,
         );
 
         labels.extend([
-                Label::new(field_name.location).with_color(Color::Red),
-                Label::new(struct_type_info.name.location).with_color(Color::Cyan).with_message("struct defined here"),
+            Label::new(field_name.location).with_color(Color::Red),
+            Label::new(struct_type_info.name.location)
+                .with_color(Color::Cyan)
+                .with_message("struct defined here"),
         ]);
 
         diagnostics::emit_error(
@@ -742,7 +765,9 @@ pub fn extract_struct(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let [input_struct_value_id] = *op_data.inputs().as_arr();
-    let Some([ input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else { return };
+    let Some([input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else {
+        return;
+    };
     let input_struct_type_info = type_store.get_type_info(input_struct_type_id);
 
     let output_data_id = if emit_struct {
@@ -812,7 +837,8 @@ pub fn extract_struct(
     let Some(field_info) = struct_def
         .fields
         .iter()
-        .find(|fi| fi.name.inner == field_name.inner) else {
+        .find(|fi| fi.name.inner == field_name.inner)
+    else {
         *had_error = true;
         let unknown_field_name = interner.resolve(field_name.inner);
         let struct_name = interner.resolve(struct_def.name.inner);
@@ -822,12 +848,14 @@ pub fn extract_struct(
             analyzer,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
-            Color::Cyan
+            Color::Cyan,
         );
 
         labels.extend([
-                Label::new(field_name.location).with_color(Color::Red),
-                Label::new(struct_def.name.location).with_color(Color::Cyan).with_message("struct defined here"),
+            Label::new(field_name.location).with_color(Color::Red),
+            Label::new(struct_def.name.location)
+                .with_color(Color::Cyan)
+                .with_message("struct defined here"),
         ]);
 
         diagnostics::emit_error(
@@ -853,10 +881,12 @@ pub fn load(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let ptr_id = op_data.inputs[0];
-    let Some([ptr_type]) = analyzer.value_types([ptr_id]) else { return };
+    let Some([ptr_type]) = analyzer.value_types([ptr_id]) else {
+        return;
+    };
     let ptr_info = type_store.get_type_info(ptr_type);
 
-    let TypeKind::Pointer(kind) =  ptr_info.kind else {
+    let TypeKind::Pointer(kind) = ptr_info.kind else {
         *had_error = true;
 
         let ptr_type_info = type_store.get_type_info(ptr_type);
@@ -894,7 +924,9 @@ pub fn store(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let [data_id, ptr_id] = *op_data.inputs.as_arr::<2>();
-    let Some([data_type, ptr_type]) = analyzer.value_types([data_id, ptr_id]) else { return };
+    let Some([data_type, ptr_type]) = analyzer.value_types([data_id, ptr_id]) else {
+        return;
+    };
     let ptr_type_info = type_store.get_type_info(ptr_type);
 
     let TypeKind::Pointer(pointee_type) = ptr_type_info.kind else {

@@ -35,7 +35,10 @@ impl<'ctx> CodeGen<'ctx> {
                 let [output_type_id] = ds.analyzer.value_types([op_io.outputs()[0]]).unwrap();
                 let output_type_info = ds.type_store.get_type_info(output_type_id);
 
-                let TypeKind::Integer{ width: to_width, .. } = output_type_info.kind else {
+                let TypeKind::Integer {
+                    width: to_width, ..
+                } = output_type_info.kind
+                else {
                     panic!("ICE: Non-int output of int-int arithmetic");
                 };
 
@@ -124,10 +127,11 @@ impl<'ctx> CodeGen<'ctx> {
 
         let (a_val, b_val) = if let TypeKind::Integer { width, .. } = output_type_info.kind {
             let [TypeKind::Integer {
-                signed: a_signed,..
+                signed: a_signed, ..
             }, TypeKind::Integer {
-                signed: b_signed,..
-            }] = input_type_infos.map(|ti| ti.kind) else {
+                signed: b_signed, ..
+            }] = input_type_infos.map(|ti| ti.kind)
+            else {
                 unreachable!()
             };
 
@@ -156,12 +160,11 @@ impl<'ctx> CodeGen<'ctx> {
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(inputs).unwrap();
         let [TypeKind::Integer {
-            signed: a_signed,
-            ..
+            signed: a_signed, ..
         }, TypeKind::Integer {
-            signed: b_signed,
-            ..
-        }] = input_type_ids.map(|id| ds.type_store.get_type_info(id).kind) else {
+            signed: b_signed, ..
+        }] = input_type_ids.map(|id| ds.type_store.get_type_info(id).kind)
+        else {
             panic!("ICE: DivMod has non-int inputs");
         };
 
@@ -169,7 +172,11 @@ impl<'ctx> CodeGen<'ctx> {
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else {
+        let TypeKind::Integer {
+            width: output_width,
+            signed: output_signed,
+        } = output_type_info.kind
+        else {
             panic!("ICE: Non-int output of int-int arithmetic");
         };
 
@@ -198,12 +205,11 @@ impl<'ctx> CodeGen<'ctx> {
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_ids = ds.analyzer.value_types(inputs).unwrap();
         let [TypeKind::Integer {
-            signed: a_signed,
-            ..
+            signed: a_signed, ..
         }, TypeKind::Integer {
-            signed: b_signed,
-            ..
-        }] = input_ids.map(|id| ds.type_store.get_type_info(id).kind) else {
+            signed: b_signed, ..
+        }] = input_ids.map(|id| ds.type_store.get_type_info(id).kind)
+        else {
             panic!("ICE: Non-int input of int-int arithmetic");
         };
 
@@ -211,7 +217,11 @@ impl<'ctx> CodeGen<'ctx> {
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let TypeKind::Integer{ width: output_width, signed: output_signed } = output_type_info.kind else {
+        let TypeKind::Integer {
+            width: output_width,
+            signed: output_signed,
+        } = output_type_info.kind
+        else {
             panic!("ICE: Non-int output of int-int arithmetic");
         };
 
@@ -313,7 +323,9 @@ impl<'ctx> CodeGen<'ctx> {
         let input_value_id = op_io.inputs()[0];
         let [input_type_id] = ds.analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = ds.type_store.get_type_info(input_type_id);
-        let TypeKind::Pointer(ptee_id) = input_type_info.kind else { unreachable!() };
+        let TypeKind::Pointer(ptee_id) = input_type_info.kind else {
+            unreachable!()
+        };
         let ptee_type = self.get_type(ds.type_store, ptee_id);
 
         let ptr_val = value_store

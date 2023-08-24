@@ -38,7 +38,12 @@ pub fn epilogue_return(
     let op_io = analyzer.get_op_io(op.id);
 
     for &value_id in op_io.inputs() {
-        let Some([ConstVal::Ptr { id: PtrId::Mem(id), ..}]) = analyzer.value_consts([value_id]) else {
+        let Some(
+            [ConstVal::Ptr {
+                id: PtrId::Mem(id), ..
+            }],
+        ) = analyzer.value_consts([value_id])
+        else {
             continue;
         };
 
