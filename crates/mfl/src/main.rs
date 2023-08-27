@@ -171,7 +171,15 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeSt
 fn run_compile(args: &Args) -> Result<()> {
     print!("   Compiling...");
     let (program, source_storage, mut interner, mut type_store, top_level_items) =
-        load_program(args)?;
+        match load_program(args) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!();
+                eprintln!("{}: unable to compile program", "Error".red());
+                eprintln!("  Failed at stage: {e}");
+                std::process::exit(-3);
+            }
+        };
 
     let objects = backend_llvm::compile(
         &program,
