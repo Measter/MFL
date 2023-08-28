@@ -1,0 +1,11 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+
+// END
+
+struct Foo is
+    field foo Foo
+    field bar s32
+end
