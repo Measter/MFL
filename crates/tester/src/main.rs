@@ -490,23 +490,24 @@ fn run_single_test(
     });
 
     for run in &test_group.run_tests {
-        if !skip_run {
-            let test_command = run_command(output_binary, &[], run)?;
-            let command_result: RunStatus = test_command.status.into();
-            let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
-
-            counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
-
-            test_results.push(TestRunResult::Run {
-                command: test_command,
-                command_result,
-                test: run,
-                post_fn_result,
-            });
-        } else {
+        if skip_run {
             counts.skip();
             test_results.push(TestRunResult::Skipped { test: run });
+            continue;
         }
+
+        let test_command = run_command(output_binary, &[], run)?;
+        let command_result: RunStatus = test_command.status.into();
+        let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
+
+        counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
+
+        test_results.push(TestRunResult::Run {
+            command: test_command,
+            command_result,
+            test: run,
+            post_fn_result,
+        });
     }
 
     for result in test_results {
