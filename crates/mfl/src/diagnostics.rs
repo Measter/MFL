@@ -5,7 +5,8 @@ use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
     program::static_analysis::{Analyzer, ValueId},
-    source_file::{SourceLocation, SourceStorage},
+    source_file::SourceLocation,
+    Stores,
 };
 
 pub static TABLE_FORMAT: Lazy<TableFormat> = Lazy::new(|| {
@@ -60,36 +61,36 @@ where
 }
 
 pub fn emit_error<Labels>(
+    stores: &Stores,
     loc: SourceLocation,
     msg: impl ToString,
     labels: Labels,
     note: impl Into<Option<String>>,
-    sources: &SourceStorage,
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
-    emit(ReportKind::Error, loc, msg, labels, note, sources);
+    emit(stores, ReportKind::Error, loc, msg, labels, note);
 }
 
 pub fn emit_warning<Labels>(
+    stores: &Stores,
     loc: SourceLocation,
     msg: impl ToString,
     labels: Labels,
     note: impl Into<Option<String>>,
-    sources: &SourceStorage,
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
-    emit(ReportKind::Warning, loc, msg, labels, note, sources);
+    emit(stores, ReportKind::Warning, loc, msg, labels, note);
 }
 
 pub fn emit<Labels>(
+    stores: &Stores,
     kind: ReportKind,
     loc: SourceLocation,
     msg: impl ToString,
     labels: Labels,
     note: impl Into<Option<String>>,
-    mut sources: &SourceStorage,
 ) where
     Labels: IntoIterator<Item = Label<SourceLocation>>,
 {
@@ -103,5 +104,5 @@ pub fn emit<Labels>(
         diag = diag.with_label(label);
     }
 
-    diag.finish().eprint(&mut sources).unwrap();
+    diag.finish().eprint(&mut &stores.source).unwrap();
 }

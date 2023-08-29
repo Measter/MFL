@@ -10,7 +10,8 @@ use crate::{
     interners::Interner,
     opcode::UnresolvedIdent,
     program::ItemId,
-    source_file::{SourceLocation, SourceStorage, Spanned},
+    source_file::{SourceLocation, Spanned},
+    Stores,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -818,17 +819,13 @@ impl TypeStore {
     }
 }
 
-pub fn emit_type_error_diag(
-    token: Spanned<Spur>,
-    interner: &Interner,
-    source_store: &SourceStorage,
-) {
+pub fn emit_type_error_diag(stores: &Stores, token: Spanned<Spur>) {
     diagnostics::emit_error(
+        stores,
         token.location,
-        format!("unknown type `{}`", interner.resolve(token.inner)),
+        format!("unknown type `{}`", stores.strings.resolve(token.inner)),
         [Label::new(token.location).with_color(Color::Red)],
         None,
-        source_store,
     );
 }
 

@@ -7,20 +7,14 @@ use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
-    interners::Interner,
     opcode::{Op, OpCode},
     program::{ItemKind, ItemSignatureResolved, Program},
-    source_file::SourceStorage,
-    type_store::{emit_type_error_diag, TypeKind, TypeStore, UnresolvedTypeIds},
+    type_store::{emit_type_error_diag, TypeKind, UnresolvedTypeIds},
+    Stores,
 };
 
 impl Program {
-    pub fn resolve_struct_defs(
-        &self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-    ) -> Result<()> {
+    pub fn resolve_struct_defs(&self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::check_self_referring_structs)).entered();
         let mut had_error = false;
 
@@ -37,8 +31,8 @@ impl Program {
         for &id in &struct_item_ids {
             let def = self.structs_unresolved.get(&id).unwrap();
             // We check if the name already exists by trying to resolve it.
-            if let Ok(existing_info) = type_store.resolve_type(
-                interner,
+            if let Ok(existing_info) = stores.types.resolve_type(
+                &mut stores.strings,
                 &UnresolvedTypeIds::SimpleCustom {
                     id,
                     token: def.name,
@@ -47,6 +41,7 @@ impl Program {
                 if let Some(loc) = existing_info.location {
                     // The user defined the type.
                     diagnostics::emit_error(
+                        stores,
                         def.name.location,
                         "type with this name already exists",
                         [
@@ -56,16 +51,15 @@ impl Program {
                                 .with_message("already defined here"),
                         ],
                         None,
-                        source_store,
                     );
                 } else {
                     // It's a built-in type.
                     diagnostics::emit_error(
+                        stores,
                         def.name.location,
                         "cannot define struct with the name of a primative",
                         [Label::new(def.name.location).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                 }
 
@@ -74,13 +68,15 @@ impl Program {
 
             if def.generic_params.is_some() {
                 generic_structs.push(id);
-                type_store.add_type(
+                stores.types.add_type(
                     def.name.inner,
                     def.name.location,
                     TypeKind::GenericStructBase(id),
                 );
             } else {
-                type_store.add_type(def.name.inner, def.name.location, TypeKind::Struct(id));
+                stores
+                    .types
+                    .add_type(def.name.inner, def.name.location, TypeKind::Struct(id));
             }
         }
 
@@ -90,7 +86,9 @@ impl Program {
 
         for id in generic_structs {
             let def = self.structs_unresolved.get(&id).unwrap();
-            type_store.partially_resolve_generic_struct(interner, id, def);
+            stores
+                .types
+                .partially_resolve_generic_struct(&mut stores.strings, id, def);
         }
 
         // Now we try to resolve the struct definition.
@@ -100,9 +98,14 @@ impl Program {
                 continue;
             }
 
-            if let Err(missing_token) = type_store.define_fixed_struct(interner, id, def) {
+            if let Err(missing_token) =
+                stores
+                    .types
+                    .define_fixed_struct(&mut stores.strings, id, def)
+            {
                 // The type that failed to resolve is us.
                 diagnostics::emit_error(
+                    stores,
                     missing_token.location,
                     "undefined field type",
                     [
@@ -112,7 +115,6 @@ impl Program {
                             .with_message("In this struct"),
                     ],
                     None,
-                    source_store,
                 );
                 had_error = true;
                 continue;
@@ -129,66 +131,36 @@ impl Program {
     #[allow(clippy::only_used_in_recursion)]
     pub fn resolve_types_in_block(
         &self,
-        mut body: Vec<Op>,
+        stores: &mut Stores,
         had_error: &mut bool,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
+        mut body: Vec<Op>,
     ) -> Vec<Op> {
         for op in &mut body {
             match &mut op.code {
                 OpCode::While(while_op) => {
                     let temp_body = std::mem::take(&mut while_op.condition);
-                    while_op.condition = self.resolve_types_in_block(
-                        temp_body,
-                        had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    );
+                    while_op.condition = self.resolve_types_in_block(stores, had_error, temp_body);
                     let temp_body = std::mem::take(&mut while_op.body_block);
-                    while_op.body_block = self.resolve_types_in_block(
-                        temp_body,
-                        had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    );
+                    while_op.body_block = self.resolve_types_in_block(stores, had_error, temp_body);
                 }
                 OpCode::If(if_op) => {
                     // Mmmm.. repetition...
                     let temp_body = std::mem::take(&mut if_op.condition);
-                    if_op.condition = self.resolve_types_in_block(
-                        temp_body,
-                        had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    );
+                    if_op.condition = self.resolve_types_in_block(stores, had_error, temp_body);
                     let temp_body = std::mem::take(&mut if_op.then_block);
-                    if_op.then_block = self.resolve_types_in_block(
-                        temp_body,
-                        had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    );
+                    if_op.then_block = self.resolve_types_in_block(stores, had_error, temp_body);
                     let temp_body = std::mem::take(&mut if_op.else_block);
-                    if_op.else_block = self.resolve_types_in_block(
-                        temp_body,
-                        had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    );
+                    if_op.else_block = self.resolve_types_in_block(stores, had_error, temp_body);
                 }
 
                 OpCode::UnresolvedCast { unresolved_type } => {
-                    let type_info = match type_store.resolve_type(interner, unresolved_type.as_id())
+                    let type_info = match stores
+                        .types
+                        .resolve_type(&mut stores.strings, unresolved_type.as_id())
                     {
                         Ok(info) => info,
                         Err(err_token) => {
-                            emit_type_error_diag(err_token, interner, source_store);
+                            emit_type_error_diag(stores, err_token);
 
                             *had_error = true;
                             continue;
@@ -198,11 +170,13 @@ impl Program {
                     op.code = OpCode::ResolvedCast { id: type_info.id };
                 }
                 OpCode::UnresolvedPackStruct { unresolved_type } => {
-                    let type_info = match type_store.resolve_type(interner, unresolved_type.as_id())
+                    let type_info = match stores
+                        .types
+                        .resolve_type(&mut stores.strings, unresolved_type.as_id())
                     {
                         Ok(info) => info,
                         Err(err_token) => {
-                            emit_type_error_diag(err_token, interner, source_store);
+                            emit_type_error_diag(stores, err_token);
 
                             *had_error = true;
                             continue;
@@ -212,11 +186,13 @@ impl Program {
                     op.code = OpCode::PackStruct { id: type_info.id };
                 }
                 OpCode::UnresolvedSizeOf { unresolved_type } => {
-                    let type_info = match type_store.resolve_type(interner, unresolved_type.as_id())
+                    let type_info = match stores
+                        .types
+                        .resolve_type(&mut stores.strings, unresolved_type.as_id())
                     {
                         Ok(info) => info,
                         Err(err_token) => {
-                            emit_type_error_diag(err_token, interner, source_store);
+                            emit_type_error_diag(stores, err_token);
 
                             *had_error = true;
                             continue;
@@ -233,12 +209,7 @@ impl Program {
         body
     }
 
-    pub fn resolve_types(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-    ) -> Result<()> {
+    pub fn resolve_types(&mut self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_types)).entered();
         let mut had_error = false;
 
@@ -249,7 +220,7 @@ impl Program {
         });
 
         for item in items {
-            trace!(name = interner.get_symbol_name(self, item.id));
+            trace!(name = stores.strings.get_symbol_name(self, item.id));
 
             if item.kind == ItemKind::Memory {
                 let parent_kind = self.get_item_header(item.parent.unwrap()).kind;
@@ -260,15 +231,17 @@ impl Program {
 
                 let unresolved_memory_type = &self.memory_type_unresolved[&item.id];
 
-                let info =
-                    match type_store.resolve_type(interner, unresolved_memory_type.inner.as_id()) {
-                        Ok(info) => info,
-                        Err(tk) => {
-                            had_error = true;
-                            emit_type_error_diag(tk, interner, source_store);
-                            continue;
-                        }
-                    };
+                let info = match stores
+                    .types
+                    .resolve_type(&mut stores.strings, unresolved_memory_type.inner.as_id())
+                {
+                    Ok(info) => info,
+                    Err(tk) => {
+                        had_error = true;
+                        emit_type_error_diag(stores, tk);
+                        continue;
+                    }
+                };
 
                 self.memory_type_resolved.insert(item.id, info.id);
             } else {
@@ -279,11 +252,14 @@ impl Program {
                     SmallVec::with_capacity(unresolved_sig.exit_stack.inner.len());
 
                 for input_sig in unresolved_sig.entry_stack() {
-                    let info = match type_store.resolve_type(interner, input_sig.inner.as_id()) {
+                    let info = match stores
+                        .types
+                        .resolve_type(&mut stores.strings, input_sig.inner.as_id())
+                    {
                         Ok(info) => info,
                         Err(tk) => {
                             had_error = true;
-                            emit_type_error_diag(tk, interner, source_store);
+                            emit_type_error_diag(stores, tk);
                             continue;
                         }
                     };
@@ -291,11 +267,14 @@ impl Program {
                 }
 
                 for output_sig in unresolved_sig.exit_stack() {
-                    let info = match type_store.resolve_type(interner, output_sig.inner.as_id()) {
+                    let info = match stores
+                        .types
+                        .resolve_type(&mut stores.strings, output_sig.inner.as_id())
+                    {
                         Ok(info) => info,
                         Err(tk) => {
                             had_error = true;
-                            emit_type_error_diag(tk, interner, source_store);
+                            emit_type_error_diag(stores, tk);
                             continue;
                         }
                     };
@@ -313,13 +292,7 @@ impl Program {
                 let body = self.item_bodies.remove(&item.id).unwrap();
                 self.item_bodies.insert(
                     item.id,
-                    self.resolve_types_in_block(
-                        body,
-                        &mut had_error,
-                        interner,
-                        source_store,
-                        type_store,
-                    ),
+                    self.resolve_types_in_block(stores, &mut had_error, body),
                 );
             }
         }

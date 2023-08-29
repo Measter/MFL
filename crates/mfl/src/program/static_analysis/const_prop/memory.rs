@@ -3,22 +3,14 @@ use intcast::IntCast;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::static_analysis::{Analyzer, ConstVal, PtrId},
-    source_file::SourceStorage,
-    type_store::{TypeKind, TypeStore},
+    type_store::TypeKind,
+    Stores,
 };
 
-pub fn extract_array(
-    analyzer: &mut Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn extract_array(stores: &Stores, analyzer: &Analyzer, had_error: &mut bool, op: &Op) {
     let op_io = analyzer.get_op_io(op.id);
     let [array_id, idx_id] = *op_io.inputs().as_arr();
 
@@ -27,12 +19,12 @@ pub fn extract_array(
     };
 
     let [array_type_id] = analyzer.value_types([array_id]).unwrap();
-    let array_type_info = type_store.get_type_info(array_type_id);
+    let array_type_info = stores.types.get_type_info(array_type_id);
 
     let array_length = match array_type_info.kind {
         TypeKind::Array { length, .. } => length,
         TypeKind::Pointer(id) => {
-            let info = type_store.get_type_info(id);
+            let info = stores.types.get_type_info(id);
             match info.kind {
                 TypeKind::Array { length, .. } => length,
                 TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
@@ -45,7 +37,7 @@ pub fn extract_array(
 
     if idx.to_usize() >= array_length {
         *had_error = true;
-        let array_type_name = interner.resolve(array_type_info.name);
+        let array_type_name = stores.strings.resolve(array_type_info.name);
 
         let idx_value = format!("{idx}");
         let mut labels = diagnostics::build_creator_label_chain(
@@ -58,23 +50,16 @@ pub fn extract_array(
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
         diagnostics::emit_error(
+            stores,
             op.token.location,
             "index out of bounds",
             labels,
             None,
-            source_store,
         );
     }
 }
 
-pub fn insert_array(
-    analyzer: &mut Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn insert_array(stores: &Stores, analyzer: &Analyzer, had_error: &mut bool, op: &Op) {
     let op_io = analyzer.get_op_io(op.id);
     let [_, array_id, idx_id] = *op_io.inputs().as_arr();
 
@@ -83,12 +68,12 @@ pub fn insert_array(
     };
 
     let [array_type_id] = analyzer.value_types([array_id]).unwrap();
-    let array_type_info = type_store.get_type_info(array_type_id);
+    let array_type_info = stores.types.get_type_info(array_type_id);
 
     let array_length = match array_type_info.kind {
         TypeKind::Array { length, .. } => length,
         TypeKind::Pointer(id) => {
-            let info = type_store.get_type_info(id);
+            let info = stores.types.get_type_info(id);
             match info.kind {
                 TypeKind::Array { length, .. } => length,
                 TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
@@ -101,7 +86,7 @@ pub fn insert_array(
 
     if idx.to_usize() >= array_length {
         *had_error = true;
-        let array_type_name = interner.resolve(array_type_info.name);
+        let array_type_name = stores.strings.resolve(array_type_info.name);
 
         let idx_value = format!("{idx}");
         let mut labels = diagnostics::build_creator_label_chain(
@@ -114,22 +99,16 @@ pub fn insert_array(
         labels.push(Label::new(op.token.location).with_color(Color::Red));
 
         diagnostics::emit_error(
+            stores,
             op.token.location,
             "index out of bounds",
             labels,
             None,
-            source_store,
         );
     }
 }
 
-pub fn load(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn load(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else {
@@ -144,7 +123,7 @@ pub fn load(
             src_op_loc,
             offset: Some(offset),
         } => {
-            let string = interner.resolve(spur);
+            let string = stores.strings.resolve(spur);
             // Remember that string literals are always null-terminated.
             let bare_string = string.strip_suffix('\0').unwrap_or(string);
 
@@ -152,6 +131,7 @@ pub fn load(
                 Some(val) => ConstVal::Int(IntKind::Unsigned(val.to_u64())),
                 None => {
                     diagnostics::emit_error(
+                        stores,
                         op.token.location,
                         "index out of bounds",
                         [
@@ -163,7 +143,6 @@ pub fn load(
                                 .with_message(format!("length: {}", bare_string.len())),
                         ],
                         None,
-                        source_store,
                     );
                     *had_error = true;
                     return;

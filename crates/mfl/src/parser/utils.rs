@@ -5,11 +5,11 @@ use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
-    interners::Interner,
     lexer::{Token, TokenKind},
     opcode::{OpCode, UnresolvedIdent},
-    source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
+    source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{UnresolvedType, UnresolvedTypeTokens},
+    Stores,
 };
 
 pub type ParseOpResult = Result<(OpCode, SourceLocation), ()>;
@@ -44,12 +44,11 @@ pub fn valid_type_token(t: TokenKind) -> bool {
 }
 
 pub fn expect_token<'a>(
+    stores: &Stores,
     tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     kind_str: &str,
     expected: fn(TokenKind) -> bool,
     prev: Spanned<Token>,
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<(usize, Spanned<Token>), ()> {
     match tokens.peek() {
         Some((_, ident)) if expected(ident.inner.kind) => {
@@ -57,25 +56,25 @@ pub fn expect_token<'a>(
         }
         Some((_, ident)) => {
             diagnostics::emit_error(
+                stores,
                 ident.location,
                 format!(
                     "expected `{}`, found `{}`",
                     kind_str,
-                    interner.resolve(ident.inner.lexeme)
+                    stores.strings.resolve(ident.inner.lexeme)
                 ),
                 Some(Label::new(ident.location).with_color(Color::Red)),
                 None,
-                source_store,
             );
             Err(())
         }
         None => {
             diagnostics::emit_error(
+                stores,
                 prev.location,
                 "unexpected end of tokens",
                 Some(Label::new(prev.location).with_color(Color::Red)),
                 None,
-                source_store,
             );
             Err(())
         }
@@ -108,34 +107,25 @@ pub struct Terminated {
 }
 
 pub fn get_delimited_tokens<'a>(
+    stores: &Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev: Spanned<Token>,
     expected_len: Option<usize>,
     (open_delim_str, open_delim_fn): (&'static str, fn(TokenKind) -> bool),
     inner_tokens: (&'static str, fn(TokenKind) -> bool),
     close_token: (&'static str, fn(TokenKind) -> bool),
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<Delimited, ()> {
     let mut had_error = false;
-    let (_, open_token) = expect_token(
-        token_iter,
-        open_delim_str,
-        open_delim_fn,
-        prev,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, prev));
+    let (_, open_token) = expect_token(stores, token_iter, open_delim_str, open_delim_fn, prev)
+        .recover(&mut had_error, (0, prev));
 
     let terminated = get_terminated_tokens(
+        stores,
         token_iter,
         open_token,
         expected_len,
         inner_tokens,
         close_token,
-        interner,
-        source_store,
     )?;
 
     if had_error {
@@ -150,13 +140,12 @@ pub fn get_delimited_tokens<'a>(
 }
 
 pub fn get_terminated_tokens<'a>(
+    stores: &Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     open_token: Spanned<Token>,
     expected_len: Option<usize>,
     (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
     (close_delim_str, close_delim_fn): (&'static str, fn(TokenKind) -> bool),
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<Terminated, ()> {
     let mut had_error = false;
     let mut tokens = Vec::new();
@@ -166,11 +155,11 @@ pub fn get_terminated_tokens<'a>(
     loop {
         let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
             diagnostics::emit_error(
+                stores,
                 prev.location,
                 "unexpected end of tokens",
                 Some(Label::new(prev.location).with_color(Color::Red)),
                 None,
-                source_store,
             );
             return Err(());
         };
@@ -185,14 +174,8 @@ pub fn get_terminated_tokens<'a>(
             depth -= 1;
         }
 
-        let Ok((_, item_token)) = expect_token(
-            token_iter,
-            token_str,
-            token_fn,
-            prev,
-            interner,
-            source_store,
-        ) else {
+        let Ok((_, item_token)) = expect_token(stores, token_iter, token_str, token_fn, prev)
+        else {
             had_error = true;
 
             // If it's not the close token, we should consume it so we can continue.
@@ -206,25 +189,18 @@ pub fn get_terminated_tokens<'a>(
         prev = item_token;
     }
 
-    let (_, close_token) = expect_token(
-        token_iter,
-        close_delim_str,
-        close_delim_fn,
-        prev,
-        interner,
-        source_store,
-    )
-    .recover(&mut had_error, (0, prev));
+    let (_, close_token) = expect_token(stores, token_iter, close_delim_str, close_delim_fn, prev)
+        .recover(&mut had_error, (0, prev));
 
     if let Some(len) = expected_len {
         if len != tokens.len() {
             let range = open_token.location.merge(close_token.location);
             diagnostics::emit_error(
+                stores,
                 range,
                 format!("expected {len} tokens, found {}", tokens.len()),
                 [Label::new(range).with_color(Color::Red)],
                 None,
-                source_store,
             );
             had_error = true;
         }
@@ -241,8 +217,7 @@ pub fn get_terminated_tokens<'a>(
 }
 
 pub fn parse_unresolved_types(
-    interner: &Interner,
-    source_store: &SourceStorage,
+    stores: &mut Stores,
     prev: Spanned<Token>,
     tokens: &[Spanned<Token>],
 ) -> Result<Vec<Spanned<UnresolvedTypeTokens>>, ()> {
@@ -252,25 +227,19 @@ pub fn parse_unresolved_types(
 
     while token_iter.peek().is_some() {
         let Ok((_, ident)) = expect_token(
+            stores,
             &mut token_iter,
             "ident",
             |t| t == TokenKind::Ident || t == TokenKind::ColonColon,
             prev,
-            interner,
-            source_store,
         ) else {
             had_error = true;
             token_iter.next(); // Consume the token so we can progress.
             continue;
         };
 
-        let Ok((ident, last_token)) = parse_ident(
-            &mut token_iter,
-            interner,
-            source_store,
-            &mut had_error,
-            ident,
-        ) else {
+        let Ok((ident, last_token)) = parse_ident(stores, &mut had_error, &mut token_iter, ident)
+        else {
             had_error = true;
             continue;
         };
@@ -280,13 +249,13 @@ pub fn parse_unresolved_types(
 
         if !is_valid_for_ptr {
             for segment in &ident.path {
-                if interner.resolve(segment.inner) == "ptr" {
+                if stores.strings.resolve(segment.inner) == "ptr" {
                     diagnostics::emit_error(
+                        stores,
                         ident.span,
                         "`ptr` cannot be in path segment",
                         [Label::new(ident.span).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                     had_error = true;
                     break;
@@ -294,29 +263,29 @@ pub fn parse_unresolved_types(
             }
         }
 
-        let first_lexeme = interner.resolve(ident.path[0].inner);
+        let first_lexeme = stores.strings.resolve(ident.path[0].inner);
         let base_type = if is_valid_for_ptr && first_lexeme == "ptr" {
             let ptr_type = ident.generic_params;
             let mut ptr_type = match ptr_type {
                 Some(v) if v.len() == 1 => v,
                 Some(_) => {
                     diagnostics::emit_error(
+                        stores,
                         ident.span,
                         "`ptr` cannot be parameterized over multiple types",
                         [Label::new(ident.span).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                     had_error = true;
                     continue;
                 }
                 None => {
                     diagnostics::emit_error(
+                        stores,
                         ident.span,
                         "`ptr` must have a type",
                         [Label::new(ident.span).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                     had_error = true;
                     continue;
@@ -337,21 +306,20 @@ pub fn parse_unresolved_types(
         {
             // Parsing an array!
             let Ok(delim) = get_delimited_tokens(
+                stores,
                 &mut token_iter,
                 last_token,
                 Some(1),
                 ("[", |t| t == TokenKind::SquareBracketOpen),
                 ("integer", |t| matches!(t, TokenKind::Integer { .. })),
                 ("]", |t| t == TokenKind::SquareBracketClosed),
-                interner,
-                source_store,
             ) else {
                 had_error = true;
                 continue;
             };
 
             let len_token = delim.list[0];
-            let length = parse_integer_lexeme(len_token, interner, source_store)?;
+            let length = parse_integer_lexeme(stores, len_token)?;
             type_span = type_span.merge(delim.close.location);
 
             UnresolvedTypeTokens::Array(Box::new(base_type), length)
@@ -366,10 +334,9 @@ pub fn parse_unresolved_types(
 }
 
 pub fn parse_ident<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    interner: &Interner,
-    source_store: &SourceStorage,
+    stores: &mut Stores,
     had_error: &mut bool,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     mut token: Spanned<Token>,
 ) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
     let mut import_span = token.location;
@@ -383,11 +350,11 @@ pub fn parse_ident<'a>(
             *t
         } else {
             diagnostics::emit_error(
+                stores,
                 token.location,
                 "unexpected end of ident",
                 Some(Label::new(token.location).with_color(Color::Red)),
                 None,
-                source_store,
             );
             *had_error = true;
             return Err(());
@@ -412,11 +379,11 @@ pub fn parse_ident<'a>(
             *t
         } else {
             diagnostics::emit_error(
+                stores,
                 colons.location,
                 "unexpected end of ident",
                 Some(Label::new(colons.location).with_color(Color::Red)),
                 None,
-                source_store,
             );
             *had_error = true;
             return Err(());
@@ -433,14 +400,13 @@ pub fn parse_ident<'a>(
         .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let Ok(delim) = get_delimited_tokens(
+            stores,
             token_iter,
             token,
             None,
             ("(", |t| t == TokenKind::ParenthesisOpen),
             ("Ident", valid_type_token),
             (")", |t| t == TokenKind::ParenthesisClosed),
-            interner,
-            source_store,
         ) else {
             *had_error = true;
             return Err(());
@@ -448,20 +414,18 @@ pub fn parse_ident<'a>(
         token.location = token.location.merge(delim.close.location);
 
         let span = delim.span();
-        let Ok(unresolved_types) =
-            parse_unresolved_types(interner, source_store, delim.open, &delim.list)
-        else {
+        let Ok(unresolved_types) = parse_unresolved_types(stores, delim.open, &delim.list) else {
             *had_error = true;
             return Err(());
         };
 
         if unresolved_types.is_empty() {
             diagnostics::emit_error(
+                stores,
                 span,
                 "expected at least type, found 0",
                 [Label::new(span).with_color(Color::Red)],
                 None,
-                source_store,
             );
             *had_error = true;
             return Err(());
@@ -491,18 +455,14 @@ pub fn parse_ident<'a>(
     ))
 }
 
-pub fn parse_integer_lexeme<T>(
-    int_token: Spanned<Token>,
-    interner: &Interner,
-    source_store: &SourceStorage,
-) -> Result<T, ()>
+pub fn parse_integer_lexeme<T>(stores: &Stores, int_token: Spanned<Token>) -> Result<T, ()>
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
     let TokenKind::Integer { lexeme, is_hex } = int_token.inner.kind else {
         panic!("ICE: called parse_integer_lexeme with a non-integer token")
     };
-    let string = interner.resolve(lexeme);
+    let string = stores.strings.resolve(lexeme);
     let res = if is_hex {
         T::from_str_radix(string, 16)
     } else {
@@ -510,6 +470,7 @@ where
     };
     let Ok(int) = res else {
         diagnostics::emit_error(
+            stores,
             int_token.location,
             "integer out bounds",
             [Label::new(int_token.location)
@@ -520,7 +481,6 @@ where
                     T::max_value()
                 ))],
             None,
-            source_store,
         );
         return Err(());
     };
@@ -529,48 +489,44 @@ where
 }
 
 pub fn parse_integer_param<'a>(
+    stores: &Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     token: Spanned<Token>,
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<(Spanned<u8>, SourceLocation), ()> {
     let delim = get_delimited_tokens(
+        stores,
         token_iter,
         token,
         Some(1),
         ("(", |t| t == TokenKind::ParenthesisOpen),
         ("Integer", |t| matches!(t, TokenKind::Integer { .. })),
         (")", |t| t == TokenKind::ParenthesisClosed),
-        interner,
-        source_store,
     )?;
 
     let count_token = delim.list[0];
-    let count: u8 = parse_integer_lexeme(count_token, interner, source_store)?;
+    let count: u8 = parse_integer_lexeme(stores, count_token)?;
     Ok((count.with_span(count_token.location), delim.close.location))
 }
 
 pub fn parse_stack_def<'a>(
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    stores: &mut Stores,
     had_error: &mut bool,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev_token: Spanned<Token>,
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {
     let stack = get_delimited_tokens(
+        stores,
         token_iter,
         prev_token,
         None,
         ("[", |t| t == TokenKind::SquareBracketOpen),
         ("Ident", valid_type_token),
         ("]", |t| t == TokenKind::SquareBracketClosed),
-        interner,
-        source_store,
     )
     .recover(had_error, Delimited::fallback(prev_token));
     let stack_location = stack.span();
-    let unresolved_types = parse_unresolved_types(interner, source_store, stack.open, &stack.list)
-        .recover(had_error, Vec::new());
+    let unresolved_types =
+        parse_unresolved_types(stores, stack.open, &stack.list).recover(had_error, Vec::new());
 
     unresolved_types.with_span(stack_location)
 }

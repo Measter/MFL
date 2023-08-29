@@ -1,29 +1,21 @@
 use crate::{
-    interners::Interner,
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
         Analyzer,
     },
-    source_file::SourceStorage,
-    type_store::{BuiltinTypes, Signedness, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, Signedness, TypeKind},
+    Stores,
 };
 
-pub fn add(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn add(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
-    let input_type_info = inputs.map(|id| type_store.get_type_info(id));
+    let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| (ti.id, ti.kind)) {
         [(
@@ -39,7 +31,8 @@ pub fn add(
                 signed: b_signed,
             },
         )] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
-            type_store
+            stores
+                .types
                 .get_builtin(
                     promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
@@ -67,16 +60,8 @@ pub fn add(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve(op.token.inner);
-            generate_type_mismatch_diag(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                lexeme,
-                op,
-                &input_ids,
-            );
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
         }
     };
@@ -85,20 +70,13 @@ pub fn add(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub fn subtract(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn subtract(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
-    let input_type_info = inputs.map(|id| type_store.get_type_info(id));
+    let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer {
@@ -108,7 +86,8 @@ pub fn subtract(
             width: b_width,
             signed: b_signed,
         }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
-            type_store
+            stores
+                .types
                 .get_builtin(
                     promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
@@ -118,7 +97,7 @@ pub fn subtract(
         }
 
         [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
-            type_store.get_builtin(BuiltinTypes::U64).id
+            stores.types.get_builtin(BuiltinTypes::U64).id
         }
         [TypeKind::Pointer(_), TypeKind::Integer {
             signed: Signedness::Unsigned,
@@ -129,16 +108,8 @@ pub fn subtract(
             // Type mismatch
             *had_error = true;
 
-            let lexeme = interner.resolve(op.token.inner);
-            generate_type_mismatch_diag(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                lexeme,
-                op,
-                &input_ids,
-            );
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
         }
     };
@@ -147,20 +118,13 @@ pub fn subtract(
     analyzer.set_value_type(output_id, new_type);
 }
 
-pub fn bitnot(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn bitnot(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([input]) = analyzer.value_types([input_id]) else {
         return;
     };
-    let input_type_info = type_store.get_type_info(input);
+    let input_type_info = stores.types.get_type_info(input);
 
     let new_type = match input_type_info.kind {
         TypeKind::Integer { .. } | TypeKind::Bool => input,
@@ -168,16 +132,8 @@ pub fn bitnot(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve(op.token.inner);
-            generate_type_mismatch_diag(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                lexeme,
-                op,
-                &[input_id],
-            );
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_id]);
 
             return;
         }
@@ -188,10 +144,8 @@ pub fn bitnot(
 }
 
 pub fn bitand_bitor_bitxor(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -200,7 +154,7 @@ pub fn bitand_bitor_bitxor(
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
-    let input_type_info = inputs.map(|id| type_store.get_type_info(id));
+    let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer {
@@ -210,7 +164,8 @@ pub fn bitand_bitor_bitxor(
             width: b_width,
             signed: b_signed,
         }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
-            type_store
+            stores
+                .types
                 .get_builtin(
                     promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
@@ -219,21 +174,13 @@ pub fn bitand_bitor_bitxor(
                 .id
         }
 
-        [TypeKind::Bool, TypeKind::Bool] => type_store.get_builtin(BuiltinTypes::Bool).id,
+        [TypeKind::Bool, TypeKind::Bool] => stores.types.get_builtin(BuiltinTypes::Bool).id,
 
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve(op.token.inner);
-            generate_type_mismatch_diag(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                lexeme,
-                op,
-                &input_ids,
-            );
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
         }
     };
@@ -243,10 +190,8 @@ pub fn bitand_bitor_bitxor(
 }
 
 pub fn multiply_div_rem_shift(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    interner: &Interner,
-    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -255,7 +200,7 @@ pub fn multiply_div_rem_shift(
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
-    let input_type_info = inputs.map(|id| type_store.get_type_info(id));
+    let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer {
@@ -265,7 +210,8 @@ pub fn multiply_div_rem_shift(
             width: b_width,
             signed: b_signed,
         }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
-            type_store
+            stores
+                .types
                 .get_builtin(
                     promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
                         .unwrap()
@@ -277,16 +223,8 @@ pub fn multiply_div_rem_shift(
         _ => {
             // Type mismatch
             *had_error = true;
-            let lexeme = interner.resolve(op.token.inner);
-            generate_type_mismatch_diag(
-                analyzer,
-                interner,
-                source_store,
-                type_store,
-                lexeme,
-                op,
-                &input_ids,
-            );
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
         }
     };

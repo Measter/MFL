@@ -5,17 +5,17 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{IntKind, Op, OpCode},
     program::static_analysis::{Analyzer, ConstVal},
-    source_file::SourceStorage,
-    type_store::{TypeKind, TypeStore},
+    type_store::TypeKind,
+    Stores,
 };
 
-pub fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn add(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let val_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
         return;
     };
-    let output_type_info = type_store.get_type_info(output_type_id);
+    let output_type_info = stores.types.get_type_info(output_type_id);
     let Some(input_const_vals) = analyzer.value_consts(val_ids) else {
         return;
     };
@@ -74,13 +74,7 @@ pub fn add(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub fn subtract(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn subtract(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else {
@@ -89,7 +83,7 @@ pub fn subtract(
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
         unreachable!()
     };
-    let output_type_info = type_store.get_type_info(output_type_id);
+    let output_type_info = stores.types.get_type_info(output_type_id);
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
@@ -139,6 +133,7 @@ pub fn subtract(
             ..
         }] if id1 != id2 => {
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "subtracting pointers of different sources",
                 [
@@ -155,7 +150,6 @@ pub fn subtract(
                         .with_order(1),
                 ],
                 None,
-                source_store,
             );
             *had_error = true;
             return;
@@ -174,6 +168,7 @@ pub fn subtract(
             if offset2 > offset1 {
                 // Subtracting the end from the start.
                 diagnostics::emit_error(
+                    stores,
                     op.token.location,
                     "subtracting end from start",
                     [
@@ -190,7 +185,6 @@ pub fn subtract(
                             .with_order(1),
                     ],
                     None,
-                    source_store,
                 );
                 *had_error = true;
                 return;
@@ -212,7 +206,7 @@ pub fn subtract(
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn bitnot(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_id = op_data.inputs[0];
     let Some([types]) = analyzer.value_consts([input_id]) else {
@@ -221,7 +215,7 @@ pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
         unreachable!()
     };
-    let output_type_info = type_store.get_type_info(output_type_id);
+    let output_type_info = stores.types.get_type_info(output_type_id);
     let TypeKind::Integer {
         width: output_width,
         ..
@@ -245,7 +239,7 @@ pub fn bitnot(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
     analyzer.set_value_const(output_id, new_const_val);
 }
 
-pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: &Op) {
+pub fn bitand_bitor_bitxor(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_ids) else {
@@ -254,7 +248,7 @@ pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: 
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
         return;
     };
-    let output_type_info = type_store.get_type_info(output_type_id);
+    let output_type_info = stores.types.get_type_info(output_type_id);
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
@@ -292,9 +286,8 @@ pub fn bitand_bitor_bitxor(analyzer: &mut Analyzer, type_store: &TypeStore, op: 
 }
 
 pub fn multiply_div_rem_shift(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -304,7 +297,7 @@ pub fn multiply_div_rem_shift(
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs()[0]]) else {
         return;
     };
-    let output_type_info = type_store.get_type_info(output_type_id);
+    let output_type_info = stores.types.get_type_info(output_type_id);
     let TypeKind::Integer {
         width: output_width,
         signed: output_sign,
@@ -328,6 +321,7 @@ pub fn multiply_div_rem_shift(
         if shift_amount > 63 {
             let [shift_val] = analyzer.values([input_ids[1]]);
             diagnostics::emit_warning(
+                stores,
                 op.token.location,
                 "shift value exceeds 63",
                 [
@@ -340,13 +334,13 @@ pub fn multiply_div_rem_shift(
                         .with_order(1),
                 ],
                 format!("shift value ({shift_amount}) will be masked to the lower 6 bits"),
-                source_store,
             );
         }
 
         if (shift_amount & 63) >= output_width.bit_width() {
             let [shift_val] = analyzer.values([input_ids[1]]);
             diagnostics::emit_warning(
+                stores,
                 op.token.location,
                 "shift value exceeds 63",
                 [
@@ -359,7 +353,6 @@ pub fn multiply_div_rem_shift(
                         .with_order(1),
                 ],
                 format!("shift value ({shift_amount}) exceeds width"),
-                source_store,
             );
         }
     } else if matches!(&op.code, OpCode::Div | OpCode::Rem) {
@@ -370,6 +363,7 @@ pub fn multiply_div_rem_shift(
         if div_amount == 0 {
             let [div_val] = analyzer.values([input_ids[1]]);
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "division by 0",
                 [
@@ -380,7 +374,6 @@ pub fn multiply_div_rem_shift(
                         .with_order(1),
                 ],
                 None,
-                source_store,
             );
             *had_error = true;
             return;

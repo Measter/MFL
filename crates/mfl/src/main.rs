@@ -73,11 +73,13 @@ pub struct Args {
     emit_llir: bool,
 }
 
-fn is_valid_entry_sig(
-    interner: &mut Interner,
-    type_store: &mut TypeStore,
-    entry_sig: &ItemSignatureResolved,
-) -> bool {
+pub struct Stores {
+    source: SourceStorage,
+    strings: Interner,
+    types: TypeStore,
+}
+
+fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &ItemSignatureResolved) -> bool {
     if !entry_sig.exit_stack().is_empty() {
         return false;
     }
@@ -90,22 +92,30 @@ fn is_valid_entry_sig(
         return false;
     };
 
-    let expected_argc_id = type_store.get_builtin(BuiltinTypes::U64).id;
-    let u8_ptr_type = type_store.get_builtin_ptr(BuiltinTypes::U8).id;
-    let expected_argv_id = type_store.get_pointer(interner, u8_ptr_type).id;
+    let expected_argc_id = stores.types.get_builtin(BuiltinTypes::U64).id;
+    let u8_ptr_type = stores.types.get_builtin_ptr(BuiltinTypes::U8).id;
+    let expected_argv_id = stores
+        .types
+        .get_pointer(&mut stores.strings, u8_ptr_type)
+        .id;
 
     *argc_id == expected_argc_id && *argv_id == expected_argv_id
 }
 
-fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeStore, Vec<ItemId>)> {
+fn load_program(args: &Args) -> Result<(Program, Stores, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
-    let mut source_storage = SourceStorage::new();
+    let source_storage = SourceStorage::new();
     let mut interner = Interner::new();
-    let mut type_store = TypeStore::new(&mut interner);
+    let type_store = TypeStore::new(&mut interner);
+
+    let mut stores = Stores {
+        source: source_storage,
+        strings: interner,
+        types: type_store,
+    };
 
     let mut program = Program::new();
-    let entry_module_id =
-        program.load_program2(&mut interner, &mut source_storage, &mut type_store, args)?;
+    let entry_module_id = program.load_program2(&mut stores, args)?;
 
     let mut top_level_symbols = Vec::new();
 
@@ -118,7 +128,7 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeSt
             }
         }
     } else {
-        let entry_symbol = interner.intern("entry");
+        let entry_symbol = stores.strings.intern("entry");
         let entry_scope = program.get_scope(entry_module_id);
 
         let entry_function_id = entry_scope
@@ -132,6 +142,7 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeSt
         if !matches!(entry_item.kind(), ItemKind::Function) {
             let name = entry_item.name();
             diagnostics::emit_error(
+                &stores,
                 name.location,
                 "`entry` must be a function",
                 Some(
@@ -140,55 +151,40 @@ fn load_program(args: &Args) -> Result<(Program, SourceStorage, Interner, TypeSt
                         .with_message(format!("found `{:?}`", entry_item.kind())),
                 ),
                 None,
-                &source_storage,
             );
             return Err(eyre!("invalid `entry` procedure type"));
         }
 
         let entry_sig = program.get_item_signature_resolved(entry_function_id);
-        if !is_valid_entry_sig(&mut interner, &mut type_store, entry_sig) {
+        if !is_valid_entry_sig(&mut stores, entry_sig) {
             let name = entry_item.name();
             diagnostics::emit_error(
+                &stores,
                 name.location,
                 "`entry` must have the signature `[] to []` or `[u64 ptr(ptr(u8))] to []`",
                 Some(Label::new(name.location).with_color(Color::Red)),
                 None,
-                &source_storage,
             );
             return Err(eyre!("invalid `entry` signature"));
         }
     }
 
-    Ok((
-        program,
-        source_storage,
-        interner,
-        type_store,
-        top_level_symbols,
-    ))
+    Ok((program, stores, top_level_symbols))
 }
 
 fn run_compile(args: &Args) -> Result<()> {
     print!("   Compiling...");
-    let (program, source_storage, mut interner, mut type_store, top_level_items) =
-        match load_program(args) {
-            Ok(o) => o,
-            Err(e) => {
-                eprintln!();
-                eprintln!("{}: unable to compile program", "Error".red());
-                eprintln!("  Failed at stage: {e}");
-                std::process::exit(-3);
-            }
-        };
+    let (program, mut stores, top_level_items) = match load_program(args) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!();
+            eprintln!("{}: unable to compile program", "Error".red());
+            eprintln!("  Failed at stage: {e}");
+            std::process::exit(-3);
+        }
+    };
 
-    let objects = backend_llvm::compile(
-        &program,
-        &top_level_items,
-        &source_storage,
-        &mut interner,
-        &mut type_store,
-        args,
-    )?;
+    let objects = backend_llvm::compile(&program, &mut stores, &top_level_items, args)?;
 
     if args.is_library {
         println!(" {}", "Finished".green());

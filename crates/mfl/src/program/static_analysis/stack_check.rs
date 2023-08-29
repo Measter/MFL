@@ -1,4 +1,4 @@
-use crate::{n_ops::VecNOps, opcode::Op, source_file::SourceStorage};
+use crate::{n_ops::VecNOps, opcode::Op, Stores};
 
 use super::{generate_stack_length_mismatch_diag, Analyzer, ValueId};
 
@@ -7,16 +7,16 @@ pub mod memory;
 pub mod stack_ops;
 
 fn ensure_stack_depth(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     depth: usize,
 ) {
     if stack.len() < depth {
         generate_stack_length_mismatch_diag(
-            source_store,
+            stores,
             op.token.location,
             op.token.location,
             stack.len(),
@@ -34,13 +34,13 @@ fn ensure_stack_depth(
 }
 
 pub(super) fn eat_one_make_one(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 1);
 
     let value_id = stack.pop().unwrap();
     analyzer.consume_value(value_id, op.id);
@@ -51,13 +51,13 @@ pub(super) fn eat_one_make_one(
 }
 
 pub(super) fn eat_two_make_one(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {

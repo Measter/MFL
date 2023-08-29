@@ -6,12 +6,11 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     lexer::{Token, TokenKind},
     opcode::{Direction, Op, OpCode, OpId},
     program::ModuleQueueType,
-    source_file::{SourceLocation, SourceStorage, Spanned, WithSpan},
-    ItemId, Program,
+    source_file::{SourceLocation, Spanned, WithSpan},
+    ItemId, Program, Stores,
 };
 
 use self::{
@@ -25,11 +24,10 @@ mod utils;
 
 pub fn parse_item_body_contents(
     program: &mut Program,
+    stores: &mut Stores,
     tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
-    interner: &mut Interner,
     parent_id: ItemId,
-    source_store: &SourceStorage,
 ) -> Result<Vec<Op>, ()> {
     let mut ops = Vec::new();
     let mut had_error = false;
@@ -44,14 +42,13 @@ pub fn parse_item_body_contents(
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let delim = get_delimited_tokens(
+                        stores,
                         &mut token_iter,
                         token,
                         None,
                         ("(", |t| t == TokenKind::ParenthesisOpen),
                         ("ident", |t| t == TokenKind::Ident || t == TokenKind::Dot),
                         (")", |t| t == TokenKind::ParenthesisClosed),
-                        interner,
-                        source_store,
                     )?;
 
                     token.location = token.location.merge(delim.close.location);
@@ -63,12 +60,11 @@ pub fn parse_item_body_contents(
                     let mut prev_token = delim.open;
                     loop {
                         let Ok(next) = expect_token(
+                            stores,
                             &mut delim_iter,
                             "ident",
                             |t| t == TokenKind::Ident,
                             prev_token,
-                            interner,
-                            source_store,
                         ) else {
                             local_had_error = true;
                             break;
@@ -184,12 +180,11 @@ pub fn parse_item_body_contents(
             TokenKind::While => {
                 let Ok(code) = ops::parse_while(
                     program,
+                    stores,
                     &mut token_iter,
                     token,
                     op_id_gen,
                     parent_id,
-                    interner,
-                    source_store,
                 ) else {
                     had_error = true;
                     continue;
@@ -199,12 +194,11 @@ pub fn parse_item_body_contents(
             TokenKind::If => {
                 let Ok(code) = ops::parse_if(
                     program,
+                    stores,
                     &mut token_iter,
                     token,
                     op_id_gen,
                     parent_id,
-                    interner,
-                    source_store,
                 ) else {
                     had_error = true;
                     continue;
@@ -213,43 +207,20 @@ pub fn parse_item_body_contents(
             }
 
             TokenKind::Assert => {
-                had_error |= items::parse_assert(
-                    program,
-                    &mut token_iter,
-                    token,
-                    parent_id,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_assert(program, stores, &mut token_iter, token, parent_id)
+                        .is_err();
 
                 continue;
             }
             TokenKind::Const => {
-                if items::parse_const(
-                    program,
-                    &mut token_iter,
-                    token,
-                    parent_id,
-                    interner,
-                    source_store,
-                )
-                .is_err()
-                {
+                if items::parse_const(program, stores, &mut token_iter, token, parent_id).is_err() {
                     had_error = true;
                 }
                 continue;
             }
             TokenKind::Memory => {
-                if items::parse_memory(
-                    program,
-                    &mut token_iter,
-                    token,
-                    parent_id,
-                    interner,
-                    source_store,
-                )
-                .is_err()
+                if items::parse_memory(program, stores, &mut token_iter, token, parent_id).is_err()
                 {
                     had_error = true;
                 }
@@ -257,6 +228,7 @@ pub fn parse_item_body_contents(
             }
             TokenKind::Module | TokenKind::Proc | TokenKind::Field | TokenKind::Struct => {
                 diagnostics::emit_error(
+                    stores,
                     token.location,
                     format!("cannot use `{:?}` inside a procedure", token.inner.kind),
                     Some(
@@ -265,7 +237,6 @@ pub fn parse_item_body_contents(
                             .with_message("here"),
                     ),
                     None,
-                    source_store,
                 );
                 had_error = true;
                 continue;
@@ -286,20 +257,20 @@ pub fn parse_item_body_contents(
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
                 diagnostics::emit_error(
+                    stores,
                     token.location,
                     format!(
                         "unexpected token `{}` in input",
-                        interner.resolve(token.inner.lexeme)
+                        stores.strings.resolve(token.inner.lexeme)
                     ),
                     Some(Label::new(token.location)),
                     None,
-                    source_store,
                 );
 
                 return Err(());
             }
 
-            _ => parse_simple_op(&mut token_iter, token, interner, source_store)?,
+            _ => parse_simple_op(stores, &mut token_iter, token)?,
         };
 
         let token = token.inner.lexeme.with_span(token.location.merge(op_end));
@@ -311,11 +282,10 @@ pub fn parse_item_body_contents(
 
 pub(super) fn parse_file(
     program: &mut Program,
+    stores: &mut Stores,
     module_id: ItemId,
     tokens: &[Spanned<Token>],
-    interner: &mut Interner,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
-    source_store: &SourceStorage,
 ) -> Result<(), ()> {
     let _span = debug_span!(stringify!(parser::parse_module)).entered();
 
@@ -325,58 +295,33 @@ pub(super) fn parse_file(
     while let Some((_, token)) = token_iter.next() {
         match token.inner.kind {
             TokenKind::Assert => {
-                had_error |= items::parse_assert(
-                    program,
-                    &mut token_iter,
-                    *token,
-                    module_id,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_assert(program, stores, &mut token_iter, *token, module_id)
+                        .is_err();
             }
 
             TokenKind::Const => {
-                had_error |= items::parse_const(
-                    program,
-                    &mut token_iter,
-                    *token,
-                    module_id,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_const(program, stores, &mut token_iter, *token, module_id)
+                        .is_err();
             }
 
             TokenKind::Proc => {
-                had_error |= items::parse_function(
-                    program,
-                    &mut token_iter,
-                    *token,
-                    module_id,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_function(program, stores, &mut token_iter, *token, module_id)
+                        .is_err();
             }
 
             TokenKind::Memory => {
-                had_error |= items::parse_memory(
-                    program,
-                    &mut token_iter,
-                    *token,
-                    module_id,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_memory(program, stores, &mut token_iter, *token, module_id)
+                        .is_err();
             }
 
             TokenKind::Import => {
                 had_error |= items::parse_import(
                     program,
-                    interner,
-                    source_store,
+                    stores,
                     &mut had_error,
                     &mut token_iter,
                     *token,
@@ -386,34 +331,22 @@ pub(super) fn parse_file(
             }
 
             TokenKind::Module => {
-                had_error |= items::parse_module(
-                    interner,
-                    source_store,
-                    include_queue,
-                    &mut token_iter,
-                    *token,
-                    module_id,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_module(stores, &mut token_iter, include_queue, *token, module_id)
+                        .is_err();
             }
 
             TokenKind::Struct => {
-                had_error |= items::parse_struct(
-                    program,
-                    module_id,
-                    &mut token_iter,
-                    *token,
-                    interner,
-                    source_store,
-                )
-                .is_err();
+                had_error |=
+                    items::parse_struct(program, stores, &mut token_iter, module_id, *token)
+                        .is_err();
             }
 
             TokenKind::Extract { .. }
             | TokenKind::Insert { .. }
             | TokenKind::If
             | TokenKind::While => {
-                emit_top_level_op_error(token.location, token.inner.kind, source_store);
+                emit_top_level_op_error(stores, token.location, token.inner.kind);
                 had_error = true;
                 continue;
             }
@@ -432,14 +365,14 @@ pub(super) fn parse_file(
             | TokenKind::SquareBracketClosed
             | TokenKind::SquareBracketOpen => {
                 diagnostics::emit_error(
+                    stores,
                     token.location,
                     format!(
                         "unexpected token `{}` in input",
-                        interner.resolve(token.inner.lexeme)
+                        stores.strings.resolve(token.inner.lexeme)
                     ),
                     Some(Label::new(token.location)),
                     None,
-                    source_store,
                 );
 
                 had_error = true;
@@ -448,14 +381,13 @@ pub(super) fn parse_file(
 
             // These are invalid in top level position, but we should properly parse them anyway.
             _ => {
-                let location = if let Ok((_, loc)) =
-                    parse_simple_op(&mut token_iter, *token, interner, source_store)
-                {
-                    token.location.merge(loc)
-                } else {
-                    token.location
-                };
-                emit_top_level_op_error(location, token.inner.kind, source_store);
+                let location =
+                    if let Ok((_, loc)) = parse_simple_op(stores, &mut token_iter, *token) {
+                        token.location.merge(loc)
+                    } else {
+                        token.location
+                    };
+                emit_top_level_op_error(stores, location, token.inner.kind);
 
                 had_error = true;
                 continue;
@@ -466,16 +398,12 @@ pub(super) fn parse_file(
     had_error.not().then_some(()).ok_or(())
 }
 
-fn emit_top_level_op_error(
-    location: SourceLocation,
-    kind: TokenKind,
-    source_store: &SourceStorage,
-) {
+fn emit_top_level_op_error(stores: &Stores, location: SourceLocation, kind: TokenKind) {
     diagnostics::emit_error(
+        stores,
         location,
         format!("top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `{:?}`", kind),
         Some(Label::new(location).with_color(Color::Red)),
         None,
-        source_store
     );
 }

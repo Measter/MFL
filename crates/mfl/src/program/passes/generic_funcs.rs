@@ -8,17 +8,17 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     opcode::{Op, OpCode},
     program::{ItemId, ItemKind, Program},
-    source_file::{SourceStorage, WithSpan},
+    source_file::WithSpan,
     type_store::{BuiltinTypes, UnresolvedType, UnresolvedTypeIds},
+    Stores,
 };
 
-fn mangle_type_name(interner: &mut Interner, ty: &UnresolvedTypeIds, name: &mut String) {
+fn mangle_type_name(stores: &mut Stores, ty: &UnresolvedTypeIds, name: &mut String) {
     match ty {
         UnresolvedTypeIds::SimpleCustom { token, .. } => {
-            let t_name = interner.resolve(token.inner);
+            let t_name = stores.strings.resolve(token.inner);
             name.push_str(t_name);
         }
         UnresolvedTypeIds::SimpleBuiltin(t) => {
@@ -38,26 +38,26 @@ fn mangle_type_name(interner: &mut Interner, ty: &UnresolvedTypeIds, name: &mut 
         }
         UnresolvedTypeIds::SimpleGenericParam(_) => unreachable!(),
         UnresolvedTypeIds::Array(t, len) => {
-            mangle_type_name(interner, t, name);
+            mangle_type_name(stores, t, name);
             write!(name, "$AO${len}$AC$").unwrap();
         }
         UnresolvedTypeIds::Pointer(t) => {
             write!(name, "ptr$PO$").unwrap();
-            mangle_type_name(interner, t, name);
+            mangle_type_name(stores, t, name);
             write!(name, "$PC$").unwrap();
         }
         UnresolvedTypeIds::GenericInstance {
             id_token, params, ..
         } => {
-            let t_name = interner.resolve(id_token.inner);
+            let t_name = stores.strings.resolve(id_token.inner);
             write!(name, "{t_name}$GO$").unwrap();
             let [first, rest @ ..] = params.as_slice() else {
                 unreachable!()
             };
-            mangle_type_name(interner, first, name);
+            mangle_type_name(stores, first, name);
             for r in rest {
                 name.push('_');
-                mangle_type_name(interner, r, name);
+                mangle_type_name(stores, r, name);
             }
 
             name.push_str("$GC$");
@@ -65,21 +65,21 @@ fn mangle_type_name(interner: &mut Interner, ty: &UnresolvedTypeIds, name: &mut 
     }
 }
 
-fn build_mangled_name(interner: &mut Interner, base: Spur, params: &[UnresolvedType]) -> String {
-    let mut name = interner.resolve(base).to_owned();
+fn build_mangled_name(stores: &mut Stores, base: Spur, params: &[UnresolvedType]) -> String {
+    let mut name = stores.strings.resolve(base).to_owned();
     name.push_str("$GO$");
 
     let [UnresolvedType::Id(first), rest @ ..] = params else {
         unreachable!()
     };
-    mangle_type_name(interner, first, &mut name);
+    mangle_type_name(stores, first, &mut name);
 
     for tn in rest {
         name.push('_');
         let UnresolvedType::Id(tn) = tn else {
             unreachable!()
         };
-        mangle_type_name(interner, tn, &mut name);
+        mangle_type_name(stores, tn, &mut name);
     }
 
     name.push_str("$GC$");
@@ -171,8 +171,7 @@ fn expand_generic_params_in_block(
 impl Program {
     fn get_generic_function_instance(
         &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
+        stores: &mut Stores,
         fn_id: ItemId,
         generic_params: &[UnresolvedType],
     ) -> ItemId {
@@ -181,7 +180,7 @@ impl Program {
         let base_header = self.get_item_header(fn_id);
         assert_eq!(generic_params.len(), base_fd_params.len());
 
-        let new_name = build_mangled_name(interner, base_header.name.inner, generic_params);
+        let new_name = build_mangled_name(stores, base_header.name.inner, generic_params);
         if let Some(id) = self.generic_functions_map.get(&(fn_id, new_name.clone())) {
             return *id;
         }
@@ -220,9 +219,9 @@ impl Program {
             entry_stack.push(new_type.with_span(stack_item.location));
         }
 
-        let new_name_spur = interner.intern(&new_name);
+        let new_name_spur = stores.strings.intern(&new_name);
         let new_proc_id = self.new_function(
-            source_store,
+            stores,
             &mut false,
             new_name_spur.with_span(base_header.name.location),
             base_header.parent.unwrap(),
@@ -253,13 +252,8 @@ impl Program {
             let new_memory_sig = expand_generic_params_in_type(alloc_memory_type, &param_map);
             let new_sig = UnresolvedType::Id(new_memory_sig).with_span(alloc_type.location);
 
-            let new_alloc_id = self.new_memory(
-                source_store,
-                &mut false,
-                item_header.name,
-                new_proc_id,
-                new_sig,
-            );
+            let new_alloc_id =
+                self.new_memory(stores, &mut false, item_header.name, new_proc_id, new_sig);
 
             old_alloc_map.insert(item_header.id, new_alloc_id);
         }
@@ -276,8 +270,7 @@ impl Program {
 
     fn instantiate_generic_functions_in_block(
         &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
+        stores: &mut Stores,
         had_error: &mut bool,
         queue: &mut Vec<ItemId>,
         seen_ids: &mut HashSet<ItemId>,
@@ -288,53 +281,28 @@ impl Program {
                 OpCode::While(while_op) => {
                     let temp_body = std::mem::take(&mut while_op.condition);
                     while_op.condition = self.instantiate_generic_functions_in_block(
-                        interner,
-                        source_store,
-                        had_error,
-                        queue,
-                        seen_ids,
-                        temp_body,
+                        stores, had_error, queue, seen_ids, temp_body,
                     );
 
                     let temp_body = std::mem::take(&mut while_op.body_block);
                     while_op.body_block = self.instantiate_generic_functions_in_block(
-                        interner,
-                        source_store,
-                        had_error,
-                        queue,
-                        seen_ids,
-                        temp_body,
+                        stores, had_error, queue, seen_ids, temp_body,
                     );
                 }
                 OpCode::If(if_op) => {
                     let temp_body = std::mem::take(&mut if_op.condition);
                     if_op.condition = self.instantiate_generic_functions_in_block(
-                        interner,
-                        source_store,
-                        had_error,
-                        queue,
-                        seen_ids,
-                        temp_body,
+                        stores, had_error, queue, seen_ids, temp_body,
                     );
 
                     let temp_body = std::mem::take(&mut if_op.then_block);
                     if_op.then_block = self.instantiate_generic_functions_in_block(
-                        interner,
-                        source_store,
-                        had_error,
-                        queue,
-                        seen_ids,
-                        temp_body,
+                        stores, had_error, queue, seen_ids, temp_body,
                     );
 
                     let temp_body = std::mem::take(&mut if_op.else_block);
                     if_op.else_block = self.instantiate_generic_functions_in_block(
-                        interner,
-                        source_store,
-                        had_error,
-                        queue,
-                        seen_ids,
-                        temp_body,
+                        stores, had_error, queue, seen_ids, temp_body,
                     );
                 }
                 OpCode::ResolvedIdent {
@@ -344,22 +312,18 @@ impl Program {
                     let Some(generic_params) = generic_params.as_ref() else {
                         *had_error = true;
                         diagnostics::emit_error(
+                            stores,
                             op.token.location,
                             "generic function call missing generic parameters",
                             [Label::new(op.token.location).with_color(Color::Red)],
                             None,
-                            source_store,
                         );
 
                         continue;
                     };
 
-                    let new_id = self.get_generic_function_instance(
-                        interner,
-                        source_store,
-                        *item_id,
-                        generic_params,
-                    );
+                    let new_id =
+                        self.get_generic_function_instance(stores, *item_id, generic_params);
                     *item_id = new_id;
 
                     if seen_ids.insert(new_id) {
@@ -374,11 +338,7 @@ impl Program {
         body
     }
 
-    pub fn instantiate_generic_functions(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
+    pub fn instantiate_generic_functions(&mut self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::instantiate_generic_functions)).entered();
         let mut had_error = false;
 
@@ -394,8 +354,7 @@ impl Program {
             seen_ids.insert(item_id);
             let body = self.item_bodies.remove(&item_id).unwrap();
             let new_body = self.instantiate_generic_functions_in_block(
-                interner,
-                source_store,
+                stores,
                 &mut had_error,
                 &mut queue,
                 &mut seen_ids,

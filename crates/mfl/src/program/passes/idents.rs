@@ -9,25 +9,24 @@ use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
-    interners::Interner,
     opcode::{If, Op, OpCode, UnresolvedIdent, While},
     program::{
         static_analysis::ConstVal, symbol_redef_error, ItemHeader, ItemId, ItemKind, Program,
     },
     simulate::SimulatorValue,
-    source_file::{FileId, SourceStorage, Spanned, WithSpan},
+    source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds, UnresolvedTypeTokens,
     },
+    Stores,
 };
 
 impl Program {
     fn resolve_single_ident(
         &self,
-        item_header: ItemHeader,
-        interner: &Interner,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
+        item_header: ItemHeader,
         ident: &UnresolvedIdent,
     ) -> Result<ItemId, ()> {
         let [first_ident, rest @ ..] = ident.path.as_slice() else {
@@ -36,13 +35,13 @@ impl Program {
 
         let mut current_item = if ident.is_from_root {
             let Some(tlm) = self.top_level_modules.get(&first_ident.inner) else {
-                let item_name = interner.resolve(first_ident.inner);
+                let item_name = stores.strings.resolve(first_ident.inner);
                 diagnostics::emit_error(
+                    stores,
                     first_ident.location,
                     format!("symbol `{item_name}` not found"),
                     Some(Label::new(first_ident.location).with_color(Color::Red)),
                     None,
-                    source_store,
                 );
                 *had_error = true;
                 return Err(());
@@ -51,13 +50,13 @@ impl Program {
         } else {
             let Some(start_item) = self.get_visible_symbol(item_header, first_ident.inner) else {
                 // TODO: Handle naming builtins here
-                let item_name = interner.resolve(first_ident.inner);
+                let item_name = stores.strings.resolve(first_ident.inner);
                 diagnostics::emit_error(
+                    stores,
                     first_ident.location,
                     format!("symbol `{item_name}` not found"),
                     Some(Label::new(first_ident.location).with_color(Color::Red)),
                     None,
-                    source_store,
                 );
                 *had_error = true;
                 return Err(());
@@ -71,6 +70,7 @@ impl Program {
             let cur_item = self.get_item_header(current_item);
             if cur_item.kind != ItemKind::Module {
                 diagnostics::emit_error(
+                    stores,
                     sub_ident.location,
                     "cannot path into non-module items",
                     [
@@ -80,7 +80,6 @@ impl Program {
                             .with_message("not a module"),
                     ],
                     None,
-                    source_store,
                 );
                 *had_error = true;
                 return Err(());
@@ -89,11 +88,11 @@ impl Program {
             let scope = self.get_scope(cur_item.id);
             let Some(sub_item) = scope.get_symbol(sub_ident.inner) else {
                 diagnostics::emit_error(
+                    stores,
                     sub_ident.location,
                     "symbol not found",
                     [Label::new(sub_ident.location).with_color(Color::Red)],
                     None,
-                    source_store,
                 );
                 *had_error = true;
                 return Err(());
@@ -108,10 +107,9 @@ impl Program {
 
     fn resolve_idents_in_type(
         &self,
-        item_header: ItemHeader,
-        interner: &Interner,
-        source_store: &SourceStorage,
+        stores: &mut Stores,
         had_error: &mut bool,
+        item_header: ItemHeader,
         unresolved_type: &UnresolvedTypeTokens,
         generic_params: Option<&Vec<Spanned<Spur>>>,
     ) -> Result<UnresolvedTypeIds, ()> {
@@ -122,7 +120,7 @@ impl Program {
                     .last()
                     .expect("ICE: empty unresolved ident");
 
-                let name = interner.resolve(item_name.inner);
+                let name = stores.strings.resolve(item_name.inner);
                 let builtin_name = BuiltinTypes::from_name(name);
 
                 if (unresolved_ident.path.len() > 1
@@ -132,11 +130,11 @@ impl Program {
                 {
                     // Emit error
                     diagnostics::emit_error(
+                        stores,
                         unresolved_ident.span,
                         "cannot name builtin with a path",
                         [Label::new(unresolved_ident.span).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                     *had_error = true;
                     return Err(());
@@ -152,10 +150,9 @@ impl Program {
                     UnresolvedTypeIds::SimpleGenericParam(*item_name)
                 } else {
                     let ident = self.resolve_single_ident(
-                        item_header,
-                        interner,
-                        source_store,
+                        stores,
                         had_error,
+                        item_header,
                         unresolved_ident,
                     )?;
 
@@ -168,10 +165,9 @@ impl Program {
                                         unreachable!()
                                     };
                                     self.resolve_idents_in_type(
-                                        item_header,
-                                        interner,
-                                        source_store,
+                                        stores,
                                         had_error,
+                                        item_header,
                                         p,
                                         generic_params,
                                     )
@@ -193,10 +189,9 @@ impl Program {
             }
             UnresolvedTypeTokens::Array(sub_type, length) => {
                 let sub_type = self.resolve_idents_in_type(
-                    item_header,
-                    interner,
-                    source_store,
+                    stores,
                     had_error,
+                    item_header,
                     sub_type,
                     generic_params,
                 )?;
@@ -205,10 +200,9 @@ impl Program {
             }
             UnresolvedTypeTokens::Pointer(sub_type) => {
                 let sub_type = self.resolve_idents_in_type(
-                    item_header,
-                    interner,
-                    source_store,
+                    stores,
                     had_error,
+                    item_header,
                     sub_type,
                     generic_params,
                 )?;
@@ -222,11 +216,10 @@ impl Program {
 
     pub fn resolve_idents_in_block(
         &self,
+        stores: &mut Stores,
+        had_error: &mut bool,
         item: ItemHeader,
         mut body: Vec<Op>,
-        had_error: &mut bool,
-        interner: &Interner,
-        source_store: &SourceStorage,
         generic_params: Option<&Vec<Spanned<Spur>>>,
     ) -> Vec<Op> {
         for op in &mut body {
@@ -234,20 +227,18 @@ impl Program {
                 OpCode::While(while_op) => {
                     let temp_body = std::mem::take(&mut while_op.condition);
                     while_op.condition = self.resolve_idents_in_block(
+                        stores,
+                        had_error,
                         item,
                         temp_body,
-                        had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     );
                     let temp_body = std::mem::take(&mut while_op.body_block);
                     while_op.body_block = self.resolve_idents_in_block(
+                        stores,
+                        had_error,
                         item,
                         temp_body,
-                        had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     );
                 }
@@ -255,36 +246,32 @@ impl Program {
                     // Mmmm.. repetition...
                     let temp_body = std::mem::take(&mut if_op.condition);
                     if_op.condition = self.resolve_idents_in_block(
+                        stores,
+                        had_error,
                         item,
                         temp_body,
-                        had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     );
                     let temp_body = std::mem::take(&mut if_op.then_block);
                     if_op.then_block = self.resolve_idents_in_block(
+                        stores,
+                        had_error,
                         item,
                         temp_body,
-                        had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     );
                     let temp_body = std::mem::take(&mut if_op.else_block);
                     if_op.else_block = self.resolve_idents_in_block(
+                        stores,
+                        had_error,
                         item,
                         temp_body,
-                        had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     );
                 }
 
                 OpCode::UnresolvedIdent(ident) => {
-                    let Ok(item_id) =
-                        self.resolve_single_ident(item, interner, source_store, had_error, ident)
+                    let Ok(item_id) = self.resolve_single_ident(stores, had_error, item, ident)
                     else {
                         continue;
                     };
@@ -297,10 +284,9 @@ impl Program {
                                 unreachable!()
                             };
                             let Ok(f) = self.resolve_idents_in_type(
-                                item,
-                                interner,
-                                source_store,
+                                stores,
                                 had_error,
+                                item,
                                 param,
                                 generic_params,
                             ) else {
@@ -325,10 +311,9 @@ impl Program {
                         ItemKind::StructDef => {
                             let ty = UnresolvedTypeTokens::Simple(ident.clone());
                             let Ok(new_ty) = self.resolve_idents_in_type(
-                                item,
-                                interner,
-                                source_store,
+                                stores,
                                 had_error,
+                                item,
                                 &ty,
                                 generic_params,
                             ) else {
@@ -356,16 +341,16 @@ impl Program {
                                 );
                                 String::new()
                             } else {
-                                let name = interner.resolve(found_item_header.name.inner);
+                                let name = stores.strings.resolve(found_item_header.name.inner);
                                 format!("`{name}` is a top-level module")
                             };
 
                             diagnostics::emit_error(
+                                stores,
                                 op.token.location,
                                 format!("cannot refer to a {:?} here", found_item_header.kind()),
                                 labels,
                                 note,
-                                source_store,
                             );
                             continue;
                         }
@@ -378,14 +363,9 @@ impl Program {
                         panic!("ICE: tried to resolve type on resolved type")
                     };
 
-                    let Ok(new_ty) = self.resolve_idents_in_type(
-                        item,
-                        interner,
-                        source_store,
-                        had_error,
-                        ty,
-                        generic_params,
-                    ) else {
+                    let Ok(new_ty) =
+                        self.resolve_idents_in_type(stores, had_error, item, ty, generic_params)
+                    else {
                         *had_error = true;
                         continue;
                     };
@@ -400,11 +380,10 @@ impl Program {
 
     fn resolve_idents_in_struct_def(
         &self,
+        stores: &mut Stores,
+        had_error: &mut bool,
         item: ItemHeader,
         mut def: UnresolvedStruct,
-        had_error: &mut bool,
-        interner: &Interner,
-        source_store: &SourceStorage,
     ) -> UnresolvedStruct {
         for field in &mut def.fields {
             let UnresolvedType::Tokens(field_kind) = &field.kind else {
@@ -412,10 +391,9 @@ impl Program {
             };
 
             let Ok(new_kind) = self.resolve_idents_in_type(
-                item,
-                interner,
-                source_store,
+                stores,
                 had_error,
+                item,
                 field_kind,
                 def.generic_params.as_ref(),
             ) else {
@@ -431,16 +409,14 @@ impl Program {
 
     fn resolve_idents_in_module_imports(
         &mut self,
-        interner: &Interner,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         item: ItemHeader,
     ) {
         let imports = self.get_scope(item.id).unresolved_imports.clone();
 
         for import in imports {
-            let Ok(resolved_item) =
-                self.resolve_single_ident(item, interner, source_store, had_error, &import)
+            let Ok(resolved_item) = self.resolve_single_ident(stores, had_error, item, &import)
             else {
                 continue;
             };
@@ -451,34 +427,24 @@ impl Program {
                 scope.add_visible_symbol(item_name.inner.with_span(import.span), resolved_item)
             {
                 *had_error = true;
-                symbol_redef_error(import.span, prev_loc, source_store);
+                symbol_redef_error(stores, import.span, prev_loc);
             }
         }
     }
 
-    pub fn resolve_idents(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
+    pub fn resolve_idents(&mut self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::resolve_idents)).entered();
         let mut had_error = false;
         let items: Vec<_> = self.item_headers.clone();
 
         for item in items {
-            trace!(name = interner.get_symbol_name(self, item.id));
+            trace!(name = stores.strings.get_symbol_name(self, item.id));
 
             if item.kind() == ItemKind::StructDef {
                 let def = self.structs_unresolved.remove(&item.id).unwrap();
                 self.structs_unresolved.insert(
                     item.id,
-                    self.resolve_idents_in_struct_def(
-                        item,
-                        def,
-                        &mut had_error,
-                        interner,
-                        source_store,
-                    ),
+                    self.resolve_idents_in_struct_def(stores, &mut had_error, item, def),
                 );
             } else if item.kind() == ItemKind::Memory {
                 let generic_params = match item.parent {
@@ -495,10 +461,9 @@ impl Program {
                     unreachable!()
                 };
                 let Ok(new_kind) = self.resolve_idents_in_type(
-                    item,
-                    interner,
-                    source_store,
+                    stores,
                     &mut had_error,
+                    item,
                     memory_type_tokens,
                     generic_params,
                 ) else {
@@ -509,7 +474,7 @@ impl Program {
 
                 self.memory_type_unresolved.insert(item.id, memory_type);
             } else if item.kind() == ItemKind::Module {
-                self.resolve_idents_in_module_imports(interner, source_store, &mut had_error, item);
+                self.resolve_idents_in_module_imports(stores, &mut had_error, item);
             } else {
                 let mut sig = self.item_signatures_unresolved.remove(&item.id).unwrap();
 
@@ -529,10 +494,9 @@ impl Program {
                         unreachable!()
                     };
                     let Ok(new_kind) = self.resolve_idents_in_type(
-                        item,
-                        interner,
-                        source_store,
+                        stores,
                         &mut had_error,
+                        item,
                         kind_tokens,
                         generic_params,
                     ) else {
@@ -549,11 +513,10 @@ impl Program {
                 self.item_bodies.insert(
                     item.id,
                     self.resolve_idents_in_block(
+                        stores,
+                        &mut had_error,
                         item,
                         body,
-                        &mut had_error,
-                        interner,
-                        source_store,
                         generic_params,
                     ),
                 );
@@ -568,69 +531,69 @@ impl Program {
 
     pub fn check_invalid_cyclic_refs_in_block(
         &self,
+        stores: &mut Stores,
+        had_error: &mut bool,
         root_item: ItemHeader,
         block: &[Op],
         cur_item: ItemHeader,
         kind: &str,
         already_checked: &mut HashSet<ItemId>,
         check_queue: &mut Vec<ItemHeader>,
-        had_error: &mut bool,
-        source_store: &SourceStorage,
     ) {
         for op in block {
             match op.code {
                 OpCode::While(ref while_op) => {
                     self.check_invalid_cyclic_refs_in_block(
+                        stores,
+                        had_error,
                         root_item,
                         &while_op.condition,
                         cur_item,
                         kind,
                         already_checked,
                         check_queue,
-                        had_error,
-                        source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
+                        stores,
+                        had_error,
                         root_item,
                         &while_op.body_block,
                         cur_item,
                         kind,
                         already_checked,
                         check_queue,
-                        had_error,
-                        source_store,
                     );
                 }
                 OpCode::If(ref if_op) => {
                     self.check_invalid_cyclic_refs_in_block(
+                        stores,
+                        had_error,
                         root_item,
                         &if_op.condition,
                         cur_item,
                         kind,
                         already_checked,
                         check_queue,
-                        had_error,
-                        source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
+                        stores,
+                        had_error,
                         root_item,
                         &if_op.then_block,
                         cur_item,
                         kind,
                         already_checked,
                         check_queue,
-                        had_error,
-                        source_store,
                     );
                     self.check_invalid_cyclic_refs_in_block(
+                        stores,
+                        had_error,
                         root_item,
                         &if_op.else_block,
                         cur_item,
                         kind,
                         already_checked,
                         check_queue,
-                        had_error,
-                        source_store,
                     );
                 }
                 OpCode::ResolvedIdent { item_id, .. } => {
@@ -643,6 +606,7 @@ impl Program {
                     if item_id == root_item.id() {
                         *had_error = true;
                         diagnostics::emit_error(
+                            stores,
                             cur_item.name.location,
                             format!("cyclic {kind} detected"),
                             [
@@ -654,7 +618,6 @@ impl Program {
                                     .with_message("cyclic reference"),
                             ],
                             None,
-                            source_store,
                         );
                     } else {
                         check_queue.push(self.get_item_header(item_id));
@@ -665,18 +628,14 @@ impl Program {
         }
     }
 
-    pub fn check_invalid_cyclic_refs(
-        &self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
+    pub fn check_invalid_cyclic_refs(&self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::check_invalid_cyclic_refs)).entered();
         let mut had_error = false;
 
         let mut check_queue = Vec::new();
         let mut already_checked = HashSet::new();
         for root_item in self.item_headers.iter().copied() {
-            trace!(name = interner.get_symbol_name(self, root_item.id()));
+            trace!(name = stores.strings.get_symbol_name(self, root_item.id()));
 
             let kind = match root_item.kind() {
                 ItemKind::Const => "const",
@@ -694,14 +653,14 @@ impl Program {
 
             while let Some(item) = check_queue.pop() {
                 self.check_invalid_cyclic_refs_in_block(
+                    stores,
+                    &mut had_error,
                     root_item,
                     &self.item_bodies[&item.id],
                     item,
                     kind,
                     &mut already_checked,
                     &mut check_queue,
-                    &mut had_error,
-                    source_store,
                 );
             }
         }
@@ -714,11 +673,10 @@ impl Program {
 
     pub fn process_idents_in_block(
         &mut self,
+        stores: &mut Stores,
+        had_error: &mut bool,
         own_item_id: ItemId,
         block: Vec<Op>,
-        had_error: &mut bool,
-        interner: &Interner,
-        source_store: &SourceStorage,
     ) -> Vec<Op> {
         let mut new_ops: Vec<Op> = Vec::with_capacity(block.len());
         for op in block {
@@ -727,18 +685,16 @@ impl Program {
                     new_ops.push(Op {
                         code: OpCode::While(Box::new(While {
                             condition: self.process_idents_in_block(
+                                stores,
+                                had_error,
                                 own_item_id,
                                 while_op.condition,
-                                had_error,
-                                interner,
-                                source_store,
                             ),
                             body_block: self.process_idents_in_block(
+                                stores,
+                                had_error,
                                 own_item_id,
                                 while_op.body_block,
-                                had_error,
-                                interner,
-                                source_store,
                             ),
                             ..*while_op
                         })),
@@ -748,25 +704,22 @@ impl Program {
                 }
                 OpCode::If(if_op) => {
                     let new_condition = self.process_idents_in_block(
+                        stores,
+                        had_error,
                         own_item_id,
                         if_op.condition,
-                        had_error,
-                        interner,
-                        source_store,
                     );
                     let new_then_block = self.process_idents_in_block(
+                        stores,
+                        had_error,
                         own_item_id,
                         if_op.then_block,
-                        had_error,
-                        interner,
-                        source_store,
                     );
                     let new_else_block = self.process_idents_in_block(
+                        stores,
+                        had_error,
                         own_item_id,
                         if_op.else_block,
-                        had_error,
-                        interner,
-                        source_store,
                     );
 
                     new_ops.push(Op {
@@ -788,7 +741,7 @@ impl Program {
                         ItemKind::Const => {
                             let Some(vals) = self.const_vals.get(&found_item.id) else {
                                 let own_item = self.get_item_header(own_item_id);
-                                let name = interner.resolve(own_item.name.inner);
+                                let name = stores.strings.resolve(own_item.name.inner);
                                 panic!("ICE: Encountered un-evaluated const during ident processing {name}");
                             };
                             for (_, val) in vals {
@@ -840,6 +793,7 @@ impl Program {
                         ItemKind::Assert | ItemKind::StructDef | ItemKind::Module => {
                             *had_error = true;
                             diagnostics::emit_error(
+                                stores,
                                 op.token.location,
                                 format!("{:?} cannot be used in operations", found_item.kind()),
                                 Some(
@@ -848,7 +802,6 @@ impl Program {
                                         .with_message("here"),
                                 ),
                                 None,
-                                source_store,
                             );
                             continue;
                         }
@@ -860,11 +813,7 @@ impl Program {
         new_ops
     }
 
-    pub fn process_idents(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-    ) -> Result<()> {
+    pub fn process_idents(&mut self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::process_idents)).entered();
         let mut had_error = false;
 
@@ -882,16 +831,14 @@ impl Program {
             .collect();
 
         for own_item_id in all_item_ids {
-            trace!("Processing {}", interner.get_symbol_name(self, own_item_id));
+            trace!(
+                "Processing {}",
+                stores.strings.get_symbol_name(self, own_item_id)
+            );
 
             let old_body = self.item_bodies.remove(&own_item_id).unwrap();
-            let new_body = self.process_idents_in_block(
-                own_item_id,
-                old_body,
-                &mut had_error,
-                interner,
-                source_store,
-            );
+            let new_body =
+                self.process_idents_in_block(stores, &mut had_error, own_item_id, old_body);
             self.item_bodies.insert(own_item_id, new_body);
         }
 

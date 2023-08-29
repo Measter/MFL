@@ -30,7 +30,7 @@ use crate::{
     },
     source_file::SourceStorage,
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
-    Args,
+    Args, Stores,
 };
 
 mod arithmetic;
@@ -345,7 +345,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         interner: &mut Interner,
-        type_store: &mut TypeStore,
+        type_store: &TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
@@ -915,10 +915,8 @@ impl<'ctx> CodeGen<'ctx> {
 
 pub(crate) fn compile(
     program: &Program,
+    stores: &mut Stores,
     top_level_items: &[ItemId],
-    source_store: &SourceStorage,
-    interner: &mut Interner,
-    type_store: &mut TypeStore,
     args: &Args,
 ) -> Result<Vec<PathBuf>> {
     let _span = debug_span!(stringify!(backend_llvm::compile)).entered();
@@ -977,9 +975,14 @@ pub(crate) fn compile(
     top_level_items
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
-    codegen.build_function_prototypes(program, interner, type_store);
+    codegen.build_function_prototypes(program, &mut stores.strings, &stores.types);
     if !args.is_library {
-        codegen.build_entry(program, interner, type_store, top_level_items[0]);
+        codegen.build_entry(
+            program,
+            &mut stores.strings,
+            &mut stores.types,
+            top_level_items[0],
+        );
     } else {
         // Top level items clearly need to be external symbols if we're a library.
         // Pretty naff library if they're not.
@@ -987,7 +990,12 @@ pub(crate) fn compile(
             .iter()
             .for_each(|id| codegen.item_function_map[id].set_linkage(Linkage::External));
     }
-    codegen.build(program, source_store, interner, type_store);
+    codegen.build(
+        program,
+        &stores.source,
+        &mut stores.strings,
+        &mut stores.types,
+    );
 
     {
         let _span = trace_span!("Writing object file").entered();

@@ -12,13 +12,13 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
-    interners::Interner,
     n_ops::HashMapNOps,
     opcode::{IntKind, Op, OpCode, OpId},
     option::OptionExt,
     program::{ItemId, Program},
-    source_file::{SourceLocation, SourceStorage, Spanned},
-    type_store::{IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    source_file::{SourceLocation, Spanned},
+    type_store::{IntWidth, Signedness, TypeId, TypeKind},
+    Stores,
 };
 
 use self::stack_check::{eat_one_make_one, eat_two_make_one, make_one};
@@ -307,10 +307,8 @@ impl Analyzer {
 }
 
 fn failed_compare_stack_types(
+    stores: &Stores,
     analyzer: &Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
     actual_stack: &[ValueId],
     expected_stack: &[TypeId],
     sample_location: SourceLocation,
@@ -325,14 +323,14 @@ fn failed_compare_stack_types(
     let mut bad_values = Vec::new();
     for (idx, (expected, actual_id)) in pairs {
         let value_type = analyzer.value_types([*actual_id]).map_or("Unknown", |[v]| {
-            let type_info = type_store.get_type_info(v);
-            interner.resolve(type_info.name)
+            let type_info = stores.types.get_type_info(v);
+            stores.strings.resolve(type_info.name)
         });
 
         bad_values.push((*actual_id, idx.to_u64(), value_type));
 
-        let expected_type_info = type_store.get_type_info(*expected);
-        let expected_name = interner.resolve(expected_type_info.name);
+        let expected_type_info = stores.types.get_type_info(*expected);
+        let expected_name = stores.strings.resolve(expected_type_info.name);
         note.add_row(row!(
             (actual_stack.len() - idx - 1).to_string(),
             expected_name,
@@ -351,14 +349,12 @@ fn failed_compare_stack_types(
             .with_message("expected due to this signature"),
     ]);
 
-    diagnostics::emit_error(error_location, msg, labels, note.to_string(), source_store);
+    diagnostics::emit_error(stores, error_location, msg, labels, note.to_string());
 }
 
 fn generate_type_mismatch_diag(
+    stores: &Stores,
     analyzer: &Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
     operator_str: &str,
     op: &Op,
     types: &[ValueId],
@@ -368,8 +364,8 @@ fn generate_type_mismatch_diag(
         [] => unreachable!(),
         [a] => {
             let kind = analyzer.value_types([*a]).map_or("Unknown", |[v]| {
-                let type_info = type_store.get_type_info(v);
-                interner.resolve(type_info.name)
+                let type_info = stores.types.get_type_info(v);
+                stores.strings.resolve(type_info.name)
             });
             write!(&mut message, "`{kind}`").unwrap();
         }
@@ -378,8 +374,8 @@ fn generate_type_mismatch_diag(
                 .value_types([*a, *b])
                 .map_or(["Unknown", "Unknown"], |k| {
                     k.map(|id| {
-                        let type_info = type_store.get_type_info(id);
-                        interner.resolve(type_info.name)
+                        let type_info = stores.types.get_type_info(id);
+                        stores.strings.resolve(type_info.name)
                     })
                 });
             write!(&mut message, "`{a}` and `{b}`").unwrap();
@@ -387,15 +383,15 @@ fn generate_type_mismatch_diag(
         [xs @ .., last] => {
             for x in xs {
                 let kind = analyzer.value_types([*x]).map_or("Unknown", |[v]| {
-                    let type_info = type_store.get_type_info(v);
-                    interner.resolve(type_info.name)
+                    let type_info = stores.types.get_type_info(v);
+                    stores.strings.resolve(type_info.name)
                 });
                 write!(&mut message, "`{kind}`, ").unwrap();
             }
 
             let kind = analyzer.value_types([*last]).map_or("Unknown", |[v]| {
-                let type_info = type_store.get_type_info(v);
-                interner.resolve(type_info.name)
+                let type_info = stores.types.get_type_info(v);
+                stores.strings.resolve(type_info.name)
             });
             write!(&mut message, "and `{kind}`").unwrap();
         }
@@ -404,8 +400,8 @@ fn generate_type_mismatch_diag(
     let mut bad_values = Vec::new();
     for (value_id, order) in types.iter().rev().zip(1..) {
         let value_type = analyzer.value_types([*value_id]).map_or("Unknown", |[v]| {
-            let type_info = type_store.get_type_info(v);
-            interner.resolve(type_info.name)
+            let type_info = stores.types.get_type_info(v);
+            stores.strings.resolve(type_info.name)
         });
         bad_values.push((*value_id, order, value_type));
     }
@@ -413,11 +409,11 @@ fn generate_type_mismatch_diag(
     let mut labels =
         diagnostics::build_creator_label_chain(analyzer, bad_values, Color::Yellow, Color::Cyan);
     labels.push(Label::new(op.token.location).with_color(Color::Red));
-    diagnostics::emit_error(op.token.location, message, labels, None, source_store);
+    diagnostics::emit_error(stores, op.token.location, message, labels, None);
 }
 
 fn generate_stack_length_mismatch_diag(
-    source_store: &SourceStorage,
+    stores: &Stores,
     sample_location: SourceLocation,
     error_location: SourceLocation,
     actual: usize,
@@ -444,20 +440,18 @@ fn generate_stack_length_mismatch_diag(
             .with_message("here")]
     };
 
-    diagnostics::emit_error(sample_location, message, labels, note, source_store);
+    diagnostics::emit_error(stores, sample_location, message, labels, note);
 }
 
 fn analyze_block(
     program: &Program,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
     item_id: ItemId,
     block: &[Op],
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    had_error: &mut bool,
-    analyzer: &mut Analyzer,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     emit_traces: bool,
 ) {
     let mut op_iter = block.iter();
@@ -466,19 +460,12 @@ fn analyze_block(
         match &op.code {
             OpCode::Add => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::arithmetic::add(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::arithmetic::add(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::arithmetic::add(analyzer, type_store, op);
+                    const_prop::arithmetic::add(stores, analyzer, op);
                 }
 
                 *had_error |= local_had_error;
@@ -489,22 +476,19 @@ fn analyze_block(
             | OpCode::ShiftLeft
             | OpCode::ShiftRight => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
                     type_check2::arithmetic::multiply_div_rem_shift(
+                        stores,
                         analyzer,
-                        source_store,
-                        interner,
-                        type_store,
                         &mut local_had_error,
                         op,
                     );
                 }
                 if !local_had_error {
                     const_prop::arithmetic::multiply_div_rem_shift(
+                        stores,
                         analyzer,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                     );
@@ -514,25 +498,12 @@ fn analyze_block(
             }
             OpCode::Subtract => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::arithmetic::subtract(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::arithmetic::subtract(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::arithmetic::subtract(
-                        analyzer,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::arithmetic::subtract(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -540,38 +511,29 @@ fn analyze_block(
 
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
                     type_check2::arithmetic::bitand_bitor_bitxor(
+                        stores,
                         analyzer,
-                        source_store,
-                        interner,
-                        type_store,
                         &mut local_had_error,
                         op,
                     );
                 }
                 if !local_had_error {
-                    const_prop::arithmetic::bitand_bitor_bitxor(analyzer, type_store, op);
+                    const_prop::arithmetic::bitand_bitor_bitxor(stores, analyzer, op);
                 }
 
                 *had_error |= local_had_error;
             }
             OpCode::BitNot => {
                 let mut local_had_error = false;
-                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::arithmetic::bitnot(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::arithmetic::bitnot(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::arithmetic::bitnot(analyzer, type_store, op);
+                    const_prop::arithmetic::bitnot(stores, analyzer, op);
                 }
 
                 *had_error |= local_had_error;
@@ -579,41 +541,21 @@ fn analyze_block(
 
             OpCode::Equal | OpCode::NotEq => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::comparative::equal(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::comparative::equal(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::comparative::equal(
-                        analyzer,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::comparative::equal(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
             }
             OpCode::IsNull => {
                 let mut local_had_error = false;
-                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::comparative::is_null(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::comparative::is_null(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
                     const_prop::comparative::is_null(analyzer, op);
@@ -622,40 +564,27 @@ fn analyze_block(
 
             OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
                 let mut local_had_error = false;
-                eat_two_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_two_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::comparative::compare(
-                        analyzer,
-                        source_store,
-                        interner,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::comparative::compare(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::comparative::compare(
-                        analyzer,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::comparative::compare(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
             }
 
             OpCode::Drop { count } => {
-                stack_check::stack_ops::drop(analyzer, stack, source_store, had_error, op, *count);
+                stack_check::stack_ops::drop(stores, analyzer, had_error, stack, op, *count);
             }
             OpCode::Dup { count } => {
                 let mut local_had_error = false;
                 stack_check::stack_ops::dup(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *count,
                 );
@@ -669,33 +598,24 @@ fn analyze_block(
             OpCode::ExtractArray { emit_array } => {
                 let mut local_had_error = false;
                 stack_check::memory::extract_array(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *emit_array,
                 );
                 if !local_had_error {
                     type_check2::memory::extract_array(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *emit_array,
                     );
                 }
                 if !local_had_error {
-                    const_prop::memory::extract_array(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::memory::extract_array(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -703,33 +623,24 @@ fn analyze_block(
             OpCode::InsertArray { emit_array } => {
                 let mut local_had_error = false;
                 stack_check::memory::insert_array(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *emit_array,
                 );
                 if !local_had_error {
                     type_check2::memory::insert_array(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *emit_array,
                     );
                 }
                 if !local_had_error {
-                    const_prop::memory::insert_array(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::memory::insert_array(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -740,19 +651,17 @@ fn analyze_block(
             } => {
                 let mut local_had_error = false;
                 stack_check::memory::extract_struct(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *emit_struct,
                 );
                 if !local_had_error {
                     type_check2::memory::extract_struct(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *field_name,
@@ -768,19 +677,17 @@ fn analyze_block(
             } => {
                 let mut local_had_error = false;
                 stack_check::memory::insert_struct(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *emit_struct,
                 );
                 if !local_had_error {
                     type_check2::memory::insert_struct(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *field_name,
@@ -793,10 +700,10 @@ fn analyze_block(
             OpCode::Over { depth } => {
                 let mut local_had_error = false;
                 stack_check::stack_ops::over(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *depth,
                 );
@@ -810,19 +717,17 @@ fn analyze_block(
             OpCode::PackArray { count } => {
                 let mut local_had_error = false;
                 stack_check::memory::pack_array(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *count,
                 );
                 if !local_had_error {
                     type_check2::memory::pack_array(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *count,
@@ -834,20 +739,17 @@ fn analyze_block(
             OpCode::PackStruct { id } => {
                 let mut local_had_error = false;
                 stack_check::memory::pack_struct(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
-                    type_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *id,
                 );
                 if !local_had_error {
                     type_check2::memory::pack_struct(
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *id,
@@ -857,14 +759,7 @@ fn analyze_block(
                 *had_error |= local_had_error;
             }
             OpCode::Reverse { count } => {
-                stack_check::stack_ops::reverse(
-                    analyzer,
-                    stack,
-                    source_store,
-                    had_error,
-                    op,
-                    *count,
-                );
+                stack_check::stack_ops::reverse(stores, analyzer, had_error, stack, op, *count);
             }
             OpCode::Rot {
                 item_count,
@@ -872,10 +767,10 @@ fn analyze_block(
                 shift_count,
             } => {
                 stack_check::stack_ops::rot(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     had_error,
+                    stack,
                     op,
                     *item_count,
                     *direction,
@@ -883,28 +778,13 @@ fn analyze_block(
                 );
             }
             OpCode::Swap { count } => {
-                stack_check::stack_ops::swap(analyzer, stack, source_store, had_error, op, *count);
+                stack_check::stack_ops::swap(stores, analyzer, had_error, stack, op, *count);
             }
             OpCode::Unpack => {
                 let mut local_had_error = false;
-                stack_check::memory::unpack(
-                    analyzer,
-                    stack,
-                    interner,
-                    source_store,
-                    type_store,
-                    &mut local_had_error,
-                    op,
-                );
+                stack_check::memory::unpack(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::memory::unpack(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::memory::unpack(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -912,14 +792,14 @@ fn analyze_block(
 
             OpCode::PushBool(v) => {
                 make_one(analyzer, stack, op);
-                type_check2::stack_ops::push_bool(analyzer, type_store, op);
+                type_check2::stack_ops::push_bool(stores, analyzer, op);
                 const_prop::stack_ops::push_bool(analyzer, op, *v);
             }
             OpCode::PushInt { width, value } => {
                 make_one(analyzer, stack, op);
                 type_check2::stack_ops::push_int(
+                    stores,
                     analyzer,
-                    type_store,
                     op,
                     *width,
                     value.to_signedness(),
@@ -928,10 +808,10 @@ fn analyze_block(
             }
             OpCode::SizeOf(kind) => {
                 make_one(analyzer, stack, op);
-                let size_info = type_store.get_size_info(*kind);
+                let size_info = stores.types.get_size_info(*kind);
                 type_check2::stack_ops::push_int(
+                    stores,
                     analyzer,
-                    type_store,
                     op,
                     IntWidth::I64,
                     Signedness::Unsigned,
@@ -944,31 +824,18 @@ fn analyze_block(
             }
             OpCode::PushStr { id, is_c_str } => {
                 stack_check::stack_ops::push_str(analyzer, stack, op);
-                type_check2::stack_ops::push_str(analyzer, type_store, op, *is_c_str);
+                type_check2::stack_ops::push_str(stores, analyzer, op, *is_c_str);
                 const_prop::stack_ops::push_str(analyzer, op, *id, *is_c_str);
             }
 
             OpCode::Load => {
                 let mut local_had_error = false;
-                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
+                eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::memory::load(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::memory::load(stores, analyzer, &mut local_had_error, op);
                 }
                 if !local_had_error {
-                    const_prop::memory::load(
-                        analyzer,
-                        source_store,
-                        interner,
-                        &mut local_had_error,
-                        op,
-                    );
+                    const_prop::memory::load(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -976,17 +843,9 @@ fn analyze_block(
             OpCode::Memory { .. } => todo!(),
             OpCode::Store => {
                 let mut local_had_error = false;
-                stack_check::memory::store(analyzer, stack, source_store, &mut local_had_error, op);
+                stack_check::memory::store(stores, analyzer, &mut local_had_error, stack, op);
                 if !local_had_error {
-                    type_check2::memory::store(
-                        program,
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::memory::store(program, stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -997,21 +856,18 @@ fn analyze_block(
                 let mut local_had_error = false;
                 stack_check::control::epilogue_return(
                     program,
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
-                    interner,
                     &mut local_had_error,
+                    stack,
                     op,
                     item_id,
                 );
                 if !local_had_error {
                     type_check2::control::epilogue_return(
                         program,
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         item_id,
@@ -1020,8 +876,8 @@ fn analyze_block(
                 if !local_had_error {
                     const_prop::control::epilogue_return(
                         program,
+                        stores,
                         analyzer,
-                        source_store,
                         &mut local_had_error,
                         op,
                     );
@@ -1043,22 +899,15 @@ fn analyze_block(
             OpCode::SysCall { arg_count } => {
                 let mut local_had_error = false;
                 stack_check::control::syscall(
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *arg_count,
                 );
                 if !local_had_error {
-                    type_check2::control::syscall(
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        &mut local_had_error,
-                        op,
-                    );
+                    type_check2::control::syscall(stores, analyzer, &mut local_had_error, op);
                 }
 
                 *had_error |= local_had_error;
@@ -1068,25 +917,21 @@ fn analyze_block(
                 let mut local_had_error = false;
                 stack_check::control::analyze_if(
                     program,
-                    item_id,
+                    stores,
                     analyzer,
+                    &mut local_had_error,
+                    item_id,
                     stack,
                     max_stack_depth,
-                    &mut local_had_error,
-                    interner,
-                    source_store,
-                    type_store,
                     op,
                     if_op,
                     emit_traces,
                 );
                 if !local_had_error {
                     type_check2::control::analyze_if(
-                        &mut local_had_error,
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
+                        &mut local_had_error,
                         op,
                         if_op,
                     );
@@ -1108,14 +953,12 @@ fn analyze_block(
 
                 stack_check::control::analyze_while(
                     program,
-                    item_id,
+                    stores,
                     analyzer,
+                    &mut local_had_error,
+                    item_id,
                     stack,
                     max_stack_depth,
-                    &mut local_had_error,
-                    interner,
-                    source_store,
-                    type_store,
                     op,
                     while_op,
                     false,
@@ -1130,14 +973,12 @@ fn analyze_block(
                 // Now we can run it again with the values properly inhibited.
                 stack_check::control::analyze_while(
                     program,
-                    item_id,
+                    stores,
                     analyzer,
+                    &mut local_had_error,
+                    item_id,
                     stack,
                     max_stack_depth,
-                    &mut local_had_error,
-                    interner,
-                    source_store,
-                    type_store,
                     op,
                     while_op,
                     emit_traces,
@@ -1145,11 +986,9 @@ fn analyze_block(
 
                 if !local_had_error {
                     type_check2::control::analyze_while(
-                        &mut local_had_error,
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
+                        &mut local_had_error,
                         op,
                         while_op,
                     );
@@ -1160,25 +999,21 @@ fn analyze_block(
 
             OpCode::ResolvedCast { id } => {
                 let mut local_had_error = false;
-                eat_one_make_one(analyzer, stack, source_store, &mut local_had_error, op);
-                let type_info = type_store.get_type_info(*id);
+                eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
+                let type_info = stores.types.get_type_info(*id);
                 if !local_had_error {
                     match type_info.kind {
                         TypeKind::Integer { width, signed } => type_check2::stack_ops::cast_to_int(
+                            stores,
                             analyzer,
-                            source_store,
-                            interner,
-                            type_store,
                             &mut local_had_error,
                             op,
                             width,
                             signed,
                         ),
                         TypeKind::Pointer(kind) => type_check2::stack_ops::cast_to_ptr(
+                            stores,
                             analyzer,
-                            source_store,
-                            interner,
-                            type_store,
                             &mut local_had_error,
                             op,
                             kind,
@@ -1189,11 +1024,14 @@ fn analyze_block(
                         | TypeKind::GenericStructBase(_)
                         | TypeKind::GenericStructInstance(_) => {
                             diagnostics::emit_error(
+                                stores,
                                 op.token.location,
-                                format!("cannot cast to {}", interner.resolve(type_info.name)),
+                                format!(
+                                    "cannot cast to {}",
+                                    stores.strings.resolve(type_info.name)
+                                ),
                                 [Label::new(op.token.location).with_color(Color::Red)],
                                 None,
-                                source_store,
                             );
                             local_had_error = true;
                         }
@@ -1225,20 +1063,18 @@ fn analyze_block(
                 let mut local_had_error = false;
                 stack_check::control::resolved_ident(
                     program,
+                    stores,
                     analyzer,
-                    stack,
-                    source_store,
                     &mut local_had_error,
+                    stack,
                     op,
                     *resolved_item,
                 );
                 if !local_had_error {
                     type_check2::control::resolved_ident(
                         program,
+                        stores,
                         analyzer,
-                        interner,
-                        source_store,
-                        type_store,
                         &mut local_had_error,
                         op,
                         *resolved_item,
@@ -1253,15 +1089,7 @@ fn analyze_block(
 
             OpCode::EmitStack(emit_labels) => {
                 if emit_traces {
-                    type_check2::stack_ops::emit_stack(
-                        stack,
-                        analyzer,
-                        interner,
-                        source_store,
-                        type_store,
-                        op,
-                        *emit_labels,
-                    );
+                    type_check2::stack_ops::emit_stack(stores, analyzer, stack, op, *emit_labels);
                 }
             }
 
@@ -1282,22 +1110,20 @@ fn analyze_block(
             continue;
         }
         diagnostics::emit_warning(
+            stores,
             op.token.location,
             "unreachable op",
             [Label::new(op.token.location).with_color(Color::Yellow)],
             None,
-            source_store,
         );
     }
 }
 
 pub fn analyze_item(
     program: &Program,
-    item_id: ItemId,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
+    item_id: ItemId,
     print_stack_depth: bool,
 ) -> Result<(), ()> {
     let mut stack = Vec::new();
@@ -1306,20 +1132,18 @@ pub fn analyze_item(
 
     analyze_block(
         program,
+        stores,
+        analyzer,
+        &mut had_error,
         item_id,
         program.get_item_body(item_id),
         &mut stack,
         &mut max_stack_depth,
-        &mut had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         true,
     );
 
     if print_stack_depth {
-        let item_name = interner.get_symbol_name(program, item_id);
+        let item_name = stores.strings.get_symbol_name(program, item_id);
         println!("{item_name}: {max_stack_depth}");
     }
 

@@ -3,7 +3,6 @@ use intcast::IntCast;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
@@ -13,16 +12,14 @@ use crate::{
         },
         ItemId, ItemKind, ItemSignatureResolved, Program,
     },
-    source_file::SourceStorage,
-    type_store::{BuiltinTypes, TypeKind, TypeStore},
+    type_store::{BuiltinTypes, TypeKind},
+    Stores,
 };
 
 pub fn epilogue_return(
     program: &Program,
-    analyzer: &mut Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
+    stores: &Stores,
+    analyzer: &Analyzer,
     had_error: &mut bool,
     op: &Op,
     item_id: ItemId,
@@ -37,8 +34,8 @@ pub fn epilogue_return(
         };
 
         if actual_type != expected {
-            let actual_type_info = type_store.get_type_info(actual_type);
-            let expected_type_info = type_store.get_type_info(expected);
+            let actual_type_info = stores.types.get_type_info(actual_type);
+            let expected_type_info = stores.types.get_type_info(expected);
 
             if !matches!((actual_type_info.kind, expected_type_info.kind), (
                         TypeKind::Integer { width: actual_width, signed: actual_signed },
@@ -46,10 +43,8 @@ pub fn epilogue_return(
                     ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
             {
                 failed_compare_stack_types(
+                    stores,
                     analyzer,
-                    interner,
-                    source_store,
-                    type_store,
                     &op_data.inputs,
                     item_sig.exit_stack(),
                     item_sig_tokens.exit_stack_location(),
@@ -74,10 +69,8 @@ pub fn prologue(analyzer: &mut Analyzer, op: &Op, item_sig: &ItemSignatureResolv
 
 pub fn resolved_ident(
     program: &Program,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     had_error: &mut bool,
     op: &Op,
     item_id: ItemId,
@@ -90,7 +83,9 @@ pub fn resolved_ident(
             let reference_item_memory_type = program.get_memory_type_resolved(item_id);
 
             let output_id = op_data.outputs[0];
-            let ptr_type = type_store.get_pointer(interner, reference_item_memory_type);
+            let ptr_type = stores
+                .types
+                .get_pointer(&mut stores.strings, reference_item_memory_type);
             analyzer.set_value_type(output_id, ptr_type.id);
         }
         ItemKind::Function | ItemKind::Const => {
@@ -107,8 +102,8 @@ pub fn resolved_ident(
                 };
 
                 if actual_type != expected {
-                    let actual_type_info = type_store.get_type_info(actual_type);
-                    let expected_type_info = type_store.get_type_info(expected);
+                    let actual_type_info = stores.types.get_type_info(actual_type);
+                    let expected_type_info = stores.types.get_type_info(expected);
 
                     if !matches!((actual_type_info.kind, expected_type_info.kind), (
                         TypeKind::Integer { width: actual_width, signed: actual_signed },
@@ -116,10 +111,8 @@ pub fn resolved_ident(
                     ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
                     {
                         failed_compare_stack_types(
+                            stores,
                             analyzer,
-                            interner,
-                            source_store,
-                            type_store,
                             &op_data.inputs,
                             referenced_item_sig.entry_stack(),
                             referenced_item_sig_tokens.entry_stack_location(),
@@ -143,26 +136,19 @@ pub fn resolved_ident(
     }
 }
 
-pub fn syscall(
-    analyzer: &mut Analyzer,
-    interner: &Interner,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn syscall(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
 
     for (idx, input_value) in op_data.inputs().iter().enumerate() {
         let Some([type_id]) = analyzer.value_types([*input_value]) else {
             continue;
         };
-        let type_info = type_store.get_type_info(type_id);
+        let type_info = stores.types.get_type_info(type_id);
         match type_info.kind {
             TypeKind::Integer { .. } | TypeKind::Pointer(_) | TypeKind::Bool => {}
 
             _ => {
-                let type_name = interner.resolve(type_info.name);
+                let type_name = stores.strings.resolve(type_info.name);
                 let mut labels = diagnostics::build_creator_label_chain(
                     analyzer,
                     [(*input_value, idx.to_u64(), type_name)],
@@ -173,11 +159,11 @@ pub fn syscall(
                 labels.push(Label::new(op.token.location).with_color(Color::Red));
 
                 diagnostics::emit_error(
+                    stores,
                     op.token.location,
                     "invalid syscall parameter",
                     labels,
                     None,
-                    source_store,
                 );
                 *had_error = true;
             }
@@ -188,16 +174,14 @@ pub fn syscall(
 
     analyzer.set_value_type(
         op_data.outputs[0],
-        type_store.get_builtin(BuiltinTypes::U64).id,
+        stores.types.get_builtin(BuiltinTypes::U64).id,
     );
 }
 
 pub fn analyze_while(
+    stores: &Stores,
+    analyzer: &Analyzer,
     had_error: &mut bool,
-    analyzer: &mut Analyzer,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
 ) {
@@ -215,10 +199,10 @@ pub fn analyze_while(
         return;
     };
 
-    if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
+    if condition_type != stores.types.get_builtin(BuiltinTypes::Bool).id {
         *had_error = true;
-        let condition_info = type_store.get_type_info(condition_type);
-        let condition_type_name = interner.resolve(condition_info.name);
+        let condition_info = stores.types.get_type_info(condition_type);
+        let condition_type_name = stores.strings.resolve(condition_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -229,11 +213,11 @@ pub fn analyze_while(
         labels.push(Label::new(while_op.do_token).with_color(Color::Red));
 
         diagnostics::emit_error(
+            stores,
             while_op.do_token,
             "condition must evaluate to a boolean",
             labels,
             None,
-            source_store,
         );
     }
 
@@ -244,8 +228,8 @@ pub fn analyze_while(
         else {
             continue;
         };
-        let pre_type_info = type_store.get_type_info(pre_type);
-        let condition_type_info = type_store.get_type_info(condition_type);
+        let pre_type_info = stores.types.get_type_info(pre_type);
+        let condition_type_info = stores.types.get_type_info(condition_type);
 
         if pre_type != condition_type
             && !matches!((pre_type_info.kind, condition_type_info.kind), (
@@ -254,8 +238,8 @@ pub fn analyze_while(
                     ) if can_promote_int_unidirectional(condition_width, condition_signed, pre_width, pre_signed ))
         {
             let [pre_type_name, condition_type_name] = input_type_ids.map(|id| {
-                let info = type_store.get_type_info(id);
-                interner.resolve(info.name)
+                let info = stores.types.get_type_info(id);
+                stores.strings.resolve(info.name)
             });
 
             let labels = diagnostics::build_creator_label_chain(
@@ -270,22 +254,20 @@ pub fn analyze_while(
 
             *had_error = true;
             diagnostics::emit_error(
+                stores,
                 condition_value.source_location,
                 "while loop condition or body may not change types on the stack",
                 labels,
                 None,
-                source_store,
             );
         }
     }
 }
 
 pub fn analyze_if(
-    had_error: &mut bool,
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
+    had_error: &mut bool,
     op: &Op,
     if_op: &If,
 ) {
@@ -295,10 +277,10 @@ pub fn analyze_if(
     let op_data = analyzer.get_op_io(op.id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type]) = analyzer.value_types([condition_value_id]) {
-        if condition_type != type_store.get_builtin(BuiltinTypes::Bool).id {
+        if condition_type != stores.types.get_builtin(BuiltinTypes::Bool).id {
             *had_error = true;
-            let condition_type_info = type_store.get_type_info(condition_type);
-            let condition_type_name = interner.resolve(condition_type_info.name);
+            let condition_type_info = stores.types.get_type_info(condition_type);
+            let condition_type_name = stores.strings.resolve(condition_type_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
@@ -309,11 +291,11 @@ pub fn analyze_if(
             labels.push(Label::new(if_op.do_token).with_color(Color::Red));
 
             diagnostics::emit_error(
+                stores,
                 if_op.do_token,
                 "condition must evaluate to a boolean",
                 labels,
                 None,
-                source_store,
             );
         }
     }
@@ -330,8 +312,8 @@ pub fn analyze_if(
         else {
             continue;
         };
-        let then_type_info = type_store.get_type_info(then_type);
-        let else_type_info = type_store.get_type_info(else_type);
+        let then_type_info = stores.types.get_type_info(then_type);
+        let else_type_info = stores.types.get_type_info(else_type);
 
         let final_type = match (then_type_info.kind, else_type_info.kind) {
             (
@@ -358,13 +340,13 @@ pub fn analyze_if(
                 )
                 .unwrap();
 
-                type_store.get_builtin(kind.into()).id
+                stores.types.get_builtin(kind.into()).id
             }
             _ => {
                 if then_type != else_type {
                     let [then_type_name, else_type_name] = input_type_ids.map(|id| {
-                        let info = type_store.get_type_info(id);
-                        interner.resolve(info.name)
+                        let info = stores.types.get_type_info(id);
+                        stores.strings.resolve(info.name)
                     });
 
                     let labels = diagnostics::build_creator_label_chain(
@@ -379,11 +361,11 @@ pub fn analyze_if(
 
                     *had_error = true;
                     diagnostics::emit_error(
+                        stores,
                         then_value.source_location,
                         "conditional body cannot change types on the stack",
                         labels,
                         None,
-                        source_store,
                     );
                 }
 

@@ -4,12 +4,11 @@ use tracing::info;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     n_ops::{SliceNOps, VecNOps},
     opcode::{Direction, IntKind, Op, OpCode},
     program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
-    source_file::SourceStorage,
-    type_store::{IntWidth, TypeStore},
+    type_store::IntWidth,
+    Stores,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,11 +108,9 @@ fn apply_bool_op(
 
 fn simulate_execute_program_block(
     program: &Program,
+    stores: &mut Stores,
     block: &[Op],
     value_stack: &mut Vec<SimulatorValue>,
-    type_store: &mut TypeStore,
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
     while let Some(op) = block.get(ip) {
@@ -158,7 +155,7 @@ fn simulate_execute_program_block(
                 kind: *value,
             }),
             OpCode::SizeOf(kind) => {
-                let size = type_store.get_size_info(*kind);
+                let size = stores.types.get_size_info(*kind);
                 value_stack.push(SimulatorValue::Int {
                     width: IntWidth::I64,
                     kind: IntKind::Unsigned(size.byte_width),
@@ -168,7 +165,7 @@ fn simulate_execute_program_block(
             // you could just drop the address that gets pushed leaving the length
             // which can be used in a const context.
             OpCode::PushStr { id, is_c_str } => {
-                let literal = interner.resolve(*id);
+                let literal = stores.strings.resolve(*id);
                 if !is_c_str {
                     // Strings are null-terminated during parsing, but the MFL-style strings shouldn't
                     // include that character.
@@ -188,56 +185,31 @@ fn simulate_execute_program_block(
             }
 
             OpCode::While(while_op) => loop {
-                simulate_execute_program_block(
-                    program,
-                    &while_op.condition,
-                    value_stack,
-                    type_store,
-                    interner,
-                    source_store,
-                )?;
+                simulate_execute_program_block(program, stores, &while_op.condition, value_stack)?;
                 let a = value_stack.pop().unwrap();
                 if a == SimulatorValue::Bool(false) {
                     break;
                 }
-                simulate_execute_program_block(
-                    program,
-                    &while_op.body_block,
-                    value_stack,
-                    type_store,
-                    interner,
-                    source_store,
-                )?;
+                simulate_execute_program_block(program, stores, &while_op.body_block, value_stack)?;
             },
 
             OpCode::If(if_op) => {
-                simulate_execute_program_block(
-                    program,
-                    &if_op.condition,
-                    value_stack,
-                    type_store,
-                    interner,
-                    source_store,
-                )?;
+                simulate_execute_program_block(program, stores, &if_op.condition, value_stack)?;
 
                 let a = value_stack.pop().unwrap();
                 if a == SimulatorValue::Bool(true) {
                     simulate_execute_program_block(
                         program,
+                        stores,
                         &if_op.then_block,
                         value_stack,
-                        type_store,
-                        interner,
-                        source_store,
                     )?;
                 } else {
                     simulate_execute_program_block(
                         program,
+                        stores,
                         &if_op.else_block,
                         value_stack,
-                        type_store,
-                        interner,
-                        source_store,
                     )?;
                 }
             }
@@ -309,11 +281,11 @@ fn simulate_execute_program_block(
                     value_stack.extend(vals.iter().map(|(_, v)| *v));
                 } else {
                     diagnostics::emit_error(
+                        stores,
                         op.token.location,
                         "non-const cannot be refenced in a const",
                         [Label::new(op.token.location).with_color(Color::Red)],
                         None,
-                        source_store,
                     );
                     return Err(SimulationError::UnsupportedOp);
                 }
@@ -335,11 +307,11 @@ fn simulate_execute_program_block(
             | OpCode::IsNull
             | OpCode::SysCall { .. } => {
                 diagnostics::emit_error(
+                    stores,
                     op.token.location,
                     "operation not supported during const evaluation",
                     [Label::new(op.token.location).with_color(Color::Red)],
                     None,
-                    source_store,
                 );
                 return Err(SimulationError::UnsupportedOp);
             }
@@ -360,21 +332,17 @@ fn simulate_execute_program_block(
 
 pub(crate) fn simulate_execute_program(
     program: &Program,
-    type_store: &mut TypeStore,
+    stores: &mut Stores,
     item_id: ItemId,
-    interner: &Interner,
-    source_store: &SourceStorage,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     simulate_execute_program_block(
         program,
+        stores,
         program.get_item_body(item_id),
         &mut value_stack,
-        type_store,
-        interner,
-        source_store,
     )?;
 
     Ok(value_stack)

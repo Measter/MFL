@@ -8,7 +8,7 @@ use crate::{
         static_analysis::{Analyzer, ConstVal, PtrId},
         ItemId, ItemKind, Program,
     },
-    source_file::SourceStorage,
+    Stores,
 };
 
 pub fn resolved_ident(program: &Program, analyzer: &mut Analyzer, op: &Op, item_id: ItemId) {
@@ -30,8 +30,8 @@ pub fn resolved_ident(program: &Program, analyzer: &mut Analyzer, op: &Op, item_
 
 pub fn epilogue_return(
     program: &Program,
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
+    stores: &Stores,
+    analyzer: &Analyzer,
     had_error: &mut bool,
     op: &Op,
 ) {
@@ -62,11 +62,11 @@ pub fn epilogue_return(
             );
 
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "returning pointer to local memory",
                 labels,
                 None,
-                source_store,
             );
         }
     }

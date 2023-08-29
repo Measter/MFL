@@ -4,11 +4,10 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
-    interners::Interner,
     n_ops::{SliceNOps, VecNOps},
     opcode::Op,
-    source_file::SourceStorage,
-    type_store::{TypeId, TypeKind, TypeStore},
+    type_store::{TypeId, TypeKind},
+    Stores,
 };
 
 use super::{
@@ -17,21 +16,14 @@ use super::{
 };
 
 pub fn pack_array(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     count: u8,
 ) {
-    ensure_stack_depth(
-        analyzer,
-        stack,
-        source_store,
-        had_error,
-        op,
-        count.to_usize(),
-    );
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, count.to_usize());
 
     let mut inputs = Vec::new();
     let input_ids = stack.lastn(count.to_usize()).unwrap();
@@ -48,34 +40,33 @@ pub fn pack_array(
 }
 
 pub fn pack_struct(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     type_id: TypeId,
 ) {
-    let type_info = type_store.get_type_info(type_id);
+    let type_info = stores.types.get_type_info(type_id);
     let num_fields = match type_info.kind {
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-            type_store.get_struct_def(type_id).fields.len()
+            stores.types.get_struct_def(type_id).fields.len()
         }
-        TypeKind::GenericStructBase(_) => type_store.get_generic_base_def(type_id).fields.len(),
+        TypeKind::GenericStructBase(_) => stores.types.get_generic_base_def(type_id).fields.len(),
         _ => {
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "cannot pack that type",
                 [Label::new(op.token.location).with_color(Color::Red)],
                 None,
-                source_store,
             );
             *had_error = true;
             return;
         }
     };
 
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_fields);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_fields);
 
     let mut inputs = Vec::new();
     let input_ids = stack.lastn(num_fields).unwrap();
@@ -92,14 +83,14 @@ pub fn pack_struct(
 }
 
 pub fn extract_array(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     emit_array: bool,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
 
     let [array_id, idx] = stack.popn().unwrap();
     analyzer.consume_value(array_id, op.id);
@@ -121,14 +112,14 @@ pub fn extract_array(
 }
 
 pub fn insert_array(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     emit_array: bool,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
 
     let inputs = stack.popn::<3>().unwrap();
     for id in inputs {
@@ -148,14 +139,14 @@ pub fn insert_array(
 }
 
 pub fn insert_struct(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     emit_struct: bool,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for id in inputs {
@@ -174,14 +165,14 @@ pub fn insert_struct(
 }
 
 pub fn extract_struct(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     emit_struct: bool,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 1);
 
     let [struct_id] = stack.popn().unwrap();
     analyzer.consume_value(struct_id, op.id);
@@ -202,15 +193,13 @@ pub fn extract_struct(
 }
 
 pub fn unpack(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 1);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 1);
     let input_id = stack.pop().unwrap();
 
     // To find out how many values we create, we need to look up the type of our input.
@@ -219,17 +208,17 @@ pub fn unpack(
         return;
     };
 
-    let input_type_info = type_store.get_type_info(input_type_id);
+    let input_type_info = stores.types.get_type_info(input_type_id);
 
     let length = match input_type_info.kind {
         TypeKind::Array { length, .. } => length,
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-            let struct_info = type_store.get_struct_def(input_type_id);
+            let struct_info = stores.types.get_struct_def(input_type_id);
             struct_info.fields.len()
         }
         _ => {
             *had_error = true;
-            let value_type_name = interner.resolve(input_type_info.name);
+            let value_type_name = stores.strings.resolve(input_type_info.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
                 [(input_id, 0, value_type_name)],
@@ -240,11 +229,11 @@ pub fn unpack(
             labels.push(Label::new(op.token.location).with_color(Color::Red));
 
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 format!("unable to unpack a `{value_type_name}`",),
                 labels,
                 "value must be an array or struct".to_owned(),
-                source_store,
             );
             0
         }
@@ -262,13 +251,13 @@ pub fn unpack(
 }
 
 pub fn store(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
 ) {
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {

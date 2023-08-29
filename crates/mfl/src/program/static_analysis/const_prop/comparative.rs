@@ -5,17 +5,11 @@ use crate::{
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
     program::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
-    source_file::SourceStorage,
-    type_store::{TypeKind, TypeStore},
+    type_store::TypeKind,
+    Stores,
 };
 
-pub fn compare(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn compare(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = analyzer.value_types(input_ids).unwrap();
@@ -31,7 +25,7 @@ pub fn compare(
             }, TypeKind::Integer {
                 width: b_width,
                 signed: b_signed,
-            }] = input_type_ids.map(|id| type_store.get_type_info(id).kind)
+            }] = input_type_ids.map(|id| stores.types.get_type_info(id).kind)
             else {
                 unreachable!()
             };
@@ -65,6 +59,7 @@ pub fn compare(
             ..
         }] if id1 != id2 => {
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "pointers have different sources",
                 [
@@ -81,7 +76,6 @@ pub fn compare(
                         .with_order(1),
                 ],
                 None,
-                source_store,
             );
             *had_error = true;
             return;
@@ -105,13 +99,7 @@ pub fn compare(
     analyzer.set_value_const(output_id, ConstVal::Bool(new_const_val));
 }
 
-pub fn equal(
-    analyzer: &mut Analyzer,
-    source_store: &SourceStorage,
-    type_store: &TypeStore,
-    had_error: &mut bool,
-    op: &Op,
-) {
+pub fn equal(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &Op) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_type_ids) = analyzer.value_types(input_ids) else {
@@ -129,7 +117,7 @@ pub fn equal(
             }, TypeKind::Integer {
                 width: b_width,
                 signed: b_signed,
-            }] = input_type_ids.map(|id| type_store.get_type_info(id).kind)
+            }] = input_type_ids.map(|id| stores.types.get_type_info(id).kind)
             else {
                 unreachable!()
             };
@@ -165,6 +153,7 @@ pub fn equal(
         }] if id1 != id2 => {
             *had_error = true;
             diagnostics::emit_error(
+                stores,
                 op.token.location,
                 "pointers have different sources",
                 [
@@ -181,7 +170,6 @@ pub fn equal(
                         .with_order(1),
                 ],
                 None,
-                source_store,
             );
             return;
         }
@@ -198,6 +186,7 @@ pub fn equal(
         }] => {
             if offset1 != offset2 {
                 diagnostics::emit_warning(
+                    stores,
                     op.token.location,
                     "pointers never equal",
                     [
@@ -214,7 +203,6 @@ pub fn equal(
                             .with_order(1),
                     ],
                     None,
-                    source_store,
                 );
                 op.code.get_unsigned_binary_op()(0, 1) != 0
             } else {

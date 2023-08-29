@@ -9,17 +9,13 @@ use smallvec::SmallVec;
 use tracing::{debug_span, trace, trace_span};
 
 use crate::{
-    diagnostics,
-    interners::Interner,
-    lexer,
+    diagnostics, lexer,
     opcode::{Op, OpCode, UnresolvedIdent},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
-    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
-    type_store::{
-        TypeId, TypeKind, TypeStore, UnresolvedStruct, UnresolvedType, UnresolvedTypeTokens,
-    },
-    Args,
+    source_file::{FileId, SourceLocation, Spanned, WithSpan},
+    type_store::{TypeId, TypeKind, UnresolvedStruct, UnresolvedType, UnresolvedTypeTokens},
+    Args, Stores,
 };
 
 mod passes;
@@ -220,19 +216,13 @@ impl Program {
         }
     }
 
-    pub fn load_program2(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &mut SourceStorage,
-        type_store: &mut TypeStore,
-        args: &Args,
-    ) -> Result<ItemId> {
+    pub fn load_program2(&mut self, stores: &mut Stores, args: &Args) -> Result<ItemId> {
         let _span = debug_span!(stringify!(Program::load_program)).entered();
         let mut had_error = false;
 
-        let builtin_structs_module_name = interner.intern("builtins");
+        let builtin_structs_module_name = stores.strings.intern("builtins");
         let builtin_module = self.new_module(
-            source_store,
+            stores,
             &mut had_error,
             builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
             None,
@@ -240,21 +230,19 @@ impl Program {
         self.top_level_modules
             .insert(builtin_structs_module_name, builtin_module);
         self.load_module(
+            stores,
             builtin_module,
-            source_store,
-            interner,
             Path::new("builtins"),
             BUILTINS,
             &mut VecDeque::new(),
         )?;
-        type_store.update_builtins(&self.structs_unresolved);
+        stores.types.update_builtins(&self.structs_unresolved);
 
         let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
         let main_lib_root = args.file.parent().unwrap();
         let root_file_name = args.file.file_name().unwrap();
         let entry_module = self.load_library(
-            interner,
-            source_store,
+            stores,
             &mut had_error,
             module_name,
             root_file_name,
@@ -265,8 +253,7 @@ impl Program {
             let module_name = lib.file_stem().and_then(OsStr::to_str).unwrap();
             had_error |= self
                 .load_library(
-                    interner,
-                    source_store,
+                    stores,
                     &mut had_error,
                     module_name,
                     OsStr::new("lib.mfl"),
@@ -279,15 +266,14 @@ impl Program {
             return Err(eyre!("Error loading program"));
         }
 
-        self.post_process_items(interner, source_store, type_store, args.print_stack_depths)?;
+        self.post_process_items(stores, args.print_stack_depths)?;
 
         entry_module
     }
 
     fn load_library(
         &mut self,
-        interner: &mut Interner,
-        source_store: &mut SourceStorage,
+        stores: &mut Stores,
         had_error: &mut bool,
         lib_name: &str,
         lib_filename: &OsStr,
@@ -315,7 +301,8 @@ impl Program {
                     };
                     (
                         contents,
-                        interner
+                        stores
+                            .strings
                             .intern(lib_name)
                             .with_span(SourceLocation::new(FileId::dud(), 0..0)),
                     )
@@ -326,7 +313,7 @@ impl Program {
                     }
                     loaded_modules.insert(token.inner);
 
-                    let name = interner.resolve(token.inner);
+                    let name = stores.strings.resolve(token.inner);
                     root.push(name);
                     root.set_extension("mfl");
 
@@ -334,11 +321,11 @@ impl Program {
                         Ok(c) => c,
                         Err(e) => {
                             diagnostics::emit_error(
+                                stores,
                                 token.location,
                                 format!("error loading module: {e}"),
                                 [Label::new(token.location).with_color(Color::Red)],
                                 None,
-                                source_store,
                             );
                             *had_error = true;
                             root.pop();
@@ -350,21 +337,14 @@ impl Program {
                 }
             };
 
-            let module_id = self.new_module(source_store, had_error, module_name, parent);
+            let module_id = self.new_module(stores, had_error, module_name, parent);
             if module == ModuleQueueType::Root {
                 self.top_level_modules.insert(module_name.inner, module_id);
             }
 
             first_module = first_module.or(Some(module_id));
 
-            let res = self.load_module(
-                module_id,
-                source_store,
-                interner,
-                &root,
-                &contents,
-                &mut module_queue,
-            );
+            let res = self.load_module(stores, module_id, &root, &contents, &mut module_queue);
 
             *had_error |= res.is_err();
 
@@ -376,9 +356,8 @@ impl Program {
 
     fn load_module(
         &mut self,
+        stores: &mut Stores,
         module_id: ItemId,
-        source_store: &mut SourceStorage,
-        interner: &mut Interner,
         file: &Path,
         file_contents: &str,
         include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
@@ -386,23 +365,16 @@ impl Program {
         let file_type = format!("{file:?}");
         let _span = debug_span!(stringify!(Module::load), file_type).entered();
 
-        let file_id = source_store.add(file, file_contents);
+        let file_id = stores.source.add(file, file_contents);
 
-        let tokens = lexer::lex_file(file_contents, file_id, interner, source_store)
+        let tokens = lexer::lex_file(stores, file_contents, file_id)
             .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
 
         let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
-        interner.intern(file_stem);
+        stores.strings.intern(file_stem);
 
-        crate::parser::parse_file(
-            self,
-            module_id,
-            &tokens,
-            interner,
-            include_queue,
-            source_store,
-        )
-        .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
+        crate::parser::parse_file(self, stores, module_id, &tokens, include_queue)
+            .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
 
         Ok(())
     }
@@ -432,7 +404,7 @@ impl Program {
         false
     }
 
-    fn determine_terminal_blocks(&mut self, interner: &mut Interner) {
+    fn determine_terminal_blocks(&mut self, stores: &mut Stores) {
         let _span = debug_span!(stringify!(Program::determine_terminal_blocks)).entered();
         let items: Vec<_> = self
             .item_headers
@@ -446,7 +418,7 @@ impl Program {
             .collect();
 
         for item_id in items {
-            trace!(name = interner.get_symbol_name(self, item_id));
+            trace!(name = stores.strings.get_symbol_name(self, item_id));
 
             let mut body = self.item_bodies.remove(&item_id).unwrap();
             self.determine_terminal_blocks_in_block(&mut body);
@@ -454,13 +426,7 @@ impl Program {
         }
     }
 
-    fn analyze_data_flow(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-        print_stack_depths: bool,
-    ) -> Result<()> {
+    fn analyze_data_flow(&mut self, stores: &mut Stores, print_stack_depths: bool) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
         let items: Vec<_> = self
@@ -476,19 +442,15 @@ impl Program {
             .collect();
 
         for id in items {
-            let _span =
-                trace_span!("Analyzing item", name = interner.get_symbol_name(self, id)).entered();
-            let mut analyzer = Analyzer::default();
-            had_error |= static_analysis::analyze_item(
-                self,
-                id,
-                &mut analyzer,
-                interner,
-                source_store,
-                type_store,
-                print_stack_depths,
+            let _span = trace_span!(
+                "Analyzing item",
+                name = stores.strings.get_symbol_name(self, id)
             )
-            .is_err();
+            .entered();
+            let mut analyzer = Analyzer::default();
+            had_error |=
+                static_analysis::analyze_item(self, stores, &mut analyzer, id, print_stack_depths)
+                    .is_err();
 
             self.analyzers.insert(id, analyzer);
         }
@@ -499,12 +461,7 @@ impl Program {
             .ok_or_else(|| eyre!("data analysis error"))
     }
 
-    fn evaluate_const_items(
-        &mut self,
-        interner: &Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-    ) -> Result<()> {
+    fn evaluate_const_items(&mut self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::evaluate_const_items)).entered();
         let mut had_error = false;
 
@@ -519,13 +476,13 @@ impl Program {
         loop {
             for const_id in const_queue.drain(..) {
                 let item_sig = self.get_item_signature_resolved(const_id);
-                match simulate_execute_program(self, type_store, const_id, interner, source_store) {
+                match simulate_execute_program(self, stores, const_id) {
                     Ok(stack) => {
                         let const_vals = stack
                             .into_iter()
                             .zip(&item_sig.exit_stack)
                             .map(|(val, ty)| {
-                                let expected_type = type_store.get_type_info(*ty);
+                                let expected_type = stores.types.get_type_info(*ty);
                                 let val = match val {
                                     SimulatorValue::Int { kind, .. } => {
                                         let TypeKind::Integer {
@@ -572,12 +529,7 @@ impl Program {
             .ok_or_else(|| eyre!("failed during const evaluation"))
     }
 
-    fn check_asserts(
-        &self,
-        interner: &Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-    ) -> Result<()> {
+    fn check_asserts(&self, stores: &mut Stores) -> Result<()> {
         let _span = debug_span!(stringify!(Program::check_asserts)).entered();
         let mut had_error = false;
 
@@ -586,23 +538,23 @@ impl Program {
                 continue;
             }
 
-            let assert_result =
-                match simulate_execute_program(self, type_store, item.id, interner, source_store) {
-                    // Type check says we'll have a value at this point.
-                    Ok(mut stack) => {
-                        let Some(SimulatorValue::Bool(val)) = stack.pop() else {
-                            panic!("ICE: Simulated assert returned non-bool");
-                        };
-                        val
-                    }
-                    Err(_) => {
-                        had_error = true;
-                        continue;
-                    }
-                };
+            let assert_result = match simulate_execute_program(self, stores, item.id) {
+                // Type check says we'll have a value at this point.
+                Ok(mut stack) => {
+                    let Some(SimulatorValue::Bool(val)) = stack.pop() else {
+                        panic!("ICE: Simulated assert returned non-bool");
+                    };
+                    val
+                }
+                Err(_) => {
+                    had_error = true;
+                    continue;
+                }
+            };
 
             if !assert_result {
                 diagnostics::emit_error(
+                    stores,
                     item.name.location,
                     "assert failure",
                     Some(
@@ -611,7 +563,6 @@ impl Program {
                             .with_message("evaluated to false"),
                     ),
                     None,
-                    source_store,
                 );
                 had_error = true;
             }
@@ -623,28 +574,22 @@ impl Program {
             .ok_or_else(|| eyre!("failed assert check"))
     }
 
-    fn post_process_items(
-        &mut self,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
-        type_store: &mut TypeStore,
-        print_stack_depths: bool,
-    ) -> Result<()> {
+    fn post_process_items(&mut self, stores: &mut Stores, print_stack_depths: bool) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
-        self.resolve_idents(interner, source_store)?;
-        self.instantiate_generic_functions(interner, source_store)?;
-        self.resolve_struct_defs(interner, source_store, type_store)?;
-        self.resolve_types(interner, source_store, type_store)?;
+        self.resolve_idents(stores)?;
+        self.instantiate_generic_functions(stores)?;
+        self.resolve_struct_defs(stores)?;
+        self.resolve_types(stores)?;
 
-        self.check_invalid_cyclic_refs(interner, source_store)?;
+        self.check_invalid_cyclic_refs(stores)?;
 
-        self.determine_terminal_blocks(interner);
+        self.determine_terminal_blocks(stores);
 
-        self.analyze_data_flow(interner, source_store, type_store, print_stack_depths)?;
-        self.evaluate_const_items(interner, source_store, type_store)?;
+        self.analyze_data_flow(stores, print_stack_depths)?;
+        self.evaluate_const_items(stores)?;
 
-        self.process_idents(interner, source_store)?;
-        self.check_asserts(interner, source_store, type_store)?;
+        self.process_idents(stores)?;
+        self.check_asserts(stores)?;
 
         Ok(())
     }
@@ -653,16 +598,16 @@ impl Program {
 impl Program {
     fn add_to_parent(
         &mut self,
+        stores: &Stores,
+        had_error: &mut bool,
         parent_id: ItemId,
         child_name: Spanned<Spur>,
         child_id: ItemId,
-        had_error: &mut bool,
-        source_store: &SourceStorage,
     ) {
         let parent_scope = &mut self.scopes[parent_id.0.to_usize()];
         if let Err(prev_loc) = parent_scope.add_child(child_name, child_id) {
             *had_error = true;
-            symbol_redef_error(child_name.location, prev_loc, source_store);
+            symbol_redef_error(stores, child_name.location, prev_loc);
         }
     }
 
@@ -692,7 +637,7 @@ impl Program {
 
     fn new_module(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
@@ -700,7 +645,7 @@ impl Program {
         let header = self.new_header(name, parent, ItemKind::Module);
 
         if let Some(parent_id) = parent {
-            self.add_to_parent(parent_id, name, header.id, had_error, source_store);
+            self.add_to_parent(stores, had_error, parent_id, name, header.id);
         }
 
         header.id
@@ -708,7 +653,7 @@ impl Program {
 
     pub fn new_function(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -724,22 +669,21 @@ impl Program {
             },
         );
 
-        self.add_to_parent(parent, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
     }
 
     pub fn new_assert(
         &mut self,
-        source_store: &SourceStorage,
-        interner: &mut Interner,
+        stores: &mut Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::Assert);
         // Such a hack.
-        let bool_symbol = interner.intern("bool");
+        let bool_symbol = stores.strings.intern("bool");
         self.item_signatures_unresolved.insert(
             header.id,
             ItemSignatureUnresolved {
@@ -757,14 +701,14 @@ impl Program {
             },
         );
 
-        self.add_to_parent(parent, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
     }
 
     pub fn new_const(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -779,14 +723,14 @@ impl Program {
             },
         );
 
-        self.add_to_parent(parent, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
     }
 
     pub fn new_generic_function(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -804,14 +748,14 @@ impl Program {
         );
 
         self.generic_template_parameters.insert(header.id, params);
-        self.add_to_parent(parent, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
     }
 
     pub fn new_struct(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         module: ItemId,
         def: UnresolvedStruct,
@@ -820,12 +764,12 @@ impl Program {
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
         self.structs_unresolved.insert(header.id, def);
 
-        self.add_to_parent(module, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, module, name, header.id);
     }
 
     pub fn new_memory(
         &mut self,
-        source_store: &SourceStorage,
+        stores: &Stores,
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -834,7 +778,7 @@ impl Program {
         let header = self.new_header(name, Some(parent), ItemKind::Memory);
         self.memory_type_unresolved.insert(header.id, memory_type);
 
-        self.add_to_parent(parent, name, header.id, had_error, source_store);
+        self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
     }
@@ -929,12 +873,9 @@ impl Scope {
     }
 }
 
-fn symbol_redef_error(
-    new_def: SourceLocation,
-    prev_def: SourceLocation,
-    source_store: &SourceStorage,
-) {
+fn symbol_redef_error(stores: &Stores, new_def: SourceLocation, prev_def: SourceLocation) {
     diagnostics::emit_error(
+        stores,
         new_def,
         "item of that name already exists",
         [
@@ -944,6 +885,5 @@ fn symbol_redef_error(
                 .with_message("previously defined here"),
         ],
         None,
-        source_store,
     );
 }

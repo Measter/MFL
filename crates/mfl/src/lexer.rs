@@ -12,8 +12,8 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    interners::Interner,
-    source_file::{FileId, SourceLocation, SourceStorage, Spanned, WithSpan},
+    source_file::{FileId, SourceLocation, Spanned, WithSpan},
+    Stores,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,9 +179,9 @@ impl<'source> Scanner<'source> {
 
     fn consume_string_or_char_literal(
         &mut self,
+        stores: &Stores,
         close_char: char,
         kind: &str,
-        source_store: &SourceStorage,
     ) -> Result<(), ()> {
         self.string_buf.clear();
 
@@ -227,11 +227,11 @@ impl<'source> Scanner<'source> {
         if ch != close_char && self.is_at_end() {
             let loc = SourceLocation::new(self.file_id, self.lexeme_range());
             diagnostics::emit_error(
+                stores,
                 loc,
                 format!("unclosed {kind} literal"),
                 Some(Label::new(loc).with_color(Color::Red)),
                 None,
-                source_store,
             );
 
             return Err(());
@@ -247,9 +247,9 @@ impl<'source> Scanner<'source> {
 
     fn consume_integer_literal(
         &mut self,
+        stores: &Stores,
         start_char: char,
         valid_char: impl Fn(char) -> bool,
-        source_store: &SourceStorage,
     ) -> Result<(), ()> {
         self.string_buf.clear();
         self.string_buf.push(start_char);
@@ -265,11 +265,11 @@ impl<'source> Scanner<'source> {
                 self.advance();
                 let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                 diagnostics::emit_error(
+                    stores,
                     loc,
                     format!("invalid character in number: `{c}`"),
                     Some(Label::new(loc).with_color(Color::Red)),
                     None,
-                    source_store,
                 );
 
                 return Err(());
@@ -282,9 +282,8 @@ impl<'source> Scanner<'source> {
 
     fn scan_token(
         &mut self,
+        stores: &mut Stores,
         input: &str,
-        interner: &mut Interner,
-        source_store: &SourceStorage,
     ) -> Result<Option<Spanned<Token>>, ()> {
         let ch = self.advance();
         let next_ch = self.peek().unwrap_or_default();
@@ -310,7 +309,7 @@ impl<'source> Scanner<'source> {
 
                 self.advance(); // Consume the '='
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -341,7 +340,7 @@ impl<'source> Scanner<'source> {
                     _ => unreachable!(),
                 };
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -349,7 +348,7 @@ impl<'source> Scanner<'source> {
             }
 
             ('"', _) => {
-                self.consume_string_or_char_literal('"', "string", source_store)?;
+                self.consume_string_or_char_literal(stores, '"', "string")?;
 
                 let is_c_str = if let Some('c') = self.peek() {
                     self.advance();
@@ -358,8 +357,8 @@ impl<'source> Scanner<'source> {
                     false
                 };
 
-                let lexeme = interner.intern(self.lexeme(input));
-                let literal = interner.intern(&self.string_buf);
+                let lexeme = stores.strings.intern(self.lexeme(input));
+                let literal = stores.strings.intern(&self.string_buf);
 
                 Some(
                     Token::new(
@@ -374,21 +373,21 @@ impl<'source> Scanner<'source> {
             }
 
             ('\'', _) => {
-                self.consume_string_or_char_literal('\'', "char", source_store)?;
+                self.consume_string_or_char_literal(stores, '\'', "char")?;
 
                 if self.string_buf.chars().count() != 1 {
                     let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                     diagnostics::emit_error(
+                        stores,
                         loc,
                         "invalid char literal",
                         Some(Label::new(loc).with_color(Color::Red)),
                         None,
-                        source_store,
                     );
                     return Err(());
                 }
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 let ch = self.string_buf.chars().next().unwrap();
 
                 Some(
@@ -399,7 +398,7 @@ impl<'source> Scanner<'source> {
 
             (':', ':') => {
                 self.advance(); // Consume the second ':'
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(TokenKind::ColonColon, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -414,29 +413,25 @@ impl<'source> Scanner<'source> {
                     let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                     let next_char = next.unwrap();
                     diagnostics::emit_error(
+                        stores,
                         loc,
                         format!("unexpected character in input: `{next_char}`"),
                         Some(Label::new(loc).with_color(Color::Red)),
                         None,
-                        source_store,
                     );
                     return Err(());
                 }
 
                 let ch = self.advance();
-                self.consume_integer_literal(
-                    ch,
-                    |c| c == '_' || c.is_ascii_hexdigit(),
-                    source_store,
-                )?;
+                self.consume_integer_literal(stores, ch, |c| c == '_' || c.is_ascii_hexdigit())?;
 
-                let stripped_id = interner.intern(&self.string_buf);
+                let stripped_id = stores.strings.intern(&self.string_buf);
                 let kind = TokenKind::Integer {
                     lexeme: stripped_id,
                     is_hex: true,
                 };
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -444,14 +439,14 @@ impl<'source> Scanner<'source> {
             }
 
             ('0'..='9', _) => {
-                self.consume_integer_literal(ch, |c| c == '_' || c.is_ascii_digit(), source_store)?;
-                let stripped_id = interner.intern(&self.string_buf);
+                self.consume_integer_literal(stores, ch, |c| c == '_' || c.is_ascii_digit())?;
+                let stripped_id = stores.strings.intern(&self.string_buf);
                 let kind = TokenKind::Integer {
                     lexeme: stripped_id,
                     is_hex: false,
                 };
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -486,7 +481,7 @@ impl<'source> Scanner<'source> {
                     "here" => {
                         // These should never fail; we get the file ID from the source store, and the store
                         // has a full copy of the contents.
-                        let filename = source_store.name(self.file_id);
+                        let filename = stores.source.name(self.file_id);
 
                         self.string_buf.clear();
                         write!(
@@ -495,7 +490,7 @@ impl<'source> Scanner<'source> {
                             filename, self.line, self.cur_token_column
                         )
                         .unwrap();
-                        let id = interner.intern(&self.string_buf);
+                        let id = stores.strings.intern(&self.string_buf);
                         TokenKind::Here(id)
                     }
                     "if" => TokenKind::If,
@@ -529,7 +524,7 @@ impl<'source> Scanner<'source> {
                     _ => TokenKind::Ident,
                 };
 
-                let lexeme = interner.intern(self.lexeme(input));
+                let lexeme = stores.strings.intern(self.lexeme(input));
                 Some(
                     Token::new(kind, lexeme)
                         .with_span(SourceLocation::new(self.file_id, self.lexeme_range())),
@@ -539,11 +534,11 @@ impl<'source> Scanner<'source> {
             (c, _) => {
                 let loc = SourceLocation::new(self.file_id, self.lexeme_range());
                 diagnostics::emit_error(
+                    stores,
                     loc,
                     format!("unexpected character in input: `{c}`"),
                     Some(Label::new(loc).with_color(Color::Red)),
                     None,
-                    source_store,
                 );
                 return Err(());
             }
@@ -554,10 +549,9 @@ impl<'source> Scanner<'source> {
 }
 
 pub(crate) fn lex_file(
+    stores: &mut Stores,
     contents: &str,
     file_id: FileId,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
 ) -> Result<Vec<Spanned<Token>>, ()> {
     let _span = debug_span!(stringify!(lexer::lex_file)).entered();
 
@@ -579,7 +573,7 @@ pub(crate) fn lex_file(
         scanner.cur_token_start = scanner.next_token_start;
         scanner.cur_token_column = scanner.column;
 
-        match scanner.scan_token(contents, interner, source_store) {
+        match scanner.scan_token(stores, contents) {
             Ok(Some(op)) => ops.push(op),
             Ok(None) => continue,
             Err(_) => had_error = true,

@@ -7,15 +7,14 @@ use tracing::trace;
 
 use crate::{
     diagnostics::{self, build_creator_label_chain},
-    interners::Interner,
     n_ops::SliceNOps,
     opcode::{If, Op, While},
     program::{
         static_analysis::{IfMerge, WhileMerge, WhileMerges},
         ItemId, ItemKind, ItemSignatureUnresolved, Program,
     },
-    source_file::{SourceStorage, Spanned},
-    type_store::TypeStore,
+    source_file::Spanned,
+    Stores,
 };
 
 use super::{
@@ -25,11 +24,10 @@ use super::{
 
 pub fn epilogue_return(
     program: &Program,
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
-    interner: &Interner,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     item_id: ItemId,
 ) {
@@ -70,16 +68,16 @@ pub fn epilogue_return(
         }
 
         diagnostics::emit_error(
+            stores,
             op.token.location,
             format!(
                 "function `{}` returns {} values, found {}",
-                interner.resolve(item.name().inner),
+                stores.strings.resolve(item.name().inner),
                 item_sig.exit_stack().len(),
                 stack.len()
             ),
             labels,
             None,
-            source_store,
         );
     }
 
@@ -113,10 +111,10 @@ pub fn prologue(
 
 pub fn resolved_ident(
     program: &Program,
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     item: ItemId,
 ) {
@@ -133,10 +131,10 @@ pub fn resolved_ident(
 
             // TODO: Maybe do a custom error here so we can point to the expected signature.
             ensure_stack_depth(
+                stores,
                 analyzer,
-                stack,
-                source_store,
                 had_error,
+                stack,
                 op,
                 referenced_item_sig.entry_stack().len(),
             );
@@ -160,29 +158,29 @@ pub fn resolved_ident(
 }
 
 pub fn syscall(
+    stores: &Stores,
     analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    source_store: &SourceStorage,
     had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
     op: &Op,
     num_args: Spanned<u8>,
 ) {
     if !matches!(num_args.inner, 1..=7) {
         diagnostics::emit_error(
+            stores,
             op.token.location,
             "invalid syscall size",
             [Label::new(num_args.location)
                 .with_color(Color::Red)
                 .with_message("valid syscall sizes are 1..=7")],
             None,
-            source_store,
         );
         *had_error = true;
         return;
     }
 
     let num_args = num_args.inner.to_usize();
-    ensure_stack_depth(analyzer, stack, source_store, had_error, op, num_args);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
     for &value_id in &inputs {
@@ -196,14 +194,12 @@ pub fn syscall(
 
 pub fn analyze_while(
     program: &Program,
-    item_id: ItemId,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    had_error: &mut bool,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     op: &Op,
     while_op: &While,
     emit_traces: bool,
@@ -213,22 +209,20 @@ pub fn analyze_while(
     // Evaluate the condition.
     super::super::analyze_block(
         program,
+        stores,
+        analyzer,
+        had_error,
         item_id,
         &while_op.condition,
         stack,
         max_stack_depth,
-        had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         emit_traces,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
     if stack.is_empty() {
         generate_stack_length_mismatch_diag(
-            source_store,
+            stores,
             while_op.do_token,
             while_op.do_token,
             stack.len(),
@@ -247,7 +241,7 @@ pub fn analyze_while(
     // executed an arbitrary number of times.
     if stack.len() != initial_stack.len() {
         generate_stack_length_mismatch_diag(
-            source_store,
+            stores,
             op.token.location,
             while_op.do_token,
             stack.len(),
@@ -288,22 +282,20 @@ pub fn analyze_while(
     // Now we do the same thing as above, but with the body.
     super::super::analyze_block(
         program,
+        stores,
+        analyzer,
+        had_error,
         item_id,
         &while_op.body_block,
         stack,
         max_stack_depth,
-        had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         emit_traces,
     );
 
     // Again, the body cannot change the depth of the stack.
     if stack.len() != initial_stack.len() {
         generate_stack_length_mismatch_diag(
-            source_store,
+            stores,
             op.token.location,
             while_op.end_token,
             stack.len(),
@@ -352,14 +344,12 @@ pub fn analyze_while(
 
 pub fn analyze_if(
     program: &Program,
-    item_id: ItemId,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    had_error: &mut bool,
-    interner: &mut Interner,
-    source_store: &SourceStorage,
-    type_store: &mut TypeStore,
     op: &Op,
     if_op: &If,
     emit_traces: bool,
@@ -369,22 +359,20 @@ pub fn analyze_if(
     // Evaluate condition.
     super::super::analyze_block(
         program,
+        stores,
+        analyzer,
+        had_error,
         item_id,
         &if_op.condition,
         stack,
         max_stack_depth,
-        had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         emit_traces,
     );
 
     // We expect there to be a boolean value on the top of the stack afterwards.
     if stack.is_empty() {
         generate_stack_length_mismatch_diag(
-            source_store,
+            stores,
             if_op.do_token,
             if_op.do_token,
             stack.len(),
@@ -403,15 +391,13 @@ pub fn analyze_if(
     // Now we can do the then-block.
     super::super::analyze_block(
         program,
+        stores,
+        analyzer,
+        had_error,
         item_id,
         &if_op.then_block,
         stack,
         max_stack_depth,
-        had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         emit_traces,
     );
 
@@ -426,15 +412,13 @@ pub fn analyze_if(
     // Now analyze the else block.
     super::super::analyze_block(
         program,
+        stores,
+        analyzer,
+        had_error,
         item_id,
         &if_op.else_block,
         stack,
         max_stack_depth,
-        had_error,
-        analyzer,
-        interner,
-        source_store,
-        type_store,
         emit_traces,
     );
 
@@ -455,7 +439,7 @@ pub fn analyze_if(
         // Neither diverge, so we need to do some checking.
         if stack.len() != then_block_stack.len() {
             generate_stack_length_mismatch_diag(
-                source_store,
+                stores,
                 then_block_sample_location,
                 if_op.end_token,
                 stack.len(),
