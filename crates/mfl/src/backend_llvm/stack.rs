@@ -7,7 +7,7 @@ use crate::{
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind},
 };
 
-use super::{CodeGen, DataStore, ValueStore};
+use super::{CodeGen, DataStore, InkwellResult, ValueStore};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
@@ -16,7 +16,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         to_type_id: TypeId,
-    ) {
+    ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
         let to_type_info = ds.type_store.get_type_info(to_type_id);
@@ -29,7 +29,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.type_store.get_type_info(input_type_id);
 
-                let input_data = value_store.load_value(self, input_id, ds);
+                let input_data = value_store.load_value(self, input_id, ds)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -38,19 +38,19 @@ impl<'ctx> CodeGen<'ctx> {
                     } => {
                         let val = input_data.into_int_value();
                         let target_type = output_width.get_int_type(self.ctx);
-                        self.cast_int(val, target_type, input_signed)
+                        self.cast_int(val, target_type, input_signed)?
                     }
                     TypeKind::Bool => {
                         let val = input_data.into_int_value();
                         let target_type = output_width.get_int_type(self.ctx);
 
-                        self.cast_int(val, target_type, Signedness::Unsigned)
+                        self.cast_int(val, target_type, Signedness::Unsigned)?
                     }
                     TypeKind::Pointer(_) => self.builder.build_ptr_to_int(
                         input_data.into_pointer_value(),
                         self.ctx.i64_type(),
                         "cast_ptr",
-                    ),
+                    )?,
                     TypeKind::Array { .. }
                     | TypeKind::Struct(_)
                     | TypeKind::GenericStructBase(_)
@@ -59,13 +59,13 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 };
 
-                value_store.store_value(self, op_io.outputs()[0], output.into());
+                value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
             TypeKind::Pointer(to_ptr_type) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.type_store.get_type_info(input_type_id);
-                let input_data = value_store.load_value(self, input_id, ds);
+                let input_data = value_store.load_value(self, input_id, ds)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer {
@@ -79,7 +79,7 @@ impl<'ctx> CodeGen<'ctx> {
                             input_data.into_int_value(),
                             ptr_type,
                             "cast_int",
-                        )
+                        )?
                     }
                     TypeKind::Pointer(_) => {
                         let to_ptr_type = self
@@ -89,7 +89,7 @@ impl<'ctx> CodeGen<'ctx> {
                             input_data.into_pointer_value(),
                             to_ptr_type,
                             "cast_ptr",
-                        )
+                        )?
                     }
 
                     TypeKind::Integer { .. }
@@ -102,7 +102,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 };
 
-                value_store.store_value(self, op_io.outputs()[0], output.into());
+                value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
             TypeKind::Bool
             | TypeKind::Array { .. }
@@ -110,6 +110,8 @@ impl<'ctx> CodeGen<'ctx> {
             | TypeKind::GenericStructBase(_)
             | TypeKind::GenericStructInstance(_) => unreachable!(),
         }
+
+        Ok(())
     }
 
     pub(super) fn build_dup_over(
@@ -117,13 +119,15 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
-    ) {
+    ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-            let value = value_store.load_value(self, input_id, ds);
-            value_store.store_value(self, output_id, value);
+            let value = value_store.load_value(self, input_id, ds)?;
+            value_store.store_value(self, output_id, value)?;
         }
+
+        Ok(())
     }
 
     pub(super) fn build_push_int(
@@ -133,7 +137,7 @@ impl<'ctx> CodeGen<'ctx> {
         op: &Op,
         width: IntWidth,
         value: IntKind,
-    ) {
+    ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
         let int_type = width.get_int_type(self.ctx);
@@ -147,7 +151,9 @@ impl<'ctx> CodeGen<'ctx> {
                 .const_cast(int_type, false)
                 .into(),
         };
-        value_store.store_value(self, op_io.outputs()[0], value);
+        value_store.store_value(self, op_io.outputs()[0], value)?;
+
+        Ok(())
     }
 
     pub(super) fn build_push_bool(
@@ -156,11 +162,13 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
         value: bool,
-    ) {
+    ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
         let value = self.ctx.bool_type().const_int(value as _, false).into();
-        value_store.store_value(self, op_io.outputs()[0], value);
+        value_store.store_value(self, op_io.outputs()[0], value)?;
+
+        Ok(())
     }
 
     pub(super) fn build_push_str(
@@ -170,9 +178,9 @@ impl<'ctx> CodeGen<'ctx> {
         op: &Op,
         str_id: Spur,
         is_c_str: bool,
-    ) {
+    ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
-        let str_ptr = value_store.get_string_literal(self, ds.interner, str_id);
+        let str_ptr = value_store.get_string_literal(self, ds.interner, str_id)?;
 
         let store_value = if is_c_str {
             str_ptr.as_basic_value_enum()
@@ -195,6 +203,8 @@ impl<'ctx> CodeGen<'ctx> {
                 .as_basic_value_enum()
         };
 
-        value_store.store_value(self, op_io.outputs()[0], store_value);
+        value_store.store_value(self, op_io.outputs()[0], store_value)?;
+
+        Ok(())
     }
 }
