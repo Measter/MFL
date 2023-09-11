@@ -1,0 +1,13 @@
+// CFG
+// [compile]
+// expected = "Error"
+// END
+
+union Bar(T) is
+    field foo T
+    field int u32
+end
+
+proc entry [] to [] is
+    0xDEADBEEF(u32) Bar drop
+end

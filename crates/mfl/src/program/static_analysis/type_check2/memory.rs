@@ -11,7 +11,9 @@ use crate::{
         Program,
     },
     source_file::Spanned,
-    type_store::{IntWidth, Signedness, TypeId, TypeInfo, TypeKind},
+    type_store::{
+        GenericPartiallyResolvedFieldKind, IntWidth, Signedness, TypeId, TypeInfo, TypeKind,
+    },
     Stores,
 };
 
@@ -135,108 +137,208 @@ pub fn pack_struct(
     let inputs = op_data.inputs();
 
     // Let's see if we can determine the field types from our inputs.
-    let type_id =
-        if let TypeKind::GenericStructBase(item_id) = stores.types.get_type_info(type_id).kind {
-            let generic_def = stores.types.get_generic_base_def(type_id);
+    let type_id = if let TypeKind::GenericStructBase(item_id) =
+        stores.types.get_type_info(type_id).kind
+    {
+        let generic_def = stores.types.get_generic_base_def(type_id);
 
-            let mut param_types = Vec::new();
+        // We can't infer generic parameters for a union, as there may be multiple parameters, but we only
+        // take a single input.
+        // TODO: Handle instance of a union having a single generic parameter.
+        if generic_def.is_union && generic_def.generic_params.len() != 1 {
+            *had_error = true;
+            diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "unable to infer type paramaters of generic unions with more than 1 generic paramater",
+                    [Label::new(op.token.location).with_color(Color::Red)],
+                    None,
+                );
 
-            for param in &generic_def.generic_params {
-                let mut found_field = false;
-                for (field, input_id) in generic_def.fields.iter().zip(inputs) {
-                    let Some([input_type]) = analyzer.value_types([*input_id]) else {
-                        continue;
-                    };
-                    let input_type_kind = stores.types.get_type_info(input_type).kind;
+            return;
+        }
 
-                    let Some(type_id) =
-                        field
-                            .kind
-                            .match_generic_type(param.inner, input_type, input_type_kind)
-                    else {
-                        continue;
-                    };
-
-                    param_types.push(type_id);
-                    found_field = true;
-                    break;
-                }
-
-                if !found_field {
+        // If we are a union, double-check that none of the non-generic fields are our input type.
+        if generic_def.is_union {
+            let Some([input_type]) = analyzer.value_types([inputs[0]]) else {
+                return;
+            };
+            for field in &generic_def.fields {
+                let GenericPartiallyResolvedFieldKind::Fixed(field_type_id) = field.kind else {
+                    continue;
+                };
+                // We've found a fixed field, so we can't infer the generic parameter.
+                if field_type_id == input_type {
                     *had_error = true;
+
+                    let type_info = stores.types.get_type_info(input_type);
+                    let other_value_type_name = stores.strings.resolve(type_info.name);
+                    let mut labels = diagnostics::build_creator_label_chain(
+                        analyzer,
+                        [(inputs[0], 0, other_value_type_name)],
+                        Color::Yellow,
+                        Color::Cyan,
+                    );
+                    labels.push(
+                        Label::new(field.name.location)
+                            .with_color(Color::Green)
+                            .with_message("Input type matches this non-generic field"),
+                    );
+                    labels.push(Label::new(op.token.location).with_color(Color::Red));
+
                     diagnostics::emit_error(
                         stores,
                         op.token.location,
-                        "Unable to infer type parameter",
-                        [
-                            Label::new(op.token.location).with_color(Color::Red),
-                            Label::new(param.location).with_color(Color::Cyan),
-                        ],
+                        "unable to infer type paramater of generic union",
+                        labels,
                         None,
                     );
+
+                    return;
                 }
             }
+        }
 
-            stores
-                .types
-                .instantiate_generic_struct(&mut stores.strings, item_id, type_id, param_types)
-                .id
-        } else {
-            type_id
-        };
+        let mut param_types = Vec::new();
+
+        for param in &generic_def.generic_params {
+            let mut found_field = false;
+            for (field, input_id) in generic_def.fields.iter().zip(inputs) {
+                let Some([input_type]) = analyzer.value_types([*input_id]) else {
+                    continue;
+                };
+                let input_type_kind = stores.types.get_type_info(input_type).kind;
+
+                let Some(type_id) =
+                    field
+                        .kind
+                        .match_generic_type(param.inner, input_type, input_type_kind)
+                else {
+                    continue;
+                };
+
+                param_types.push(type_id);
+                found_field = true;
+                break;
+            }
+
+            if !found_field {
+                *had_error = true;
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "Unable to infer type parameter",
+                    [
+                        Label::new(op.token.location).with_color(Color::Red),
+                        Label::new(param.location).with_color(Color::Cyan),
+                    ],
+                    None,
+                );
+            }
+        }
+
+        stores
+            .types
+            .instantiate_generic_struct(&mut stores.strings, item_id, type_id, param_types)
+            .id
+    } else {
+        type_id
+    };
 
     let struct_info = stores.types.get_struct_def(type_id);
 
-    for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
-        let Some([input_type_id]) = analyzer.value_types([input_id]) else {
-            continue;
+    if struct_info.is_union {
+        let Some([input_type_id]) = analyzer.value_types([inputs[0]]) else {
+            return;
         };
-        let expected_store_type = stores.types.get_type_info(field_def.kind);
-        let value_type_info = stores.types.get_type_info(input_type_id);
 
-        if input_type_id != field_def.kind
-            && !matches!(
-                (expected_store_type.kind, value_type_info.kind),
-                (
-                    TypeKind::Integer { width: to_width, signed: to_signed },
-                    TypeKind::Integer { width: from_width, signed: from_signed }
-                ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
-            )
-        {
+        let mut found_field = false;
+        for field_def in &struct_info.fields {
+            let expected_store_type = stores.types.get_type_info(field_def.kind);
+            if input_type_id == expected_store_type.id {
+                found_field = true;
+                break;
+            }
+        }
+
+        if !found_field {
             let type_info = stores.types.get_type_info(input_type_id);
             let other_value_type_name = stores.strings.resolve(type_info.name);
-            let expected_value_type_name = stores.strings.resolve(expected_store_type.name);
             let mut labels = diagnostics::build_creator_label_chain(
                 analyzer,
-                [(input_id, val_id, other_value_type_name)],
+                [(inputs[0], 0, other_value_type_name)],
                 Color::Yellow,
                 Color::Cyan,
             );
             labels.push(
-                Label::new(field_def.name.location)
-                    .with_color(Color::Cyan)
-                    .with_message("Expected type defined here..."),
-            );
-            labels.push(
                 Label::new(struct_info.name.location)
                     .with_color(Color::Cyan)
-                    .with_message("... in this struct"),
+                    .with_message("Expected a field type defined in this union"),
             );
-
             labels.push(Label::new(op.token.location).with_color(Color::Red));
-            let note = format!(
-                "Expected type `{expected_value_type_name}`, found `{other_value_type_name}`"
-            );
 
             diagnostics::emit_error(
                 stores,
                 op.token.location,
-                "unable to pack struct: mismatched input types",
+                "unable to pack union",
                 labels,
-                note,
+                None,
             );
 
             *had_error = true;
+        }
+    } else {
+        for ((field_def, &input_id), val_id) in struct_info.fields.iter().zip(inputs).zip(1..) {
+            let Some([input_type_id]) = analyzer.value_types([input_id]) else {
+                continue;
+            };
+            let expected_store_type = stores.types.get_type_info(field_def.kind);
+            let value_type_info = stores.types.get_type_info(input_type_id);
+
+            if input_type_id != field_def.kind
+                && !matches!(
+                    (expected_store_type.kind, value_type_info.kind),
+                    (
+                        TypeKind::Integer { width: to_width, signed: to_signed },
+                        TypeKind::Integer { width: from_width, signed: from_signed }
+                    ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+                )
+            {
+                let type_info = stores.types.get_type_info(input_type_id);
+                let other_value_type_name = stores.strings.resolve(type_info.name);
+                let expected_value_type_name = stores.strings.resolve(expected_store_type.name);
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(input_id, val_id, other_value_type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+                labels.push(
+                    Label::new(field_def.name.location)
+                        .with_color(Color::Cyan)
+                        .with_message("Expected type defined here..."),
+                );
+                labels.push(
+                    Label::new(struct_info.name.location)
+                        .with_color(Color::Cyan)
+                        .with_message("... in this struct"),
+                );
+
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+                let note = format!(
+                    "Expected type `{expected_value_type_name}`, found `{other_value_type_name}`"
+                );
+
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "unable to pack struct: mismatched input types",
+                    labels,
+                    note,
+                );
+
+                *had_error = true;
+            }
         }
     }
 

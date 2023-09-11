@@ -50,9 +50,21 @@ pub fn pack_struct(
     let type_info = stores.types.get_type_info(type_id);
     let num_fields = match type_info.kind {
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-            stores.types.get_struct_def(type_id).fields.len()
+            let struct_def = stores.types.get_struct_def(type_id);
+            if struct_def.is_union {
+                1
+            } else {
+                struct_def.fields.len()
+            }
         }
-        TypeKind::GenericStructBase(_) => stores.types.get_generic_base_def(type_id).fields.len(),
+        TypeKind::GenericStructBase(_) => {
+            let struct_def = stores.types.get_generic_base_def(type_id);
+            if struct_def.is_union {
+                1
+            } else {
+                struct_def.fields.len()
+            }
+        }
         _ => {
             diagnostics::emit_error(
                 stores,

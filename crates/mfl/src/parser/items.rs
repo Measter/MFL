@@ -337,7 +337,7 @@ pub fn parse_memory<'a>(
     }
 }
 
-pub fn parse_struct<'a>(
+pub fn parse_struct_or_union<'a>(
     program: &mut Program,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -446,6 +446,7 @@ pub fn parse_struct<'a>(
         name: name_token.map(|t| t.lexeme),
         fields,
         generic_params,
+        is_union: keyword.inner.kind == TokenKind::Union,
     };
 
     program.new_struct(stores, &mut had_error, module_id, struct_def);

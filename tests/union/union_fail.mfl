@@ -1,0 +1,13 @@
+// CFG
+// [compile]
+// expected = "Error"
+// END
+
+union Bar is
+    field foo s32
+    field int u32
+end
+
+proc entry [] to [] is
+    "Foo" Bar drop
+end

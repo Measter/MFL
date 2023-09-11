@@ -1,0 +1,26 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+struct Foo is
+    field a u16
+    field b u16
+end
+
+union Bar(T) is
+    field foo T
+    field int u32
+end
+
+proc entry [] to [] is
+    0xDEAD 0xBEEF Foo Bar xtrd(int)
+    std::term::write_ui_ln
+
+    sizeof(Bar(Foo))
+    std::term::write_ui_ln
+end

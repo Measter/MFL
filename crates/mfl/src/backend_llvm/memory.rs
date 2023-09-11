@@ -1,7 +1,10 @@
 use ariadne::Cache;
 use inkwell::{
     types::BasicType,
-    values::{AggregateValue, BasicValue, FunctionValue, IntValue, PointerValue, StructValue},
+    values::{
+        AggregateValue, AggregateValueEnum, BasicValue, FunctionValue, IntValue, PointerValue,
+        StructValue,
+    },
     AddressSpace, IntPredicate,
 };
 use intcast::IntCast;
@@ -38,26 +41,17 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    pub(super) fn build_pack(
+    fn build_pack_aggregate(
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         op: &Op,
+        mut aggr_value: AggregateValueEnum<'ctx>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
         let output_id = op_io.outputs()[0];
         let [output_type_id] = ds.analyzer.value_types([output_id]).unwrap();
         let output_type_info = ds.type_store.get_type_info(output_type_id);
-
-        let aggr_llvm_type = self.get_type(ds.type_store, output_type_id);
-        let aggr_value = aggr_llvm_type.const_zero();
-        let mut aggr_value = match output_type_info.kind {
-            TypeKind::Array { .. } => aggr_value.into_array_value().as_aggregate_value_enum(),
-            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                aggr_value.into_struct_value().as_aggregate_value_enum()
-            }
-            _ => unreachable!(),
-        };
 
         for (value_id, idx) in op_io.inputs().iter().zip(0..) {
             let [input_type_id] = ds.analyzer.value_types([*value_id]).unwrap();
@@ -101,6 +95,72 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         value_store.store_value(self, output_id, aggr_value.as_basic_value_enum())?;
+        Ok(())
+    }
+
+    fn build_pack_union(
+        &mut self,
+        ds: &mut DataStore,
+        value_store: &mut ValueStore<'ctx>,
+        op: &Op,
+    ) -> InkwellResult {
+        let op_io = ds.analyzer.get_op_io(op.id);
+        let output_id = op_io.outputs()[0];
+        let input_id = op_io.inputs()[0];
+        let [input_type_id, output_type_id] =
+            ds.analyzer.value_types([input_id, output_id]).unwrap();
+
+        let union_type = self
+            .get_type(ds.type_store, output_type_id)
+            .into_array_type();
+        // We need to alloca the union, then cast its pointer.
+        let data_ptr_type = self
+            .get_type(ds.type_store, input_type_id)
+            .ptr_type(AddressSpace::default());
+
+        let union_alloc = value_store.get_temp_alloca(self, ds.type_store, output_type_id)?;
+        let value_ptr = self
+            .builder
+            .build_pointer_cast(union_alloc, data_ptr_type, "")?;
+        let input_value = value_store.load_value(self, input_id, ds)?;
+        self.builder.build_store(value_ptr, input_value)?;
+
+        let union_value = self.builder.build_load(union_type, union_alloc, "")?;
+        value_store.store_value(self, output_id, union_value)?;
+        value_store.release_temp_alloca(input_type_id, union_alloc);
+
+        Ok(())
+    }
+
+    pub(super) fn build_pack(
+        &mut self,
+        ds: &mut DataStore,
+        value_store: &mut ValueStore<'ctx>,
+        op: &Op,
+    ) -> InkwellResult {
+        let op_io = ds.analyzer.get_op_io(op.id);
+        let output_id = op_io.outputs()[0];
+        let [output_type_id] = ds.analyzer.value_types([output_id]).unwrap();
+        let output_type_info = ds.type_store.get_type_info(output_type_id);
+
+        let aggr_llvm_type = self.get_type(ds.type_store, output_type_id);
+        let aggr_value = aggr_llvm_type.const_zero();
+        match output_type_info.kind {
+            TypeKind::Array { .. } => {
+                let aggr_value = aggr_value.into_array_value().as_aggregate_value_enum();
+                self.build_pack_aggregate(ds, value_store, op, aggr_value)?;
+            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                let struct_info = ds.type_store.get_struct_def(output_type_id);
+                if struct_info.is_union {
+                    self.build_pack_union(ds, value_store, op)?;
+                } else {
+                    let aggr_value = aggr_value.into_struct_value().as_aggregate_value_enum();
+                    self.build_pack_aggregate(ds, value_store, op, aggr_value)?;
+                }
+            }
+            _ => unreachable!(),
+        }
 
         Ok(())
     }
@@ -579,20 +639,36 @@ impl<'ctx> CodeGen<'ctx> {
         let input_struct_type_info = ds.type_store.get_type_info(input_struct_type_id);
         let data_type_info = ds.type_store.get_type_info(data_type_id);
 
-        let (struct_value, struct_def) = match input_struct_type_info.kind {
+        let (struct_value, struct_def, struct_def_type_id) = match input_struct_type_info.kind {
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let struct_def = ds.type_store.get_struct_def(input_struct_type_id);
-                (input_struct_val.into_struct_value(), struct_def)
+                let struct_def = ds.type_store.get_struct_def(input_struct_type_id).clone();
+                let aggr_value = if struct_def.is_union {
+                    input_struct_val
+                        .into_array_value()
+                        .as_aggregate_value_enum()
+                } else {
+                    input_struct_val
+                        .into_struct_value()
+                        .as_aggregate_value_enum()
+                };
+                (aggr_value, struct_def, input_struct_type_id)
             }
             TypeKind::Pointer(sub_type_id) => {
-                let struct_def = ds.type_store.get_struct_def(sub_type_id);
+                let struct_def = ds.type_store.get_struct_def(sub_type_id).clone();
                 let ptee_type = self.get_type(ds.type_store, sub_type_id);
-                let struct_value = self
-                    .builder
-                    .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
-                    .into_struct_value();
+                let aggr_value = if struct_def.is_union {
+                    self.builder
+                        .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
+                        .into_array_value()
+                        .as_aggregate_value_enum()
+                } else {
+                    self.builder
+                        .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
+                        .into_struct_value()
+                        .as_aggregate_value_enum()
+                };
 
-                (struct_value, struct_def)
+                (aggr_value, struct_def, sub_type_id)
             }
             _ => unreachable!(),
         };
@@ -628,17 +704,36 @@ impl<'ctx> CodeGen<'ctx> {
         let new_value_name = if emit_struct {
             format!("{}", op_io.outputs()[0])
         } else {
-            struct_value.get_name().to_str().unwrap().to_owned()
+            String::new()
         };
-        let new_struct_val = self
-            .builder
-            .build_insert_value(
+
+        let new_struct_val = if struct_def.is_union {
+            let union_type = self.get_type(ds.type_store, struct_def_type_id);
+            let union_alloc =
+                value_store.get_temp_alloca(self, ds.type_store, struct_def_type_id)?;
+            let union_value = struct_value.into_array_value();
+            self.builder.build_store(union_alloc, union_value)?;
+
+            let data_type = self.get_type(ds.type_store, field_type_info.id);
+            let cast_union_ptr = self.builder.build_pointer_cast(
+                union_alloc,
+                data_type.ptr_type(AddressSpace::default()),
+                "",
+            )?;
+
+            self.builder.build_store(cast_union_ptr, data_val)?;
+
+            let union_value = self.builder.build_load(union_type, union_alloc, "")?;
+            value_store.release_temp_alloca(struct_def_type_id, union_alloc);
+            union_value.into_array_value().as_aggregate_value_enum()
+        } else {
+            self.builder.build_insert_value(
                 struct_value,
                 data_val,
                 field_idx.to_u32().unwrap(),
                 &new_value_name,
-            )
-            .unwrap();
+            )?
+        };
 
         if let TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) =
             input_struct_type_info.kind
@@ -677,29 +772,39 @@ impl<'ctx> CodeGen<'ctx> {
         let [input_struct_type_id] = ds.analyzer.value_types([input_struct_value_id]).unwrap();
         let input_struct_type_info = ds.type_store.get_type_info(input_struct_type_id);
 
-        let (struct_value, struct_def) = match input_struct_type_info.kind {
+        let (struct_value, struct_def, struct_def_type_id) = match input_struct_type_info.kind {
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let struct_def = ds.type_store.get_struct_def(input_struct_type_id);
-                (input_struct_val.into_struct_value(), struct_def)
+                let struct_def = ds.type_store.get_struct_def(input_struct_type_id).clone();
+                let aggr_value = if struct_def.is_union {
+                    input_struct_val
+                        .into_array_value()
+                        .as_aggregate_value_enum()
+                } else {
+                    input_struct_val
+                        .into_struct_value()
+                        .as_aggregate_value_enum()
+                };
+                (aggr_value, struct_def, input_struct_type_id)
             }
             TypeKind::Pointer(sub_type_id) => {
-                let struct_def = ds.type_store.get_struct_def(sub_type_id);
+                let struct_def = ds.type_store.get_struct_def(sub_type_id).clone();
                 let ptee_type = self.get_type(ds.type_store, sub_type_id);
-                let struct_value = self
-                    .builder
-                    .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
-                    .into_struct_value();
+                let aggr_value = if struct_def.is_union {
+                    self.builder
+                        .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
+                        .into_array_value()
+                        .as_aggregate_value_enum()
+                } else {
+                    self.builder
+                        .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
+                        .into_struct_value()
+                        .as_aggregate_value_enum()
+                };
 
-                (struct_value, struct_def)
+                (aggr_value, struct_def, sub_type_id)
             }
             _ => unreachable!(),
         };
-
-        let field_idx = struct_def
-            .fields
-            .iter()
-            .position(|fi| fi.name.inner == field_name.inner)
-            .unwrap();
 
         let data_value_id = if emit_struct {
             value_store.store_value(self, op_io.outputs()[0], input_struct_val)?;
@@ -708,14 +813,39 @@ impl<'ctx> CodeGen<'ctx> {
             op_io.outputs()[0]
         };
 
-        let data_value = self
-            .builder
-            .build_extract_value(
-                struct_value,
-                field_idx.to_u32().unwrap(),
-                &format!("{data_value_id}"),
-            )
-            .unwrap();
+        let data_value = if struct_def.is_union {
+            let union_alloc =
+                value_store.get_temp_alloca(self, ds.type_store, struct_def_type_id)?;
+
+            self.builder.build_store(union_alloc, struct_value)?;
+
+            let [data_value_type] = ds.analyzer.value_types([data_value_id]).unwrap();
+            let data_type = self.get_type(ds.type_store, data_value_type);
+            let data_ptr_type = data_type.ptr_type(AddressSpace::default());
+
+            let value_ptr = self
+                .builder
+                .build_pointer_cast(union_alloc, data_ptr_type, "")?;
+
+            let extracted_value = self.builder.build_load(data_type, value_ptr, "")?;
+
+            value_store.release_temp_alloca(struct_def_type_id, union_alloc);
+            extracted_value
+        } else {
+            let field_idx = struct_def
+                .fields
+                .iter()
+                .position(|fi| fi.name.inner == field_name.inner)
+                .unwrap();
+
+            self.builder
+                .build_extract_value(
+                    struct_value,
+                    field_idx.to_u32().unwrap(),
+                    &format!("{data_value_id}"),
+                )
+                .unwrap()
+        };
 
         value_store.store_value(self, data_value_id, data_value)?;
 

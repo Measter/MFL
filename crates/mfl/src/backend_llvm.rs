@@ -147,7 +147,7 @@ impl<'ctx> ValueStore<'ctx> {
     fn get_temp_alloca(
         &mut self,
         cg: &mut CodeGen<'ctx>,
-        type_store: &TypeStore,
+        type_store: &mut TypeStore,
         type_id: TypeId,
     ) -> InkwellResult<PointerValue<'ctx>> {
         let slot = self
@@ -356,7 +356,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         program: &Program,
         interner: &mut Interner,
-        type_store: &TypeStore,
+        type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
@@ -450,7 +450,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(widened)
     }
 
-    fn get_type(&mut self, type_store: &TypeStore, kind: TypeId) -> BasicTypeEnum<'ctx> {
+    fn get_type(&mut self, type_store: &mut TypeStore, kind: TypeId) -> BasicTypeEnum<'ctx> {
         if let Some(tp) = self.type_map.get(&kind) {
             return *tp;
         }
@@ -473,13 +473,27 @@ impl<'ctx> CodeGen<'ctx> {
                 .into(),
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = type_store.get_struct_def(kind);
-                let fields: Vec<BasicTypeEnum> = struct_def
-                    .fields
-                    .iter()
-                    .map(|f| self.get_type(type_store, f.kind))
-                    .collect();
 
-                self.ctx.struct_type(&fields, false).into()
+                if struct_def.is_union {
+                    let size = type_store.get_size_info(kind);
+                    let size = match size.byte_width % 8 {
+                        0 => size.byte_width / 8,
+                        _ => (size.byte_width / 8) + 1,
+                    };
+                    self.ctx
+                        .i64_type()
+                        .array_type(size.to_u32().unwrap())
+                        .into()
+                } else {
+                    let fields: Vec<BasicTypeEnum> = struct_def
+                        .clone()
+                        .fields
+                        .iter()
+                        .map(|f| self.get_type(type_store, f.kind))
+                        .collect();
+
+                    self.ctx.struct_type(&fields, false).into()
+                }
             }
             TypeKind::GenericStructBase(_) => unreachable!(),
         };
@@ -675,14 +689,14 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         block: &[Op],
         analyzer: &Analyzer,
-        type_store: &TypeStore,
+        type_store: &mut TypeStore,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
     ) -> InkwellResult {
         fn make_variable<'ctx>(
             value_id: ValueId,
             cg: &mut CodeGen<'ctx>,
             analyzer: &Analyzer,
-            type_store: &TypeStore,
+            type_store: &mut TypeStore,
             merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
         ) -> InkwellResult {
             if merge_pair_map.contains_key(&value_id) {
@@ -1000,7 +1014,7 @@ pub(crate) fn compile(
     top_level_items
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
-    codegen.build_function_prototypes(program, &mut stores.strings, &stores.types);
+    codegen.build_function_prototypes(program, &mut stores.strings, &mut stores.types);
     if !args.is_library {
         codegen.build_entry(
             program,

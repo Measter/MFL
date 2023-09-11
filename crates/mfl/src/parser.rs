@@ -226,7 +226,11 @@ pub fn parse_item_body_contents(
                 }
                 continue;
             }
-            TokenKind::Module | TokenKind::Proc | TokenKind::Field | TokenKind::Struct => {
+            TokenKind::Module
+            | TokenKind::Proc
+            | TokenKind::Field
+            | TokenKind::Struct
+            | TokenKind::Union => {
                 diagnostics::emit_error(
                     stores,
                     token.location,
@@ -336,10 +340,15 @@ pub(super) fn parse_file(
                         .is_err();
             }
 
-            TokenKind::Struct => {
-                had_error |=
-                    items::parse_struct(program, stores, &mut token_iter, module_id, *token)
-                        .is_err();
+            TokenKind::Struct | TokenKind::Union => {
+                had_error |= items::parse_struct_or_union(
+                    program,
+                    stores,
+                    &mut token_iter,
+                    module_id,
+                    *token,
+                )
+                .is_err();
             }
 
             TokenKind::Extract { .. }
