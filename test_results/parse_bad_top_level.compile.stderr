@@ -103,12 +103,12 @@
     [38;5;246m│[0m
  [38;5;246m28 │[0m [31m:[0m[31m:[0m[31mF[0m[31mo[0m[31mo[0m[31m:[0m[31m:[0m[31mB[0m[31ma[0m[31mr[0m
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `Integer { lexeme: Spur(93), is_hex: false }`
+[31mError:[0m top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `Integer(Integer { is_hex: false })`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:29:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m29 │[0m [31m1[0m[31m2[0m[31m3[0m
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `String { id: Spur(95), is_c_str: false }`
+[31mError:[0m top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `String(StringToken { id: Spur(94), is_c_str: false })`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:30:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m30 │[0m [31m"[0m[31mH[0m[31me[0m[31ml[0m[31ml[0m[31mo[0m[31m"[0m

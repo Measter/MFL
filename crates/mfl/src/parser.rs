@@ -6,7 +6,7 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
-    lexer::{Token, TokenKind},
+    lexer::{Extract, Insert, Token, TokenKind},
     opcode::{Direction, Op, OpCode, OpId},
     program::ModuleQueueType,
     source_file::{SourceLocation, Spanned, WithSpan},
@@ -86,7 +86,7 @@ pub fn parse_item_body_contents(
                     }
 
                     match token.inner.kind {
-                        TokenKind::Extract { emit_struct } => {
+                        TokenKind::Extract(Extract { emit_struct }) => {
                             // As we're generating multiple ops, we need a bit of manual handling.
                             let mut emit_struct = emit_struct;
                             for field_name in idents {
@@ -101,7 +101,7 @@ pub fn parse_item_body_contents(
 
                             continue;
                         }
-                        TokenKind::Insert { emit_struct } if idents.len() > 1 => {
+                        TokenKind::Insert(Insert { emit_struct }) if idents.len() > 1 => {
                             // Hang on to your seat, this'll be a good one!
                             let [prev @ .., _] = idents.as_slice() else {
                                 unreachable!()
@@ -150,7 +150,7 @@ pub fn parse_item_body_contents(
                             continue;
                             // todo!()
                         }
-                        TokenKind::Insert { emit_struct } => (
+                        TokenKind::Insert(Insert { emit_struct }) => (
                             OpCode::InsertStruct {
                                 emit_struct,
                                 field_name: idents[0].map(|t| t.lexeme),
@@ -161,13 +161,13 @@ pub fn parse_item_body_contents(
                     }
                 } else {
                     match token.inner.kind {
-                        TokenKind::Extract { emit_struct } => (
+                        TokenKind::Extract(Extract { emit_struct }) => (
                             OpCode::ExtractArray {
                                 emit_array: emit_struct,
                             },
                             token.location,
                         ),
-                        TokenKind::Insert { emit_struct } => (
+                        TokenKind::Insert(Insert { emit_struct }) => (
                             OpCode::InsertArray {
                                 emit_array: emit_struct,
                             },

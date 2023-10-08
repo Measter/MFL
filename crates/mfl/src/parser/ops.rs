@@ -5,7 +5,7 @@ use intcast::IntCast;
 
 use crate::{
     diagnostics,
-    lexer::{Token, TokenKind},
+    lexer::{StringToken, Token, TokenKind},
     opcode::{Direction, If, IntKind, Op, OpCode, OpId, While},
     program::{ItemId, Program},
     source_file::{Spanned, WithSpan},
@@ -63,7 +63,7 @@ pub fn parse_simple_op<'a>(
             return parse_ident_op(stores, token_iter, token)
         }
         TokenKind::Integer { .. } => return parse_integer_op(stores, token_iter, token, false),
-        TokenKind::String { id, is_c_str } => OpCode::PushStr { id, is_c_str },
+        TokenKind::String(StringToken { id, is_c_str }) => OpCode::PushStr { id, is_c_str },
         TokenKind::Here(id) => OpCode::PushStr {
             id,
             is_c_str: false,

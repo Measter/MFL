@@ -5,7 +5,7 @@ use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
-    lexer::{Token, TokenKind},
+    lexer::{Integer, Token, TokenKind},
     opcode::{OpCode, UnresolvedIdent},
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{UnresolvedType, UnresolvedTypeTokens},
@@ -459,14 +459,19 @@ pub fn parse_integer_lexeme<T>(stores: &Stores, int_token: Spanned<Token>) -> Re
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer { lexeme, is_hex } = int_token.inner.kind else {
+    let TokenKind::Integer(Integer { is_hex }) = int_token.inner.kind else {
         panic!("ICE: called parse_integer_lexeme with a non-integer token")
     };
-    let string = stores.strings.resolve(lexeme);
+    let string = stores.strings.resolve(int_token.inner.lexeme);
+    // Need to skip the "0x"
+    let string = if is_hex { &string[2..] } else { string };
+
+    let string: String = string.chars().filter(|&c| c != '_').collect();
+
     let res = if is_hex {
-        T::from_str_radix(string, 16)
+        T::from_str_radix(&string, 16)
     } else {
-        T::from_str_radix(string, 10)
+        T::from_str_radix(&string, 10)
     };
     let Ok(int) = res else {
         diagnostics::emit_error(
