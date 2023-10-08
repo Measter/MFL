@@ -38,9 +38,9 @@ pub struct Args {
     #[arg(short, action = clap::ArgAction::Count)]
     verbose: u8,
 
-    /// Print the maximum depth of the stack in each procedure.
-    #[arg(long = "stack-depth")]
-    print_stack_depths: bool,
+    /// Print the number of unique values, and the stack depth of procedures.
+    #[arg(long = "value-stats")]
+    print_analyzer_stats: bool,
 
     /// Comma-separated list of library paths.
     #[arg(short = 'L', value_delimiter = ',')]

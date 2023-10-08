@@ -1,7 +1,4 @@
-use std::{
-    fmt::{Display, Write},
-    ops::Not,
-};
+use std::fmt::{Display, Write};
 
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
@@ -1119,13 +1116,17 @@ fn analyze_block(
     }
 }
 
+pub struct AnalyzerStats {
+    pub max_stack_depth: usize,
+    pub unique_item_count: usize,
+}
+
 pub fn analyze_item(
     program: &Program,
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     item_id: ItemId,
-    print_stack_depth: bool,
-) -> Result<(), ()> {
+) -> Result<AnalyzerStats, AnalyzerStats> {
     let mut stack = Vec::new();
     let mut had_error = false;
     let mut max_stack_depth = 0;
@@ -1142,10 +1143,14 @@ pub fn analyze_item(
         true,
     );
 
-    if print_stack_depth {
-        let item_name = stores.strings.get_symbol_name(program, item_id);
-        println!("{item_name}: {max_stack_depth}");
-    }
+    let stats = AnalyzerStats {
+        max_stack_depth,
+        unique_item_count: analyzer.value_lifetime.len(),
+    };
 
-    had_error.not().then_some(()).ok_or(())
+    if had_error {
+        Err(stats)
+    } else {
+        Ok(stats)
+    }
 }

@@ -5,11 +5,13 @@ use color_eyre::eyre::{eyre, Context, Result};
 use hashbrown::{HashMap, HashSet};
 use intcast::IntCast;
 use lasso::Spur;
+use prettytable::{row, Table};
 use smallvec::SmallVec;
 use tracing::{debug_span, trace, trace_span};
 
 use crate::{
-    diagnostics, lexer,
+    diagnostics::{self, TABLE_FORMAT},
+    lexer,
     opcode::{Op, OpCode, UnresolvedIdent},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulationError, SimulatorValue},
@@ -266,7 +268,7 @@ impl Program {
             return Err(eyre!("Error loading program"));
         }
 
-        self.post_process_items(stores, args.print_stack_depths)?;
+        self.post_process_items(stores, args.print_analyzer_stats)?;
 
         entry_module
     }
@@ -426,7 +428,7 @@ impl Program {
         }
     }
 
-    fn analyze_data_flow(&mut self, stores: &mut Stores, print_stack_depths: bool) -> Result<()> {
+    fn analyze_data_flow(&mut self, stores: &mut Stores, print_analyzer_stats: bool) -> Result<()> {
         let _span = debug_span!(stringify!(Program::analyze_data_flow)).entered();
         let mut had_error = false;
         let items: Vec<_> = self
@@ -441,6 +443,10 @@ impl Program {
             .map(|i| i.id)
             .collect();
 
+        let mut stats_table = Table::new();
+        stats_table.set_format(*TABLE_FORMAT);
+        stats_table.set_titles(row!("Proc Name", "Stack Depth", "Value Count"));
+
         for id in items {
             let _span = trace_span!(
                 "Analyzing item",
@@ -448,11 +454,28 @@ impl Program {
             )
             .entered();
             let mut analyzer = Analyzer::default();
-            had_error |=
-                static_analysis::analyze_item(self, stores, &mut analyzer, id, print_stack_depths)
-                    .is_err();
+
+            let res = static_analysis::analyze_item(self, stores, &mut analyzer, id);
+
+            let stats = match res {
+                Ok(s) => s,
+                Err(s) => {
+                    had_error = true;
+                    s
+                }
+            };
+
+            stats_table.add_row(row![
+                stores.strings.get_symbol_name(self, id),
+                stats.max_stack_depth,
+                stats.unique_item_count
+            ]);
 
             self.analyzers.insert(id, analyzer);
+        }
+
+        if print_analyzer_stats {
+            println!("\n{stats_table}");
         }
 
         had_error
@@ -574,7 +597,11 @@ impl Program {
             .ok_or_else(|| eyre!("failed assert check"))
     }
 
-    fn post_process_items(&mut self, stores: &mut Stores, print_stack_depths: bool) -> Result<()> {
+    fn post_process_items(
+        &mut self,
+        stores: &mut Stores,
+        print_analyzer_stats: bool,
+    ) -> Result<()> {
         let _span = debug_span!(stringify!(Program::post_process_items)).entered();
         self.resolve_idents(stores)?;
         self.instantiate_generic_functions(stores)?;
@@ -585,7 +612,7 @@ impl Program {
 
         self.determine_terminal_blocks(stores);
 
-        self.analyze_data_flow(stores, print_stack_depths)?;
+        self.analyze_data_flow(stores, print_analyzer_stats)?;
         self.evaluate_const_items(stores)?;
 
         self.process_idents(stores)?;
