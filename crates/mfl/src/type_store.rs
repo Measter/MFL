@@ -154,6 +154,7 @@ impl From<(Signedness, IntWidth)> for BuiltinTypes {
 pub struct FixedResolvedStruct {
     pub name: Spanned<Spur>,
     pub fields: Vec<FixedResolvedField>,
+    pub is_union: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +168,7 @@ pub struct GenericPartiallyResolvedStruct {
     pub name: Spanned<Spur>,
     pub fields: Vec<GenericPartiallyResolvedField>,
     pub generic_params: Vec<Spanned<Spur>>,
+    pub is_union: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +221,7 @@ pub struct UnresolvedStruct {
     pub name: Spanned<Spur>,
     pub fields: Vec<UnresolvedField>,
     pub generic_params: Option<Vec<Spanned<Spur>>>,
+    pub is_union: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -576,6 +579,7 @@ impl TypeStore {
             name: def.name,
             fields: resolved_fields,
             generic_params,
+            is_union: def.is_union,
         };
 
         let type_id = self.struct_id_map[&base_item_id];
@@ -656,6 +660,7 @@ impl TypeStore {
         let new_def = FixedResolvedStruct {
             name: base_def.name,
             fields: resolved_fields,
+            is_union: base_def.is_union,
         };
 
         let mut name = interner.resolve(base_def.name.inner).to_owned();
@@ -746,12 +751,21 @@ impl TypeStore {
                 };
 
                 let struct_info = self.fixed_struct_defs.get(&id).unwrap().clone();
-                for field in &struct_info.fields {
-                    let field_size = self.get_size_info(field.kind);
-                    size_info.alignement = size_info.alignement.max(field_size.alignement);
-                    size_info.byte_width =
-                        next_multiple_of(size_info.byte_width, field_size.alignement)
-                            + field_size.byte_width;
+                if struct_info.is_union {
+                    // We just take the biggest size and biggest alignment here.
+                    for field in &struct_info.fields {
+                        let field_size = self.get_size_info(field.kind);
+                        size_info.alignement = size_info.alignement.max(field_size.alignement);
+                        size_info.byte_width = size_info.byte_width.max(field_size.byte_width);
+                    }
+                } else {
+                    for field in &struct_info.fields {
+                        let field_size = self.get_size_info(field.kind);
+                        size_info.alignement = size_info.alignement.max(field_size.alignement);
+                        size_info.byte_width =
+                            next_multiple_of(size_info.byte_width, field_size.alignement)
+                                + field_size.byte_width;
+                    }
                 }
 
                 size_info
@@ -791,6 +805,7 @@ impl TypeStore {
         let def = FixedResolvedStruct {
             name: def.name,
             fields: resolved_fields,
+            is_union: def.is_union,
         };
 
         let type_id = self.struct_id_map[&struct_id];
