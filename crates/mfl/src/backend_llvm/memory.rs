@@ -386,7 +386,7 @@ impl<'ctx> CodeGen<'ctx> {
                             arr_ptr,
                             length,
                             ArrayPtrKind::Direct,
-                            sub_type_id,
+                            store_ptee_info.id,
                             store_ptee_info.id,
                         )
                     }
@@ -405,7 +405,7 @@ impl<'ctx> CodeGen<'ctx> {
                     arr_ptr,
                     length,
                     ArrayPtrKind::Direct,
-                    array_type_id,
+                    store_ptee_info.id,
                     store_ptee_info.id,
                 )
             }
