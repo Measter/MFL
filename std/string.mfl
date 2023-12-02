@@ -117,3 +117,16 @@ end
 proc trim [String] to [String] is 
     trim_start trim_end
 end
+
+proc remove_start[String u64] to [String] is
+    if over xtrd(length) over< do
+        "Cannot trim " std::term::ewrite
+        std::term::ewrite_ui
+        " from string of length "
+        xtr(length) std::term::ewrite_ui_ln
+        exit
+    end
+
+    swap xtr(length) over(2)- swap ins(length)
+    xtr(pointer) rot(3<1)+ swap ins(pointer)
+end
