@@ -7,7 +7,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
-    type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
+    type_store::{BuiltinTypes, Integer, TypeId, TypeKind},
     Stores,
 };
 
@@ -58,8 +58,7 @@ pub fn cast_to_int(
     analyzer: &mut Analyzer,
     had_error: &mut bool,
     op: &Op,
-    width: IntWidth,
-    sign: Signedness,
+    to: Integer,
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
@@ -71,7 +70,7 @@ pub fn cast_to_int(
     match input_type_info.kind {
         TypeKind::Bool => {}
         TypeKind::Pointer(_) => {
-            if (width, sign) != (IntWidth::I64, Signedness::Unsigned) {
+            if to != Integer::U64 {
                 *had_error = true;
                 let input_type_name = stores.strings.resolve(input_type_info.name);
 
@@ -86,14 +85,14 @@ pub fn cast_to_int(
                 diagnostics::emit_error(
                     stores,
                     op.token.location,
-                    format!("cannot cast to {}", width.name(sign)),
+                    format!("cannot cast to {}", to.width.name(to.signed)),
                     labels,
-                    Some(format!("{} cannot hold a ptr", width.name(sign))),
+                    Some(format!("{} cannot hold a ptr", to.width.name(to.signed))),
                 );
             }
         }
         TypeKind::Integer(from) => {
-            if (from.width, from.signed) == (width, sign) {
+            if from == to {
                 let input_type_name = stores.strings.resolve(input_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
@@ -125,7 +124,7 @@ pub fn cast_to_int(
         }
     };
 
-    let output_kind = (sign, width).into();
+    let output_kind = to.into();
     let output_type_id = stores.types.get_builtin(output_kind).id;
 
     analyzer.set_value_type(op_data.outputs[0], output_type_id);
@@ -236,15 +235,9 @@ pub fn push_bool(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
     );
 }
 
-pub fn push_int(
-    stores: &Stores,
-    analyzer: &mut Analyzer,
-    op: &Op,
-    width: IntWidth,
-    sign: Signedness,
-) {
+pub fn push_int(stores: &Stores, analyzer: &mut Analyzer, op: &Op, int: Integer) {
     let op_data = analyzer.get_op_io(op.id);
-    let builtin = (sign, width).into();
+    let builtin = int.into();
     analyzer.set_value_type(op_data.outputs[0], stores.types.get_builtin(builtin).id);
 }
 

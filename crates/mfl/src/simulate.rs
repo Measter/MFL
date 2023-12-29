@@ -40,13 +40,13 @@ fn apply_int_op(
                 kind: b_kind,
             },
         ) => {
-            let (to_signed, to_width) = promote_int_type_bidirectional(
+            let to_int = promote_int_type_bidirectional(
                 (a_width, a_kind.to_signedness()).into(),
                 (b_width, b_kind.to_signedness()).into(),
             )
             .unwrap();
-            let a_kind = a_kind.cast(to_width, to_signed);
-            let b_kind = b_kind.cast(to_width, to_signed);
+            let a_kind = a_kind.cast(to_int);
+            let b_kind = b_kind.cast(to_int);
 
             let out_kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => IntKind::Signed(s_op(a, b)),
@@ -55,7 +55,7 @@ fn apply_int_op(
             };
 
             SimulatorValue::Int {
-                width: to_width,
+                width: to_int.width,
                 kind: out_kind,
             }
         }
@@ -81,13 +81,13 @@ fn apply_bool_op(
                 kind: b_kind,
             },
         ) => {
-            let (to_signed, to_width) = promote_int_type_bidirectional(
+            let to_int = promote_int_type_bidirectional(
                 (a_width, a_kind.to_signedness()).into(),
                 (b_width, b_kind.to_signedness()).into(),
             )
             .unwrap();
-            let a_kind = a_kind.cast(to_width, to_signed);
-            let b_kind = b_kind.cast(to_width, to_signed);
+            let a_kind = a_kind.cast(to_int);
+            let b_kind = b_kind.cast(to_int);
 
             let res = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => s_op(a, b) != 0,

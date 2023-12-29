@@ -170,9 +170,9 @@ impl BuiltinTypes {
     }
 }
 
-impl From<(Signedness, IntWidth)> for BuiltinTypes {
-    fn from(value: (Signedness, IntWidth)) -> Self {
-        match value {
+impl From<Integer> for BuiltinTypes {
+    fn from(value: Integer) -> Self {
+        match (value.signed, value.width) {
             (Signedness::Signed, IntWidth::I8) => BuiltinTypes::S8,
             (Signedness::Signed, IntWidth::I16) => BuiltinTypes::S16,
             (Signedness::Signed, IntWidth::I32) => BuiltinTypes::S32,

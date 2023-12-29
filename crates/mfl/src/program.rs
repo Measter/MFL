@@ -514,7 +514,7 @@ impl Program {
 
                                         SimulatorValue::Int {
                                             width: int.width,
-                                            kind: kind.cast(int.width, int.signed),
+                                            kind: kind.cast(int),
                                         }
                                     }
                                     SimulatorValue::Bool(_) => val,

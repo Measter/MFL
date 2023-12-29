@@ -14,7 +14,7 @@ use crate::{
     option::OptionExt,
     program::{ItemId, Program},
     source_file::{SourceLocation, Spanned},
-    type_store::{IntWidth, Integer, Signedness, TypeId, TypeKind},
+    type_store::{Integer, Signedness, TypeId, TypeKind},
     Stores,
 };
 
@@ -28,17 +28,14 @@ fn can_promote_int_unidirectional(from: Integer, to: Integer) -> bool {
     promote_int_type_uni_directional(from, to).is_some()
 }
 
-pub fn promote_int_type_uni_directional(
-    from: Integer,
-    to: Integer,
-) -> Option<(Signedness, IntWidth)> {
+pub fn promote_int_type_uni_directional(from: Integer, to: Integer) -> Option<Integer> {
     if from.signed == Signedness::Unsigned
         && to.signed == Signedness::Signed
         && to.width > from.width
     {
-        Some((Signedness::Signed, to.width))
+        Some((to.width, Signedness::Signed).into())
     } else if from.signed == to.signed && to.width >= from.width {
-        Some((to.signed, to.width))
+        Some((to.width, to.signed).into())
     } else {
         None
     }
@@ -48,28 +45,28 @@ fn can_promote_int_bidirectional(a: Integer, b: Integer) -> bool {
     promote_int_type_bidirectional(a, b).is_some()
 }
 
-pub fn promote_int_type_bidirectional(a: Integer, b: Integer) -> Option<(Signedness, IntWidth)> {
+pub fn promote_int_type_bidirectional(a: Integer, b: Integer) -> Option<Integer> {
     promote_int_type_uni_directional(a, b).or_else(|| promote_int_type_uni_directional(b, a))
 }
 
 #[test]
 fn test_promote_int() {
-    use IntWidth::*;
+    use crate::type_store::IntWidth::*;
     use Signedness::*;
 
     assert_eq!(
         promote_int_type_bidirectional((I16, Unsigned).into(), (I16, Unsigned).into()),
-        Some((Unsigned, I16))
+        Some((I16, Unsigned,).into())
     );
 
     assert_eq!(
         promote_int_type_bidirectional((I16, Unsigned).into(), (I32, Unsigned).into()),
-        Some((Unsigned, I32))
+        Some((I32, Unsigned).into())
     );
 
     assert_eq!(
         promote_int_type_bidirectional((I16, Unsigned).into(), (I32, Signed).into()),
-        Some((Signed, I32))
+        Some((I32, Signed).into())
     );
 
     assert_eq!(
@@ -780,21 +777,14 @@ fn analyze_block(
                     stores,
                     analyzer,
                     op,
-                    *width,
-                    value.to_signedness(),
+                    (*width, value.to_signedness()).into(),
                 );
                 const_prop::stack_ops::push_int(analyzer, op, *value);
             }
             OpCode::SizeOf(kind) => {
                 make_one(analyzer, stack, op);
                 let size_info = stores.types.get_size_info(*kind);
-                type_check2::stack_ops::push_int(
-                    stores,
-                    analyzer,
-                    op,
-                    IntWidth::I64,
-                    Signedness::Unsigned,
-                );
+                type_check2::stack_ops::push_int(stores, analyzer, op, Integer::U64);
                 const_prop::stack_ops::push_int(
                     analyzer,
                     op,
@@ -987,8 +977,7 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             op,
-                            int.width,
-                            int.signed,
+                            int,
                         ),
                         TypeKind::Pointer(kind) => type_check2::stack_ops::cast_to_ptr(
                             stores,
@@ -1020,7 +1009,7 @@ fn analyze_block(
                 if !local_had_error {
                     match type_info.kind {
                         TypeKind::Integer(int) => {
-                            const_prop::stack_ops::cast_to_int(analyzer, op, int.width, int.signed);
+                            const_prop::stack_ops::cast_to_int(analyzer, op, int);
                         }
                         TypeKind::Pointer(kind) => {
                             const_prop::stack_ops::cast_to_ptr(analyzer, op, kind);

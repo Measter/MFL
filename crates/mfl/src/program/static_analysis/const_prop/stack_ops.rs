@@ -3,11 +3,11 @@ use lasso::Spur;
 use crate::{
     n_ops::SliceNOps,
     opcode::{IntKind, Op},
-    program::static_analysis::{Analyzer, ConstVal, IntWidth, PtrId},
-    type_store::{Signedness, TypeId},
+    program::static_analysis::{Analyzer, ConstVal, PtrId},
+    type_store::{Integer, TypeId},
 };
 
-pub fn cast_to_int(analyzer: &mut Analyzer, op: &Op, to_width: IntWidth, to_signed: Signedness) {
+pub fn cast_to_int(analyzer: &mut Analyzer, op: &Op, to: Integer) {
     let op_data = analyzer.get_op_io(op.id);
     let input_ids = *op_data.inputs.as_arr::<1>();
     let Some([input_const_val]) = analyzer.value_consts(input_ids) else {
@@ -15,7 +15,7 @@ pub fn cast_to_int(analyzer: &mut Analyzer, op: &Op, to_width: IntWidth, to_sign
     };
 
     let new_const_val = match input_const_val {
-        ConstVal::Int(v) => ConstVal::Int(v.cast(to_width, to_signed)),
+        ConstVal::Int(v) => ConstVal::Int(v.cast(to)),
         ConstVal::Bool(b) => ConstVal::Int(IntKind::Unsigned(b as _)),
         ConstVal::Ptr { .. } => return,
     };

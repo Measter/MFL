@@ -27,8 +27,8 @@ pub fn add(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_int.width, output_int.signed);
-            let b_kind = b.cast(output_int.width, output_int.signed);
+            let a_kind = a.cast(output_int);
+            let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -88,8 +88,8 @@ pub fn subtract(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, 
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_int.width, output_int.signed);
-            let b_kind = b.cast(output_int.width, output_int.signed);
+            let a_kind = a.cast(output_int);
+            let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -245,8 +245,8 @@ pub fn bitand_bitor_bitxor(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_int.width, output_int.signed);
-            let b_kind = b.cast(output_int.width, output_int.signed);
+            let a_kind = a.cast(output_int);
+            let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -359,8 +359,8 @@ pub fn multiply_div_rem_shift(
             return;
         }
     }
-    let a_val = a_const_val.cast(output_int.width, output_int.signed);
-    let b_val = b_const_val.cast(output_int.width, output_int.signed);
+    let a_val = a_const_val.cast(output_int);
+    let b_val = b_const_val.cast(output_int);
 
     let new_kind = match (a_val, b_val) {
         (IntKind::Signed(a), IntKind::Signed(b)) => {

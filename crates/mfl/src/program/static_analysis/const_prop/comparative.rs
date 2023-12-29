@@ -26,10 +26,10 @@ pub fn compare(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, o
             };
 
             // If we got here then the cast already type-checked.
-            let (output_sign, output_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
+            let output_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
 
-            let a_kind = a.cast(output_width, output_sign);
-            let b_kind = b.cast(output_width, output_sign);
+            let a_kind = a.cast(output_int);
+            let b_kind = b.cast(output_int);
 
             match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
@@ -112,11 +112,11 @@ pub fn equal(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op:
             };
 
             // If we got here then the cast already type-checked.
-            let (output_sign, output_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
+            let output_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_width, output_sign);
-            let b_kind = b.cast(output_width, output_sign);
+            let a_kind = a.cast(output_int);
+            let b_kind = b.cast(output_int);
             match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     op.code.get_signed_binary_op()(a, b) != 0

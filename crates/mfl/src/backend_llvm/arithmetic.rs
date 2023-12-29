@@ -263,8 +263,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         let (a_val, b_val, signed) = match input_type_infos.map(|ti| ti.kind) {
             [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] => {
-                let (to_signed, to_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
-                let target_type = to_width.get_int_type(self.ctx);
+                let to_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
+                let target_type = to_int.width.get_int_type(self.ctx);
 
                 let a_val = a_val.into_int_value();
                 let b_val = b_val.into_int_value();
@@ -272,7 +272,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
                 let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-                (a_val, b_val, to_signed)
+                (a_val, b_val, to_int.signed)
             }
             [TypeKind::Pointer(_), TypeKind::Pointer(_)] => todo!(),
             [TypeKind::Bool, TypeKind::Bool] => (
