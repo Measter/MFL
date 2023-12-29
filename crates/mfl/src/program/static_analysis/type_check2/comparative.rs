@@ -20,13 +20,7 @@ pub fn compare(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, o
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores.types.get_builtin(BuiltinTypes::Bool).id
         }
 
@@ -56,13 +50,7 @@ pub fn equal(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op:
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores.types.get_builtin(BuiltinTypes::Bool).id
         }
 

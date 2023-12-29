@@ -206,14 +206,10 @@ impl<'ctx> ValueStore<'ctx> {
             ConstVal::Int(val) => {
                 let [type_id] = ds.analyzer.value_types([id]).unwrap();
                 let type_info = ds.type_store.get_type_info(type_id);
-                let TypeKind::Integer {
-                    width: target_width,
-                    ..
-                } = type_info.kind
-                else {
+                let TypeKind::Integer(target) = type_info.kind else {
                     panic!("ICE: ConstInt for non-int type");
                 };
-                let target_type = target_width.get_int_type(cg.ctx);
+                let target_type = target.width.get_int_type(cg.ctx);
                 match val {
                     IntKind::Signed(val) => target_type
                         .const_int(val as u64, false)
@@ -456,7 +452,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         let tp = match type_store.get_type_info(kind).kind {
-            TypeKind::Integer { width, .. } => match width {
+            TypeKind::Integer(int) => match int.width {
                 IntWidth::I8 => self.ctx.i8_type().into(),
                 IntWidth::I16 => self.ctx.i16_type().into(),
                 IntWidth::I32 => self.ctx.i32_type().into(),

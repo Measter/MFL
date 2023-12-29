@@ -37,20 +37,11 @@ impl<'ctx> CodeGen<'ctx> {
                     ds.type_store.get_type_info(expected_type).kind,
                     ds.type_store.get_type_info(input_type_id).kind,
                 ) {
-                    (
-                        TypeKind::Integer {
-                            width: expected_width,
-                            ..
-                        },
-                        TypeKind::Integer {
-                            signed: input_signed,
-                            ..
-                        },
-                    ) => self
+                    (TypeKind::Integer(expected_int), TypeKind::Integer(input_int)) => self
                         .cast_int(
                             value.into_int_value(),
-                            expected_width.get_int_type(self.ctx),
-                            input_signed,
+                            expected_int.width.get_int_type(self.ctx),
+                            input_int.signed,
                         )?
                         .as_basic_value_enum(),
                     _ => value,
@@ -115,20 +106,11 @@ impl<'ctx> CodeGen<'ctx> {
                 let expected_type_info = ds.type_store.get_type_info(*expected_type_id);
 
                 let value = match (value_type_info.kind, expected_type_info.kind) {
-                    (
-                        TypeKind::Integer {
-                            signed: value_signed,
-                            ..
-                        },
-                        TypeKind::Integer {
-                            width: expected_width,
-                            ..
-                        },
-                    ) => self
+                    (TypeKind::Integer(value_int), TypeKind::Integer(expected_int)) => self
                         .cast_int(
                             value.into_int_value(),
-                            expected_width.get_int_type(self.ctx),
-                            value_signed,
+                            expected_int.width.get_int_type(self.ctx),
+                            value_int.signed,
                         )?
                         .as_basic_value_enum(),
                     _ => value,
@@ -193,14 +175,13 @@ impl<'ctx> CodeGen<'ctx> {
                             .builder
                             .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")?)
                     }
-                    BasicValueEnum::IntValue(i) => {
+                    BasicValueEnum::IntValue(int_val) => {
                         let [type_id] = ds.analyzer.value_types([*id]).unwrap();
-                        let TypeKind::Integer { signed, .. } =
-                            ds.type_store.get_type_info(type_id).kind
+                        let TypeKind::Integer(int_type) = ds.type_store.get_type_info(type_id).kind
                         else {
                             unreachable!()
                         };
-                        Ok(self.cast_int(i, self.ctx.i64_type(), signed)?)
+                        Ok(self.cast_int(int_val, self.ctx.i64_type(), int_type.signed)?)
                     }
                     t => panic!("ICE: Unexected type: {t:?}"),
                 }
@@ -288,17 +269,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.then_value, ds)?;
 
-                let data = if let [TypeKind::Integer {
-                    signed: then_signed,
-                    ..
-                }, TypeKind::Integer {
-                    width: output_width,
-                    ..
-                }] = type_info_kinds
+                let data = if let [TypeKind::Integer(then_int), TypeKind::Integer(output_int)] =
+                    type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = output_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, then_signed)?
+                    let target_type = output_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, then_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data
@@ -331,17 +307,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.else_value, ds)?;
 
-                let data = if let [TypeKind::Integer {
-                    signed: else_signed,
-                    ..
-                }, TypeKind::Integer {
-                    width: output_width,
-                    ..
-                }] = type_info_kinds
+                let data = if let [TypeKind::Integer(else_int), TypeKind::Integer(output_int)] =
+                    type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = output_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, else_signed)?
+                    let target_type = output_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, else_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data
@@ -404,16 +375,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.condition_value, ds)?;
 
-                let data = if let [TypeKind::Integer {
-                    signed: condition_signed,
-                    ..
-                }, TypeKind::Integer {
-                    width: pre_width, ..
-                }] = type_info_kinds
+                let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
+                    type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = pre_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_signed)?
+                    let target_type = pre_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, condition_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data
@@ -452,16 +419,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.condition_value, ds)?;
 
-                let data = if let [TypeKind::Integer {
-                    signed: condition_signed,
-                    ..
-                }, TypeKind::Integer {
-                    width: pre_width, ..
-                }] = type_info_kinds
+                let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
+                    type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = pre_width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_signed)?
+                    let target_type = pre_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, condition_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data

@@ -22,17 +22,13 @@ pub fn add(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer {
-                width: output_width,
-                signed: output_signed,
-            } = output_type_info.kind
-            else {
+            let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_width, output_signed);
-            let b_kind = b.cast(output_width, output_signed);
+            let a_kind = a.cast(output_int.width, output_int.signed);
+            let b_kind = b.cast(output_int.width, output_int.signed);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -87,17 +83,13 @@ pub fn subtract(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, 
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer {
-                width: output_width,
-                signed: output_signed,
-            } = output_type_info.kind
-            else {
+            let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_width, output_signed);
-            let b_kind = b.cast(output_width, output_signed);
+            let a_kind = a.cast(output_int.width, output_int.signed);
+            let b_kind = b.cast(output_int.width, output_int.signed);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -216,20 +208,16 @@ pub fn bitnot(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
         unreachable!()
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
-    let TypeKind::Integer {
-        width: output_width,
-        ..
-    } = output_type_info.kind
-    else {
+    let TypeKind::Integer(output_int) = output_type_info.kind else {
         unreachable!()
     };
 
     let new_const_val = match types {
         ConstVal::Int(IntKind::Unsigned(a)) => {
-            ConstVal::Int(IntKind::Unsigned((!a) & output_width.mask()))
+            ConstVal::Int(IntKind::Unsigned((!a) & output_int.width.mask()))
         }
         ConstVal::Int(IntKind::Signed(a)) => {
-            ConstVal::Int(IntKind::Signed((!a) & output_width.mask() as i64))
+            ConstVal::Int(IntKind::Signed((!a) & output_int.width.mask() as i64))
         }
         ConstVal::Bool(a) => ConstVal::Bool(!a),
         _ => return,
@@ -252,17 +240,13 @@ pub fn bitand_bitor_bitxor(stores: &Stores, analyzer: &mut Analyzer, op: &Op) {
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer {
-                width: output_width,
-                signed: output_signed,
-            } = output_type_info.kind
-            else {
+            let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
 
             // If we got here then the cast already type-checked.
-            let a_kind = a.cast(output_width, output_signed);
-            let b_kind = b.cast(output_width, output_signed);
+            let a_kind = a.cast(output_int.width, output_int.signed);
+            let b_kind = b.cast(output_int.width, output_int.signed);
             let kind = match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     IntKind::Signed(op.code.get_signed_binary_op()(a, b))
@@ -298,11 +282,7 @@ pub fn multiply_div_rem_shift(
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
-    let TypeKind::Integer {
-        width: output_width,
-        signed: output_sign,
-    } = output_type_info.kind
-    else {
+    let TypeKind::Integer(output_int) = output_type_info.kind else {
         unreachable!()
     };
 
@@ -337,7 +317,7 @@ pub fn multiply_div_rem_shift(
             );
         }
 
-        if (shift_amount & 63) >= output_width.bit_width() {
+        if (shift_amount & 63) >= output_int.width.bit_width() {
             let [shift_val] = analyzer.values([input_ids[1]]);
             diagnostics::emit_warning(
                 stores,
@@ -379,8 +359,8 @@ pub fn multiply_div_rem_shift(
             return;
         }
     }
-    let a_val = a_const_val.cast(output_width, output_sign);
-    let b_val = b_const_val.cast(output_width, output_sign);
+    let a_val = a_const_val.cast(output_int.width, output_int.signed);
+    let b_val = b_const_val.cast(output_int.width, output_int.signed);
 
     let new_kind = match (a_val, b_val) {
         (IntKind::Signed(a), IntKind::Signed(b)) => {

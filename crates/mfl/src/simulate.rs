@@ -41,10 +41,8 @@ fn apply_int_op(
             },
         ) => {
             let (to_signed, to_width) = promote_int_type_bidirectional(
-                a_width,
-                a_kind.to_signedness(),
-                b_width,
-                b_kind.to_signedness(),
+                (a_width, a_kind.to_signedness()).into(),
+                (b_width, b_kind.to_signedness()).into(),
             )
             .unwrap();
             let a_kind = a_kind.cast(to_width, to_signed);
@@ -84,10 +82,8 @@ fn apply_bool_op(
             },
         ) => {
             let (to_signed, to_width) = promote_int_type_bidirectional(
-                a_width,
-                a_kind.to_signedness(),
-                b_width,
-                b_kind.to_signedness(),
+                (a_width, a_kind.to_signedness()).into(),
+                (b_width, b_kind.to_signedness()).into(),
             )
             .unwrap();
             let a_kind = a_kind.cast(to_width, to_signed);

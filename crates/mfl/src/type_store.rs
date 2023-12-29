@@ -92,14 +92,49 @@ pub enum Signedness {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Integer {
+    pub width: IntWidth,
+    pub signed: Signedness,
+}
+
+impl Integer {
+    pub const U64: Self = Self {
+        width: IntWidth::I64,
+        signed: Signedness::Unsigned,
+    };
+
+    pub fn is_unsigned(self) -> bool {
+        self.signed == Signedness::Unsigned
+    }
+}
+
+impl From<(IntWidth, Signedness)> for Integer {
+    fn from(value: (IntWidth, Signedness)) -> Self {
+        Self {
+            width: value.0,
+            signed: value.1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },
-    Integer { width: IntWidth, signed: Signedness },
+    Integer(Integer),
     Pointer(TypeId),
     Bool,
     Struct(ItemId),
     GenericStructBase(ItemId),
     GenericStructInstance(ItemId),
+}
+
+impl TypeKind {
+    pub fn is_unsigned_int(self) -> bool {
+        let TypeKind::Integer(int) = self else {
+            return false;
+        };
+        int.is_unsigned()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -331,66 +366,42 @@ impl TypeStore {
             (
                 "u8",
                 BuiltinTypes::U8,
-                TypeKind::Integer {
-                    width: IntWidth::I8,
-                    signed: Signedness::Unsigned,
-                },
+                TypeKind::Integer((IntWidth::I8, Signedness::Unsigned).into()),
             ),
             (
                 "u16",
                 BuiltinTypes::U16,
-                TypeKind::Integer {
-                    width: IntWidth::I16,
-                    signed: Signedness::Unsigned,
-                },
+                TypeKind::Integer((IntWidth::I16, Signedness::Unsigned).into()),
             ),
             (
                 "u32",
                 BuiltinTypes::U32,
-                TypeKind::Integer {
-                    width: IntWidth::I32,
-                    signed: Signedness::Unsigned,
-                },
+                TypeKind::Integer((IntWidth::I32, Signedness::Unsigned).into()),
             ),
             (
                 "u64",
                 BuiltinTypes::U64,
-                TypeKind::Integer {
-                    width: IntWidth::I64,
-                    signed: Signedness::Unsigned,
-                },
+                TypeKind::Integer((IntWidth::I64, Signedness::Unsigned).into()),
             ),
             (
                 "s8",
                 BuiltinTypes::S8,
-                TypeKind::Integer {
-                    width: IntWidth::I8,
-                    signed: Signedness::Signed,
-                },
+                TypeKind::Integer((IntWidth::I8, Signedness::Signed).into()),
             ),
             (
                 "s16",
                 BuiltinTypes::S16,
-                TypeKind::Integer {
-                    width: IntWidth::I16,
-                    signed: Signedness::Signed,
-                },
+                TypeKind::Integer((IntWidth::I16, Signedness::Signed).into()),
             ),
             (
                 "s32",
                 BuiltinTypes::S32,
-                TypeKind::Integer {
-                    width: IntWidth::I32,
-                    signed: Signedness::Signed,
-                },
+                TypeKind::Integer((IntWidth::I32, Signedness::Signed).into()),
             ),
             (
                 "s64",
                 BuiltinTypes::S64,
-                TypeKind::Integer {
-                    width: IntWidth::I64,
-                    signed: Signedness::Signed,
-                },
+                TypeKind::Integer((IntWidth::I64, Signedness::Signed).into()),
             ),
             ("bool", BuiltinTypes::Bool, TypeKind::Bool),
         ];
@@ -732,9 +743,9 @@ impl TypeStore {
                         * length.to_u64();
                 inner_size
             }
-            TypeKind::Integer { width, .. } => TypeSize {
-                byte_width: width.byte_width(),
-                alignement: width.byte_width(),
+            TypeKind::Integer(int) => TypeSize {
+                byte_width: int.width.byte_width(),
+                alignement: int.width.byte_width(),
             },
             TypeKind::Pointer(_) => TypeSize {
                 byte_width: 8,

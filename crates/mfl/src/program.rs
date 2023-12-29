@@ -508,17 +508,13 @@ impl Program {
                                 let expected_type = stores.types.get_type_info(*ty);
                                 let val = match val {
                                     SimulatorValue::Int { kind, .. } => {
-                                        let TypeKind::Integer {
-                                            width: to_width,
-                                            signed: to_signed,
-                                        } = expected_type.kind
-                                        else {
+                                        let TypeKind::Integer(int) = expected_type.kind else {
                                             unreachable!()
                                         };
 
                                         SimulatorValue::Int {
-                                            width: to_width,
-                                            kind: kind.cast(to_width, to_signed),
+                                            width: int.width,
+                                            kind: kind.cast(int.width, int.signed),
                                         }
                                     }
                                     SimulatorValue::Bool(_) => val,

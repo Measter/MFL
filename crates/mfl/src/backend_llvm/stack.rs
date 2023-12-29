@@ -4,7 +4,7 @@ use lasso::Spur;
 
 use crate::{
     opcode::{IntKind, Op},
-    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind},
+    type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
@@ -21,10 +21,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let to_type_info = ds.type_store.get_type_info(to_type_id);
         match to_type_info.kind {
-            TypeKind::Integer {
-                width: output_width,
-                ..
-            } => {
+            TypeKind::Integer(output_int) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.type_store.get_type_info(input_type_id);
@@ -32,17 +29,14 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_data = value_store.load_value(self, input_id, ds)?;
 
                 let output = match input_type_info.kind {
-                    TypeKind::Integer {
-                        signed: input_signed,
-                        ..
-                    } => {
+                    TypeKind::Integer(input_int) => {
                         let val = input_data.into_int_value();
-                        let target_type = output_width.get_int_type(self.ctx);
-                        self.cast_int(val, target_type, input_signed)?
+                        let target_type = output_int.width.get_int_type(self.ctx);
+                        self.cast_int(val, target_type, input_int.signed)?
                     }
                     TypeKind::Bool => {
                         let val = input_data.into_int_value();
-                        let target_type = output_width.get_int_type(self.ctx);
+                        let target_type = output_int.width.get_int_type(self.ctx);
 
                         self.cast_int(val, target_type, Signedness::Unsigned)?
                     }
@@ -68,10 +62,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_data = value_store.load_value(self, input_id, ds)?;
 
                 let output = match input_type_info.kind {
-                    TypeKind::Integer {
-                        width: IntWidth::I64,
-                        signed: Signedness::Unsigned,
-                    } => {
+                    TypeKind::Integer(Integer::U64) => {
                         let ptr_type = self
                             .get_type(ds.type_store, to_ptr_type)
                             .ptr_type(AddressSpace::default());

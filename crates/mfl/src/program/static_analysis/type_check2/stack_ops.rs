@@ -7,7 +7,7 @@ use crate::{
     n_ops::SliceNOps,
     opcode::Op,
     program::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
-    type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind},
+    type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
     Stores,
 };
 
@@ -92,11 +92,8 @@ pub fn cast_to_int(
                 );
             }
         }
-        TypeKind::Integer {
-            width: from_width,
-            signed: from_sign,
-        } => {
-            if (from_width, from_sign) == (width, sign) {
+        TypeKind::Integer(from) => {
+            if (from.width, from.signed) == (width, sign) {
                 let input_type_name = stores.strings.resolve(input_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
@@ -169,11 +166,7 @@ pub fn cast_to_ptr(
                 Some(format!("already a {ptr_type_name}")),
             );
         }
-        TypeKind::Integer {
-            width: IntWidth::I64,
-            signed: Signedness::Unsigned,
-        }
-        | TypeKind::Pointer(_) => {}
+        TypeKind::Integer(Integer::U64) | TypeKind::Pointer(_) => {}
 
         TypeKind::Integer { .. } => {
             *had_error = true;

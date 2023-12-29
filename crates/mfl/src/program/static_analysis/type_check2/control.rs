@@ -38,9 +38,9 @@ pub fn epilogue_return(
             let expected_type_info = stores.types.get_type_info(expected);
 
             if !matches!((actual_type_info.kind, expected_type_info.kind), (
-                        TypeKind::Integer { width: actual_width, signed: actual_signed },
-                        TypeKind::Integer { width: expected_width, signed: expected_signed }
-                    ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
+                        TypeKind::Integer (actual),
+                        TypeKind::Integer (expected)
+                    ) if can_promote_int_unidirectional(actual, expected))
             {
                 failed_compare_stack_types(
                     stores,
@@ -106,9 +106,9 @@ pub fn resolved_ident(
                     let expected_type_info = stores.types.get_type_info(expected);
 
                     if !matches!((actual_type_info.kind, expected_type_info.kind), (
-                        TypeKind::Integer { width: actual_width, signed: actual_signed },
-                        TypeKind::Integer { width: expected_width, signed: expected_signed }
-                    ) if can_promote_int_unidirectional(actual_width, actual_signed, expected_width, expected_signed ))
+                        TypeKind::Integer (actual),
+                        TypeKind::Integer (expected)
+                    ) if can_promote_int_unidirectional(actual, expected))
                     {
                         failed_compare_stack_types(
                             stores,
@@ -233,9 +233,9 @@ pub fn analyze_while(
 
         if pre_type != condition_type
             && !matches!((pre_type_info.kind, condition_type_info.kind), (
-                        TypeKind::Integer { width: pre_width, signed: pre_signed },
-                        TypeKind::Integer { width: condition_width, signed: condition_signed }
-                    ) if can_promote_int_unidirectional(condition_width, condition_signed, pre_width, pre_signed ))
+                        TypeKind::Integer (pre_int),
+                        TypeKind::Integer (condition_int)
+                    ) if can_promote_int_unidirectional(condition_int, pre_int))
         {
             let [pre_type_name, condition_type_name] = input_type_ids.map(|id| {
                 let info = stores.types.get_type_info(id);
@@ -316,30 +316,10 @@ pub fn analyze_if(
         let else_type_info = stores.types.get_type_info(else_type);
 
         let final_type = match (then_type_info.kind, else_type_info.kind) {
-            (
-                TypeKind::Integer {
-                    width: then_width,
-                    signed: then_signed,
-                },
-                TypeKind::Integer {
-                    width: else_width,
-                    signed: else_signed,
-                },
-            ) if (can_promote_int_bidirectional(
-                then_width,
-                then_signed,
-                else_width,
-                else_signed,
-            )) =>
+            (TypeKind::Integer(then_int), TypeKind::Integer(else_int))
+                if (can_promote_int_bidirectional(then_int, else_int)) =>
             {
-                let kind = promote_int_type_bidirectional(
-                    then_width,
-                    then_signed,
-                    else_width,
-                    else_signed,
-                )
-                .unwrap();
-
+                let kind = promote_int_type_bidirectional(then_int, else_int).unwrap();
                 stores.types.get_builtin(kind.into()).id
             }
             _ => {

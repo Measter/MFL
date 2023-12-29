@@ -68,20 +68,13 @@ impl<'ctx> CodeGen<'ctx> {
             };
 
             let value = value_store.load_value(self, *value_id, ds)?;
-            let value = if let (
-                TypeKind::Integer {
-                    width: to_width, ..
-                },
-                TypeKind::Integer {
-                    signed: from_signed,
-                    ..
-                },
-            ) = (field_store_type_info.kind, input_type_info.kind)
+            let value = if let (TypeKind::Integer(to_int), TypeKind::Integer(from_int)) =
+                (field_store_type_info.kind, input_type_info.kind)
             {
                 self.cast_int(
                     value.into_int_value(),
-                    to_width.get_int_type(self.ctx),
-                    from_signed,
+                    to_int.width.get_int_type(self.ctx),
+                    from_int.signed,
                 )?
                 .as_basic_value_enum()
             } else {
@@ -576,20 +569,13 @@ impl<'ctx> CodeGen<'ctx> {
                 .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")?
         };
 
-        let data_val = if let (
-            TypeKind::Integer {
-                width: to_width, ..
-            },
-            TypeKind::Integer {
-                signed: from_signed,
-                ..
-            },
-        ) = (store_type_info.kind, data_type_info.kind)
+        let data_val = if let (TypeKind::Integer(to_int), TypeKind::Integer(from_int)) =
+            (store_type_info.kind, data_type_info.kind)
         {
             self.cast_int(
                 data_val.into_int_value(),
-                to_width.get_int_type(self.ctx),
-                from_signed,
+                to_int.width.get_int_type(self.ctx),
+                from_int.signed,
             )?
             .as_basic_value_enum()
         } else {
@@ -681,20 +667,13 @@ impl<'ctx> CodeGen<'ctx> {
         let field_info = &struct_def.fields[field_idx];
         let field_type_info = ds.type_store.get_type_info(field_info.kind);
 
-        let data_val = if let (
-            TypeKind::Integer {
-                width: to_width, ..
-            },
-            TypeKind::Integer {
-                signed: from_signed,
-                ..
-            },
-        ) = (field_type_info.kind, data_type_info.kind)
+        let data_val = if let (TypeKind::Integer(to_int), TypeKind::Integer(from_int)) =
+            (field_type_info.kind, data_type_info.kind)
         {
             self.cast_int(
                 data_val.into_int_value(),
-                to_width.get_int_type(self.ctx),
-                from_signed,
+                to_int.width.get_int_type(self.ctx),
+                from_int.signed,
             )?
             .as_basic_value_enum()
         } else {
@@ -898,15 +877,10 @@ impl<'ctx> CodeGen<'ctx> {
         let data = value_store.load_value(self, data, ds)?;
 
         let data = match [data_type_kind, pointee_type_kind] {
-            [TypeKind::Integer {
-                signed: data_signed,
-                ..
-            }, TypeKind::Integer {
-                width: ptr_width, ..
-            }] => {
+            [TypeKind::Integer(data_int), TypeKind::Integer(ptr_int)] => {
                 let data = data.into_int_value();
-                let target_type = ptr_width.get_int_type(self.ctx);
-                self.cast_int(data, target_type, data_signed)?.into()
+                let target_type = ptr_int.width.get_int_type(self.ctx);
+                self.cast_int(data, target_type, data_int.signed)?.into()
             }
             _ => data,
         };

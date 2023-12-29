@@ -11,9 +11,7 @@ use crate::{
         Program,
     },
     source_file::Spanned,
-    type_store::{
-        GenericPartiallyResolvedFieldKind, IntWidth, Signedness, TypeId, TypeInfo, TypeKind,
-    },
+    type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     Stores,
 };
 
@@ -30,10 +28,9 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
         let field_kind = stores.types.get_type_info(field.kind).kind;
 
         match field_kind {
-            TypeKind::Integer {
-                width: IntWidth::I64,
-                signed: Signedness::Unsigned,
-            } if field.name.inner == length_spur => has_valid_length_field = true,
+            TypeKind::Integer(Integer::U64) if field.name.inner == length_spur => {
+                has_valid_length_field = true
+            }
             TypeKind::Pointer(ptr_id) if field.name.inner == pointer_spur => {
                 store_type_id = Some(ptr_id)
             }
@@ -85,9 +82,9 @@ pub fn pack_array(
             && !matches!(
                 (expected_store_type.kind, value_type_info.kind),
                 (
-                    TypeKind::Integer { width: to_width, signed: to_signed },
-                    TypeKind::Integer { width: from_width, signed: from_signed }
-                ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+                    TypeKind::Integer (to),
+                    TypeKind::Integer (from)
+                ) if can_promote_int_unidirectional(from, to)
             )
         {
             let type_info = stores.types.get_type_info(value_type_id);
@@ -299,9 +296,9 @@ pub fn pack_struct(
                 && !matches!(
                     (expected_store_type.kind, value_type_info.kind),
                     (
-                        TypeKind::Integer { width: to_width, signed: to_signed },
-                        TypeKind::Integer { width: from_width, signed: from_signed }
-                    ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+                        TypeKind::Integer (to),
+                        TypeKind::Integer (from)
+                    ) if can_promote_int_unidirectional(from, to)
                 )
             {
                 let type_info = stores.types.get_type_info(input_type_id);
@@ -482,13 +479,7 @@ pub fn extract_array(
         }
     };
 
-    if !matches!(
-        idx_type_info.kind,
-        TypeKind::Integer {
-            signed: Signedness::Unsigned,
-            ..
-        }
-    ) {
+    if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -604,13 +595,7 @@ pub fn insert_array(
 
     let store_type_info = stores.types.get_type_info(store_type_id);
 
-    if !matches!(
-        idx_type_info.kind,
-        TypeKind::Integer {
-            signed: Signedness::Unsigned,
-            ..
-        }
-    ) {
+    if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
             analyzer,
@@ -635,9 +620,9 @@ pub fn insert_array(
         && !matches!(
             (store_type_info.kind, data_type_info.kind),
             (
-                TypeKind::Integer { width: to_width, signed: to_signed },
-                TypeKind::Integer { width: from_width, signed: from_signed }
-            ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+                TypeKind::Integer (to),
+                TypeKind::Integer (from)
+            ) if can_promote_int_unidirectional(from, to)
         )
     {
         let data_type_name = stores.strings.resolve(data_type_info.name);
@@ -791,9 +776,9 @@ pub fn insert_struct(
         && !matches!(
             (field_type_info.kind, data_type_info.kind),
             (
-                TypeKind::Integer { width: to_width, signed: to_signed },
-                TypeKind::Integer { width: from_width, signed: from_signed }
-            ) if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+                TypeKind::Integer (to),
+                TypeKind::Integer (from)
+            ) if can_promote_int_unidirectional(from, to)
         )
     {
         let data_type_name = stores.strings.resolve(data_type_info.name);
@@ -1029,17 +1014,9 @@ pub fn store(
     let data_type_info = stores.types.get_type_info(data_type);
     let pointee_type_info = stores.types.get_type_info(pointee_type);
     let can_promote_int = matches!(
-    [data_type_info.kind, pointee_type_info.kind],
-    [
-        TypeKind::Integer {
-            width: from_width,
-            signed: from_signed,
-        }, TypeKind::Integer {
-            width: to_width,
-            signed: to_signed,
-        }
-    ]
-    if can_promote_int_unidirectional(from_width, from_signed, to_width, to_signed)
+        [data_type_info.kind, pointee_type_info.kind],
+        [TypeKind::Integer(from), TypeKind::Integer (to)]
+        if can_promote_int_unidirectional(from, to)
     );
 
     if data_type != pointee_type && !can_promote_int {

@@ -19,20 +19,14 @@ pub fn compare(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, o
 
     let new_const_val = match input_const_val {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let [TypeKind::Integer {
-                width: a_width,
-                signed: a_signed,
-            }, TypeKind::Integer {
-                width: b_width,
-                signed: b_signed,
-            }] = input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
             else {
                 unreachable!()
             };
 
             // If we got here then the cast already type-checked.
-            let (output_sign, output_width) =
-                promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
+            let (output_sign, output_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
 
             let a_kind = a.cast(output_width, output_sign);
             let b_kind = b.cast(output_width, output_sign);
@@ -111,20 +105,14 @@ pub fn equal(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op:
 
     let new_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let [TypeKind::Integer {
-                width: a_width,
-                signed: a_signed,
-            }, TypeKind::Integer {
-                width: b_width,
-                signed: b_signed,
-            }] = input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
             else {
                 unreachable!()
             };
 
             // If we got here then the cast already type-checked.
-            let (output_sign, output_width) =
-                promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
+            let (output_sign, output_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
 
             // If we got here then the cast already type-checked.
             let a_kind = a.cast(output_width, output_sign);

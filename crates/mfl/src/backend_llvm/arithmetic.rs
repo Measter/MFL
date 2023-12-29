@@ -25,36 +25,27 @@ impl<'ctx> CodeGen<'ctx> {
         let output_name = format!("{}", op_io.outputs()[0]);
 
         let res: BasicValueEnum = match input_type_infos.map(|ti| ti.kind) {
-            [TypeKind::Integer {
-                signed: a_from_signed,
-                ..
-            }, TypeKind::Integer {
-                signed: b_from_signed,
-                ..
-            }] => {
+            [TypeKind::Integer(a_from), TypeKind::Integer(b_from)] => {
                 let [output_type_id] = ds.analyzer.value_types([op_io.outputs()[0]]).unwrap();
                 let output_type_info = ds.type_store.get_type_info(output_type_id);
 
-                let TypeKind::Integer {
-                    width: to_width, ..
-                } = output_type_info.kind
-                else {
+                let TypeKind::Integer(to_int) = output_type_info.kind else {
                     panic!("ICE: Non-int output of int-int arithmetic");
                 };
 
                 let a_val = value_store.load_value(self, a, ds)?.into_int_value();
                 let b_val = value_store.load_value(self, b, ds)?.into_int_value();
 
-                let target_type = to_width.get_int_type(self.ctx);
-                let a_val = self.cast_int(a_val, target_type, a_from_signed)?;
-                let b_val = self.cast_int(b_val, target_type, b_from_signed)?;
+                let target_type = to_int.width.get_int_type(self.ctx);
+                let a_val = self.cast_int(a_val, target_type, a_from.signed)?;
+                let b_val = self.cast_int(b_val, target_type, b_from.signed)?;
 
                 let func = op.code.get_arith_fn();
                 func(&self.builder, a_val, b_val, &output_name)?.into()
             }
-            [TypeKind::Integer { signed, .. }, TypeKind::Pointer(ptee_type)] => {
+            [TypeKind::Integer(int_type), TypeKind::Pointer(ptee_type)] => {
                 assert!(matches!(op.code, OpCode::Add));
-                assert_eq!(signed, Signedness::Unsigned);
+                assert_eq!(int_type.signed, Signedness::Unsigned);
                 let offset = value_store.load_value(self, a, ds)?.into_int_value();
 
                 let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned)?;
@@ -67,8 +58,8 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 .into()
             }
-            [TypeKind::Pointer(ptee_type), TypeKind::Integer { signed, .. }] => {
-                assert_eq!(signed, Signedness::Unsigned);
+            [TypeKind::Pointer(ptee_type), TypeKind::Integer(int_type)] => {
+                assert_eq!(int_type.signed, Signedness::Unsigned);
                 let offset = value_store.load_value(self, b, ds)?.into_int_value();
 
                 let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned)?;
@@ -127,19 +118,16 @@ impl<'ctx> CodeGen<'ctx> {
         let a_val = value_store.load_value(self, a, ds)?.into_int_value();
         let b_val = value_store.load_value(self, b, ds)?.into_int_value();
 
-        let (a_val, b_val) = if let TypeKind::Integer { width, .. } = output_type_info.kind {
-            let [TypeKind::Integer {
-                signed: a_signed, ..
-            }, TypeKind::Integer {
-                signed: b_signed, ..
-            }] = input_type_infos.map(|ti| ti.kind)
+        let (a_val, b_val) = if let TypeKind::Integer(output_int) = output_type_info.kind {
+            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                input_type_infos.map(|ti| ti.kind)
             else {
                 unreachable!()
             };
 
-            let target_type = width.get_int_type(self.ctx);
-            let a_val = self.cast_int(a_val, target_type, a_signed)?;
-            let b_val = self.cast_int(b_val, target_type, b_signed)?;
+            let target_type = output_int.width.get_int_type(self.ctx);
+            let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+            let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
             (a_val, b_val)
         } else {
@@ -163,11 +151,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(inputs).unwrap();
-        let [TypeKind::Integer {
-            signed: a_signed, ..
-        }, TypeKind::Integer {
-            signed: b_signed, ..
-        }] = input_type_ids.map(|id| ds.type_store.get_type_info(id).kind)
+        let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+            input_type_ids.map(|id| ds.type_store.get_type_info(id).kind)
         else {
             panic!("ICE: DivMod has non-int inputs");
         };
@@ -176,22 +161,18 @@ impl<'ctx> CodeGen<'ctx> {
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let TypeKind::Integer {
-            width: output_width,
-            signed: output_signed,
-        } = output_type_info.kind
-        else {
+        let TypeKind::Integer(output_int) = output_type_info.kind else {
             panic!("ICE: Non-int output of int-int arithmetic");
         };
 
         let a_val = value_store.load_value(self, a, ds)?.into_int_value();
         let b_val = value_store.load_value(self, b, ds)?.into_int_value();
 
-        let target_type = output_width.get_int_type(self.ctx);
-        let a_val = self.cast_int(a_val, target_type, a_signed)?;
-        let b_val = self.cast_int(b_val, target_type, b_signed)?;
+        let target_type = output_int.width.get_int_type(self.ctx);
+        let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+        let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-        let func = op.code.get_div_rem_fn(output_signed);
+        let func = op.code.get_div_rem_fn(output_int.signed);
         let res = func(&self.builder, a_val, b_val, &output_name)?;
 
         let [res_val] = *op_io.outputs().as_arr();
@@ -210,11 +191,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_ids = ds.analyzer.value_types(inputs).unwrap();
-        let [TypeKind::Integer {
-            signed: a_signed, ..
-        }, TypeKind::Integer {
-            signed: b_signed, ..
-        }] = input_ids.map(|id| ds.type_store.get_type_info(id).kind)
+        let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+            input_ids.map(|id| ds.type_store.get_type_info(id).kind)
         else {
             panic!("ICE: Non-int input of int-int arithmetic");
         };
@@ -223,27 +201,23 @@ impl<'ctx> CodeGen<'ctx> {
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let TypeKind::Integer {
-            width: output_width,
-            signed: output_signed,
-        } = output_type_info.kind
-        else {
+        let TypeKind::Integer(output_int) = output_type_info.kind else {
             panic!("ICE: Non-int output of int-int arithmetic");
         };
 
         let a_val = value_store.load_value(self, a, ds)?.into_int_value();
         let b_val = value_store.load_value(self, b, ds)?.into_int_value();
 
-        let target_type = output_width.get_int_type(self.ctx);
-        let a_val = self.cast_int(a_val, target_type, a_signed)?;
-        let b_val = self.cast_int(b_val, target_type, b_signed)?;
+        let target_type = output_int.width.get_int_type(self.ctx);
+        let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+        let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
         let res = match &op.code {
             OpCode::ShiftLeft => self.builder.build_left_shift(a_val, b_val, &output_name)?,
             OpCode::ShiftRight => self.builder.build_right_shift(
                 a_val,
                 b_val,
-                output_signed == Signedness::Signed,
+                output_int.signed == Signedness::Signed,
                 &output_name,
             )?,
             _ => unreachable!(),
@@ -288,22 +262,15 @@ impl<'ctx> CodeGen<'ctx> {
         let output_name = format!("{}", op_io.outputs()[0]);
 
         let (a_val, b_val, signed) = match input_type_infos.map(|ti| ti.kind) {
-            [TypeKind::Integer {
-                width: a_width,
-                signed: a_signed,
-            }, TypeKind::Integer {
-                width: b_width,
-                signed: b_signed,
-            }] => {
-                let (to_signed, to_width) =
-                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed).unwrap();
+            [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] => {
+                let (to_signed, to_width) = promote_int_type_bidirectional(a_int, b_int).unwrap();
                 let target_type = to_width.get_int_type(self.ctx);
 
                 let a_val = a_val.into_int_value();
                 let b_val = b_val.into_int_value();
 
-                let a_val = self.cast_int(a_val, target_type, a_signed)?;
-                let b_val = self.cast_int(b_val, target_type, b_signed)?;
+                let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+                let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
                 (a_val, b_val, to_signed)
             }

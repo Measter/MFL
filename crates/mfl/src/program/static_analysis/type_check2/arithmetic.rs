@@ -5,7 +5,7 @@ use crate::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
         Analyzer,
     },
-    type_store::{BuiltinTypes, Signedness, TypeKind},
+    type_store::{BuiltinTypes, TypeKind},
     Stores,
 };
 
@@ -18,43 +18,21 @@ pub fn add(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, op: &
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| (ti.id, ti.kind)) {
-        [(
-            _,
-            TypeKind::Integer {
-                width: a_width,
-                signed: a_signed,
-            },
-        ), (
-            _,
-            TypeKind::Integer {
-                width: b_width,
-                signed: b_signed,
-            },
-        )] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [(_, TypeKind::Integer(a)), (_, TypeKind::Integer(b))]
+            if can_promote_int_bidirectional(a, b) =>
+        {
             stores
                 .types
-                .get_builtin(
-                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
-                        .unwrap()
-                        .into(),
-                )
+                .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
         }
 
-        [(ptr_id, TypeKind::Pointer(_)), (
-            _,
-            TypeKind::Integer {
-                signed: Signedness::Unsigned,
-                ..
-            },
-        )]
-        | [(
-            _,
-            TypeKind::Integer {
-                signed: Signedness::Unsigned,
-                ..
-            },
-        ), (ptr_id, TypeKind::Pointer(_))] => ptr_id,
+        [(ptr_id, TypeKind::Pointer(_)), (_, TypeKind::Integer(int))]
+        | [(_, TypeKind::Integer(int)), (ptr_id, TypeKind::Pointer(_))]
+            if int.is_unsigned() =>
+        {
+            ptr_id
+        }
 
         _ => {
             // Type mismatch
@@ -79,30 +57,17 @@ pub fn subtract(stores: &Stores, analyzer: &mut Analyzer, had_error: &mut bool, 
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores
                 .types
-                .get_builtin(
-                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
-                        .unwrap()
-                        .into(),
-                )
+                .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
         }
 
         [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
             stores.types.get_builtin(BuiltinTypes::U64).id
         }
-        [TypeKind::Pointer(_), TypeKind::Integer {
-            signed: Signedness::Unsigned,
-            ..
-        }] => inputs[0],
+        [TypeKind::Pointer(_), TypeKind::Integer(int)] if int.is_unsigned() => inputs[0],
 
         _ => {
             // Type mismatch
@@ -157,20 +122,10 @@ pub fn bitand_bitor_bitxor(
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores
                 .types
-                .get_builtin(
-                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
-                        .unwrap()
-                        .into(),
-                )
+                .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
         }
 
@@ -203,20 +158,10 @@ pub fn multiply_div_rem_shift(
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
     let new_type = match input_type_info.map(|ti| ti.kind) {
-        [TypeKind::Integer {
-            width: a_width,
-            signed: a_signed,
-        }, TypeKind::Integer {
-            width: b_width,
-            signed: b_signed,
-        }] if can_promote_int_bidirectional(a_width, a_signed, b_width, b_signed) => {
+        [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores
                 .types
-                .get_builtin(
-                    promote_int_type_bidirectional(a_width, a_signed, b_width, b_signed)
-                        .unwrap()
-                        .into(),
-                )
+                .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
         }
 
