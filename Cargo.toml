@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/mfl", "crates/intcast", "crates/tester"]
+resolver = "2"
 
 [profile.release]
 debug = true
