@@ -21,8 +21,8 @@ use crate::{
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
 
 enum ArrayPtrKind {
-    Array,  // ptr(T[N])
-    Direct, // ptr(T)
+    Indirect, // ptr(T[N])
+    Direct,   // ptr(T)
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -339,7 +339,7 @@ impl<'ctx> CodeGen<'ctx> {
                 (
                     store_location,
                     length_value,
-                    ArrayPtrKind::Array,
+                    ArrayPtrKind::Indirect,
                     array_type_id,
                     stored_ptee_type,
                 )
@@ -356,7 +356,7 @@ impl<'ctx> CodeGen<'ctx> {
                         (
                             array_val.into_pointer_value(),
                             length_value,
-                            ArrayPtrKind::Array,
+                            ArrayPtrKind::Indirect,
                             sub_type_id,
                             stored_ptee_type,
                         )
@@ -415,7 +415,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
         let offset_idxs: &[IntValue] = match ptr_kind {
-            ArrayPtrKind::Array => &idxs,
+            ArrayPtrKind::Indirect => &idxs,
             ArrayPtrKind::Direct => &idxs[1..],
         };
 
@@ -482,7 +482,7 @@ impl<'ctx> CodeGen<'ctx> {
                     store_location,
                     store_type_info,
                     length_value,
-                    ArrayPtrKind::Array,
+                    ArrayPtrKind::Indirect,
                     array_type_id,
                 )
             }
@@ -494,14 +494,13 @@ impl<'ctx> CodeGen<'ctx> {
                         length,
                     } => {
                         let store_type_info = ds.type_store.get_type_info(store_type_id);
-
                         let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
 
                         (
                             array_val.into_pointer_value(),
                             store_type_info,
                             length_value,
-                            ArrayPtrKind::Array,
+                            ArrayPtrKind::Indirect,
                             sub_type_id,
                         )
                     }
@@ -559,7 +558,7 @@ impl<'ctx> CodeGen<'ctx> {
         // And finally actually build the insert
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
         let offset_idxs: &[IntValue] = match ptr_kind {
-            ArrayPtrKind::Array => &idxs,
+            ArrayPtrKind::Indirect => &idxs,
             ArrayPtrKind::Direct => &idxs[1..],
         };
 
