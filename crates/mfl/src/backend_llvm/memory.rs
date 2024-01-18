@@ -523,7 +523,7 @@ impl<'ctx> CodeGen<'ctx> {
                             store_type_info,
                             length,
                             ArrayPtrKind::Direct,
-                            sub_type_id,
+                            store_type_info.id,
                         )
                     }
                     _ => unreachable!(),
@@ -541,7 +541,7 @@ impl<'ctx> CodeGen<'ctx> {
                     store_type_info,
                     length,
                     ArrayPtrKind::Direct,
-                    array_type_id,
+                    store_type_info.id,
                 )
             }
             _ => unreachable!(),
