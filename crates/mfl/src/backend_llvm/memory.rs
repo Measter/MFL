@@ -322,9 +322,7 @@ impl<'ctx> CodeGen<'ctx> {
         let [array_type_id] = ds.analyzer.value_types([array_value_id]).unwrap();
         let array_type_info = ds.type_store.get_type_info(array_type_id);
 
-        let (arr_ptr, length, ptr_kind, arr_ptee_type, stored_ptee_type) = match array_type_info
-            .kind
-        {
+        let (arr_ptr, length, ptr_kind, arr_ptee_kind, stored_kind) = match array_type_info.kind {
             TypeKind::Array {
                 length,
                 type_id: stored_ptee_type,
@@ -368,7 +366,7 @@ impl<'ctx> CodeGen<'ctx> {
                             array_val.into_pointer_value(),
                             "",
                         )?;
-                        let (arr_ptr, store_ptee_info, length) = self
+                        let (ptr_field, store_type_info, length) = self
                             .get_slice_like_struct_fields(
                                 ds,
                                 array_value_id,
@@ -376,18 +374,18 @@ impl<'ctx> CodeGen<'ctx> {
                                 struct_val.into_struct_value(),
                             )?;
                         (
-                            arr_ptr,
+                            ptr_field,
                             length,
                             ArrayPtrKind::Direct,
-                            store_ptee_info.id,
-                            store_ptee_info.id,
+                            store_type_info.id,
+                            store_type_info.id,
                         )
                     }
                     _ => unreachable!(),
                 }
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let (arr_ptr, store_ptee_info, length) = self.get_slice_like_struct_fields(
+                let (ptr_field, store_type_info, length) = self.get_slice_like_struct_fields(
                     ds,
                     array_value_id,
                     array_type_id,
@@ -395,11 +393,11 @@ impl<'ctx> CodeGen<'ctx> {
                 )?;
 
                 (
-                    arr_ptr,
+                    ptr_field,
                     length,
                     ArrayPtrKind::Direct,
-                    store_ptee_info.id,
-                    store_ptee_info.id,
+                    store_type_info.id,
+                    store_type_info.id,
                 )
             }
             _ => unreachable!(),
@@ -420,7 +418,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let offset_ptr = unsafe {
-            let ptee_type = self.get_type(ds.type_store, arr_ptee_type);
+            let ptee_type = self.get_type(ds.type_store, arr_ptee_kind);
             self.builder
                 .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")?
         };
@@ -434,7 +432,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let output_value_name = format!("{output_value_id}");
-        let ptee_type = self.get_type(ds.type_store, stored_ptee_type);
+        let ptee_type = self.get_type(ds.type_store, stored_kind);
         let loaded_value = self
             .builder
             .build_load(ptee_type, offset_ptr, &output_value_name)?;
