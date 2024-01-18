@@ -123,7 +123,7 @@ impl SourceStorage {
         self.files.push(LoadedSource {
             name: name.to_str().unwrap().to_owned(),
             contents: source.to_owned(),
-            source: source.into(),
+            source: source.to_owned().into(),
         });
 
         FileId(id.to_u16().unwrap())
@@ -141,6 +141,8 @@ impl SourceStorage {
 }
 
 impl Cache<FileId> for &SourceStorage {
+    type Storage = String;
+
     #[inline]
     fn fetch(&mut self, id: &FileId) -> Result<&Source, Box<dyn std::fmt::Debug + '_>> {
         Ok(&self.files[id.0.to_usize()].source)
