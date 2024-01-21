@@ -1004,7 +1004,7 @@ pub fn store(
         diagnostics::emit_error(
             stores,
             op.token.location,
-            format!("found `{ptr_type_name}` expected a `ptr({data_type_name})`"),
+            format!("found `{ptr_type_name}` expected a `{data_type_name}&`"),
             labels,
             None,
         );

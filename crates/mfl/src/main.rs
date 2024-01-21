@@ -161,7 +161,7 @@ fn load_program(args: &Args) -> Result<(Program, Stores, Vec<ItemId>)> {
             diagnostics::emit_error(
                 &stores,
                 name.location,
-                "`entry` must have the signature `[] to []` or `[u64 ptr(ptr(u8))] to []`",
+                "`entry` must have the signature `[] to []` or `[u64 u8&&] to []`",
                 Some(Label::new(name.location).with_color(Color::Red)),
                 None,
             );

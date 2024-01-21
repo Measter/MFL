@@ -21,8 +21,8 @@ use crate::{
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
 
 enum ArrayPtrKind {
-    Indirect, // ptr(T[N])
-    Direct,   // ptr(T)
+    Indirect, // T[N]&
+    Direct,   // T&
 }
 
 impl<'ctx> CodeGen<'ctx> {

@@ -11,7 +11,7 @@ pack(2)
 pack(Foo)
 unpack
 rot(3<2)
-cast(ptr(Foo))
+cast(Foo&)
 !
 @
 isnull

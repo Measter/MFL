@@ -17,7 +17,7 @@ import std::mem::copy
 import std::mem::fill
 import std::term::write_ui_ln
 
-proc entry[u64 ptr(ptr(u8))] to [] is
+proc entry[u64 u8&&] to [] is
     // We'll just assume we're being called correctly.
     swap drop 
 

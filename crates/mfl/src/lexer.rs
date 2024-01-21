@@ -48,6 +48,9 @@ pub enum TokenKind {
     // Never actually emitted, but we need it for the match logic.
     Whitespace,
 
+    #[token("&")]
+    Ampersand,
+
     #[token("assert")]
     Assert,
 

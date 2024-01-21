@@ -1,6 +1,6 @@
 struct String is
     field length u64
-    field pointer ptr(u8)
+    field pointer u8&
 end
 
 proc oob_handler [String u64 u64] to [] is
@@ -23,7 +23,7 @@ proc oob_handler [String u64 u64] to [] is
 
             10 / swap 1+
         end swap drop
-        BUF cast(ptr(u8)) over 20 swap -+
+        BUF cast(u8&) over 20 swap -+
     end
     swap 1 2 rot(4>2) syscall(4) drop
 
@@ -39,7 +39,7 @@ proc oob_handler [String u64 u64] to [] is
 
             10 / swap 1+
         end swap drop
-        BUF cast(ptr(u8)) over 20 swap -+
+        BUF cast(u8&) over 20 swap -+
     end
     swap 1 2 rot(4>2) syscall(4) drop
     1 2 "\n" unpack swap syscall(4) drop

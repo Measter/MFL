@@ -40,6 +40,7 @@ pub fn valid_type_token(t: TokenKind) -> bool {
             | TokenKind::ParenthesisClosed
             | TokenKind::SquareBracketOpen
             | TokenKind::SquareBracketClosed
+            | TokenKind::Ampersand
     )
 }
 
@@ -245,87 +246,53 @@ pub fn parse_unresolved_types(
         };
 
         let mut type_span = ident.span;
-        let is_valid_for_ptr = !ident.is_from_root && ident.path.len() == 1;
+        let mut parsed_type = UnresolvedTypeTokens::Simple(ident);
 
-        if !is_valid_for_ptr {
-            for segment in &ident.path {
-                if stores.strings.resolve(segment.inner) == "ptr" {
-                    diagnostics::emit_error(
-                        stores,
-                        ident.span,
-                        "`ptr` cannot be in path segment",
-                        [Label::new(ident.span).with_color(Color::Red)],
-                        None,
-                    );
-                    had_error = true;
-                    break;
-                }
-            }
-        }
-
-        let first_lexeme = stores.strings.resolve(ident.path[0].inner);
-        let base_type = if is_valid_for_ptr && first_lexeme == "ptr" {
-            let ptr_type = ident.generic_params;
-            let mut ptr_type = match ptr_type {
-                Some(v) if v.len() == 1 => v,
-                Some(_) => {
-                    diagnostics::emit_error(
-                        stores,
-                        ident.span,
-                        "`ptr` cannot be parameterized over multiple types",
-                        [Label::new(ident.span).with_color(Color::Red)],
-                        None,
-                    );
-                    had_error = true;
-                    continue;
-                }
-                None => {
-                    diagnostics::emit_error(
-                        stores,
-                        ident.span,
-                        "`ptr` must have a type",
-                        [Label::new(ident.span).with_color(Color::Red)],
-                        None,
-                    );
-                    had_error = true;
-                    continue;
-                }
-            };
-
-            let UnresolvedType::Tokens(ptr_type) = ptr_type.pop().unwrap() else {
+        // This looks ugly
+        while token_iter.peek().is_some_and(|(_, t)| {
+            matches!(
+                t.inner.kind,
+                TokenKind::Ampersand | TokenKind::SquareBracketOpen
+            )
+        }) {
+            let Some((_, next_token)) = token_iter.peek() else {
                 unreachable!()
             };
-            UnresolvedTypeTokens::Pointer(Box::new(ptr_type))
-        } else {
-            UnresolvedTypeTokens::Simple(ident)
-        };
 
-        let parsed_type = if token_iter
-            .peek()
-            .is_some_and(|(_, t)| t.inner.kind == TokenKind::SquareBracketOpen)
-        {
-            // Parsing an array!
-            let Ok(delim) = get_delimited_tokens(
-                stores,
-                &mut token_iter,
-                last_token,
-                Some(1),
-                ("[", |t| t == TokenKind::SquareBracketOpen),
-                ("integer", |t| matches!(t, TokenKind::Integer { .. })),
-                ("]", |t| t == TokenKind::SquareBracketClosed),
-            ) else {
-                had_error = true;
-                continue;
-            };
+            match next_token.inner.kind {
+                TokenKind::SquareBracketOpen => {
+                    // Parsing an array!
+                    let Ok(delim) = get_delimited_tokens(
+                        stores,
+                        &mut token_iter,
+                        last_token,
+                        Some(1),
+                        ("[", |t| t == TokenKind::SquareBracketOpen),
+                        ("integer", |t| matches!(t, TokenKind::Integer { .. })),
+                        ("]", |t| t == TokenKind::SquareBracketClosed),
+                    ) else {
+                        had_error = true;
+                        continue;
+                    };
 
-            let len_token = delim.list[0];
-            let length = parse_integer_lexeme(stores, len_token)?;
-            type_span = type_span.merge(delim.close.location);
+                    let len_token = delim.list[0];
+                    let length = parse_integer_lexeme(stores, len_token)?;
 
-            UnresolvedTypeTokens::Array(Box::new(base_type), length)
-        } else {
-            base_type
-        };
+                    type_span = type_span.merge(delim.close.location);
+                    parsed_type = UnresolvedTypeTokens::Array(Box::new(parsed_type), length);
+                }
+                TokenKind::Ampersand => {
+                    // Parsing a pointer!
+                    let Some((_, next)) = token_iter.next() else {
+                        unreachable!()
+                    };
+
+                    type_span = type_span.merge(next.location);
+                    parsed_type = UnresolvedTypeTokens::Pointer(Box::new(parsed_type));
+                }
+                _ => unreachable!(),
+            }
+        }
 
         types.push(parsed_type.with_span(type_span));
     }

@@ -4,7 +4,7 @@ import std::term::write_si_ln
 struct Foo(T U) is
     field a T
     field b T[3]
-    field c ptr(U)
+    field c U&
     field d Bar(U)
     field e Bar(u16)
 end

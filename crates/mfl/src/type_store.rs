@@ -216,7 +216,7 @@ pub struct GenericPartiallyResolvedField {
 pub enum GenericPartiallyResolvedFieldKind {
     Fixed(TypeId),
     GenericParamSimple(Spanned<Spur>),   // T
-    GenericParamPointer(Box<Self>),      // ptr(T)
+    GenericParamPointer(Box<Self>),      // T&
     GenericParamArray(Box<Self>, usize), // T[N]
     GenericStruct(ItemId, Vec<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
 }
@@ -487,7 +487,7 @@ impl TypeStore {
             self.kinds[&pi.ptr_id]
         } else {
             let pointee_name = interner.resolve(pointee.name);
-            let name = format!("ptr({pointee_name})");
+            let name = format!("{pointee_name}&");
             let name = interner.intern(&name);
 
             let pointer_info = self.add_type(name, None, TypeKind::Pointer(pointee.id));
