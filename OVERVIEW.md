@@ -22,7 +22,7 @@ Boolean values have the type `bool`.
 
 ## Pointers
 
-Pointers notation is `ptr(T)`, where `T` is some type.
+Pointers notation is `T&`, where `T` is some type.
 
 ## Arrays
 
@@ -30,12 +30,12 @@ Arrays are `T[N]`, where `T` is some type, and `N` is a positive integer.
 
 ## Strings
 
-C-like strings are just a `ptr(u8)`, MFL-strings are the following struct:
+C-like strings are just a `u8&`, MFL-strings are the following struct:
 
 ```
 struct String is
     field len u64
-    field data ptr(u8)
+    field data u8&
 end
 ```
 
@@ -71,8 +71,8 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`iN`|
-|`uN`|`ptr(T)`|`ptr(T)`|
-|`ptr(T)`|`uN`|`ptr(T)`|
+|`uN`|`T&`|`T&`|
+|`T&`|`uN`|`T&`|
 
 ### `-` (Subtract)
 
@@ -85,8 +85,8 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`iN`|
-|`ptr(T)`|`ptr(T)`|`u64`|
-|`ptr(T)`|`uN`|`ptr(T)`|
+|`T&`|`T&`|`u64`|
+|`T&`|`uN`|`T&`|
 
 ### `*` (Multiplication), `/` (Division), `%` (Remainder)
 
@@ -161,7 +161,7 @@ Supported Types:
 |---|---|---|
 |`iN`|`iN`|`bool`|
 |`bool`|`bool`|`bool`|
-|`ptr(T)`|`ptr(T)`|`bool`|
+|`T&`|`T&`|`bool`|
 
 
 ### `<`, `>`, `<=` `>=`
@@ -178,7 +178,7 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`bool`|
-|`ptr(T)`|`ptr(T)`|`bool`|
+|`T&`|`T&`|`bool`|
 
 ## Memory
 
@@ -192,7 +192,7 @@ Supported Types:
 
 |a|b|
 |---|---|
-|`ptr(T)`|`T`|
+|`T&`|`T`|
 
 ### `!` (Store)
 
@@ -204,7 +204,7 @@ Supported Types:
 
 |a|b|
 |---|---|
-|`T`|`ptr(T)`|
+|`T`|`T&`|
 
 ### `pack(N)`
 
@@ -261,9 +261,9 @@ Supported Types:
 |a|b|c|d|
 |---|---|---|---|
 |`T`|`T[N]`|`uN`|`T[N]`|
-|`T`|`ptr(T[N])`|`uN`|`ptr(T[N])`|
+|`T`|`T[N]&`|`uN`|`T[N]&`|
 |`T`|`U`|`uN`|`U`|
-|`T`|`ptr(U)`|`uN`|`ptr(U)`|
+|`T`|`U&`|`uN`|`U&`|
 
 ### `xtr`, `xtrd` (Extract from Array)
 
@@ -283,9 +283,9 @@ Supported Types:
 |a|b|c|d|
 |---|---|---|---|
 |`T[N]`|`uN`|`T[N]`|`T`|
-|`ptr(T[N])`|`uN`|`ptr(T[N])`|`T`|
+|`T[N]&`|`uN`|`T[N]&`|`T`|
 |`U`|`uN`|`U`|`T`|
-|`ptr(U)`|`uN`|`ptr(U)`|`T`|
+|`U&`|`uN`|`U&`|`T`|
 
 ### `ins(Field[.Field]*)`, `insd(Field[.Field]*)` (Insert into Struct)
 
@@ -305,7 +305,7 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`F`|`T`|`T`|
-|`F`|`ptr(T)`|`ptr(T)`|
+|`F`|`T&`|`T&`|
 
 ### `xtr(Field[.Field]*)`, `xtrd(Field[.Field]*)` (Extract from Struct)
 
@@ -325,7 +325,7 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`T`|`T`|`F`|
-|`ptr(T)`|`ptr(T)`|`F`|
+|`T&`|`T&`|`F`|
 
 ## Stack Manipulation
 
