@@ -41,6 +41,8 @@ mod stack;
 const BOOTSTRAP_OBJ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.o"));
 const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
 
+const CALL_CONV_COLD: u32 = 9;
+
 type InkwellResult<T = ()> = Result<T, inkwell::builder::BuilderError>;
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> InkwellResult<T>;
 
@@ -319,6 +321,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.oob_handler = function;
                 // Because the OoB handle isn't called like a regular function, we'll enqueue it here.
                 self.enqueue_function(item.id());
+                function.set_call_conventions(CALL_CONV_COLD);
             }
             self.item_function_map.insert(item.id(), function);
         }
