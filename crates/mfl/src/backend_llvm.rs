@@ -25,7 +25,7 @@ use crate::{
     interners::Interner,
     opcode::{IntKind, Op, OpCode},
     program::{
-        static_analysis::{Analyzer, ConstVal, PtrId, ValueId},
+        static_analysis::{Analyzer, ValueId},
         ItemId, ItemKind, Program,
     },
     source_file::SourceStorage,
@@ -96,22 +96,6 @@ impl OpCode {
             _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
         }
     }
-}
-
-fn is_fully_const(id: ValueId, analyzer: &Analyzer) -> bool {
-    let Some([const_val]) = analyzer.value_consts([id]) else {
-        return false;
-    };
-
-    matches!(
-        const_val,
-        ConstVal::Int(_)
-            | ConstVal::Bool(_)
-            | ConstVal::Ptr {
-                offset: Some(_),
-                ..
-            }
-    )
 }
 
 struct DataStore<'a> {
@@ -194,71 +178,13 @@ impl<'ctx> ValueStore<'ctx> {
         }
     }
 
-    fn load_const_value(
-        &mut self,
-        cg: &mut CodeGen<'ctx>,
-        id: ValueId,
-        const_val: ConstVal,
-        ds: &mut DataStore,
-    ) -> InkwellResult<BasicValueEnum<'ctx>> {
-        trace!("Fetching const {id:?}");
-        let v = match const_val {
-            ConstVal::Int(val) => {
-                let [type_id] = ds.analyzer.value_types([id]).unwrap();
-                let type_info = ds.type_store.get_type_info(type_id);
-                let TypeKind::Integer(target) = type_info.kind else {
-                    panic!("ICE: ConstInt for non-int type");
-                };
-                let target_type = target.width.get_int_type(cg.ctx);
-                match val {
-                    IntKind::Signed(val) => target_type
-                        .const_int(val as u64, false)
-                        .const_cast(target_type, true)
-                        .into(),
-                    IntKind::Unsigned(val) => target_type
-                        .const_int(val, false)
-                        .const_cast(target_type, false)
-                        .into(),
-                }
-            }
-            ConstVal::Bool(val) => cg.ctx.bool_type().const_int(val as u64, false).into(),
-            ConstVal::Ptr { id, offset, .. } => {
-                let (ptr, ptee_type) = match id {
-                    PtrId::Mem(id) => (
-                        self.variable_map[&id],
-                        cg.get_type(ds.type_store, ds.program.get_memory_type_resolved(id)),
-                    ),
-                    PtrId::Str(id) => (
-                        self.get_string_literal(cg, ds.interner, id)?,
-                        cg.get_type(
-                            ds.type_store,
-                            ds.type_store.get_builtin(BuiltinTypes::U8).id,
-                        ),
-                    ),
-                };
-
-                if let Some(offset) = offset {
-                    let offset = cg.ctx.i64_type().const_int(offset, false);
-                    let name = ptr.get_name().to_str().unwrap();
-                    unsafe { cg.builder.build_gep(ptee_type, ptr, &[offset], name)? }.into()
-                } else {
-                    ptr.into()
-                }
-            }
-        };
-
-        Ok(v)
-    }
-
     fn load_value(
         &mut self,
         cg: &mut CodeGen<'ctx>,
         id: ValueId,
         ds: &mut DataStore,
     ) -> InkwellResult<BasicValueEnum<'ctx>> {
-        if let Some([const_val]) = ds.analyzer.value_consts([id]) {
-            self.load_const_value(cg, id, const_val, ds)
-        } else if let Some(&ptr) = self.merge_pair_map.get(&id) {
+        if let Some(&ptr) = self.merge_pair_map.get(&id) {
             let name = ptr.get_name().to_str().unwrap();
             trace!(name, "Fetching variable {id:?}");
             let [ty_id] = ds.analyzer.value_types([id]).unwrap();
@@ -534,19 +460,6 @@ impl<'ctx> CodeGen<'ctx> {
             | OpCode::Rot { .. }
             | OpCode::EmitStack(_) = &op.code
             {
-                continue;
-            }
-
-            let op_io = ds.analyzer.get_op_io(op.id);
-
-            if !op_io.outputs().is_empty()
-                && op_io
-                    .outputs()
-                    .iter()
-                    .all(|id| is_fully_const(*id, ds.analyzer))
-            {
-                op_io.outputs().iter().for_each(|id| trace!("{id:?}"));
-                trace!("Op is fully const");
                 continue;
             }
 
