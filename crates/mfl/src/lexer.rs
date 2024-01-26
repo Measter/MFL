@@ -158,6 +158,9 @@ pub enum TokenKind {
     #[token("isnull")]
     IsNull,
 
+    #[token("lang")]
+    LangItem,
+
     #[token("<")]
     Less,
 

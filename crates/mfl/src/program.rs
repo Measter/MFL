@@ -26,6 +26,13 @@ use static_analysis::Analyzer;
 
 const BUILTINS: &str = include_str!("builtins/builtins.mfl");
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LangItem {
+    String,
+    Alloc,
+    Free,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
 
@@ -47,6 +54,7 @@ pub struct ItemHeader {
     id: ItemId,
     parent: Option<ItemId>,
     kind: ItemKind,
+    lang_item: Option<LangItem>,
 }
 
 impl ItemHeader {
@@ -126,6 +134,8 @@ pub struct Program {
     structs_unresolved: HashMap<ItemId, UnresolvedStruct>,
     generic_functions_map: HashMap<(ItemId, String), ItemId>,
     generic_template_parameters: HashMap<ItemId, Vec<Spanned<Spur>>>,
+
+    lang_items: HashMap<LangItem, ItemId>,
 }
 
 impl Program {
@@ -215,6 +225,7 @@ impl Program {
             structs_unresolved: HashMap::new(),
             generic_functions_map: HashMap::new(),
             generic_template_parameters: HashMap::new(),
+            lang_items: HashMap::new(),
         }
     }
 
@@ -238,7 +249,6 @@ impl Program {
             BUILTINS,
             &mut VecDeque::new(),
         )?;
-        stores.types.update_builtins(&self.structs_unresolved);
 
         let module_name = args.file.file_stem().and_then(OsStr::to_str).unwrap();
         let main_lib_root = args.file.parent().unwrap();
@@ -267,6 +277,8 @@ impl Program {
         if had_error {
             return Err(eyre!("Error loading program"));
         }
+
+        stores.types.update_builtins(&self.lang_items);
 
         self.post_process_items(stores, args.print_analyzer_stats)?;
 
@@ -648,6 +660,7 @@ impl Program {
             id: new_id,
             parent,
             kind,
+            lang_item: None,
         };
         self.item_headers.push(item_header);
         self.scopes.push(Scope {
@@ -782,12 +795,13 @@ impl Program {
         had_error: &mut bool,
         module: ItemId,
         def: UnresolvedStruct,
-    ) {
+    ) -> ItemId {
         let name = def.name;
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
         self.structs_unresolved.insert(header.id, def);
 
         self.add_to_parent(stores, had_error, module, name, header.id);
+        header.id
     }
 
     pub fn new_memory(
@@ -804,6 +818,35 @@ impl Program {
         self.add_to_parent(stores, had_error, parent, name, header.id);
 
         header.id
+    }
+
+    pub fn set_lang_item(
+        &mut self,
+        stores: &Stores,
+        had_error: &mut bool,
+        lang_item_token: Spanned<Spur>,
+        item_id: ItemId,
+    ) {
+        let token_string = stores.strings.resolve(lang_item_token.inner);
+        let kind = match token_string {
+            "string" => LangItem::String,
+            "alloc" => LangItem::Alloc,
+            "free" => LangItem::Free,
+            _ => {
+                diagnostics::emit_error(
+                    stores,
+                    lang_item_token.location,
+                    format!("Unknown lang item `{token_string}`"),
+                    [Label::new(lang_item_token.location).with_color(Color::Red)],
+                    None,
+                );
+                *had_error = true;
+                return;
+            }
+        };
+
+        self.lang_items.insert(kind, item_id);
+        self.item_headers[item_id.0 as usize].lang_item = Some(kind);
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {

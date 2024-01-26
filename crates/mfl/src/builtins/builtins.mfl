@@ -1,4 +1,4 @@
-struct String is
+struct lang(string) String is
     field length u64
     field pointer u8&
 end

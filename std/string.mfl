@@ -1,5 +1,10 @@
 import std::term
 
+struct lang(string) String is
+    field length u64
+    field pointer u8&
+end
+
 struct SplitResult is
     field split bool
     field remainder String

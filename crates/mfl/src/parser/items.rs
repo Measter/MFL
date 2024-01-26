@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, iter::Peekable};
 
 use ariadne::{Color, Label};
+use lasso::Spur;
 
 use crate::{
     diagnostics,
@@ -17,6 +18,47 @@ use super::{
     utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
     Delimited, Recover,
 };
+
+fn try_get_lang_item<'a>(
+    stores: &mut Stores,
+    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+) -> Result<Option<Spanned<Spur>>, ()> {
+    if !token_iter
+        .peek()
+        .is_some_and(|(_, t)| t.inner.kind == TokenKind::LangItem)
+    {
+        return Ok(None);
+    }
+    // Consume the lang item.
+    let (_, &lang_token) = token_iter.next().unwrap();
+
+    let (_, open_paren) = expect_token(
+        stores,
+        token_iter,
+        "(",
+        |t| t == TokenKind::ParenthesisOpen,
+        lang_token,
+    )?;
+
+    let (_, ident_name) = expect_token(
+        stores,
+        token_iter,
+        "string",
+        |t| t == TokenKind::Ident,
+        open_paren,
+    )?;
+
+    let _ = expect_token(
+        stores,
+        token_iter,
+        ")",
+        |t| t == TokenKind::ParenthesisClosed,
+        ident_name,
+    )?;
+
+    Ok(Some(ident_name.map(|t| t.lexeme)))
+}
+
 fn parse_item_body<'a>(
     program: &mut Program,
     stores: &mut Stores,
@@ -73,6 +115,9 @@ pub fn parse_function<'a>(
     parent_id: ItemId,
 ) -> Result<(), ()> {
     let mut had_error = false;
+
+    let lang_item = try_get_lang_item(stores, token_iter).recover(&mut had_error, None);
+
     let name_token = expect_token(
         stores,
         token_iter,
@@ -150,6 +195,10 @@ pub fn parse_function<'a>(
                 .collect(),
         )
     };
+
+    if let Some(lang_item_id) = lang_item {
+        program.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+    }
 
     let body = parse_item_body(
         program,
@@ -345,6 +394,9 @@ pub fn parse_struct_or_union<'a>(
     keyword: Spanned<Token>,
 ) -> Result<(), ()> {
     let mut had_error = false;
+
+    let lang_item = try_get_lang_item(stores, token_iter).recover(&mut had_error, None);
+
     let name_token = expect_token(
         stores,
         token_iter,
@@ -449,7 +501,10 @@ pub fn parse_struct_or_union<'a>(
         is_union: keyword.inner.kind == TokenKind::Union,
     };
 
-    program.new_struct(stores, &mut had_error, module_id, struct_def);
+    let item_id = program.new_struct(stores, &mut had_error, module_id, struct_def);
+    if let Some(lang_item_id) = lang_item {
+        program.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+    }
 
     if !had_error {
         Ok(())

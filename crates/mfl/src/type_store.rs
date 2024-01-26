@@ -1,7 +1,7 @@
-use std::ops::RangeInclusive;
+use std::{hash::Hash, ops::RangeInclusive};
 
 use ariadne::{Color, Label};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
 
@@ -9,7 +9,7 @@ use crate::{
     diagnostics,
     interners::Interner,
     opcode::UnresolvedIdent,
-    program::ItemId,
+    program::{ItemId, LangItem},
     source_file::{SourceLocation, Spanned},
     Stores,
 };
@@ -335,8 +335,8 @@ pub struct TypeStore {
 
     // Maps ItemIds to TypeIds of non-generic structs.
     struct_id_map: HashMap<ItemId, TypeId>,
+    lang_item_ids: HashMap<ItemId, LangItem>,
     fixed_struct_defs: HashMap<TypeId, FixedResolvedStruct>,
-    builtin_struct_item_ids: HashSet<ItemId>,
     generic_struct_id_map: HashMap<TypeId, GenericPartiallyResolvedStruct>,
     generic_struct_instance_map: HashMap<(TypeId, Vec<TypeId>), TypeId>,
 
@@ -351,8 +351,8 @@ impl TypeStore {
             array_map: HashMap::new(),
             builtins: [TypeId(0); 10],
             struct_id_map: HashMap::new(),
+            lang_item_ids: HashMap::new(),
             fixed_struct_defs: HashMap::new(),
-            builtin_struct_item_ids: HashSet::new(),
             generic_struct_id_map: HashMap::new(),
             generic_struct_instance_map: HashMap::new(),
             type_sizes: HashMap::new(),
@@ -416,10 +416,12 @@ impl TypeStore {
         }
     }
 
-    pub fn update_builtins(&mut self, struct_map: &HashMap<ItemId, UnresolvedStruct>) {
-        for id in struct_map.keys() {
-            self.builtin_struct_item_ids.insert(*id);
-        }
+    pub fn update_builtins(&mut self, lang_items: &HashMap<LangItem, ItemId>) {
+        let string_item_id = lang_items
+            .get(&LangItem::String)
+            .expect("string lang_item missing");
+
+        self.lang_item_ids.insert(*string_item_id, LangItem::String);
     }
 
     pub fn add_type(
@@ -821,12 +823,9 @@ impl TypeStore {
 
         let type_id = self.struct_id_map[&struct_id];
 
-        if interner.resolve(def.name.inner) == "String"
-            && self.builtin_struct_item_ids.contains(&struct_id)
-        {
+        if self.lang_item_ids.get(&struct_id) == Some(&LangItem::String) {
             self.builtins[BuiltinTypes::String as usize] = type_id;
         }
-
         self.fixed_struct_defs.insert(type_id, def);
 
         Ok(type_id)
