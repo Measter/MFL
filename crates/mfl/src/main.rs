@@ -20,6 +20,7 @@ use source_file::SourceStorage;
 use type_store::{BuiltinTypes, TypeStore};
 
 mod backend_llvm;
+mod context;
 mod diagnostics;
 mod interners;
 mod lexer;
