@@ -24,6 +24,11 @@ impl Interner {
     }
 
     #[inline]
+    pub fn get(&self, lexeme: &str) -> Spur {
+        self.lexemes.get(lexeme).unwrap()
+    }
+
+    #[inline]
     pub fn resolve(&self, id: Spur) -> &str {
         self.lexemes.resolve(&id)
     }
