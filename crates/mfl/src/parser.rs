@@ -1,20 +1,20 @@
 use std::{collections::VecDeque, ops::Not};
 
 use ariadne::{Color, Label};
-use intcast::IntCast;
 use tracing::debug_span;
 
 use crate::{
+    context::Context,
     diagnostics,
-    lexer::{Extract, Insert, Token, TokenKind},
-    opcode::{Direction, Op, OpCode, OpId},
+    ir::{Op, OpId, UnresolvedOp},
+    lexer::{Token, TokenKind},
     program::ModuleQueueType,
     source_file::{SourceLocation, Spanned, WithSpan},
-    ItemId, Program, Stores,
+    ItemId, Stores,
 };
 
 use self::{
-    ops::parse_simple_op,
+    ops::{parse_extract_insert_array, parse_extract_insert_struct, parse_simple_op},
     utils::{expect_token, get_delimited_tokens, Delimited, Recover},
 };
 
@@ -23,12 +23,12 @@ mod ops;
 mod utils;
 
 pub fn parse_item_body_contents(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     tokens: &[Spanned<Token>],
     op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-) -> Result<Vec<Op>, ()> {
+) -> Result<Vec<Op<UnresolvedOp>>, ()> {
     let mut ops = Vec::new();
     let mut had_error = false;
 
@@ -41,140 +41,12 @@ pub fn parse_item_body_contents(
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let delim = get_delimited_tokens(
-                        stores,
-                        &mut token_iter,
-                        token,
-                        None,
-                        ("(", |t| t == TokenKind::ParenthesisOpen),
-                        ("ident", |t| t == TokenKind::Ident || t == TokenKind::Dot),
-                        (")", |t| t == TokenKind::ParenthesisClosed),
-                    )?;
-
-                    token.location = token.location.merge(delim.close.location);
-                    let mut delim_iter = delim.list.iter().enumerate().peekable();
-                    let mut idents = Vec::new();
-
-                    // We want to make sure the Dots exist, but we don't actually want them.
-                    let mut local_had_error = false;
-                    let mut prev_token = delim.open;
-                    loop {
-                        let Ok(next) = expect_token(
-                            stores,
-                            &mut delim_iter,
-                            "ident",
-                            |t| t == TokenKind::Ident,
-                            prev_token,
-                        ) else {
-                            local_had_error = true;
-                            break;
-                        };
-                        idents.push(next.1);
-
-                        if delim_iter
-                            .peek()
-                            .is_some_and(|(_, t)| t.inner.kind == TokenKind::Dot)
-                        {
-                            prev_token = *delim_iter.next().unwrap().1;
-                            continue;
-                        }
-                        break;
-                    }
-
-                    if local_had_error {
-                        return Err(());
-                    }
-
-                    match token.inner.kind {
-                        TokenKind::Extract(Extract { emit_struct }) => {
-                            // As we're generating multiple ops, we need a bit of manual handling.
-                            let mut emit_struct = emit_struct;
-                            for field_name in idents {
-                                let first = OpCode::ExtractStruct {
-                                    emit_struct,
-                                    field_name: field_name.map(|t| t.lexeme),
-                                };
-
-                                ops.push(Op::new(op_id_gen(), first, token.map(|t| t.lexeme)));
-                                emit_struct = false;
-                            }
-
-                            continue;
-                        }
-                        TokenKind::Insert(Insert { emit_struct }) if idents.len() > 1 => {
-                            // Hang on to your seat, this'll be a good one!
-                            let [prev @ .., _] = idents.as_slice() else {
-                                unreachable!()
-                            };
-
-                            for &ident in prev {
-                                let xtr = OpCode::ExtractStruct {
-                                    emit_struct: true,
-                                    field_name: ident.map(|t| t.lexeme),
-                                };
-                                ops.push(Op::new(op_id_gen(), xtr, token.map(|t| t.lexeme)));
-                            }
-
-                            let rot_len = (idents.len() + 1).to_u8().unwrap();
-                            let rot = OpCode::Rot {
-                                item_count: rot_len.with_span(token.location),
-                                direction: Direction::Left,
-                                shift_count: 1.with_span(token.location),
-                            };
-                            ops.push(Op::new(op_id_gen(), rot, token.map(|t| t.lexeme)));
-
-                            let [first, prev @ ..] = idents.as_slice() else {
-                                unreachable!()
-                            };
-                            for ident in prev.iter().rev() {
-                                let swap = OpCode::Swap {
-                                    count: 1.with_span(token.location),
-                                };
-                                ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
-                                let ins = OpCode::InsertStruct {
-                                    emit_struct: true,
-                                    field_name: ident.map(|t| t.lexeme),
-                                };
-                                ops.push(Op::new(op_id_gen(), ins, token.map(|t| t.lexeme)));
-                            }
-
-                            let swap = OpCode::Swap {
-                                count: 1.with_span(token.location),
-                            };
-                            ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
-                            let kind = OpCode::InsertStruct {
-                                emit_struct,
-                                field_name: first.map(|t| t.lexeme),
-                            };
-                            ops.push(Op::new(op_id_gen(), kind, token.map(|t| t.lexeme)));
-                            continue;
-                            // todo!()
-                        }
-                        TokenKind::Insert(Insert { emit_struct }) => (
-                            OpCode::InsertStruct {
-                                emit_struct,
-                                field_name: idents[0].map(|t| t.lexeme),
-                            },
-                            token.location,
-                        ),
-                        _ => unreachable!(),
-                    }
+                    let new_ops =
+                        parse_extract_insert_struct(stores, &mut token_iter, op_id_gen, token)?;
+                    ops.extend(new_ops);
+                    continue;
                 } else {
-                    match token.inner.kind {
-                        TokenKind::Extract(Extract { emit_struct }) => (
-                            OpCode::ExtractArray {
-                                emit_array: emit_struct,
-                            },
-                            token.location,
-                        ),
-                        TokenKind::Insert(Insert { emit_struct }) => (
-                            OpCode::InsertArray {
-                                emit_array: emit_struct,
-                            },
-                            token.location,
-                        ),
-                        _ => unreachable!(),
-                    }
+                    parse_extract_insert_array(stores, &mut token_iter, token)?
                 }
             }
             TokenKind::While => {
@@ -285,7 +157,7 @@ pub fn parse_item_body_contents(
 }
 
 pub(super) fn parse_file(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     module_id: ItemId,
     tokens: &[Spanned<Token>],

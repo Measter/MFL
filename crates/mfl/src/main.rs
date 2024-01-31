@@ -9,13 +9,13 @@ use std::{
 use ariadne::{Color, Label};
 use clap::Parser;
 use color_eyre::{
-    eyre::{eyre, Context, Result},
+    eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
+use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use interners::Interner;
-use program::{ItemId, ItemKind, ItemSignatureResolved, Program};
 use source_file::SourceStorage;
 use type_store::{BuiltinTypes, TypeStore};
 
@@ -23,9 +23,9 @@ mod backend_llvm;
 mod context;
 mod diagnostics;
 mod interners;
+mod ir;
 mod lexer;
 mod n_ops;
-mod opcode;
 mod option;
 mod parser;
 mod program;
@@ -80,7 +80,7 @@ pub struct Stores {
     types: TypeStore,
 }
 
-fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &ItemSignatureResolved) -> bool {
+fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature) -> bool {
     if !entry_sig.exit_stack().is_empty() {
         return false;
     }
@@ -103,7 +103,7 @@ fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &ItemSignatureResolved) ->
     *argc_id == expected_argc_id && *argv_id == expected_argv_id
 }
 
-fn load_program(args: &Args) -> Result<(Program, Stores, Vec<ItemId>)> {
+fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let source_storage = SourceStorage::new();
     let mut interner = Interner::new();
@@ -115,7 +115,7 @@ fn load_program(args: &Args) -> Result<(Program, Stores, Vec<ItemId>)> {
         types: type_store,
     };
 
-    let mut program = Program::new();
+    let mut program = Context::new();
     let entry_module_id = program.load_program2(&mut stores, args)?;
 
     let mut top_level_symbols = Vec::new();

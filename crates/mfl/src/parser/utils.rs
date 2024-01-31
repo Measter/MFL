@@ -5,14 +5,14 @@ use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
+    ir::{OpCode, UnresolvedIdent, UnresolvedOp},
     lexer::{Integer, Token, TokenKind},
-    opcode::{OpCode, UnresolvedIdent},
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{UnresolvedType, UnresolvedTypeTokens},
     Stores,
 };
 
-pub type ParseOpResult = Result<(OpCode, SourceLocation), ()>;
+pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
 
 pub trait Recover<T, E> {
     fn recover(self, had_error: &mut bool, fallback: T) -> T;

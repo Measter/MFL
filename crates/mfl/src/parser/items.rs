@@ -4,10 +4,11 @@ use ariadne::{Color, Label};
 use lasso::Spur;
 
 use crate::{
+    context::{Context, ItemId},
     diagnostics,
+    ir::{Op, OpCode, OpId, UnresolvedOp},
     lexer::{Token, TokenKind},
-    opcode::{Op, OpCode, OpId},
-    program::{ItemId, ModuleQueueType, Program},
+    program::ModuleQueueType,
     source_file::{Spanned, WithSpan},
     type_store::{UnresolvedField, UnresolvedStruct, UnresolvedType},
     Stores,
@@ -60,13 +61,13 @@ fn try_get_lang_item<'a>(
 }
 
 fn parse_item_body<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     had_error: &mut bool,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     name_token: Spanned<Token>,
     parent_id: ItemId,
-) -> Vec<Op> {
+) -> Vec<Op<UnresolvedOp>> {
     let mut op_id = 0;
     let mut op_id_gen = || {
         let id = op_id;
@@ -108,7 +109,7 @@ fn parse_item_body<'a>(
 }
 
 pub fn parse_function<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -219,7 +220,7 @@ pub fn parse_function<'a>(
 }
 
 pub fn parse_assert<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -262,7 +263,7 @@ pub fn parse_assert<'a>(
 }
 
 pub fn parse_const<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -314,7 +315,7 @@ pub fn parse_const<'a>(
 }
 
 pub fn parse_memory<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -387,7 +388,7 @@ pub fn parse_memory<'a>(
 }
 
 pub fn parse_struct_or_union<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     module_id: ItemId,
@@ -537,7 +538,7 @@ pub fn parse_module<'a>(
 }
 
 pub fn parse_import<'a>(
-    program: &mut Program,
+    program: &mut Context,
     stores: &mut Stores,
     had_error: &mut bool,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,

@@ -5,9 +5,9 @@ use lasso::Spur;
 
 use crate::{
     diagnostics,
-    opcode::UnresolvedIdent,
+    ir::UnresolvedIdent,
     option::OptionExt,
-    program::{static_analysis::Analyzer, ItemKind, LangItem},
+    program::static_analysis::Analyzer,
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{TypeId, UnresolvedStruct, UnresolvedTypeIds, UnresolvedTypeTokens},
@@ -16,8 +16,26 @@ use crate::{
 
 use super::ir::{NameResolvedOp, Op, TypeResolvedOp, UnresolvedOp};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LangItem {
+    String,
+    Alloc,
+    Free,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ItemKind {
+    Assert,
+    Const,
+    Memory,
+    Function,
+    GenericFunction,
+    StructDef,
+    Module,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ItemHeader {
@@ -352,11 +370,16 @@ impl Context {
         had_error: &mut bool,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
+        is_top_level: bool,
     ) -> ItemId {
         let header = self.new_header(name, parent, ItemKind::Module);
 
         if let Some(parent_id) = parent {
             self.add_to_parent(stores, had_error, parent_id, name, header.id);
+        }
+
+        if is_top_level {
+            self.top_level_modules.insert(name, header.id);
         }
 
         header.id

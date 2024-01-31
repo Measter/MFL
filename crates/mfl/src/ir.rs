@@ -1,11 +1,74 @@
+use std::fmt::Display;
+
 use lasso::Spur;
 
 use crate::{
-    opcode::{Direction, IntKind, OpId, UnresolvedIdent},
-    program::ItemId,
     source_file::{SourceLocation, Spanned},
-    type_store::{IntWidth, TypeId, UnresolvedTypeIds, UnresolvedTypeTokens},
+    type_store::{IntWidth, Integer, Signedness, TypeId, UnresolvedTypeIds, UnresolvedTypeTokens},
 };
+
+use super::ItemId;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct OpId(pub u32);
+
+impl Display for OpId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Op")?;
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntKind {
+    Signed(i64),
+    Unsigned(u64),
+}
+
+impl IntKind {
+    pub fn to_signedness(self) -> Signedness {
+        match self {
+            IntKind::Signed(_) => Signedness::Signed,
+            IntKind::Unsigned(_) => Signedness::Unsigned,
+        }
+    }
+
+    // The cast has already been typechecked, so we know it's valid.
+    pub fn cast(self, to: Integer) -> IntKind {
+        match (self, to.signed) {
+            (IntKind::Signed(v), Signedness::Signed) if to.width == IntWidth::I64 => {
+                IntKind::Signed(v)
+            }
+            (IntKind::Signed(v), Signedness::Signed) => {
+                let (min, max) = to.width.bounds_signed().into_inner();
+                let full_range = to.width.bounds_unsigned().into_inner().1 as i64;
+                let v = if v < min {
+                    v + full_range
+                } else if v > max {
+                    v - full_range
+                } else {
+                    v
+                };
+                IntKind::Signed(v)
+            }
+
+            (IntKind::Unsigned(v), Signedness::Unsigned) => IntKind::Unsigned(v & to.width.mask()),
+
+            (IntKind::Signed(v), Signedness::Unsigned) => {
+                IntKind::Unsigned((v & to.width.mask() as i64) as u64)
+            }
+            (IntKind::Unsigned(v), Signedness::Signed) => {
+                IntKind::Signed((v & to.width.mask()) as i64)
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TerminalBlock<T> {
@@ -129,7 +192,7 @@ pub enum Memory {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum Trivial {
+pub enum Basic {
     Arithmetic(Arithmetic),
     Compare(Compare),
     Stack(Stack),
@@ -139,6 +202,30 @@ pub enum Trivial {
     PushBool(bool),
     PushInt { width: IntWidth, value: IntKind },
     PushStr { id: Spur, is_c_str: bool },
+}
+
+#[derive(Debug, Clone, Eq)]
+pub struct UnresolvedIdent {
+    pub span: SourceLocation,
+    pub is_from_root: bool,
+    pub path: Vec<Spanned<Spur>>,
+    pub generic_params: Option<Vec<UnresolvedTypeTokens>>,
+}
+
+impl std::hash::Hash for UnresolvedIdent {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.is_from_root.hash(state);
+        self.path.hash(state);
+        self.generic_params.hash(state);
+    }
+}
+
+impl PartialEq for UnresolvedIdent {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_from_root == other.is_from_root
+            && self.path == other.path
+            && self.generic_params == other.generic_params
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -183,7 +270,7 @@ pub enum TypeResolvedOp {
 
 #[derive(Debug, Clone)]
 pub enum OpCode<T> {
-    Basic(Trivial),
+    Basic(Basic),
     Complex(T),
 }
 

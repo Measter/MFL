@@ -3,10 +3,11 @@ use intcast::IntCast;
 use tracing::info;
 
 use crate::{
+    context::{Context, ItemId, ItemKind},
     diagnostics,
+    ir::{Direction, IntKind, Op, OpCode, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
-    opcode::{Direction, IntKind, Op, OpCode},
-    program::{static_analysis::promote_int_type_bidirectional, ItemId, ItemKind, Program},
+    program::static_analysis::promote_int_type_bidirectional,
     type_store::IntWidth,
     Stores,
 };
@@ -103,9 +104,9 @@ fn apply_bool_op(
 }
 
 fn simulate_execute_program_block(
-    program: &Program,
+    program: &Context,
     stores: &mut Stores,
-    block: &[Op],
+    block: &[Op<TypeResolvedOp>],
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
@@ -327,7 +328,7 @@ fn simulate_execute_program_block(
 }
 
 pub(crate) fn simulate_execute_program(
-    program: &Program,
+    program: &Context,
     stores: &mut Stores,
     item_id: ItemId,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {

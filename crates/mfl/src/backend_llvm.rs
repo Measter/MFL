@@ -9,7 +9,7 @@ use inkwell::{
     attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
     builder::Builder,
-    context::Context,
+    context::Context as InkwellContext,
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
@@ -22,12 +22,10 @@ use lasso::Spur;
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
+    context::{Context as MflContext, ItemId, ItemKind},
     interners::Interner,
-    opcode::{IntKind, Op, OpCode},
-    program::{
-        static_analysis::{Analyzer, ValueId},
-        ItemId, ItemKind, Program,
-    },
+    ir::{IntKind, Op, OpCode, TypeResolvedOp},
+    program::static_analysis::{Analyzer, ValueId},
     source_file::SourceStorage,
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     Args, Stores,
@@ -47,7 +45,7 @@ type InkwellResult<T = ()> = Result<T, inkwell::builder::BuilderError>;
 type BuilderArithFunc<'ctx, T> = fn(&'_ Builder<'ctx>, T, T, &'_ str) -> InkwellResult<T>;
 
 impl IntWidth {
-    fn get_int_type(self, ctx: &Context) -> IntType<'_> {
+    fn get_int_type(self, ctx: &InkwellContext) -> IntType<'_> {
         match self {
             IntWidth::I8 => ctx.i8_type(),
             IntWidth::I16 => ctx.i16_type(),
@@ -57,7 +55,7 @@ impl IntWidth {
     }
 }
 
-impl OpCode {
+impl OpCode<TypeResolvedOp> {
     fn get_arith_fn<'ctx, T: IntMathValue<'ctx>>(&self) -> BuilderArithFunc<'ctx, T> {
         match self {
             OpCode::Add => Builder::build_int_add,
@@ -101,7 +99,7 @@ impl OpCode {
 }
 
 struct DataStore<'a> {
-    program: &'a Program,
+    program: &'a MflContext,
     interner: &'a mut Interner,
     analyzer: &'a Analyzer,
     type_store: &'a mut TypeStore,
@@ -220,7 +218,7 @@ impl<'ctx> ValueStore<'ctx> {
 }
 
 struct CodeGen<'ctx> {
-    ctx: &'ctx Context,
+    ctx: &'ctx InkwellContext,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     pass_manager: PassManager<Module<'ctx>>,
@@ -236,7 +234,7 @@ struct CodeGen<'ctx> {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    fn from_context(ctx: &'ctx Context, opt_level: OptimizationLevel) -> Self {
+    fn from_context(ctx: &'ctx InkwellContext, opt_level: OptimizationLevel) -> Self {
         let module = ctx.create_module("mfl_module");
         let builder = ctx.create_builder();
 
@@ -278,7 +276,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_function_prototypes(
         &mut self,
-        program: &Program,
+        program: &MflContext,
         interner: &mut Interner,
         type_store: &mut TypeStore,
     ) {
@@ -433,7 +431,7 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         id: ItemId,
-        block: &[Op],
+        block: &[Op<TypeResolvedOp>],
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
         for op in block {
@@ -599,7 +597,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_merge_variables(
         &mut self,
-        block: &[Op],
+        block: &[Op<TypeResolvedOp>],
         analyzer: &Analyzer,
         type_store: &mut TypeStore,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
@@ -690,7 +688,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_procedure(
         &mut self,
-        program: &Program,
+        program: &MflContext,
         id: ItemId,
         function: FunctionValue<'ctx>,
         source_store: &SourceStorage,
@@ -793,7 +791,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build(
         &mut self,
-        program: &Program,
+        program: &MflContext,
         source_store: &SourceStorage,
         interner: &mut Interner,
         type_store: &mut TypeStore,
@@ -818,7 +816,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_entry(
         &mut self,
-        program: &Program,
+        program: &MflContext,
         interner: &mut Interner,
         type_store: &mut TypeStore,
         entry_id: ItemId,
@@ -865,7 +863,7 @@ impl<'ctx> CodeGen<'ctx> {
 }
 
 pub(crate) fn compile(
-    program: &Program,
+    program: &MflContext,
     stores: &mut Stores,
     top_level_items: &[ItemId],
     args: &Args,
@@ -920,7 +918,7 @@ pub(crate) fn compile(
         )
         .ok_or_else(|| eyre!("Error creating target machine"))?;
 
-    let context = Context::create();
+    let context = InkwellContext::create();
     let mut codegen = CodeGen::from_context(&context, opt_level);
 
     top_level_items

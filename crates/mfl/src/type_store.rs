@@ -6,10 +6,10 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
+    context::{ItemId, LangItem},
     diagnostics,
     interners::Interner,
-    opcode::UnresolvedIdent,
-    program::{ItemId, LangItem},
+    ir::UnresolvedIdent,
     source_file::{SourceLocation, Spanned},
     Stores,
 };

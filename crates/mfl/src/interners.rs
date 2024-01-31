@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use lasso::{Rodeo, Spur};
 
-use crate::program::{ItemId, Program};
+use crate::context::{Context, ItemId};
 
 pub struct Interner {
     lexemes: Rodeo,
@@ -33,7 +33,7 @@ impl Interner {
         self.lexemes.resolve(&id)
     }
 
-    pub fn get_symbol_name(&mut self, program: &Program, id: ItemId) -> &str {
+    pub fn get_symbol_name(&mut self, program: &Context, id: ItemId) -> &str {
         if let Some(name) = self.symbols.get(&id) {
             return self.lexemes.resolve(name);
         }
