@@ -9,11 +9,11 @@ use crate::{
     diagnostics,
     ir::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, Op, OpCode,
-        OpId, TerminalBlock, UnresolvedOp, While, WhileTokens,
+        OpId, Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
     },
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
     source_file::{Spanned, WithSpan},
-    type_store::{IntWidth, Signedness, UnresolvedType},
+    type_store::{IntWidth, Signedness},
     Stores,
 };
 
@@ -31,7 +31,7 @@ pub fn parse_extract_insert_array<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let kind = match token.inner.kind {
+    let (kind, loc) = match token.inner.kind {
         TokenKind::Extract(Extract { emit_struct }) => (
             Memory::ExtractArray {
                 emit_array: emit_struct,
@@ -47,20 +47,20 @@ pub fn parse_extract_insert_array<'a>(
         _ => unreachable!(),
     };
 
-    Ok((OpCode::Basic(Basic::Memory(kind)), token.location))
+    Ok((OpCode::Basic(Basic::Memory(kind)), loc))
 }
 
 pub fn parse_extract_insert_struct<'a>(
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     op_id_gen: &mut impl FnMut() -> OpId,
-    token: Spanned<Token>,
+    mut token: Spanned<Token>,
 ) -> Result<SmallVec<[Op<UnresolvedOp>; 1]>, ()> {
     let mut ops = SmallVec::new();
 
     let delim = get_delimited_tokens(
         stores,
-        &mut token_iter,
+        token_iter,
         token,
         None,
         ("(", |t| t == TokenKind::ParenthesisOpen),
@@ -123,51 +123,52 @@ pub fn parse_extract_insert_struct<'a>(
             };
 
             for &ident in prev {
-                let xtr = OpCode::ExtractStruct {
+                let xtr = OpCode::Basic(Basic::Memory(Memory::ExtractStruct {
                     emit_struct: true,
                     field_name: ident.map(|t| t.lexeme),
-                };
+                }));
                 ops.push(Op::new(op_id_gen(), xtr, token.map(|t| t.lexeme)));
             }
 
             let rot_len = (idents.len() + 1).to_u8().unwrap();
-            let rot = OpCode::Rot {
+            let rot = OpCode::Basic(Basic::Stack(Stack::Rotate {
                 item_count: rot_len.with_span(token.location),
                 direction: Direction::Left,
                 shift_count: 1.with_span(token.location),
-            };
+            }));
             ops.push(Op::new(op_id_gen(), rot, token.map(|t| t.lexeme)));
 
             let [first, prev @ ..] = idents.as_slice() else {
                 unreachable!()
             };
             for ident in prev.iter().rev() {
-                let swap = OpCode::Swap {
+                let swap = OpCode::Basic(Basic::Stack(Stack::Swap {
                     count: 1.with_span(token.location),
-                };
+                }));
                 ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
-                let ins = OpCode::InsertStruct {
+                let ins = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                     emit_struct: true,
                     field_name: ident.map(|t| t.lexeme),
-                };
+                }));
                 ops.push(Op::new(op_id_gen(), ins, token.map(|t| t.lexeme)));
             }
 
-            let swap = OpCode::Swap {
+            let swap = OpCode::Basic(Basic::Stack(Stack::Swap {
                 count: 1.with_span(token.location),
-            };
+            }));
             ops.push(Op::new(op_id_gen(), swap, token.map(|t| t.lexeme)));
-            let kind = OpCode::InsertStruct {
+            let kind = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                 emit_struct,
                 field_name: first.map(|t| t.lexeme),
-            };
+            }));
             ops.push(Op::new(op_id_gen(), kind, token.map(|t| t.lexeme)));
         }
         TokenKind::Insert(Insert { emit_struct }) => {
-            ops.push(OpCode::Basic(Basic::Memory(Memory::InsertStruct {
+            let code = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                 emit_struct,
-                filed_name: idents[0].map(|t| t.lexeme),
-            })));
+                field_name: idents[0].map(|t| t.lexeme),
+            }));
+            ops.push(Op::new(op_id_gen(), code, token.map(|t| t.lexeme)));
         }
         _ => unreachable!(),
     }
@@ -267,7 +268,7 @@ fn parse_ident_op<'a>(
     }
 
     Ok((
-        OpCode::UnresolvedIdent(ident),
+        OpCode::Complex(UnresolvedOp::Ident(ident)),
         token.location.merge(last_token.location),
     ))
 }
@@ -287,7 +288,10 @@ fn parse_minus<'a>(
             int_token.location = int_token.location.merge(token.location);
             parse_integer_op(stores, token_iter, int_token, true)?
         }
-        _ => (OpCode::Subtract, token.location),
+        _ => (
+            OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)),
+            token.location,
+        ),
     })
 }
 
@@ -320,7 +324,12 @@ fn parse_emit_stack<'a>(
         (false, token.location)
     };
 
-    Ok((OpCode::EmitStack(emit_labels), loc))
+    Ok((
+        OpCode::Basic(Basic::Stack(Stack::Emit {
+            show_labels: emit_labels,
+        })),
+        loc,
+    ))
 }
 
 fn parse_cast_sizeof<'a>(
@@ -354,21 +363,17 @@ fn parse_cast_sizeof<'a>(
 
     let unresolved_type = unresolved_types.pop().unwrap().inner;
 
-    Ok(match token.inner.kind {
-        TokenKind::Cast => (
-            OpCode::UnresolvedCast {
-                unresolved_type: UnresolvedType::Tokens(unresolved_type),
-            },
-            delim.close.location,
-        ),
-        TokenKind::SizeOf => (
-            OpCode::UnresolvedSizeOf {
-                unresolved_type: UnresolvedType::Tokens(unresolved_type),
-            },
-            delim.close.location,
-        ),
+    let code = match token.inner.kind {
+        TokenKind::Cast => UnresolvedOp::Cast {
+            id: unresolved_type,
+        },
+        TokenKind::SizeOf => UnresolvedOp::SizeOf {
+            id: unresolved_type,
+        },
         _ => unreachable!(),
-    })
+    };
+
+    Ok((OpCode::Complex(code), delim.close.location))
 }
 
 fn parse_rot<'a>(
@@ -450,11 +455,11 @@ fn parse_rot<'a>(
     }
 
     Ok((
-        OpCode::Rot {
+        OpCode::Basic(Basic::Stack(Stack::Rotate {
             item_count: item_count.with_span(item_count_token.location),
             direction,
             shift_count: shift_count.with_span(shift_count_token.location),
-        },
+        })),
         delim.close.location,
     ))
 }
@@ -616,7 +621,10 @@ fn parse_integer_op<'a>(
         return Err(());
     }
 
-    Ok((OpCode::PushInt { width, value }, overall_location))
+    Ok((
+        OpCode::Basic(Basic::PushInt { width, value }),
+        overall_location,
+    ))
 }
 
 pub fn parse_drop_dup_over_reverse_swap_syscall<'a>(
@@ -639,17 +647,17 @@ pub fn parse_drop_dup_over_reverse_swap_syscall<'a>(
     };
 
     let opcode = match token.inner.kind {
-        TokenKind::Drop => OpCode::Drop { count },
-        TokenKind::Dup => OpCode::Dup { count },
-        TokenKind::Over => OpCode::Over { depth: count },
-        TokenKind::Reverse => OpCode::Reverse { count },
-        TokenKind::Swap => OpCode::Swap { count },
-        TokenKind::SysCall => OpCode::SysCall { arg_count: count },
+        TokenKind::Drop => Basic::Stack(Stack::Drop { count }),
+        TokenKind::Dup => Basic::Stack(Stack::Dup { count }),
+        TokenKind::Over => Basic::Stack(Stack::Over { depth: count }),
+        TokenKind::Reverse => Basic::Stack(Stack::Reverse { count }),
+        TokenKind::Swap => Basic::Stack(Stack::Swap { count }),
+        TokenKind::SysCall => Basic::Control(Control::SysCall { arg_count: count }),
 
         _ => unreachable!(),
     };
 
-    Ok((opcode, op_end))
+    Ok((OpCode::Basic(opcode), op_end))
 }
 
 pub fn parse_pack<'a>(
@@ -671,7 +679,10 @@ pub fn parse_pack<'a>(
         let count_token = delim.list[0];
         let count = parse_integer_lexeme(stores, count_token)?;
 
-        Ok((OpCode::PackArray { count }, delim.close.location))
+        Ok((
+            OpCode::Basic(Basic::Memory(Memory::PackArray { count })),
+            delim.close.location,
+        ))
     } else {
         let span = delim.span();
 
@@ -690,16 +701,16 @@ pub fn parse_pack<'a>(
 
         let unresolved_type = unresolved_types.pop().unwrap();
         Ok((
-            OpCode::UnresolvedPackStruct {
-                unresolved_type: UnresolvedType::Tokens(unresolved_type.inner),
-            },
+            OpCode::Complex(UnresolvedOp::PackStruct {
+                id: unresolved_type.inner,
+            }),
             delim.close.location,
         ))
     }
 }
 
 pub fn parse_if<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -715,13 +726,8 @@ pub fn parse_if<'a>(
         ("do", |t| t == TokenKind::Do),
     )?;
 
-    let condition = parse_item_body_contents(
-        program,
-        stores,
-        &condition_tokens.list,
-        op_id_gen,
-        parent_id,
-    )?;
+    let condition =
+        parse_item_body_contents(ctx, stores, &condition_tokens.list, op_id_gen, parent_id)?;
 
     let then_block_tokens = get_terminated_tokens(
         stores,
@@ -735,13 +741,8 @@ pub fn parse_if<'a>(
     )?;
     let mut close_token = then_block_tokens.close;
 
-    let then_block = parse_item_body_contents(
-        program,
-        stores,
-        &then_block_tokens.list,
-        op_id_gen,
-        parent_id,
-    )?;
+    let then_block =
+        parse_item_body_contents(ctx, stores, &then_block_tokens.list, op_id_gen, parent_id)?;
 
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
@@ -757,7 +758,7 @@ pub fn parse_if<'a>(
         )?;
 
         let elif_condition = parse_item_body_contents(
-            program,
+            ctx,
             stores,
             &elif_condition_tokens.list,
             op_id_gen,
@@ -775,13 +776,8 @@ pub fn parse_if<'a>(
             }),
         )?;
 
-        let elif_block = parse_item_body_contents(
-            program,
-            stores,
-            &elif_block_tokens.list,
-            op_id_gen,
-            parent_id,
-        )?;
+        let elif_block =
+            parse_item_body_contents(ctx, stores, &elif_block_tokens.list, op_id_gen, parent_id)?;
 
         elif_blocks.push((
             close_token,
@@ -803,13 +799,8 @@ pub fn parse_if<'a>(
             ("end", |t| t == TokenKind::End),
         )?;
 
-        let else_block = parse_item_body_contents(
-            program,
-            stores,
-            &else_block_tokens.list,
-            op_id_gen,
-            parent_id,
-        )?;
+        let else_block =
+            parse_item_body_contents(ctx, stores, &else_block_tokens.list, op_id_gen, parent_id)?;
 
         close_token = else_block_tokens.close;
 
@@ -843,7 +834,7 @@ pub fn parse_if<'a>(
         };
         let if_op = Op::new(
             op_id_gen(),
-            OpCode::If(Box::new(if_code)),
+            OpCode::Complex(UnresolvedOp::If(Box::new(if_code))),
             open_token.map(|t| t.lexeme),
         );
 
@@ -871,11 +862,14 @@ pub fn parse_if<'a>(
             is_terminal: false,
         },
     };
-    Ok((OpCode::If(Box::new(if_code)), close_token.location))
+    Ok((
+        OpCode::Complex(UnresolvedOp::If(Box::new(if_code))),
+        close_token.location,
+    ))
 }
 
 pub fn parse_while<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -891,13 +885,8 @@ pub fn parse_while<'a>(
         ("do", |t| t == TokenKind::Do),
     )?;
 
-    let condition = parse_item_body_contents(
-        program,
-        stores,
-        &condition_tokens.list,
-        op_id_gen,
-        parent_id,
-    )?;
+    let condition =
+        parse_item_body_contents(ctx, stores, &condition_tokens.list, op_id_gen, parent_id)?;
 
     let body_tokens = get_terminated_tokens(
         stores,
@@ -909,7 +898,7 @@ pub fn parse_while<'a>(
     )?;
 
     let body_block =
-        parse_item_body_contents(program, stores, &body_tokens.list, op_id_gen, parent_id)?;
+        parse_item_body_contents(ctx, stores, &body_tokens.list, op_id_gen, parent_id)?;
 
     let while_tokens = WhileTokens {
         do_token: condition_tokens.close.location,
@@ -928,7 +917,7 @@ pub fn parse_while<'a>(
     };
 
     Ok((
-        OpCode::While(Box::new(while_code)),
+        OpCode::Complex(UnresolvedOp::While(Box::new(while_code))),
         body_tokens.close.location,
     ))
 }

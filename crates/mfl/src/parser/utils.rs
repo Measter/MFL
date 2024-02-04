@@ -8,7 +8,7 @@ use crate::{
     ir::{OpCode, UnresolvedIdent, UnresolvedOp},
     lexer::{Integer, Token, TokenKind},
     source_file::{SourceLocation, Spanned, WithSpan},
-    type_store::{UnresolvedType, UnresolvedTypeTokens},
+    type_store::UnresolvedTypeTokens,
     Stores,
 };
 
@@ -401,12 +401,7 @@ pub fn parse_ident<'a>(
         import_span = import_span.merge(delim.close.location);
         last_token = delim.close;
 
-        Some(
-            unresolved_types
-                .into_iter()
-                .map(|ut| UnresolvedType::Tokens(ut.inner))
-                .collect(),
-        )
+        Some(unresolved_types.into_iter().map(|ut| ut.inner).collect())
     } else {
         None
     };

@@ -181,7 +181,7 @@ pub enum Memory {
     },
     InsertStruct {
         emit_struct: bool,
-        filed_name: Spanned<Spur>,
+        field_name: Spanned<Spur>,
     },
     Load,
     PackArray {
@@ -232,10 +232,10 @@ impl PartialEq for UnresolvedIdent {
 pub enum UnresolvedOp {
     Cast { id: UnresolvedTypeTokens },
     Ident(UnresolvedIdent),
-    If(Box<If<Op<Self>, IfTokens>>),
+    If(Box<If<Self, IfTokens>>),
     PackStruct { id: UnresolvedTypeTokens },
     SizeOf { id: UnresolvedTypeTokens },
-    While(Box<While<Op<Self>, WhileTokens>>),
+    While(Box<While<Self, WhileTokens>>),
 }
 
 #[derive(Debug, Clone)]
@@ -279,4 +279,10 @@ pub struct Op<T> {
     pub code: OpCode<T>,
     pub id: OpId,
     pub token: Spanned<Spur>,
+}
+
+impl<T> Op<T> {
+    pub fn new(id: OpId, code: OpCode<T>, token: Spanned<Spur>) -> Self {
+        Self { id, code, token }
+    }
 }

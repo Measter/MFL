@@ -6,10 +6,10 @@ use lasso::Spur;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    ir::{Op, OpCode, OpId, UnresolvedOp},
+    ir::{Basic, Control, Op, OpCode, OpId, UnresolvedOp},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
-    source_file::{Spanned, WithSpan},
+    source_file::Spanned,
     type_store::{UnresolvedField, UnresolvedStruct, UnresolvedType},
     Stores,
 };
@@ -61,7 +61,7 @@ fn try_get_lang_item<'a>(
 }
 
 fn parse_item_body<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     had_error: &mut bool,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -87,20 +87,20 @@ fn parse_item_body<'a>(
     .recover(had_error, Delimited::fallback(name_token));
 
     let mut body =
-        parse_item_body_contents(program, stores, &body_delim.list, &mut op_id_gen, parent_id)
+        parse_item_body_contents(ctx, stores, &body_delim.list, &mut op_id_gen, parent_id)
             .recover(had_error, Vec::new());
 
     // Makes later logic easier if we always have a prologue and epilogue.
     body.insert(
         0,
         Op {
-            code: OpCode::Prologue,
+            code: OpCode::Basic(Basic::Control(Control::Prologue)),
             id: op_id_gen(),
             token: body_delim.open.map(|t| t.lexeme),
         },
     );
     body.push(Op {
-        code: OpCode::Epilogue,
+        code: OpCode::Basic(Basic::Control(Control::Epilogue)),
         id: op_id_gen(),
         token: body_delim.close.map(|t| t.lexeme),
     });
@@ -109,7 +109,7 @@ fn parse_item_body<'a>(
 }
 
 pub fn parse_function<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -148,12 +148,7 @@ pub fn parse_function<'a>(
     };
 
     let entry_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
-
-    let entry_stack = entry_stack.map(|st| {
-        st.into_iter()
-            .map(|t| t.map(UnresolvedType::Tokens))
-            .collect()
-    });
+    let entry_stack = entry_stack.map(|st| st.into_iter().collect());
 
     expect_token(
         stores,
@@ -165,15 +160,10 @@ pub fn parse_function<'a>(
     .recover(&mut had_error, (0, name_token));
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
-
-    let exit_stack = exit_stack.map(|st| {
-        st.into_iter()
-            .map(|t| t.map(UnresolvedType::Tokens))
-            .collect()
-    });
+    let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
     let item_id = if generic_params.list.is_empty() {
-        program.new_function(
+        ctx.new_function(
             stores,
             &mut had_error,
             name_token.map(|t| t.lexeme),
@@ -182,7 +172,7 @@ pub fn parse_function<'a>(
             exit_stack,
         )
     } else {
-        program.new_generic_function(
+        ctx.new_generic_function(
             stores,
             &mut had_error,
             name_token.map(|t| t.lexeme),
@@ -198,19 +188,12 @@ pub fn parse_function<'a>(
     };
 
     if let Some(lang_item_id) = lang_item {
-        program.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+        ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
     }
 
-    let body = parse_item_body(
-        program,
-        stores,
-        &mut had_error,
-        token_iter,
-        name_token,
-        item_id,
-    );
+    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    program.set_item_body(item_id, body);
+    ctx.urir().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -220,7 +203,7 @@ pub fn parse_function<'a>(
 }
 
 pub fn parse_assert<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -237,23 +220,16 @@ pub fn parse_assert<'a>(
     .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
-    let item_id = program.new_assert(
+    let item_id = ctx.new_assert(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
     );
 
-    let body = parse_item_body(
-        program,
-        stores,
-        &mut had_error,
-        token_iter,
-        name_token,
-        item_id,
-    );
+    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    program.set_item_body(item_id, body);
+    ctx.urir().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -263,7 +239,7 @@ pub fn parse_assert<'a>(
 }
 
 pub fn parse_const<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -282,13 +258,9 @@ pub fn parse_const<'a>(
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
 
-    let exit_stack = exit_stack.map(|st| {
-        st.into_iter()
-            .map(|t| t.map(UnresolvedType::Tokens))
-            .collect()
-    });
+    let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
-    let item_id = program.new_const(
+    let item_id = ctx.new_const(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
@@ -296,16 +268,9 @@ pub fn parse_const<'a>(
         exit_stack,
     );
 
-    let body = parse_item_body(
-        program,
-        stores,
-        &mut had_error,
-        token_iter,
-        name_token,
-        item_id,
-    );
+    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    program.set_item_body(item_id, body);
+    ctx.urir().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -315,7 +280,7 @@ pub fn parse_const<'a>(
 }
 
 pub fn parse_memory<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     keyword: Spanned<Token>,
@@ -367,12 +332,9 @@ pub fn parse_memory<'a>(
     }
 
     // TODO: Make this not crash on an empty store type
-    let memory_type = unresolved_store_type
-        .pop()
-        .map(|t| UnresolvedType::Tokens(t.inner).with_span(store_type_location))
-        .unwrap();
+    let memory_type = unresolved_store_type.pop().unwrap();
 
-    program.new_memory(
+    ctx.new_memory(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
@@ -388,7 +350,7 @@ pub fn parse_memory<'a>(
 }
 
 pub fn parse_struct_or_union<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     module_id: ItemId,
@@ -502,9 +464,9 @@ pub fn parse_struct_or_union<'a>(
         is_union: keyword.inner.kind == TokenKind::Union,
     };
 
-    let item_id = program.new_struct(stores, &mut had_error, module_id, struct_def);
+    let item_id = ctx.new_struct(stores, &mut had_error, module_id, struct_def);
     if let Some(lang_item_id) = lang_item {
-        program.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+        ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
     }
 
     if !had_error {
@@ -538,7 +500,7 @@ pub fn parse_module<'a>(
 }
 
 pub fn parse_import<'a>(
-    program: &mut Context,
+    ctx: &mut Context,
     stores: &mut Stores,
     had_error: &mut bool,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
@@ -558,7 +520,9 @@ pub fn parse_import<'a>(
         return Ok(());
     };
 
-    program.get_scope_mut(module_id).add_unresolved_import(path);
+    ctx.urir()
+        .get_scope_mut(module_id)
+        .add_unresolved_import(path);
 
     Ok(())
 }
