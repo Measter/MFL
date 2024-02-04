@@ -7,7 +7,7 @@ use crate::{
     diagnostics,
     ir::UnresolvedIdent,
     option::OptionExt,
-    program::static_analysis::Analyzer,
+    pass_manager::static_analysis::Analyzer,
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{TypeId, UnresolvedStruct, UnresolvedTypeIds, UnresolvedTypeTokens},
@@ -39,11 +39,11 @@ pub enum ItemKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ItemHeader {
-    name: Spanned<Spur>,
-    id: ItemId,
-    parent: Option<ItemId>,
-    kind: ItemKind,
-    lang_item: Option<LangItem>,
+    pub name: Spanned<Spur>,
+    pub id: ItemId,
+    pub parent: Option<ItemId>,
+    pub kind: ItemKind,
+    pub lang_item: Option<LangItem>,
 }
 
 impl ItemHeader {
@@ -262,6 +262,10 @@ impl Context {
         self.headers.iter().copied()
     }
 
+    pub fn get_lang_items(&self) -> &HashMap<LangItem, ItemId> {
+        &self.lang_items
+    }
+
     #[inline]
     pub fn urir(&self) -> &UnresolvedIr {
         &self.urir
@@ -307,6 +311,24 @@ impl Context {
     #[track_caller]
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_function_template_paramaters(&self, id: ItemId) -> &[Spanned<Spur>] {
+        &self.generic_template_parameters[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_new_function_instance(
+        &mut self,
+        base_id: ItemId,
+        new_name: String,
+        instance_id: ItemId,
+    ) {
+        self.generic_function_cache
+            .insert((base_id, new_name), instance_id);
     }
 }
 
@@ -379,7 +401,7 @@ impl Context {
         }
 
         if is_top_level {
-            self.top_level_modules.insert(name, header.id);
+            self.top_level_modules.insert(name.inner, header.id);
         }
 
         header.id

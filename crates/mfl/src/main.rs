@@ -28,6 +28,7 @@ mod lexer;
 mod n_ops;
 mod option;
 mod parser;
+mod pass_manager;
 mod program;
 mod simulate;
 mod source_file;
@@ -81,15 +82,15 @@ pub struct Stores {
 }
 
 fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature) -> bool {
-    if !entry_sig.exit_stack().is_empty() {
+    if !entry_sig.exit.is_empty() {
         return false;
     }
 
-    if entry_sig.entry_stack().is_empty() {
+    if entry_sig.entry.is_empty() {
         return true;
     }
 
-    let [argc_id, argv_id] = entry_sig.entry_stack() else {
+    let [argc_id, argv_id] = entry_sig.entry.as_slice() else {
         return false;
     };
 
@@ -115,22 +116,22 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         types: type_store,
     };
 
-    let mut program = Context::new();
-    let entry_module_id = program.load_program2(&mut stores, args)?;
+    let mut context = Context::new();
+    let entry_module_id = program::load_program(&mut context, &mut stores, args)?;
 
     let mut top_level_symbols = Vec::new();
 
     if args.is_library {
-        let entry_scope = program.get_scope(entry_module_id);
+        let entry_scope = context.nrir().get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
-            let item_header = program.get_item_header(item_id.inner);
+            let item_header = context.get_item_header(item_id.inner);
             if item_header.kind() == ItemKind::Function {
                 top_level_symbols.push(item_id.inner);
             }
         }
     } else {
         let entry_symbol = stores.strings.intern("entry");
-        let entry_scope = program.get_scope(entry_module_id);
+        let entry_scope = context.nrir().get_scope(entry_module_id);
 
         let entry_function_id = entry_scope
             .get_symbol(entry_symbol)
@@ -139,7 +140,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         top_level_symbols.push(entry_function_id);
 
         debug!("checking entry signature");
-        let entry_item = program.get_item_header(entry_function_id);
+        let entry_item = context.get_item_header(entry_function_id);
         if !matches!(entry_item.kind(), ItemKind::Function) {
             let name = entry_item.name();
             diagnostics::emit_error(
@@ -156,7 +157,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
             return Err(eyre!("invalid `entry` procedure type"));
         }
 
-        let entry_sig = program.get_item_signature_resolved(entry_function_id);
+        let entry_sig = context.trir().get_item_signature(entry_function_id);
         if !is_valid_entry_sig(&mut stores, entry_sig) {
             let name = entry_item.name();
             diagnostics::emit_error(
@@ -170,7 +171,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         }
     }
 
-    Ok((program, stores, top_level_symbols))
+    Ok((context, stores, top_level_symbols))
 }
 
 fn run_compile(args: &Args) -> Result<()> {

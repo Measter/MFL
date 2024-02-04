@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
-    program::static_analysis::{Analyzer, ValueId},
+    pass_manager::static_analysis::{Analyzer, ValueId},
     source_file::SourceLocation,
     Stores,
 };

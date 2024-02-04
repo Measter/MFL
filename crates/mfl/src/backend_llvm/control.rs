@@ -25,7 +25,7 @@ impl<'ctx> CodeGen<'ctx> {
             .inputs()
             .iter()
             .zip(
-                ds.program
+                ds.context
                     .get_item_signature_resolved(callee_id)
                     .entry_stack(),
             )
@@ -51,7 +51,7 @@ impl<'ctx> CodeGen<'ctx> {
             .map(|p| p.map(Into::into))
             .collect::<InkwellResult<_>>()?;
 
-        let callee_name = ds.interner.get_symbol_name(ds.program, callee_id);
+        let callee_name = ds.interner.get_symbol_name(ds.context, callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
         let result =
@@ -92,7 +92,7 @@ impl<'ctx> CodeGen<'ctx> {
             return Ok(());
         }
 
-        let sig = ds.program.get_item_signature_resolved(self_id);
+        let sig = ds.context.get_item_signature_resolved(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()

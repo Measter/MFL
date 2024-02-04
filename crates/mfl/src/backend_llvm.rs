@@ -25,7 +25,7 @@ use crate::{
     context::{Context as MflContext, ItemId, ItemKind},
     interners::Interner,
     ir::{IntKind, Op, OpCode, TypeResolvedOp},
-    program::static_analysis::{Analyzer, ValueId},
+    pass_manager::static_analysis::{Analyzer, ValueId},
     source_file::SourceStorage,
     type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     Args, Stores,
@@ -99,7 +99,7 @@ impl OpCode<TypeResolvedOp> {
 }
 
 struct DataStore<'a> {
-    program: &'a MflContext,
+    context: &'a MflContext,
     interner: &'a mut Interner,
     analyzer: &'a Analyzer,
     type_store: &'a mut TypeStore,
@@ -757,7 +757,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         {
             let mut data_store = DataStore {
-                program,
+                context: program,
                 interner,
                 analyzer: program.get_analyzer(id),
                 type_store,

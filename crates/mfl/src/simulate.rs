@@ -7,7 +7,7 @@ use crate::{
     diagnostics,
     ir::{Direction, IntKind, Op, OpCode, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
-    program::static_analysis::promote_int_type_bidirectional,
+    pass_manager::static_analysis::promote_int_type_bidirectional,
     type_store::IntWidth,
     Stores,
 };
@@ -338,7 +338,7 @@ pub(crate) fn simulate_execute_program(
     simulate_execute_program_block(
         program,
         stores,
-        program.get_item_body(item_id),
+        program.trir().get_item_body(item_id),
         &mut value_stack,
     )?;
 
