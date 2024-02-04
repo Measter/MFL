@@ -14,7 +14,6 @@ use crate::{
 };
 
 // mod passes;
-pub mod static_analysis;
 
 const BUILTINS: &str = include_str!("builtins/builtins.mfl");
 
