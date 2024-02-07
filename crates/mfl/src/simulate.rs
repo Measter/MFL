@@ -3,9 +3,11 @@ use intcast::IntCast;
 use tracing::info;
 
 use crate::{
-    context::{Context, ItemId, ItemKind},
+    context::{Context, ItemId},
     diagnostics,
-    ir::{Direction, IntKind, Op, OpCode, TypeResolvedOp},
+    ir::{
+        Arithmetic, Basic, Compare, Control, Direction, IntKind, Op, OpCode, Stack, TypeResolvedOp,
+    },
     n_ops::{SliceNOps, VecNOps},
     pass_manager::static_analysis::promote_int_type_bidirectional,
     type_store::IntWidth,
@@ -112,219 +114,219 @@ fn simulate_execute_program_block(
     let mut ip = 0;
     while let Some(op) = block.get(ip) {
         match &op.code {
-            OpCode::Add
-            | OpCode::Subtract
-            | OpCode::Multiply
-            | OpCode::Div
-            | OpCode::Rem
-            | OpCode::BitOr
-            | OpCode::BitAnd
-            | OpCode::BitXor
-            | OpCode::ShiftLeft
-            | OpCode::ShiftRight => {
+            OpCode::Basic(Basic::Arithmetic(ar_op)) => match ar_op {
+                Arithmetic::Add
+                | Arithmetic::BitAnd
+                | Arithmetic::BitOr
+                | Arithmetic::BitXor
+                | Arithmetic::Div
+                | Arithmetic::Multiply
+                | Arithmetic::Rem
+                | Arithmetic::ShiftLeft
+                | Arithmetic::ShiftRight
+                | Arithmetic::Subtract => {
+                    let [a, b] = value_stack.popn().unwrap();
+                    value_stack.push(apply_int_op(
+                        a,
+                        b,
+                        ar_op.get_unsigned_binary_op(),
+                        ar_op.get_signed_binary_op(),
+                    ));
+                }
+                Arithmetic::BitNot => {
+                    let a = value_stack.last_mut().unwrap();
+                    match a {
+                        SimulatorValue::Int {
+                            width,
+                            kind: IntKind::Signed(v),
+                        } => *v = !*v & width.mask() as i64,
+                        SimulatorValue::Int {
+                            width,
+                            kind: IntKind::Unsigned(v),
+                        } => *v = !*v & width.mask(),
+                        SimulatorValue::Bool(v) => *v = !*v,
+                    }
+                }
+            },
+            OpCode::Basic(Basic::Compare(co_op)) => {
+                if *co_op == Compare::IsNull {
+                    emit_unsupported_diag(stores, op);
+                    return Err(SimulationError::UnsupportedOp);
+                }
+
                 let [a, b] = value_stack.popn().unwrap();
-                value_stack.push(apply_int_op(
+                value_stack.push(apply_bool_op(
                     a,
                     b,
-                    op.code.get_unsigned_binary_op(),
-                    op.code.get_signed_binary_op(),
+                    co_op.get_unsigned_binary_op(),
+                    co_op.get_signed_binary_op(),
+                    co_op.get_bool_binary_op(),
                 ));
             }
-
-            OpCode::BitNot => {
-                let a = value_stack.last_mut().unwrap();
-                match a {
-                    SimulatorValue::Int {
-                        width,
-                        kind: IntKind::Signed(v),
-                    } => *v = !*v & width.mask() as i64,
-                    SimulatorValue::Int {
-                        width,
-                        kind: IntKind::Unsigned(v),
-                    } => *v = !*v & width.mask(),
-                    SimulatorValue::Bool(v) => *v = !*v,
+            OpCode::Basic(Basic::Control(con_op)) => match con_op {
+                // These are no-ops here.
+                Control::Epilogue | Control::Prologue => {}
+                Control::Return => break,
+                Control::Exit | Control::SysCall { .. } => {
+                    emit_unsupported_diag(stores, op);
+                    return Err(SimulationError::UnsupportedOp);
                 }
+            },
+            OpCode::Basic(Basic::Memory(_)) => {
+                emit_unsupported_diag(stores, op);
+                return Err(SimulationError::UnsupportedOp);
             }
-
-            OpCode::PushBool(val) => value_stack.push(SimulatorValue::Bool(*val)),
-            OpCode::PushInt { value, width } => value_stack.push(SimulatorValue::Int {
-                width: *width,
-                kind: *value,
-            }),
-            OpCode::SizeOf(kind) => {
-                let size = stores.types.get_size_info(*kind);
+            OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(*val)),
+            OpCode::Basic(Basic::PushInt { width, value }) => {
                 value_stack.push(SimulatorValue::Int {
-                    width: IntWidth::I64,
-                    kind: IntKind::Unsigned(size.byte_width),
-                });
+                    width: *width,
+                    kind: *value,
+                })
             }
-            // It's a bit weird, given you can't do much with a string, but
-            // you could just drop the address that gets pushed leaving the length
-            // which can be used in a const context.
-            OpCode::PushStr { id, is_c_str } => {
-                let literal = stores.strings.resolve(*id);
-                if !is_c_str {
-                    // Strings are null-terminated during parsing, but the MFL-style strings shouldn't
-                    // include that character.
-                    value_stack.push(SimulatorValue::Int {
-                        width: IntWidth::I64,
-                        kind: IntKind::Unsigned(literal.len() as u64 - 1),
-                    });
+            OpCode::Basic(Basic::PushStr { .. }) => {
+                emit_unsupported_diag(stores, op);
+                return Err(SimulationError::UnsupportedOp);
+            }
+            OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
+                Stack::Dup { count } => {
+                    let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();
+                    for i in range {
+                        let a = value_stack[i];
+                        value_stack.push(a);
+                    }
                 }
-                // A garbage value is fine, because you can't read/write memory in a const-context anyway.
-                value_stack.push(SimulatorValue::Int {
-                    width: IntWidth::I64,
-                    kind: IntKind::Unsigned(0),
-                });
-            }
-            OpCode::Drop { count, .. } => {
-                value_stack.truncate(value_stack.len() - count.inner.to_usize());
-            }
+                Stack::Drop { count } => {
+                    value_stack.truncate(value_stack.len() - count.inner.to_usize())
+                }
+                // Only emits a display of the stack.
+                Stack::Emit { show_labels } => {}
+                Stack::Over { depth } => {
+                    let value = value_stack[value_stack.len() - 1 - depth.inner.to_usize()];
+                    value_stack.push(value);
+                }
+                Stack::Reverse { count } => {
+                    value_stack
+                        .lastn_mut(count.inner.to_usize())
+                        .unwrap()
+                        .reverse();
+                }
+                Stack::Rotate {
+                    item_count,
+                    direction,
+                    shift_count,
+                } => {
+                    let shift_count = shift_count.inner % item_count.inner;
+                    let start = value_stack.len() - item_count.inner.to_usize();
+                    match direction {
+                        Direction::Left => value_stack[start..].rotate_left(shift_count.to_usize()),
+                        Direction::Right => {
+                            value_stack[start..].rotate_right(shift_count.to_usize())
+                        }
+                    }
+                }
+                Stack::Swap { count } => {
+                    let slice_start = value_stack.len() - count.inner.to_usize();
+                    let (rest, a_slice) = value_stack.split_at_mut(slice_start);
+                    let (_, b_slice) = rest.split_at_mut(rest.len() - count.inner.to_usize());
 
-            OpCode::While(while_op) => loop {
-                simulate_execute_program_block(program, stores, &while_op.condition, value_stack)?;
-                let a = value_stack.pop().unwrap();
-                if a == SimulatorValue::Bool(false) {
-                    break;
+                    a_slice.swap_with_slice(b_slice);
                 }
-                simulate_execute_program_block(program, stores, &while_op.body_block, value_stack)?;
             },
 
-            OpCode::If(if_op) => {
-                simulate_execute_program_block(program, stores, &if_op.condition, value_stack)?;
+            OpCode::Complex(
+                TypeResolvedOp::CallFunction { .. }
+                | TypeResolvedOp::Cast { .. }
+                | TypeResolvedOp::Memory { .. }
+                | TypeResolvedOp::PackStruct { .. },
+            ) => {
+                emit_unsupported_diag(stores, op);
+                return Err(SimulationError::UnsupportedOp);
+            }
+
+            OpCode::Complex(TypeResolvedOp::If(if_op)) => {
+                simulate_execute_program_block(
+                    program,
+                    stores,
+                    &if_op.condition.block,
+                    value_stack,
+                )?;
 
                 let a = value_stack.pop().unwrap();
                 if a == SimulatorValue::Bool(true) {
                     simulate_execute_program_block(
                         program,
                         stores,
-                        &if_op.then_block,
+                        &if_op.then_block.block,
                         value_stack,
                     )?;
                 } else {
                     simulate_execute_program_block(
                         program,
                         stores,
-                        &if_op.else_block,
+                        &if_op.else_block.block,
                         value_stack,
                     )?;
                 }
             }
-
-            OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Equal
-            | OpCode::NotEq => {
-                let [a, b] = value_stack.popn().unwrap();
-                value_stack.push(apply_bool_op(
-                    a,
-                    b,
-                    op.code.get_unsigned_binary_op(),
-                    op.code.get_signed_binary_op(),
-                    op.code.get_bool_binary_op(),
-                ));
+            OpCode::Complex(TypeResolvedOp::SizeOf { id }) => {
+                let size = stores.types.get_size_info(*id);
+                value_stack.push(SimulatorValue::Int {
+                    width: IntWidth::I64,
+                    kind: IntKind::Unsigned(size.byte_width),
+                });
             }
-            OpCode::Dup { count, .. } => {
-                let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();
-                for i in range {
-                    let a = value_stack[i];
-                    value_stack.push(a);
-                }
-            }
-            OpCode::Over { depth, .. } => {
-                let value = value_stack[value_stack.len() - 1 - depth.inner.to_usize()];
-                value_stack.push(value);
-            }
-            OpCode::Rot {
-                item_count,
-                direction,
-                shift_count,
-                ..
-            } => {
-                let shift_count = shift_count.inner % item_count.inner;
-                let start = value_stack.len() - item_count.inner.to_usize();
-                match direction {
-                    Direction::Left => value_stack[start..].rotate_left(shift_count.to_usize()),
-                    Direction::Right => value_stack[start..].rotate_right(shift_count.to_usize()),
-                }
-            }
-            OpCode::Swap { count, .. } => {
-                let slice_start = value_stack.len() - count.inner.to_usize();
-                let (rest, a_slice) = value_stack.split_at_mut(slice_start);
-                let (_, b_slice) = rest.split_at_mut(rest.len() - count.inner.to_usize());
-
-                a_slice.swap_with_slice(b_slice);
-            }
-            OpCode::Reverse { count, .. } => {
-                value_stack
-                    .lastn_mut(count.inner.to_usize())
-                    .unwrap()
-                    .reverse();
-            }
-
-            // These are no-ops for the simulator, only there to help the compiler.
-            OpCode::Epilogue | OpCode::Prologue | OpCode::EmitStack(_) => {}
-            OpCode::Return { .. } => break,
-
-            OpCode::ResolvedIdent { item_id, .. } => {
-                let referenced_item = program.get_item_header(*item_id);
-
-                if referenced_item.kind() == ItemKind::Const {
-                    let Some(vals) = program.get_consts(*item_id) else {
-                        return Err(SimulationError::UnreadyConst);
-                    };
-                    value_stack.extend(vals.iter().map(|(_, v)| *v));
-                } else {
-                    diagnostics::emit_error(
-                        stores,
-                        op.token.location,
-                        "non-const cannot be refenced in a const",
-                        [Label::new(op.token.location).with_color(Color::Red)],
-                        None,
-                    );
-                    return Err(SimulationError::UnsupportedOp);
-                }
-            }
-
-            OpCode::CallFunction { .. }
-            | OpCode::Memory { .. }
-            | OpCode::ResolvedCast { .. }
-            | OpCode::PackArray { .. }
-            | OpCode::PackStruct { .. }
-            | OpCode::Unpack { .. }
-            | OpCode::InsertArray { .. }
-            | OpCode::ExtractArray { .. }
-            | OpCode::InsertStruct { .. }
-            | OpCode::ExtractStruct { .. }
-            | OpCode::Exit
-            | OpCode::Load
-            | OpCode::Store
-            | OpCode::IsNull
-            | OpCode::SysCall { .. } => {
-                diagnostics::emit_error(
+            OpCode::Complex(TypeResolvedOp::While(while_op)) => loop {
+                simulate_execute_program_block(
+                    program,
                     stores,
-                    op.token.location,
-                    "operation not supported during const evaluation",
-                    [Label::new(op.token.location).with_color(Color::Red)],
-                    None,
-                );
-                return Err(SimulationError::UnsupportedOp);
-            }
+                    &while_op.condition.block,
+                    value_stack,
+                )?;
+                let a = value_stack.pop().unwrap();
+                if a == SimulatorValue::Bool(false) {
+                    break;
+                }
+                simulate_execute_program_block(
+                    program,
+                    stores,
+                    &while_op.body_block.block,
+                    value_stack,
+                )?;
+            }, // OpCode::ResolvedIdent { item_id, .. } => {
+               //     let referenced_item = program.get_item_header(*item_id);
 
-            OpCode::UnresolvedCast { .. }
-            | OpCode::UnresolvedIdent(_)
-            | OpCode::UnresolvedPackStruct { .. }
-            | OpCode::UnresolvedSizeOf { .. } => {
-                panic!("ICE: Encountered {:?}", op.code)
-            }
+               //     if referenced_item.kind() == ItemKind::Const {
+               //         let Some(vals) = program.get_consts(*item_id) else {
+               //             return Err(SimulationError::UnreadyConst);
+               //         };
+               //         value_stack.extend(vals.iter().map(|(_, v)| *v));
+               //     } else {
+               //         diagnostics::emit_error(
+               //             stores,
+               //             op.token.location,
+               //             "non-const cannot be refenced in a const",
+               //             [Label::new(op.token.location).with_color(Color::Red)],
+               //             None,
+               //         );
+               //         return Err(SimulationError::UnsupportedOp);
+               //     }
+               // }
         }
 
         ip += 1;
     }
 
     Ok(())
+}
+
+fn emit_unsupported_diag(stores: &mut Stores, op: &Op<TypeResolvedOp>) {
+    diagnostics::emit_error(
+        stores,
+        op.token.location,
+        "operation not supported during const evaluation",
+        [Label::new(op.token.location).with_color(Color::Red)],
+        None,
+    );
 }
 
 pub(crate) fn simulate_execute_program(

@@ -105,7 +105,7 @@ pub struct If<OpType, TokenType = ()> {
     pub else_block: TerminalBlock<OpType>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Arithmetic {
     Add,
     BitAnd,
@@ -120,7 +120,45 @@ pub enum Arithmetic {
     Subtract,
 }
 
-#[derive(Debug, Copy, Clone)]
+impl Arithmetic {
+    pub fn get_unsigned_binary_op(self) -> fn(u64, u64) -> u64 {
+        use Arithmetic::*;
+        match self {
+            Add => |a, b| a + b,
+            BitAnd => |a, b| a & b,
+            BitOr => |a, b| a | b,
+            BitXor => |a, b| a ^ b,
+            Div => |a, b| a / b,
+            Multiply => |a, b| a * b,
+            Rem => |a, b| a % b,
+            ShiftLeft => |a, b| a << b,
+            ShiftRight => |a, b| a >> b,
+            Subtract => |a, b| a - b,
+
+            Arithmetic::BitNot => panic!("ICE: Tried to get binary_op of a BitNot"),
+        }
+    }
+
+    pub fn get_signed_binary_op(self) -> fn(i64, i64) -> i64 {
+        use Arithmetic::*;
+        match self {
+            Add => |a, b| a + b,
+            BitAnd => |a, b| a & b,
+            BitOr => |a, b| a | b,
+            BitXor => |a, b| a ^ b,
+            Div => |a, b| a / b,
+            Multiply => |a, b| a * b,
+            Rem => |a, b| a % b,
+            ShiftLeft => |a, b| a << b,
+            ShiftRight => |a, b| a >> b,
+            Subtract => |a, b| a - b,
+
+            Arithmetic::BitNot => panic!("ICE: Tried to get binary_op of a BitNot"),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Compare {
     Equal,
     Less,
@@ -129,6 +167,47 @@ pub enum Compare {
     GreaterEqual,
     NotEq,
     IsNull,
+}
+
+impl Compare {
+    pub fn get_unsigned_binary_op(self) -> fn(u64, u64) -> u64 {
+        use Compare::*;
+        match self {
+            Equal => |a, b| (a == b) as u64,
+            Greater => |a, b| (a > b) as u64,
+            GreaterEqual => |a, b| (a >= b) as u64,
+            Less => |a, b| (a < b) as u64,
+            LessEqual => |a, b| (a <= b) as u64,
+            NotEq => |a, b| (a != b) as u64,
+            IsNull => unimplemented!(),
+        }
+    }
+
+    pub fn get_signed_binary_op(self) -> fn(i64, i64) -> i64 {
+        use Compare::*;
+        match self {
+            Equal => |a, b| (a == b) as i64,
+            Greater => |a, b| (a > b) as i64,
+            GreaterEqual => |a, b| (a >= b) as i64,
+            Less => |a, b| (a < b) as i64,
+            LessEqual => |a, b| (a <= b) as i64,
+            NotEq => |a, b| (a != b) as i64,
+            IsNull => unimplemented!(),
+        }
+    }
+
+    pub fn get_bool_binary_op(self) -> fn(bool, bool) -> bool {
+        use Compare::*;
+        match self {
+            Equal => |a, b| a == b,
+            NotEq => |a, b| a != b,
+            Greater => |a, b| a > b,
+            GreaterEqual => |a, b| a >= b,
+            Less => |a, b| a < b,
+            LessEqual => |a, b| a <= b,
+            IsNull => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
