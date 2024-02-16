@@ -3,8 +3,8 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    opcode::{If, Op, While},
-    program::ItemId,
+    context::ItemId,
+    ir::{If, Op, TypeResolvedOp, While},
     source_file::Spanned,
     type_store::TypeKind,
 };
@@ -16,7 +16,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         callee_id: ItemId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -24,11 +24,7 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(
-                ds.context
-                    .get_item_signature_resolved(callee_id)
-                    .entry_stack(),
-            )
+            .zip(&ds.context.trir().get_item_signature(callee_id).entry)
             .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
                 let value = value_store.load_value(self, value_id, ds)?;
                 let [input_type_id] = ds.analyzer.value_types([value_id]).unwrap();
@@ -83,7 +79,7 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         self_id: ItemId,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
@@ -92,12 +88,12 @@ impl<'ctx> CodeGen<'ctx> {
             return Ok(());
         }
 
-        let sig = ds.context.get_item_signature_resolved(self_id);
+        let sig = ds.context.trir().get_item_signature(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(sig.exit_stack())
+            .zip(&sig.exit)
             .map(|(value_id, expected_type_id)| -> InkwellResult<_> {
                 let value = value_store.load_value(self, *value_id, ds)?;
                 let [value_type_id] = ds.analyzer.value_types([*value_id]).unwrap();
@@ -142,7 +138,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -159,7 +155,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         arg_count: Spanned<u8>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -210,8 +206,8 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
-        op: &Op,
-        if_op: &If,
+        op: &Op<TypeResolvedOp>,
+        if_op: &If<TypeResolvedOp>,
     ) -> InkwellResult {
         let current_block = self.builder.get_insert_block().unwrap();
 
@@ -223,7 +219,7 @@ impl<'ctx> CodeGen<'ctx> {
             .ctx
             .append_basic_block(function, &format!("if_{}_else", op.id));
 
-        let post_basic_block = if if_op.is_then_terminal && if_op.is_else_terminal {
+        let post_basic_block = if if_op.then_block.is_terminal && if_op.else_block.is_terminal {
             None
         } else {
             Some(
@@ -235,9 +231,9 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(current_block);
         // Compile condition
         trace!("Compiling condition for {:?}", op.id);
-        self.compile_block(ds, value_store, id, &if_op.condition, function)?;
+        self.compile_block(ds, value_store, id, &if_op.condition.block, function)?;
 
-        if if_op.is_condition_terminal {
+        if if_op.condition.is_terminal {
             return Ok(());
         }
 
@@ -253,10 +249,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Then
         self.builder.position_at_end(then_basic_block);
         trace!("Compiling then-block for {:?}", op.id);
-        self.compile_block(ds, value_store, id, &if_op.then_block, function)?;
+        self.compile_block(ds, value_store, id, &if_op.then_block.block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op.id);
-        if !if_op.is_then_terminal {
+        if !if_op.then_block.is_terminal {
             let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -291,10 +287,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Else
         self.builder.position_at_end(else_basic_block);
         trace!("Compiling else-block for {:?}", op.id);
-        self.compile_block(ds, value_store, id, &if_op.else_block, function)?;
+        self.compile_block(ds, value_store, id, &if_op.else_block.block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op.id);
-        if !if_op.is_else_terminal {
+        if !if_op.else_block.is_terminal {
             let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -340,8 +336,8 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
-        op: &Op,
-        while_op: &While,
+        op: &Op<TypeResolvedOp>,
+        while_op: &While<TypeResolvedOp>,
     ) -> InkwellResult {
         let current_block = self.builder.get_insert_block().unwrap();
         let condition_block = self
@@ -359,7 +355,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling condition for {:?}", op.id);
         self.builder.position_at_end(condition_block);
-        self.compile_block(ds, value_store, id, &while_op.condition, function)?;
+        self.compile_block(ds, value_store, id, &while_op.condition.block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op.id);
         {
@@ -403,7 +399,7 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile body
         self.builder.position_at_end(body_block);
         trace!("Compiling body-block for {:?}", op.id);
-        self.compile_block(ds, value_store, id, &while_op.body_block, function)?;
+        self.compile_block(ds, value_store, id, &while_op.body_block.block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op.id);
         {

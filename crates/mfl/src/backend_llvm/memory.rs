@@ -11,9 +11,10 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
+    context::ItemId,
+    ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
-    opcode::Op,
-    program::{static_analysis::ValueId, ItemId},
+    pass_manager::static_analysis::ValueId,
     source_file::{SourceLocation, Spanned},
     type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
 };
@@ -30,7 +31,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         item_id: ItemId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -45,7 +46,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         mut aggr_value: AggregateValueEnum<'ctx>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -95,7 +96,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
         let output_id = op_io.outputs()[0];
@@ -129,7 +130,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
         let output_id = op_io.outputs()[0];
@@ -162,7 +163,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
         let input_value_id = op_io.inputs()[0];
@@ -311,7 +312,7 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         emit_array: bool,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -450,7 +451,7 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         emit_array: bool,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -606,7 +607,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         field_name: Spanned<Spur>,
         emit_struct: bool,
     ) -> InkwellResult {
@@ -737,7 +738,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         field_name: Spanned<Spur>,
         emit_struct: bool,
     ) -> InkwellResult {
@@ -832,7 +833,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
@@ -858,7 +859,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 

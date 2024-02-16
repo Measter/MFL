@@ -3,7 +3,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    opcode::{IntKind, Op},
+    ir::{IntKind, Op, TypeResolvedOp},
     type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
 };
 
@@ -14,7 +14,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         to_type_id: TypeId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -109,7 +109,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
 
@@ -125,7 +125,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         width: IntWidth,
         value: IntKind,
     ) -> InkwellResult {
@@ -151,7 +151,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         value: bool,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op.id);
@@ -166,7 +166,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op,
+        op: &Op<TypeResolvedOp>,
         str_id: Spur,
         is_c_str: bool,
     ) -> InkwellResult {
