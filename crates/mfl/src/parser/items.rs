@@ -193,7 +193,7 @@ pub fn parse_function<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir().set_item_body(item_id, body);
+    ctx.urir_mut().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -229,7 +229,7 @@ pub fn parse_assert<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir().set_item_body(item_id, body);
+    ctx.urir_mut().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -270,7 +270,7 @@ pub fn parse_const<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir().set_item_body(item_id, body);
+    ctx.urir_mut().set_item_body(item_id, body);
 
     if had_error {
         Err(())
@@ -520,7 +520,7 @@ pub fn parse_import<'a>(
         return Ok(());
     };
 
-    ctx.urir()
+    ctx.urir_mut()
         .get_scope_mut(module_id)
         .add_unresolved_import(path);
 
