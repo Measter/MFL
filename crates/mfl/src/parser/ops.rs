@@ -26,11 +26,7 @@ use super::{
     },
 };
 
-pub fn parse_extract_insert_array<'a>(
-    stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
-    token: Spanned<Token>,
-) -> ParseOpResult {
+pub fn parse_extract_insert_array(token: Spanned<Token>) -> ParseOpResult {
     let (kind, loc) = match token.inner.kind {
         TokenKind::Extract(Extract { emit_struct }) => (
             Memory::ExtractArray {

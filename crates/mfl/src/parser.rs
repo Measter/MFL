@@ -46,7 +46,7 @@ pub fn parse_item_body_contents(
                     ops.extend(new_ops);
                     continue;
                 } else {
-                    parse_extract_insert_array(stores, &mut token_iter, token)?
+                    parse_extract_insert_array(token)?
                 }
             }
             TokenKind::While => {
