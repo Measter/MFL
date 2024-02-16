@@ -33,8 +33,7 @@ pub fn parse_item_body_contents(
     let mut had_error = false;
 
     let mut token_iter = tokens.iter().enumerate().peekable();
-    while let Some((_, token)) = token_iter.next() {
-        let mut token = *token;
+    while let Some((_, &token)) = token_iter.next() {
         let (kind, op_end) = match token.inner.kind {
             TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                 if token_iter
