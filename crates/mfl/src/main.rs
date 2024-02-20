@@ -176,7 +176,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
 fn run_compile(args: &Args) -> Result<()> {
     print!("   Compiling...");
-    let (program, mut stores, top_level_items) = match load_program(args) {
+    let (mut program, mut stores, top_level_items) = match load_program(args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!();
@@ -185,6 +185,8 @@ fn run_compile(args: &Args) -> Result<()> {
             std::process::exit(-3);
         }
     };
+
+    pass_manager::run(&mut program, &mut stores)?;
 
     let objects = backend_llvm::compile(&program, &mut stores, &top_level_items, args)?;
 

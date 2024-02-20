@@ -75,8 +75,6 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
 
     stores.types.update_builtins(ctx.get_lang_items());
 
-    // self.post_process_items(stores, args.print_analyzer_stats)?;
-
     entry_module
 }
 
