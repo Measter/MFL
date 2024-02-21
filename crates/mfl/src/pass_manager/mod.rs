@@ -76,7 +76,17 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
                     ControlFlow::Break(()) => continue,
                 }
             }
-            PassState::IdentResolvedSignature => todo!(),
+            PassState::IdentResolvedSignature => {
+                match passes::ident_resolution::resolve_body(
+                    ctx,
+                    stores,
+                    &mut had_error,
+                    cur_item_id,
+                ) {
+                    ControlFlow::Continue(st) => action(cur_item_state, st),
+                    ControlFlow::Break(()) => continue,
+                }
+            }
             PassState::TypeResolvedSignature => todo!(),
             PassState::IdentResolvedBody => todo!(),
             PassState::TypeResolvedBody => todo!(),

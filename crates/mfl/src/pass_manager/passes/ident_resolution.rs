@@ -7,9 +7,9 @@ use tracing::debug_span;
 use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
-    ir::UnresolvedIdent,
+    ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
     pass_manager::PassResult,
-    source_file::{Spanned, WithSpan},
+    source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,
         UnresolvedTypeTokens,
@@ -359,6 +359,276 @@ pub fn resolve_signature(
             if local_had_error {
                 return ControlFlow::Break(());
             }
+        }
+    }
+
+    ControlFlow::Continue(PassResult::Progress)
+}
+
+fn resolve_idents_in_block(
+    ctx: &Context,
+    stores: &mut Stores,
+    had_error: &mut bool,
+    cur_id: ItemId,
+    block: &[Op<UnresolvedOp>],
+    generic_params: Option<&[Spanned<Spur>]>,
+) -> Vec<Op<NameResolvedOp>> {
+    let mut resolved_block = Vec::with_capacity(block.len());
+
+    for op in block {
+        match &op.code {
+            // These don't get resolved, so just copy it onward.
+            OpCode::Basic(bo) => resolved_block.push(Op {
+                code: OpCode::Basic(*bo),
+                id: op.id,
+                token: op.token,
+            }),
+            OpCode::Complex(comp) => match comp {
+                UnresolvedOp::If(if_op) => {
+                    let condition = resolve_idents_in_block(
+                        ctx,
+                        stores,
+                        had_error,
+                        cur_id,
+                        &if_op.condition.block,
+                        generic_params,
+                    );
+                    let then_block = resolve_idents_in_block(
+                        ctx,
+                        stores,
+                        had_error,
+                        cur_id,
+                        &if_op.then_block.block,
+                        generic_params,
+                    );
+                    let else_block = resolve_idents_in_block(
+                        ctx,
+                        stores,
+                        had_error,
+                        cur_id,
+                        &if_op.else_block.block,
+                        generic_params,
+                    );
+
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(NameResolvedOp::If(Box::new(If {
+                            tokens: (),
+                            condition: TerminalBlock {
+                                block: condition,
+                                is_terminal: false,
+                            },
+                            then_block: TerminalBlock {
+                                block: then_block,
+                                is_terminal: false,
+                            },
+                            else_block: TerminalBlock {
+                                block: else_block,
+                                is_terminal: false,
+                            },
+                        }))),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+                UnresolvedOp::While(while_op) => {
+                    let condition = resolve_idents_in_block(
+                        ctx,
+                        stores,
+                        had_error,
+                        cur_id,
+                        &while_op.condition.block,
+                        generic_params,
+                    );
+                    let body = resolve_idents_in_block(
+                        ctx,
+                        stores,
+                        had_error,
+                        cur_id,
+                        &while_op.body_block.block,
+                        generic_params,
+                    );
+
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(NameResolvedOp::While(Box::new(While {
+                            tokens: (),
+                            condition: TerminalBlock {
+                                block: condition,
+                                is_terminal: false,
+                            },
+                            body_block: TerminalBlock {
+                                block: body,
+                                is_terminal: false,
+                            },
+                        }))),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+
+                UnresolvedOp::Cast { id } => {
+                    let Ok(new_ty) =
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                    else {
+                        *had_error = true;
+                        continue;
+                    };
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(NameResolvedOp::Cast { id: new_ty }),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+                UnresolvedOp::PackStruct { id } => {
+                    let Ok(new_ty) =
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                    else {
+                        *had_error = true;
+                        continue;
+                    };
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty }),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+                UnresolvedOp::SizeOf { id } => {
+                    let Ok(new_ty) =
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                    else {
+                        *had_error = true;
+                        continue;
+                    };
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(NameResolvedOp::SizeOf { id: new_ty }),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+
+                UnresolvedOp::Ident(ident) => {
+                    let Ok(resolved_ident) =
+                        resolved_single_ident(ctx, stores, had_error, cur_id, ident)
+                    else {
+                        continue;
+                    };
+
+                    let resolved_generic_params = ident.generic_params.as_ref().map(|v| {
+                        let mut resolved_generic_params = Vec::new();
+                        for param in v {
+                            let Ok(f) = resolve_idents_in_type(
+                                ctx,
+                                stores,
+                                had_error,
+                                cur_id,
+                                param,
+                                generic_params,
+                            ) else {
+                                continue;
+                            };
+                            resolved_generic_params.push(f);
+                        }
+                        resolved_generic_params
+                    });
+
+                    let found_item_header = ctx.get_item_header(resolved_ident);
+                    let new_code = match found_item_header.kind {
+                        ItemKind::Const => NameResolvedOp::Const { id: resolved_ident },
+                        ItemKind::Function | ItemKind::GenericFunction => {
+                            NameResolvedOp::CallFunction {
+                                id: resolved_ident,
+                                generic_params: resolved_generic_params,
+                            }
+                        }
+                        ItemKind::Memory => NameResolvedOp::Memory {
+                            id: resolved_ident,
+                            is_global: found_item_header.parent.is_none(),
+                        },
+
+                        ItemKind::StructDef => {
+                            let ty = UnresolvedTypeTokens::Simple(ident.clone());
+                            let Ok(new_ty) = resolve_idents_in_type(
+                                ctx,
+                                stores,
+                                had_error,
+                                cur_id,
+                                &ty,
+                                generic_params,
+                            ) else {
+                                *had_error = true;
+                                continue;
+                            };
+
+                            NameResolvedOp::PackStruct { id: new_ty }
+                        }
+
+                        ItemKind::Assert | ItemKind::Module => {
+                            *had_error = true;
+                            let mut labels =
+                                vec![Label::new(op.token.location).with_color(Color::Red)];
+                            // This would be the case if the item was a top-level mmodule.
+                            let note = if found_item_header.name.location.file_id != FileId::dud() {
+                                labels.push(
+                                    Label::new(found_item_header.name.location)
+                                        .with_color(Color::Cyan)
+                                        .with_message(format!(
+                                            "item is a {:?}",
+                                            found_item_header.kind
+                                        )),
+                                );
+                                String::new()
+                            } else {
+                                let name = stores.strings.resolve(found_item_header.name.inner);
+                                format!("`{name}` is a top-level module")
+                            };
+
+                            diagnostics::emit_error(
+                                stores,
+                                op.token.location,
+                                format!("cannot refer to a {:?} here", found_item_header.kind),
+                                labels,
+                                note,
+                            );
+                            continue;
+                        }
+                    };
+
+                    resolved_block.push(Op {
+                        code: OpCode::Complex(new_code),
+                        id: op.id,
+                        token: op.token,
+                    });
+                }
+            },
+        }
+    }
+
+    resolved_block
+}
+
+pub fn resolve_body(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    had_error: &mut bool,
+    cur_id: ItemId,
+) -> ControlFlow<(), PassResult> {
+    let _span = debug_span!("Ident Resolve Body", ?cur_id);
+
+    let header = ctx.get_item_header(cur_id);
+    match header.kind {
+        ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {
+            // These don't have bodies.
+        }
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
+            let generic_params = if header.kind == ItemKind::GenericFunction {
+                Some(ctx.get_function_template_paramaters(cur_id))
+            } else {
+                None
+            };
+
+            let body = ctx.urir().get_item_body(cur_id);
+            let resolved_body =
+                resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
+            ctx.nrir_mut().set_item_body(cur_id, resolved_body);
         }
     }
 

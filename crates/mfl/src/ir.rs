@@ -322,13 +322,20 @@ pub enum NameResolvedOp {
     Cast {
         id: UnresolvedTypeIds,
     },
-    Ident {
-        item_id: ItemId,
+    CallFunction {
+        id: ItemId,
         generic_params: Option<Vec<UnresolvedTypeIds>>,
+    },
+    Const {
+        id: ItemId,
     },
     If(Box<If<Self>>),
     PackStruct {
         id: UnresolvedTypeIds,
+    },
+    Memory {
+        id: ItemId,
+        is_global: bool,
     },
     SizeOf {
         id: UnresolvedTypeIds,
@@ -340,6 +347,7 @@ pub enum NameResolvedOp {
 pub enum TypeResolvedOp {
     Cast { id: TypeId },
     CallFunction { id: ItemId },
+    Const { id: ItemId },
     If(Box<If<Self>>),
     PackStruct { id: TypeId },
     Memory { id: ItemId, is_global: bool },
