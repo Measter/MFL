@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, ops::ControlFlow};
 
-use color_eyre::Result;
+use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashMap;
 
 use crate::{
@@ -60,14 +60,17 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
         .collect();
 
     let mut queue: VecDeque<_> = ctx.get_all_items().map(|i| i.id).collect();
+    let mut had_error = false;
 
     while let Some(cur_item_id) = queue.pop_front() {
         let cur_item_state = states[&cur_item_id];
         let (next_state, queue_func) = match cur_item_state {
-            PassState::Unanalyzed => match passes::ident::resolve_signatures(ctx, stores) {
-                ControlFlow::Continue(st) => action(cur_item_state, st),
-                ControlFlow::Break(()) => continue,
-            },
+            PassState::Unanalyzed => {
+                match passes::ident::resolve_signature(ctx, stores, &mut had_error, cur_item_id) {
+                    ControlFlow::Continue(st) => action(cur_item_state, st),
+                    ControlFlow::Break(()) => continue,
+                }
+            }
             PassState::IdentResolvedSignature => todo!(),
             PassState::TypeResolvedSignature => todo!(),
             PassState::IdentResolvedBody => todo!(),
@@ -83,5 +86,9 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
         queue_func(&mut queue, cur_item_id);
     }
 
-    Ok(())
+    if had_error {
+        Err(eyre!("Error during static analysis"))
+    } else {
+        Ok(())
+    }
 }

@@ -118,6 +118,12 @@ impl UnresolvedIr {
     pub fn get_scope_mut(&mut self, id: ItemId) -> &mut UnresolvedScope {
         &mut self.scopes[id.0.to_usize()]
     }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_struct(&self, id: ItemId) -> &UnresolvedStruct {
+        &self.structs[&id]
+    }
 }
 
 impl UnresolvedIr {
@@ -141,6 +147,8 @@ pub struct NameResolvedIr {
     item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
     memory_type: HashMap<ItemId, UnresolvedTypeIds>,
     item_bodies: HashMap<ItemId, Vec<Op<NameResolvedOp>>>,
+    // Need to split this UnresolvedStruct business.
+    structs: HashMap<ItemId, UnresolvedStruct>,
     scopes: Vec<NameResolvedScope>,
 }
 
@@ -155,6 +163,14 @@ impl NameResolvedIr {
     #[track_caller]
     pub fn get_memory_type(&self, id: ItemId) -> &UnresolvedTypeIds {
         &self.memory_type[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_memory_type(&mut self, id: ItemId, def: UnresolvedTypeIds) {
+        self.memory_type
+            .insert(id, def)
+            .expect_none("Redefined memory type");
     }
 
     #[inline]
@@ -180,6 +196,12 @@ impl NameResolvedIr {
     pub fn get_scope_mut(&mut self, id: ItemId) -> &mut NameResolvedScope {
         &mut self.scopes[id.0.to_usize()]
     }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_struct(&mut self, id: ItemId, def: UnresolvedStruct) {
+        self.structs.insert(id, def).expect_none("Redefined struct");
+    }
 }
 
 impl NameResolvedIr {
@@ -188,6 +210,7 @@ impl NameResolvedIr {
             item_signatures: HashMap::new(),
             memory_type: HashMap::new(),
             item_bodies: HashMap::new(),
+            structs: HashMap::new(),
             scopes: Vec::new(),
         }
     }
@@ -294,6 +317,11 @@ impl Context {
     #[inline]
     pub fn trir_mut(&mut self) -> &mut TypeResolvedIr {
         &mut self.trir
+    }
+
+    #[inline]
+    pub fn get_top_level_module(&self, name: Spur) -> Option<ItemId> {
+        self.top_level_modules.get(&name).copied()
     }
 
     #[inline]
@@ -607,6 +635,10 @@ impl UnresolvedScope {
         self.imports.push(path);
     }
 
+    pub fn imports(&self) -> &[UnresolvedIdent] {
+        &self.imports
+    }
+
     fn new() -> UnresolvedScope {
         UnresolvedScope {
             imports: Vec::new(),
@@ -644,7 +676,7 @@ impl NameResolvedScope {
         Ok(())
     }
 
-    fn add_visible_symbol(
+    pub fn add_visible_symbol(
         &mut self,
         symbol: Spanned<Spur>,
         id: ItemId,
@@ -665,7 +697,7 @@ impl NameResolvedScope {
     }
 }
 
-fn make_symbol_redef_error(stores: &Stores, new_def: SourceLocation, prev_def: SourceLocation) {
+pub fn make_symbol_redef_error(stores: &Stores, new_def: SourceLocation, prev_def: SourceLocation) {
     diagnostics::emit_error(
         stores,
         new_def,
