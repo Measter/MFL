@@ -66,7 +66,12 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
         let cur_item_state = states[&cur_item_id];
         let (next_state, queue_func) = match cur_item_state {
             PassState::Unanalyzed => {
-                match passes::ident::resolve_signature(ctx, stores, &mut had_error, cur_item_id) {
+                match passes::ident_resolution::resolve_signature(
+                    ctx,
+                    stores,
+                    &mut had_error,
+                    cur_item_id,
+                ) {
                     ControlFlow::Continue(st) => action(cur_item_state, st),
                     ControlFlow::Break(()) => continue,
                 }
