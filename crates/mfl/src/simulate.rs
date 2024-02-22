@@ -199,7 +199,7 @@ fn simulate_execute_program_block(
                     value_stack.truncate(value_stack.len() - count.inner.to_usize())
                 }
                 // Only emits a display of the stack.
-                Stack::Emit { show_labels } => {}
+                Stack::Emit { .. } => {}
                 Stack::Over { depth } => {
                     let value = value_stack[value_stack.len() - 1 - depth.inner.to_usize()];
                     value_stack.push(value);
@@ -292,25 +292,13 @@ fn simulate_execute_program_block(
                     &while_op.body_block.block,
                     value_stack,
                 )?;
-            }, // OpCode::ResolvedIdent { item_id, .. } => {
-               //     let referenced_item = program.get_item_header(*item_id);
-
-               //     if referenced_item.kind() == ItemKind::Const {
-               //         let Some(vals) = program.get_consts(*item_id) else {
-               //             return Err(SimulationError::UnreadyConst);
-               //         };
-               //         value_stack.extend(vals.iter().map(|(_, v)| *v));
-               //     } else {
-               //         diagnostics::emit_error(
-               //             stores,
-               //             op.token.location,
-               //             "non-const cannot be refenced in a const",
-               //             [Label::new(op.token.location).with_color(Color::Red)],
-               //             None,
-               //         );
-               //         return Err(SimulationError::UnsupportedOp);
-               //     }
-               // }
+            },
+            OpCode::Complex(TypeResolvedOp::Const { id }) => {
+                let Some(vals) = program.get_consts(*id) else {
+                    return Err(SimulationError::UnreadyConst);
+                };
+                value_stack.extend(vals.iter().map(|(_, v)| *v));
+            }
         }
 
         ip += 1;

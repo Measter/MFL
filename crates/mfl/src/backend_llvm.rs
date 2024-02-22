@@ -587,6 +587,7 @@ impl<'ctx> CodeGen<'ctx> {
                             break;
                         }
                     }
+                    TypeResolvedOp::Const { id } => self.build_const(ds, value_store, op, *id)?,
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op)?,
                     TypeResolvedOp::Memory {
                         id,

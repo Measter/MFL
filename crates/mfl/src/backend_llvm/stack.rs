@@ -3,6 +3,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
+    context::ItemId,
     ir::{IntKind, Op, TypeResolvedOp},
     type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
 };
@@ -195,6 +196,50 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         value_store.store_value(self, op_io.outputs()[0], store_value)?;
+
+        Ok(())
+    }
+
+    pub(super) fn build_const(
+        &mut self,
+        ds: &mut DataStore,
+        value_store: &mut ValueStore<'ctx>,
+        op: &Op<TypeResolvedOp>,
+        const_id: ItemId,
+    ) -> InkwellResult {
+        let op_io = ds.analyzer.get_op_io(op.id);
+        let output_ids = op_io.outputs();
+
+        let Some(const_vals) = ds.context.get_consts(const_id) else {
+            panic!("ICE: Const wasn't ready during codegen");
+        };
+
+        for (&out_id, (_, sim_val)) in output_ids.iter().zip(const_vals) {
+            use crate::simulate::SimulatorValue;
+            // These can't use the build_push_bool and build_push_int functions above because they
+            // assume a single output value.
+            match sim_val {
+                SimulatorValue::Int { width, kind } => {
+                    let int_type = width.get_int_type(self.ctx);
+                    let value = match kind {
+                        IntKind::Signed(v) => int_type
+                            .const_int(*v as _, false)
+                            .const_cast(int_type, true)
+                            .into(),
+                        IntKind::Unsigned(v) => int_type
+                            .const_int(*v, false)
+                            .const_cast(int_type, false)
+                            .into(),
+                    };
+
+                    value_store.store_value(self, out_id, value)?;
+                }
+                SimulatorValue::Bool(b) => {
+                    let value = self.ctx.bool_type().const_int(*b as _, false).into();
+                    value_store.store_value(self, out_id, value)?;
+                }
+            }
+        }
 
         Ok(())
     }
