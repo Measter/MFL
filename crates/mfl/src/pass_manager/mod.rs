@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::ControlFlow};
+use std::collections::VecDeque;
 
 use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashMap;
@@ -14,17 +14,20 @@ pub mod static_analysis;
 #[derive(Debug, Clone, Copy)]
 enum PassResult {
     // We can progress to the next state
-    Progress,
+    Progress(PassState),
     // Failed because we're waiting on something else to progress
     // Don't progress our state, reinsert on to back of queue.
     Waiting,
+    // Failed and we can't progress.
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum PassState {
-    Unanalyzed,
     IdentResolvedSignature,
     IdentResolvedBody,
+    DeclareStructs,
+    DefineStructs,
     TypeResolvedSignature,
     TypeResolvedBody,
     CyclicRefCheckBody,
@@ -32,31 +35,13 @@ enum PassState {
     StackAndTypeCheckedBody,
     ConstPropBody,
     EvaluatedConstsAsserts,
-}
-
-fn action(state: PassState, res: PassResult) -> (PassState, fn(&mut VecDeque<ItemId>, ItemId)) {
-    let next_state = match state {
-        PassState::Unanalyzed => PassState::IdentResolvedSignature,
-        PassState::IdentResolvedSignature => PassState::IdentResolvedBody,
-        PassState::IdentResolvedBody => PassState::TypeResolvedSignature,
-        PassState::TypeResolvedSignature => PassState::TypeResolvedBody,
-        PassState::TypeResolvedBody => PassState::CyclicRefCheckBody,
-        PassState::CyclicRefCheckBody => PassState::TerminalBlockCheckBody,
-        PassState::TerminalBlockCheckBody => PassState::StackAndTypeCheckedBody,
-        PassState::StackAndTypeCheckedBody => PassState::ConstPropBody,
-        PassState::ConstPropBody => PassState::EvaluatedConstsAsserts,
-        PassState::EvaluatedConstsAsserts => state,
-    };
-    match res {
-        PassResult::Progress => (next_state, VecDeque::push_front),
-        PassResult::Waiting => (state, VecDeque::push_back),
-    }
+    Done,
 }
 
 pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
     let mut states: HashMap<_, _> = ctx
         .get_all_items()
-        .map(|i| (i.id, PassState::Unanalyzed))
+        .map(|i| (i.id, PassState::IdentResolvedSignature))
         .collect();
 
     let mut queue: VecDeque<_> = ctx.get_all_items().map(|i| i.id).collect();
@@ -64,37 +49,49 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
 
     while let Some(cur_item_id) = queue.pop_front() {
         let cur_item_state = states[&cur_item_id];
-        let (next_state, queue_func) = match cur_item_state {
-            PassState::Unanalyzed => {
+        let (next_state, queue_func): (_, fn(&mut VecDeque<_>, ItemId)) = match cur_item_state {
+            PassState::IdentResolvedSignature => {
                 match passes::ident_resolution::resolve_signature(
                     ctx,
                     stores,
                     &mut had_error,
                     cur_item_id,
                 ) {
-                    ControlFlow::Continue(st) => action(cur_item_state, st),
-                    ControlFlow::Break(()) => continue,
+                    PassResult::Progress(next) => (next, VecDeque::push_front),
+                    PassResult::Waiting => (cur_item_state, VecDeque::push_back),
+                    PassResult::Error => continue,
                 }
             }
-            PassState::IdentResolvedSignature => {
+            PassState::IdentResolvedBody => {
                 match passes::ident_resolution::resolve_body(
                     ctx,
                     stores,
                     &mut had_error,
                     cur_item_id,
                 ) {
-                    ControlFlow::Continue(st) => action(cur_item_state, st),
-                    ControlFlow::Break(()) => continue,
+                    PassResult::Progress(next) => (next, VecDeque::push_front),
+                    PassResult::Waiting => (cur_item_state, VecDeque::push_back),
+                    PassResult::Error => continue,
                 }
             }
+
+            PassState::DeclareStructs => todo!(),
+            PassState::DefineStructs => todo!(),
+
             PassState::TypeResolvedSignature => todo!(),
-            PassState::IdentResolvedBody => todo!(),
             PassState::TypeResolvedBody => todo!(),
+
             PassState::CyclicRefCheckBody => todo!(),
             PassState::TerminalBlockCheckBody => todo!(),
+
             PassState::StackAndTypeCheckedBody => todo!(),
             PassState::ConstPropBody => todo!(),
+
             PassState::EvaluatedConstsAsserts => todo!(),
+
+            PassState::Done => {
+                continue;
+            }
         };
 
         states.insert(cur_item_id, next_state);

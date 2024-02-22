@@ -1,5 +1,3 @@
-use std::ops::ControlFlow;
-
 use ariadne::{Color, Label};
 use lasso::Spur;
 use tracing::debug_span;
@@ -8,7 +6,7 @@ use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
-    pass_manager::PassResult,
+    pass_manager::{PassResult, PassState},
     source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,
@@ -268,15 +266,16 @@ pub fn resolve_signature(
     stores: &mut Stores,
     had_error: &mut bool,
     cur_id: ItemId,
-) -> ControlFlow<(), PassResult> {
+) -> PassResult {
     let _span = debug_span!("Ident Resolve Signature", ?cur_id);
 
     let header = ctx.get_item_header(cur_id);
-    match header.kind {
+    let next_state = match header.kind {
         ItemKind::StructDef => {
             let def = ctx.urir().get_struct(cur_id);
             let resolved = resolve_idents_in_struct_def(ctx, stores, had_error, cur_id, def);
             ctx.nrir_mut().set_struct(cur_id, resolved);
+            PassState::DeclareStructs
         }
         ItemKind::Memory => {
             let generic_params = match header.parent {
@@ -299,12 +298,16 @@ pub fn resolve_signature(
                 generic_params,
             ) else {
                 *had_error = true;
-                return ControlFlow::Break(());
+                return PassResult::Error;
             };
 
             ctx.nrir_mut().set_memory_type(cur_id, new_kind);
+            PassState::TypeResolvedSignature
         }
-        ItemKind::Module => resolve_idents_in_module_imports(ctx, stores, had_error, cur_id),
+        ItemKind::Module => {
+            resolve_idents_in_module_imports(ctx, stores, had_error, cur_id);
+            PassState::Done
+        }
         // These are all treated the same.
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
             let unresolved_sig = ctx.urir().get_item_signature(cur_id);
@@ -357,12 +360,13 @@ pub fn resolve_signature(
 
             *had_error |= local_had_error;
             if local_had_error {
-                return ControlFlow::Break(());
+                return PassResult::Error;
             }
+            PassState::IdentResolvedBody
         }
-    }
+    };
 
-    ControlFlow::Continue(PassResult::Progress)
+    PassResult::Progress(next_state)
 }
 
 fn resolve_idents_in_block(
@@ -610,13 +614,13 @@ pub fn resolve_body(
     stores: &mut Stores,
     had_error: &mut bool,
     cur_id: ItemId,
-) -> ControlFlow<(), PassResult> {
+) -> PassResult {
     let _span = debug_span!("Ident Resolve Body", ?cur_id);
 
     let header = ctx.get_item_header(cur_id);
-    match header.kind {
+    let next_stage = match header.kind {
         ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {
-            // These don't have bodies.
+            panic!("ICE: Tried to IdentResolveBody for {:?}", header.kind);
         }
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
             let generic_params = if header.kind == ItemKind::GenericFunction {
@@ -629,8 +633,14 @@ pub fn resolve_body(
             let resolved_body =
                 resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
             ctx.nrir_mut().set_item_body(cur_id, resolved_body);
-        }
-    }
 
-    ControlFlow::Continue(PassResult::Progress)
+            if header.kind == ItemKind::GenericFunction {
+                PassState::Done
+            } else {
+                PassState::TypeResolvedSignature
+            }
+        }
+    };
+
+    PassResult::Progress(next_stage)
 }
