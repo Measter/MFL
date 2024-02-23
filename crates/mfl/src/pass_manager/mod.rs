@@ -38,52 +38,61 @@ enum PassState {
     Done,
 }
 
-struct DepInfo {
+struct ItemState {
     deps: Vec<Vec<(ItemId, PassState)>>,
+    state: PassState,
+    had_error: bool,
 }
 
-impl DepInfo {
+impl ItemState {
     fn new() -> Self {
         Self {
             deps: (0..PassState::Done as usize).map(|_| Vec::new()).collect(),
+            state: PassState::IdentResolvedSignature,
+            had_error: false,
         }
     }
 }
 
+enum CanProgress {
+    Yes,
+    No,
+    Error,
+}
+
 struct PassContext {
-    // Keeps track of what Items and what stage they need to be in for the item to progress.
-    waiting_info: HashMap<ItemId, DepInfo>,
-    state: HashMap<ItemId, PassState>,
+    states: HashMap<ItemId, ItemState>,
 }
 
 impl PassContext {
     fn new(i: impl Iterator<Item = ItemHeader>) -> Self {
-        let (waiting_info, state) = i
-            .map(|i| {
-                (
-                    (i.id, DepInfo::new()),
-                    (i.id, PassState::IdentResolvedSignature),
-                )
-            })
-            .unzip();
-
         Self {
-            waiting_info,
-            state,
+            states: i.map(|i| (i.id, ItemState::new())).collect(),
         }
     }
 
-    fn can_progress(&self, cur_item: ItemId) -> bool {
-        let cur_state = self.get_state(cur_item);
-        let dep_info = &self.waiting_info[&cur_item];
-        let cur_state_deps = &dep_info.deps[cur_state as usize];
-        cur_state_deps
-            .iter()
-            .all(|(dep_id, dep_state)| self.state[dep_id] > *dep_state)
+    fn can_progress(&self, cur_item: ItemId) -> CanProgress {
+        let cur_item_info = &self.states[&cur_item];
+        for (dep_id, required_dep_state) in &cur_item_info.deps[cur_item_info.state as usize] {
+            let dep_state = &self.states[dep_id];
+            if dep_state.state > *required_dep_state {
+                continue;
+            }
+            if dep_state.had_error {
+                return CanProgress::Error;
+            }
+            return CanProgress::No;
+        }
+
+        CanProgress::Yes
     }
 
     fn get_state(&self, cur_item: ItemId) -> PassState {
-        self.state[&cur_item]
+        self.states[&cur_item].state
+    }
+
+    fn set_had_error(&mut self, cur_item: ItemId) {
+        self.states.get_mut(&cur_item).unwrap().had_error = true;
     }
 
     fn add_dependency(
@@ -93,12 +102,13 @@ impl PassContext {
         dep_id: ItemId,
         dep_state: PassState,
     ) {
-        let cur_item_deps = self.waiting_info.get_mut(&item).unwrap();
-        cur_item_deps.deps[for_item_state as usize].push((dep_id, dep_state));
+        let cur_item_state = self.states.get_mut(&item).unwrap();
+        cur_item_state.deps[for_item_state as usize].push((dep_id, dep_state));
     }
 
     fn progress_state(&mut self, cur_item: ItemId, new_state: PassState) {
-        self.state.insert(cur_item, new_state);
+        let cur_item_state = self.states.get_mut(&cur_item).unwrap();
+        cur_item_state.state = new_state;
     }
 }
 
@@ -109,42 +119,56 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
     let mut had_error = false;
 
     while let Some(cur_item_id) = queue.pop_front() {
-        if !pass_ctx.can_progress(cur_item_id) {
-            queue.push_back(cur_item_id);
-            continue;
-        }
-
-        let cur_item_state = pass_ctx.get_state(cur_item_id);
-        let pass_func = match cur_item_state {
-            PassState::IdentResolvedSignature => passes::ident_resolution::resolve_signature,
-            PassState::IdentResolvedBody => passes::ident_resolution::resolve_body,
-
-            PassState::DeclareStructs => passes::structs::declare_struct,
-            PassState::DefineStructs => passes::structs::define_struct,
-
-            PassState::TypeResolvedSignature => passes::type_resolution::resolve_signature,
-            PassState::TypeResolvedBody => todo!(),
-
-            PassState::CyclicRefCheckBody => todo!(),
-            PassState::TerminalBlockCheckBody => todo!(),
-
-            PassState::StackAndTypeCheckedBody => todo!(),
-            PassState::ConstPropBody => todo!(),
-
-            PassState::EvaluatedConstsAsserts => todo!(),
-
-            PassState::Done => {
-                continue;
+        match pass_ctx.can_progress(cur_item_id) {
+            CanProgress::No => {
+                // We're still waiting on something else to progress.
+                queue.push_back(cur_item_id);
             }
-        };
+            CanProgress::Error => {
+                // Whatever we were waiting for had an error before it could get to the
+                // stage we required. We need to propagate the error flag so our dependencies
+                // know we can't progress.
+                pass_ctx.set_had_error(cur_item_id);
+            }
+            CanProgress::Yes => {
+                let cur_item_state = pass_ctx.get_state(cur_item_id);
+                let pass_func = match cur_item_state {
+                    PassState::IdentResolvedSignature => {
+                        passes::ident_resolution::resolve_signature
+                    }
+                    PassState::IdentResolvedBody => passes::ident_resolution::resolve_body,
 
-        match pass_func(ctx, stores, &mut pass_ctx, &mut had_error, cur_item_id) {
-            PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
-            PassResult::Waiting => {}
-            PassResult::Error => continue,
+                    PassState::DeclareStructs => passes::structs::declare_struct,
+                    PassState::DefineStructs => passes::structs::define_struct,
+
+                    PassState::TypeResolvedSignature => passes::type_resolution::resolve_signature,
+                    PassState::TypeResolvedBody => todo!(),
+
+                    PassState::CyclicRefCheckBody => todo!(),
+                    PassState::TerminalBlockCheckBody => todo!(),
+
+                    PassState::StackAndTypeCheckedBody => todo!(),
+                    PassState::ConstPropBody => todo!(),
+
+                    PassState::EvaluatedConstsAsserts => todo!(),
+
+                    PassState::Done => {
+                        continue;
+                    }
+                };
+
+                match pass_func(ctx, stores, &mut pass_ctx, &mut had_error, cur_item_id) {
+                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
+                    PassResult::Waiting => {}
+                    PassResult::Error => {
+                        pass_ctx.set_had_error(cur_item_id);
+                        continue;
+                    }
+                }
+
+                queue.push_back(cur_item_id);
+            }
         }
-
-        queue.push_back(cur_item_id);
     }
 
     if had_error {
