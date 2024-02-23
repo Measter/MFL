@@ -299,12 +299,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proto_span = debug_span!("building prototypes").entered();
         for item in program.get_all_items() {
-            if item.kind() != ItemKind::Function {
+            if item.kind != ItemKind::Function {
                 continue;
             }
-            let item_sig = program.trir().get_item_signature(item.id());
+            let item_sig = program.trir().get_item_signature(item.id);
 
-            let name = interner.get_symbol_name(program, item.id());
+            let name = interner.get_symbol_name(program, item.id);
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
@@ -333,10 +333,10 @@ impl<'ctx> CodeGen<'ctx> {
             if name == "builtins$oob_handler" {
                 self.oob_handler = function;
                 // Because the OoB handle isn't called like a regular function, we'll enqueue it here.
-                self.enqueue_function(item.id());
+                self.enqueue_function(item.id);
                 function.set_call_conventions(CALL_CONV_COLD);
             }
-            self.item_function_map.insert(item.id(), function);
+            self.item_function_map.insert(item.id, function);
         }
         proto_span.exit();
 
@@ -730,7 +730,7 @@ impl<'ctx> CodeGen<'ctx> {
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
             let item_header = program.get_item_header(item_id);
-            if item_header.kind() != ItemKind::Memory {
+            if item_header.kind != ItemKind::Memory {
                 continue;
             }
 

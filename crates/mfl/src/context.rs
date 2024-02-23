@@ -46,28 +46,6 @@ pub struct ItemHeader {
     pub lang_item: Option<LangItem>,
 }
 
-impl ItemHeader {
-    #[inline]
-    pub fn name(&self) -> Spanned<Spur> {
-        self.name
-    }
-
-    #[inline]
-    pub fn id(&self) -> ItemId {
-        self.id
-    }
-
-    #[inline]
-    pub fn parent(&self) -> Option<ItemId> {
-        self.parent
-    }
-
-    #[inline]
-    pub fn kind(&self) -> ItemKind {
-        self.kind
-    }
-}
-
 pub struct UnresolvedItemSignature {
     pub exit: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
     pub entry: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,

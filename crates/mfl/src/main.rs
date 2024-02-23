@@ -125,7 +125,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         let entry_scope = context.nrir().get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
             let item_header = context.get_item_header(item_id.inner);
-            if item_header.kind() == ItemKind::Function {
+            if item_header.kind == ItemKind::Function {
                 top_level_symbols.push(item_id.inner);
             }
         }
@@ -141,8 +141,8 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
         debug!("checking entry signature");
         let entry_item = context.get_item_header(entry_function_id);
-        if !matches!(entry_item.kind(), ItemKind::Function) {
-            let name = entry_item.name();
+        if !matches!(entry_item.kind, ItemKind::Function) {
+            let name = entry_item.name;
             diagnostics::emit_error(
                 &stores,
                 name.location,
@@ -150,7 +150,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
                 Some(
                     Label::new(name.location)
                         .with_color(Color::Red)
-                        .with_message(format!("found `{:?}`", entry_item.kind())),
+                        .with_message(format!("found `{:?}`", entry_item.kind)),
                 ),
                 None,
             );
@@ -159,7 +159,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
         let entry_sig = context.trir().get_item_signature(entry_function_id);
         if !is_valid_entry_sig(&mut stores, entry_sig) {
-            let name = entry_item.name();
+            let name = entry_item.name;
             diagnostics::emit_error(
                 &stores,
                 name.location,
