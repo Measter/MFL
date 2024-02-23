@@ -81,3 +81,41 @@ pub fn declare_struct(
 
     PassResult::Progress(PassState::DefineStructs)
 }
+
+pub fn define_struct(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    _: &mut PassContext,
+    had_error: &mut bool,
+    cur_id: ItemId,
+) -> PassResult {
+    let _span = debug_span!("Defining struct", ?cur_id);
+
+    let def = ctx.urir().get_struct(cur_id);
+    if def.generic_params.is_some() {
+        stores
+            .types
+            .partially_resolve_generic_struct(&mut stores.strings, cur_id, def);
+    } else if let Err(missing_token) =
+        stores
+            .types
+            .define_fixed_struct(&mut stores.strings, cur_id, def)
+    {
+        // The type that failed to resolve is us.
+        diagnostics::emit_error(
+            stores,
+            missing_token.location,
+            "undefined field type",
+            [
+                Label::new(missing_token.location).with_color(Color::Red),
+                Label::new(def.name.location)
+                    .with_color(Color::Cyan)
+                    .with_message("In this struct"),
+            ],
+            None,
+        );
+        *had_error = true;
+        return PassResult::Error;
+    }
+    PassResult::Progress(PassState::Done)
+}
