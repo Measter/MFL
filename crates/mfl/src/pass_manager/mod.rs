@@ -115,48 +115,12 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
         }
 
         let cur_item_state = pass_ctx.get_state(cur_item_id);
-        match cur_item_state {
-            PassState::IdentResolvedSignature => {
-                match passes::ident_resolution::resolve_signature(
-                    ctx,
-                    stores,
-                    &mut pass_ctx,
-                    &mut had_error,
-                    cur_item_id,
-                ) {
-                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
-                    PassResult::Waiting => {}
-                    PassResult::Error => continue,
-                }
-            }
-            PassState::IdentResolvedBody => {
-                match passes::ident_resolution::resolve_body(
-                    ctx,
-                    stores,
-                    &mut pass_ctx,
-                    &mut had_error,
-                    cur_item_id,
-                ) {
-                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
-                    PassResult::Waiting => {}
-                    PassResult::Error => continue,
-                }
-            }
+        let pass_func = match cur_item_state {
+            PassState::IdentResolvedSignature => passes::ident_resolution::resolve_signature,
+            PassState::IdentResolvedBody => passes::ident_resolution::resolve_body,
 
-            PassState::DeclareStructs => {
-                match passes::structs::declare_struct(
-                    ctx,
-                    stores,
-                    &mut pass_ctx,
-                    &mut had_error,
-                    cur_item_id,
-                ) {
-                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
-                    PassResult::Waiting => {}
-                    PassResult::Error => continue,
-                }
-            }
-            PassState::DefineStructs => todo!(),
+            PassState::DeclareStructs => passes::structs::declare_struct,
+            PassState::DefineStructs => passes::structs::define_struct,
 
             PassState::TypeResolvedSignature => todo!(),
             PassState::TypeResolvedBody => todo!(),
@@ -173,6 +137,12 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
                 continue;
             }
         };
+
+        match pass_func(ctx, stores, &mut pass_ctx, &mut had_error, cur_item_id) {
+            PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
+            PassResult::Waiting => {}
+            PassResult::Error => continue,
+        }
 
         queue.push_back(cur_item_id);
     }
