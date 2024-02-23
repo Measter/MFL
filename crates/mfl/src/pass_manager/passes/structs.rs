@@ -18,7 +18,6 @@ pub fn declare_struct(
 ) -> PassResult {
     let _span = debug_span!("Declaring struct", ?cur_id);
 
-    let mut generic_structs = Vec::new();
     let def = ctx.urir().get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
@@ -57,7 +56,6 @@ pub fn declare_struct(
     }
 
     if def.generic_params.is_some() {
-        generic_structs.push(cur_id);
         stores.types.add_type(
             def.name.inner,
             def.name.location,
