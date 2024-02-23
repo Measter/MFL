@@ -383,6 +383,7 @@ pub fn resolve_signature(
 fn resolve_idents_in_block(
     ctx: &Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
     block: &[Op<UnresolvedOp>],
@@ -403,6 +404,7 @@ fn resolve_idents_in_block(
                     let condition = resolve_idents_in_block(
                         ctx,
                         stores,
+                        pass_ctx,
                         had_error,
                         cur_id,
                         &if_op.condition.block,
@@ -411,6 +413,7 @@ fn resolve_idents_in_block(
                     let then_block = resolve_idents_in_block(
                         ctx,
                         stores,
+                        pass_ctx,
                         had_error,
                         cur_id,
                         &if_op.then_block.block,
@@ -419,6 +422,7 @@ fn resolve_idents_in_block(
                     let else_block = resolve_idents_in_block(
                         ctx,
                         stores,
+                        pass_ctx,
                         had_error,
                         cur_id,
                         &if_op.else_block.block,
@@ -449,6 +453,7 @@ fn resolve_idents_in_block(
                     let condition = resolve_idents_in_block(
                         ctx,
                         stores,
+                        pass_ctx,
                         had_error,
                         cur_id,
                         &while_op.condition.block,
@@ -457,6 +462,7 @@ fn resolve_idents_in_block(
                     let body = resolve_idents_in_block(
                         ctx,
                         stores,
+                        pass_ctx,
                         had_error,
                         cur_id,
                         &while_op.body_block.block,
@@ -482,11 +488,21 @@ fn resolve_idents_in_block(
 
                 UnresolvedOp::Cast { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
                         *had_error = true;
                         continue;
                     };
+
+                    if let Some(dep_id) = new_ty.item_id() {
+                        pass_ctx.add_dependency(
+                            cur_id,
+                            PassState::TypeResolvedBody,
+                            dep_id,
+                            PassState::DeclareStructs,
+                        );
+                    }
+
                     resolved_block.push(Op {
                         code: OpCode::Complex(NameResolvedOp::Cast { id: new_ty }),
                         id: op.id,
@@ -495,11 +511,27 @@ fn resolve_idents_in_block(
                 }
                 UnresolvedOp::PackStruct { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
                         *had_error = true;
                         continue;
                     };
+
+                    if let Some(dep_id) = new_ty.item_id() {
+                        pass_ctx.add_dependency(
+                            cur_id,
+                            PassState::TypeResolvedBody,
+                            dep_id,
+                            PassState::DeclareStructs,
+                        );
+                        pass_ctx.add_dependency(
+                            cur_id,
+                            PassState::StackAndTypeCheckedBody,
+                            dep_id,
+                            PassState::DefineStructs,
+                        );
+                    }
+
                     resolved_block.push(Op {
                         code: OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty }),
                         id: op.id,
@@ -508,11 +540,27 @@ fn resolve_idents_in_block(
                 }
                 UnresolvedOp::SizeOf { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
                         *had_error = true;
                         continue;
                     };
+
+                    if let Some(dep_id) = new_ty.item_id() {
+                        pass_ctx.add_dependency(
+                            cur_id,
+                            PassState::TypeResolvedBody,
+                            dep_id,
+                            PassState::DeclareStructs,
+                        );
+                        pass_ctx.add_dependency(
+                            cur_id,
+                            PassState::ConstPropBody,
+                            dep_id,
+                            PassState::DefineStructs,
+                        );
+                    }
+
                     resolved_block.push(Op {
                         code: OpCode::Complex(NameResolvedOp::SizeOf { id: new_ty }),
                         id: op.id,
@@ -540,6 +588,15 @@ fn resolve_idents_in_block(
                             ) else {
                                 continue;
                             };
+
+                            if let Some(dep_id) = f.item_id() {
+                                pass_ctx.add_dependency(
+                                    cur_id,
+                                    PassState::TypeResolvedBody,
+                                    dep_id,
+                                    PassState::DeclareStructs,
+                                );
+                            }
                             resolved_generic_params.push(f);
                         }
                         resolved_generic_params
@@ -547,18 +604,47 @@ fn resolve_idents_in_block(
 
                     let found_item_header = ctx.get_item_header(resolved_ident);
                     let new_code = match found_item_header.kind {
-                        ItemKind::Const => NameResolvedOp::Const { id: resolved_ident },
+                        ItemKind::Const => {
+                            pass_ctx.add_dependency(
+                                cur_id,
+                                PassState::StackAndTypeCheckedBody,
+                                found_item_header.id,
+                                PassState::TypeResolvedSignature,
+                            );
+                            // TODO: Add optional support for const prop depedency
+                            NameResolvedOp::Const { id: resolved_ident }
+                        }
                         ItemKind::Function | ItemKind::GenericFunction => {
+                            // Generic functions can't get type resolved, only their instantiations.
+                            // This means we'll need to abort type resolving our body on a generic call.
+                            if found_item_header.kind != ItemKind::GenericFunction {
+                                pass_ctx.add_dependency(
+                                    cur_id,
+                                    PassState::StackAndTypeCheckedBody,
+                                    found_item_header.id,
+                                    PassState::TypeResolvedSignature,
+                                );
+                            }
+
                             NameResolvedOp::CallFunction {
                                 id: resolved_ident,
                                 generic_params: resolved_generic_params,
                             }
                         }
-                        ItemKind::Memory => NameResolvedOp::Memory {
-                            id: resolved_ident,
-                            is_global: found_item_header.parent.is_none(),
-                        },
+                        ItemKind::Memory => {
+                            pass_ctx.add_dependency(
+                                cur_id,
+                                PassState::StackAndTypeCheckedBody,
+                                found_item_header.id,
+                                PassState::TypeResolvedSignature,
+                            );
+                            NameResolvedOp::Memory {
+                                id: resolved_ident,
+                                is_global: found_item_header.parent.is_none(),
+                            }
+                        }
 
+                        // This is the same as PackStruct
                         ItemKind::StructDef => {
                             let ty = UnresolvedTypeTokens::Simple(ident.clone());
                             let Ok(new_ty) = resolve_idents_in_type(
@@ -572,6 +658,21 @@ fn resolve_idents_in_block(
                                 *had_error = true;
                                 continue;
                             };
+
+                            if let Some(dep_id) = new_ty.item_id() {
+                                pass_ctx.add_dependency(
+                                    cur_id,
+                                    PassState::TypeResolvedBody,
+                                    dep_id,
+                                    PassState::DeclareStructs,
+                                );
+                                pass_ctx.add_dependency(
+                                    cur_id,
+                                    PassState::StackAndTypeCheckedBody,
+                                    dep_id,
+                                    PassState::DefineStructs,
+                                );
+                            }
 
                             NameResolvedOp::PackStruct { id: new_ty }
                         }
@@ -642,8 +743,15 @@ pub fn resolve_body(
             };
 
             let body = ctx.urir().get_item_body(cur_id);
-            let resolved_body =
-                resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
+            let resolved_body = resolve_idents_in_block(
+                ctx,
+                stores,
+                pass_ctx,
+                had_error,
+                cur_id,
+                body,
+                generic_params,
+            );
             ctx.nrir_mut().set_item_body(cur_id, resolved_body);
 
             if header.kind == ItemKind::GenericFunction {
