@@ -373,6 +373,9 @@ pub fn resolve_signature(
             if local_had_error {
                 return PassResult::Error;
             }
+
+            ctx.nrir_mut().set_item_signature(cur_id, resolved_sig);
+
             PassState::IdentResolvedBody
         }
     };

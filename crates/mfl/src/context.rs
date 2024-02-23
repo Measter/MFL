@@ -139,6 +139,14 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn set_item_signature(&mut self, id: ItemId, sig: NameResolvedItemSignature) {
+        self.item_signatures
+            .insert(id, sig)
+            .expect_none("Redefined item signature");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_memory_type(&self, id: ItemId) -> &UnresolvedTypeIds {
         &self.memory_type[&id]
     }
