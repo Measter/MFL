@@ -4,7 +4,7 @@ use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashMap;
 
 use crate::{
-    context::{Context, ItemId},
+    context::{Context, ItemHeader, ItemId},
     Stores,
 };
 
@@ -22,7 +22,7 @@ enum PassResult {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum PassState {
     IdentResolvedSignature,
     IdentResolvedBody,
@@ -38,27 +38,94 @@ enum PassState {
     Done,
 }
 
+struct DepInfo {
+    deps: Vec<Vec<(ItemId, PassState)>>,
+}
+
+impl DepInfo {
+    fn new() -> Self {
+        Self {
+            deps: (0..PassState::Done as usize).map(|_| Vec::new()).collect(),
+        }
+    }
+}
+
+struct PassContext {
+    // Keeps track of what Items and what stage they need to be in for the item to progress.
+    waiting_info: HashMap<ItemId, DepInfo>,
+    state: HashMap<ItemId, PassState>,
+}
+
+impl PassContext {
+    fn new(i: impl Iterator<Item = ItemHeader>) -> Self {
+        let (waiting_info, state) = i
+            .map(|i| {
+                (
+                    (i.id, DepInfo::new()),
+                    (i.id, PassState::IdentResolvedSignature),
+                )
+            })
+            .unzip();
+
+        Self {
+            waiting_info,
+            state,
+        }
+    }
+
+    fn can_progress(&self, cur_item: ItemId) -> bool {
+        let cur_state = self.get_state(cur_item);
+        let dep_info = &self.waiting_info[&cur_item];
+        let cur_state_deps = &dep_info.deps[cur_state as usize];
+        cur_state_deps
+            .iter()
+            .all(|(dep_id, dep_state)| self.state[dep_id] > *dep_state)
+    }
+
+    fn get_state(&self, cur_item: ItemId) -> PassState {
+        self.state[&cur_item]
+    }
+
+    fn add_dependency(
+        &mut self,
+        item: ItemId,
+        for_item_state: PassState,
+        dep_id: ItemId,
+        dep_state: PassState,
+    ) {
+        let cur_item_deps = self.waiting_info.get_mut(&item).unwrap();
+        cur_item_deps.deps[for_item_state as usize].push((dep_id, dep_state));
+    }
+
+    fn progress_state(&mut self, cur_item: ItemId, new_state: PassState) {
+        self.state.insert(cur_item, new_state);
+    }
+}
+
 pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
-    let mut states: HashMap<_, _> = ctx
-        .get_all_items()
-        .map(|i| (i.id, PassState::IdentResolvedSignature))
-        .collect();
+    let mut pass_ctx = PassContext::new(ctx.get_all_items());
 
     let mut queue: VecDeque<_> = ctx.get_all_items().map(|i| i.id).collect();
     let mut had_error = false;
 
     while let Some(cur_item_id) = queue.pop_front() {
-        let cur_item_state = states[&cur_item_id];
-        let (next_state, queue_func): (_, fn(&mut VecDeque<_>, ItemId)) = match cur_item_state {
+        if !pass_ctx.can_progress(cur_item_id) {
+            queue.push_back(cur_item_id);
+            continue;
+        }
+
+        let cur_item_state = pass_ctx.get_state(cur_item_id);
+        match cur_item_state {
             PassState::IdentResolvedSignature => {
                 match passes::ident_resolution::resolve_signature(
                     ctx,
                     stores,
+                    &mut pass_ctx,
                     &mut had_error,
                     cur_item_id,
                 ) {
-                    PassResult::Progress(next) => (next, VecDeque::push_front),
-                    PassResult::Waiting => (cur_item_state, VecDeque::push_back),
+                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
+                    PassResult::Waiting => {}
                     PassResult::Error => continue,
                 }
             }
@@ -66,16 +133,29 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
                 match passes::ident_resolution::resolve_body(
                     ctx,
                     stores,
+                    &mut pass_ctx,
                     &mut had_error,
                     cur_item_id,
                 ) {
-                    PassResult::Progress(next) => (next, VecDeque::push_front),
-                    PassResult::Waiting => (cur_item_state, VecDeque::push_back),
+                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
+                    PassResult::Waiting => {}
                     PassResult::Error => continue,
                 }
             }
 
-            PassState::DeclareStructs => todo!(),
+            PassState::DeclareStructs => {
+                match passes::structs::declare_struct(
+                    ctx,
+                    stores,
+                    &mut pass_ctx,
+                    &mut had_error,
+                    cur_item_id,
+                ) {
+                    PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
+                    PassResult::Waiting => {}
+                    PassResult::Error => continue,
+                }
+            }
             PassState::DefineStructs => todo!(),
 
             PassState::TypeResolvedSignature => todo!(),
@@ -94,8 +174,7 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
             }
         };
 
-        states.insert(cur_item_id, next_state);
-        queue_func(&mut queue, cur_item_id);
+        queue.push_back(cur_item_id);
     }
 
     if had_error {

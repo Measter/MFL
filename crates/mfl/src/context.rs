@@ -275,6 +275,8 @@ pub struct Context {
     nrir: NameResolvedIr,
     trir: TypeResolvedIr,
 
+    // Bit of a hacky workaround for how I've done the struct resolution.
+    generic_structs: Vec<ItemId>,
     generic_function_cache: HashMap<(ItemId, String), ItemId>,
     generic_template_parameters: HashMap<ItemId, Vec<Spanned<Spur>>>,
 }
@@ -341,6 +343,10 @@ impl Context {
         self.const_vals.get(&id).map(|v| &**v)
     }
 
+    pub fn get_generic_structs(&self) -> &[ItemId] {
+        &self.generic_structs
+    }
+
     #[inline]
     #[track_caller]
     pub fn get_function_template_paramaters(&self, id: ItemId) -> &[Spanned<Spur>] {
@@ -371,6 +377,7 @@ impl Context {
             urir: UnresolvedIr::new(),
             nrir: NameResolvedIr::new(),
             trir: TypeResolvedIr::new(),
+            generic_structs: Vec::new(),
             generic_function_cache: HashMap::new(),
             generic_template_parameters: HashMap::new(),
         }
@@ -543,8 +550,12 @@ impl Context {
     ) -> ItemId {
         let name = def.name;
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
-        self.urir.structs.insert(header.id, def);
 
+        if def.generic_params.is_some() {
+            self.generic_structs.push(header.id);
+        }
+
+        self.urir.structs.insert(header.id, def);
         self.add_to_parent(stores, had_error, module, name, header.id);
         header.id
     }

@@ -6,7 +6,7 @@ use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
-    pass_manager::{PassResult, PassState},
+    pass_manager::{PassContext, PassResult, PassState},
     source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,
@@ -264,6 +264,7 @@ fn resolve_idents_in_module_imports(
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
 ) -> PassResult {
@@ -612,6 +613,7 @@ fn resolve_idents_in_block(
 pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
 ) -> PassResult {
