@@ -220,6 +220,14 @@ impl TypeResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn set_memory_type(&mut self, id: ItemId, mem_type: TypeId) {
+        self.memory_type
+            .insert(id, mem_type)
+            .expect_none("Redefined memory type");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_item_body(&self, id: ItemId) -> &[Op<TypeResolvedOp>] {
         &self.item_bodies[&id]
     }

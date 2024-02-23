@@ -122,7 +122,7 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
             PassState::DeclareStructs => passes::structs::declare_struct,
             PassState::DefineStructs => passes::structs::define_struct,
 
-            PassState::TypeResolvedSignature => todo!(),
+            PassState::TypeResolvedSignature => passes::type_resolution::resolve_signature,
             PassState::TypeResolvedBody => todo!(),
 
             PassState::CyclicRefCheckBody => todo!(),
