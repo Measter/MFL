@@ -222,6 +222,14 @@ impl TypeResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn set_item_signature(&mut self, id: ItemId, sig: TypeResolvedItemSignature) {
+        self.item_signatures
+            .insert(id, sig)
+            .expect_none("Redefined item signature");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_memory_type(&self, id: ItemId) -> TypeId {
         self.memory_type[&id]
     }
