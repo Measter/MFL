@@ -291,6 +291,19 @@ pub enum UnresolvedTypeIds {
     },
 }
 
+impl UnresolvedTypeIds {
+    pub fn item_id(&self) -> Option<ItemId> {
+        match self {
+            UnresolvedTypeIds::SimpleCustom { id, .. }
+            | UnresolvedTypeIds::GenericInstance { id, .. } => Some(*id),
+            UnresolvedTypeIds::SimpleBuiltin(_) | UnresolvedTypeIds::SimpleGenericParam(_) => None,
+            UnresolvedTypeIds::Array(sub_type, _) | UnresolvedTypeIds::Pointer(sub_type) => {
+                sub_type.item_id()
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedType {
     Tokens(UnresolvedTypeTokens),

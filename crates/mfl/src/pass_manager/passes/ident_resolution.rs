@@ -302,6 +302,15 @@ pub fn resolve_signature(
                 return PassResult::Error;
             };
 
+            if let Some(dep_id) = new_kind.item_id() {
+                pass_ctx.add_dependency(
+                    cur_id,
+                    PassState::TypeResolvedSignature,
+                    dep_id,
+                    PassState::DeclareStructs,
+                );
+            }
+
             ctx.nrir_mut().set_memory_type(cur_id, new_kind);
             PassState::TypeResolvedSignature
         }
@@ -329,35 +338,36 @@ pub fn resolve_signature(
 
             let mut local_had_error = false;
 
-            for kind in &unresolved_sig.entry.inner {
-                let Ok(new_kind) = resolve_idents_in_type(
-                    ctx,
-                    stores,
-                    had_error,
-                    cur_id,
-                    &kind.inner,
-                    generic_params,
-                ) else {
-                    local_had_error = true;
-                    continue;
-                };
-                resolved_sig.entry.push(new_kind);
-            }
+            let mut process_sig =
+                |unresolved: &[Spanned<UnresolvedTypeTokens>],
+                 resolved: &mut Vec<UnresolvedTypeIds>| {
+                    for kind in unresolved {
+                        let Ok(new_kind) = resolve_idents_in_type(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            &kind.inner,
+                            generic_params,
+                        ) else {
+                            local_had_error = true;
+                            continue;
+                        };
 
-            for kind in &unresolved_sig.exit.inner {
-                let Ok(new_kind) = resolve_idents_in_type(
-                    ctx,
-                    stores,
-                    had_error,
-                    cur_id,
-                    &kind.inner,
-                    generic_params,
-                ) else {
-                    local_had_error = true;
-                    continue;
+                        if let Some(dep_id) = new_kind.item_id() {
+                            pass_ctx.add_dependency(
+                                cur_id,
+                                PassState::TypeResolvedSignature,
+                                dep_id,
+                                PassState::DeclareStructs,
+                            );
+                        }
+                        resolved.push(new_kind);
+                    }
                 };
-                resolved_sig.exit.push(new_kind);
-            }
+
+            process_sig(&unresolved_sig.entry.inner, &mut resolved_sig.entry);
+            process_sig(&unresolved_sig.exit.inner, &mut resolved_sig.exit);
 
             *had_error |= local_had_error;
             if local_had_error {
