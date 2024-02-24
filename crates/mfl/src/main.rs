@@ -119,6 +119,8 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
     let mut context = Context::new();
     let entry_module_id = program::load_program(&mut context, &mut stores, args)?;
 
+    pass_manager::run(&mut context, &mut stores)?;
+
     let mut top_level_symbols = Vec::new();
 
     if args.is_library {
@@ -176,7 +178,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
 fn run_compile(args: &Args) -> Result<()> {
     print!("   Compiling...");
-    let (mut program, mut stores, top_level_items) = match load_program(args) {
+    let (program, mut stores, top_level_items) = match load_program(args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!();
@@ -185,8 +187,6 @@ fn run_compile(args: &Args) -> Result<()> {
             std::process::exit(-3);
         }
     };
-
-    pass_manager::run(&mut program, &mut stores)?;
 
     let objects = backend_llvm::compile(&program, &mut stores, &top_level_items, args)?;
 

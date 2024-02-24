@@ -47,7 +47,7 @@ struct ItemState {
 impl ItemState {
     fn new() -> Self {
         Self {
-            deps: (0..PassState::Done as usize).map(|_| Vec::new()).collect(),
+            deps: (0..=PassState::Done as usize).map(|_| Vec::new()).collect(),
             state: PassState::IdentResolvedSignature,
             had_error: false,
         }
