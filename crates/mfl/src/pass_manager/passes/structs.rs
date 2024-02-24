@@ -18,7 +18,7 @@ pub fn declare_struct(
 ) -> PassResult {
     let _span = debug_span!("Declaring struct", ?cur_id);
 
-    let def = ctx.urir().get_struct(cur_id);
+    let def = ctx.nrir().get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
         &mut stores.strings,
@@ -89,7 +89,7 @@ pub fn define_struct(
 ) -> PassResult {
     let _span = debug_span!("Defining struct", ?cur_id);
 
-    let def = ctx.urir().get_struct(cur_id);
+    let def = ctx.nrir().get_struct(cur_id);
     if def.generic_params.is_some() {
         stores
             .types

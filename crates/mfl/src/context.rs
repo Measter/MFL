@@ -185,6 +185,12 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn get_struct(&self, id: ItemId) -> &UnresolvedStruct {
+        &self.structs[&id]
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn set_struct(&mut self, id: ItemId, def: UnresolvedStruct) {
         self.structs.insert(id, def).expect_none("Redefined struct");
     }
