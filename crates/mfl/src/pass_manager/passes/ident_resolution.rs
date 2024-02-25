@@ -322,13 +322,10 @@ pub fn resolve_signature(
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
             let unresolved_sig = ctx.urir().get_item_signature(cur_id);
 
-            let generic_params = match header.parent {
-                Some(parent_id)
-                    if ctx.get_item_header(parent_id).kind == ItemKind::GenericFunction =>
-                {
-                    Some(ctx.get_function_template_paramaters(parent_id))
-                }
-                _ => None,
+            let generic_params = if header.kind == ItemKind::GenericFunction {
+                Some(ctx.get_function_template_paramaters(cur_id))
+            } else {
+                None
             };
 
             let mut resolved_sig = NameResolvedItemSignature {
