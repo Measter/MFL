@@ -47,12 +47,17 @@ impl ItemState {
 pub struct PassContext {
     states: HashMap<ItemId, ItemState>,
     queue: VecDeque<ItemId>,
+    defined_generic_structs: bool,
 }
 
 impl PassContext {
     fn new(i: impl Iterator<Item = ItemHeader>) -> Self {
         let (states, queue) = i.map(|i| ((i.id, ItemState::new()), i.id)).unzip();
-        Self { states, queue }
+        Self {
+            states,
+            queue,
+            defined_generic_structs: false,
+        }
     }
 
     fn get_state(&self, cur_item: ItemId) -> PassState {
@@ -118,9 +123,16 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::DeclareStructs);
-        true
+        let mut had_error = false;
+        passes::structs::declare_struct(ctx, stores, &mut had_error, cur_item);
+        eprintln!("DeclStruct: {cur_item:?} - {had_error}");
+        if !had_error {
+            self.set_state(cur_item, PassState::DeclareStructs);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_define_structs(
@@ -138,9 +150,33 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::DefineStructs);
-        true
+        let mut had_error = false;
+        eprintln!("DefStruct: {cur_item:?} - {had_error}");
+
+        // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
+        // TODO: Make this use the pass manager to avoid this bit.
+        let struct_def = ctx.nrir().get_struct(cur_item);
+        if struct_def.generic_params.is_none() && !self.defined_generic_structs {
+            let all_generic_structs = ctx.get_generic_structs().to_owned();
+            for gsi in all_generic_structs {
+                had_error |= self.ensure_define_structs(ctx, stores, gsi);
+            }
+            self.defined_generic_structs = true;
+        }
+
+        if had_error {
+            self.set_error(cur_item);
+            return false;
+        }
+
+        passes::structs::define_struct(ctx, stores, &mut had_error, cur_item);
+        if !had_error {
+            self.set_state(cur_item, PassState::DefineStructs);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_ident_resolved_signature(
@@ -158,9 +194,16 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::IdentResolvedSignature);
-        true
+        let mut had_error = false;
+        passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
+        eprintln!("IdentSig: {cur_item:?} - {had_error}");
+        if !had_error {
+            self.set_state(cur_item, PassState::IdentResolvedSignature);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_ident_resolved_body(
@@ -178,9 +221,16 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::IdentResolvedBody);
-        true
+        let mut had_error = false;
+        passes::ident_resolution::resolve_body(ctx, stores, &mut had_error, cur_item);
+        eprintln!("IdentBody: {cur_item:?} - {had_error}");
+        if !had_error {
+            self.set_state(cur_item, PassState::IdentResolvedBody);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_type_resolved_signature(
@@ -198,9 +248,16 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::TypeResolvedSignature);
-        true
+        let mut had_error = false;
+        passes::type_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
+        eprintln!("TypeSig: {cur_item:?} - {had_error}");
+        if !had_error {
+            self.set_state(cur_item, PassState::TypeResolvedSignature);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_type_resolved_body(

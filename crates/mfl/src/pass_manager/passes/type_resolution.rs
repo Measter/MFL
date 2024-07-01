@@ -12,7 +12,6 @@ use crate::{
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
-    _: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
