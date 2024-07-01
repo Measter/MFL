@@ -4,7 +4,7 @@ use tracing::debug_span;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    pass_manager::{PassContext, PassResult, PassState},
+    pass_manager::PassContext,
     type_store::{TypeKind, UnresolvedTypeIds},
     Stores,
 };
@@ -12,10 +12,9 @@ use crate::{
 pub fn declare_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
-) -> PassResult {
+) {
     let _span = debug_span!("Declaring struct", ?cur_id);
 
     let def = ctx.nrir().get_struct(cur_id);
@@ -63,21 +62,11 @@ pub fn declare_struct(
         );
     } else {
         // Non-generic structs need to wait until the generic structs are defined
-        for gen_struct in ctx.get_generic_structs() {
-            pass_ctx.add_dependency(
-                cur_id,
-                PassState::DefineStructs,
-                *gen_struct,
-                PassState::DefineStructs,
-            );
-        }
 
         stores
             .types
             .add_type(def.name.inner, def.name.location, TypeKind::Struct(cur_id));
     }
-
-    PassResult::Progress(PassState::DefineStructs)
 }
 
 pub fn define_struct(
@@ -86,7 +75,7 @@ pub fn define_struct(
     _: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
-) -> PassResult {
+) {
     let _span = debug_span!("Defining struct", ?cur_id);
 
     let def = ctx.nrir().get_struct(cur_id);
@@ -113,7 +102,6 @@ pub fn define_struct(
             None,
         );
         *had_error = true;
-        return PassResult::Error;
+        return;
     }
-    PassResult::Progress(PassState::Done)
 }
