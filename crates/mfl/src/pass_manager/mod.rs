@@ -249,7 +249,7 @@ impl PassContext {
         );
 
         let mut had_error = false;
-        passes::type_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
+        passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
         eprintln!("TypeSig: {cur_item:?} - {had_error}");
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedSignature);
@@ -395,7 +395,9 @@ impl PassContext {
             ItemKind::Module => PassState::IdentResolvedSignature,
             ItemKind::StructDef => PassState::DefineStructs,
             ItemKind::Memory => PassState::TypeResolvedSignature,
-            ItemKind::Function | ItemKind::GenericFunction | ItemKind::Assert | ItemKind::Const => {
+            // Type resolution happens after the generic function is instantiated.
+            ItemKind::GenericFunction => PassState::IdentResolvedBody,
+            ItemKind::Function | ItemKind::Assert | ItemKind::Const => {
                 PassState::EvaluatedConstsAsserts
             }
         };
@@ -403,6 +405,7 @@ impl PassContext {
         let prev_function: fn(&mut PassContext, &mut Context, &mut Stores, ItemId) -> bool =
             match needed_prev_state {
                 PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
+                PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
                 PassState::DefineStructs => PassContext::ensure_define_structs,
                 PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
                 PassState::ConstPropBody => PassContext::ensure_const_prop_body,
