@@ -108,6 +108,33 @@ impl PassContext {
         true
     }
 
+    fn ensure_ident_resolved_signature(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> bool {
+        state_check!(
+            self,
+            PassState::IdentResolvedSignature,
+            ensure_initial,
+            ctx,
+            stores,
+            cur_item
+        );
+
+        let mut had_error = false;
+        passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
+        eprintln!("IdentSig: {cur_item:?} - {had_error}");
+        if !had_error {
+            self.set_state(cur_item, PassState::IdentResolvedSignature);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
+    }
+
     fn ensure_declare_structs(
         &mut self,
         ctx: &mut Context,
@@ -172,33 +199,6 @@ impl PassContext {
         passes::structs::define_struct(ctx, stores, &mut had_error, cur_item);
         if !had_error {
             self.set_state(cur_item, PassState::DefineStructs);
-            true
-        } else {
-            self.set_error(cur_item);
-            false
-        }
-    }
-
-    fn ensure_ident_resolved_signature(
-        &mut self,
-        ctx: &mut Context,
-        stores: &mut Stores,
-        cur_item: ItemId,
-    ) -> bool {
-        state_check!(
-            self,
-            PassState::IdentResolvedSignature,
-            ensure_initial,
-            ctx,
-            stores,
-            cur_item
-        );
-
-        let mut had_error = false;
-        passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
-        eprintln!("IdentSig: {cur_item:?} - {had_error}");
-        if !had_error {
-            self.set_state(cur_item, PassState::IdentResolvedSignature);
             true
         } else {
             self.set_error(cur_item);
