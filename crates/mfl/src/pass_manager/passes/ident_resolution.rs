@@ -621,12 +621,6 @@ pub fn resolve_body(ctx: &mut Context, stores: &mut Stores, had_error: &mut bool
             let resolved_body =
                 resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
             ctx.nrir_mut().set_item_body(cur_id, resolved_body);
-
-            if header.kind == ItemKind::GenericFunction {
-                PassState::Done
-            } else {
-                PassState::TypeResolvedSignature
-            }
         }
-    };
+    }
 }
