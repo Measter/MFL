@@ -608,7 +608,7 @@ pub fn resolve_body(ctx: &mut Context, stores: &mut Stores, had_error: &mut bool
     let header = ctx.get_item_header(cur_id);
     match header.kind {
         ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {
-            panic!("ICE: Tried to IdentResolveBody for {:?}", header.kind);
+            // Nothing to do.
         }
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
             let generic_params = if header.kind == ItemKind::GenericFunction {
