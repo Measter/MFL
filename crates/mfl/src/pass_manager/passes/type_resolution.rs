@@ -12,6 +12,7 @@ use crate::{
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
@@ -27,7 +28,7 @@ pub fn resolve_signature(
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
-            let unresolved_sig = ctx.nrir().get_item_signature(cur_id);
+            let unresolved_sig = ctx.nrir().get_item_signature(cur_id).clone();
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
@@ -37,6 +38,10 @@ pub fn resolve_signature(
 
             let mut process_sig = |unresolved: &[UnresolvedTypeIds], resolved: &mut Vec<TypeId>| {
                 for kind in unresolved {
+                    if let Some(type_item) = kind.item_id() {
+                        *had_error |= !pass_ctx.ensure_define_structs(ctx, stores, type_item);
+                    }
+
                     let info = match stores.types.resolve_type(&mut stores.strings, kind) {
                         Ok(info) => info,
                         Err(tk) => {
@@ -69,10 +74,13 @@ pub fn resolve_signature(
                 return;
             }
 
-            let memory_type_unresolved = ctx.nrir().get_memory_type(cur_id);
+            let memory_type_unresolved = ctx.nrir().get_memory_type(cur_id).clone();
+            if let Some(type_item) = memory_type_unresolved.item_id() {
+                *had_error |= !pass_ctx.ensure_define_structs(ctx, stores, type_item);
+            }
             let info = match stores
                 .types
-                .resolve_type(&mut stores.strings, memory_type_unresolved)
+                .resolve_type(&mut stores.strings, &memory_type_unresolved)
             {
                 Ok(info) => info,
                 Err(tk) => {
