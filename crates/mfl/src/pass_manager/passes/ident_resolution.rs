@@ -6,7 +6,6 @@ use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
-    pass_manager::{PassContext, PassState},
     source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,

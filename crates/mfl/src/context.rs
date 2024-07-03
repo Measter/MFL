@@ -726,7 +726,9 @@ impl Context {
                     | NameResolvedOp::PackStruct { id }
                     | NameResolvedOp::SizeOf { id } => {
                         if let Some(type_item) = id.item_id() {
-                            pass_ctx.ensure_declare_structs(self, stores, type_item);
+                            pass_ctx
+                                .ensure_declare_structs(self, stores, type_item)
+                                .unwrap();
                         }
                         let new_id = self.expand_generic_params_in_type(id, param_map);
                         match &op.code {

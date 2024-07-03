@@ -4,7 +4,6 @@ use tracing::debug_span;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    pass_manager::PassContext,
     type_store::{TypeKind, UnresolvedTypeIds},
     Stores,
 };

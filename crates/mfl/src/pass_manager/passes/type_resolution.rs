@@ -39,7 +39,9 @@ pub fn resolve_signature(
             let mut process_sig = |unresolved: &[UnresolvedTypeIds], resolved: &mut Vec<TypeId>| {
                 for kind in unresolved {
                     if let Some(type_item) = kind.item_id() {
-                        *had_error |= !pass_ctx.ensure_declare_structs(ctx, stores, type_item);
+                        *had_error |= pass_ctx
+                            .ensure_declare_structs(ctx, stores, type_item)
+                            .is_err();
                     }
 
                     let info = match stores.types.resolve_type(&mut stores.strings, kind) {
@@ -76,7 +78,9 @@ pub fn resolve_signature(
 
             let memory_type_unresolved = ctx.nrir().get_memory_type(cur_id).clone();
             if let Some(type_item) = memory_type_unresolved.item_id() {
-                *had_error |= !pass_ctx.ensure_declare_structs(ctx, stores, type_item);
+                *had_error |= pass_ctx
+                    .ensure_declare_structs(ctx, stores, type_item)
+                    .is_err();
             }
             let info = match stores
                 .types
@@ -130,7 +134,9 @@ fn resolve_block(
 
                     for ugp in unresolved_generic_params {
                         if let Some(type_item) = ugp.item_id() {
-                            *had_error |= !pass_ctx.ensure_declare_structs(ctx, stores, type_item);
+                            *had_error |= pass_ctx
+                                .ensure_declare_structs(ctx, stores, type_item)
+                                .is_err();
                         }
 
                         let type_info = match stores.types.resolve_type(&mut stores.strings, ugp) {
@@ -237,7 +243,9 @@ fn resolve_block(
             | OpCode::Complex(NameResolvedOp::PackStruct { id })
             | OpCode::Complex(NameResolvedOp::SizeOf { id }) => {
                 if let Some(type_item) = id.item_id() {
-                    *had_error |= !pass_ctx.ensure_declare_structs(ctx, stores, type_item);
+                    *had_error |= pass_ctx
+                        .ensure_declare_structs(ctx, stores, type_item)
+                        .is_err();
                 }
                 let type_info = match stores.types.resolve_type(&mut stores.strings, id) {
                     Ok(info) => info,

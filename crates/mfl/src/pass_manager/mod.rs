@@ -94,18 +94,18 @@ macro_rules! state_check {
     ($self:expr, $expected_state:expr, $prev_function:ident, $ctx: expr, $stores: expr, $cur_item:expr) => {
         let cur_state = $self.states[&$cur_item];
         if cur_state.state >= $expected_state {
-            return true;
+            return Ok(());
         }
-        if cur_state.had_error || !$self.$prev_function($ctx, $stores, $cur_item) {
-            return false;
+        if cur_state.had_error || $self.$prev_function($ctx, $stores, $cur_item).is_err() {
+            return Err(());
         }
     };
 }
 
 impl PassContext {
-    fn ensure_initial(&mut self, _: &mut Context, _: &mut Stores, _: ItemId) -> bool {
+    fn ensure_initial(&mut self, _: &mut Context, _: &mut Stores, _: ItemId) -> Result<(), ()> {
         // This is just here to keep the pattern going.
-        true
+        Ok(())
     }
 
     fn ensure_ident_resolved_signature(
@@ -113,7 +113,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::IdentResolvedSignature,
@@ -133,10 +133,10 @@ impl PassContext {
         );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedSignature);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -145,7 +145,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::DeclareStructs,
@@ -165,10 +165,10 @@ impl PassContext {
         );
         if !had_error {
             self.set_state(cur_item, PassState::DeclareStructs);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -177,7 +177,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::DefineStructs,
@@ -201,23 +201,23 @@ impl PassContext {
         if struct_def.generic_params.is_none() && !self.defined_generic_structs {
             let all_generic_structs = ctx.get_generic_structs().to_owned();
             for gsi in all_generic_structs {
-                had_error |= self.ensure_define_structs(ctx, stores, gsi);
+                had_error |= self.ensure_define_structs(ctx, stores, gsi).is_err();
             }
             self.defined_generic_structs = true;
         }
 
         if had_error {
             self.set_error(cur_item);
-            return false;
+            return Err(());
         }
 
         passes::structs::define_struct(ctx, stores, &mut had_error, cur_item);
         if !had_error {
             self.set_state(cur_item, PassState::DefineStructs);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -226,7 +226,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::IdentResolvedBody,
@@ -246,10 +246,10 @@ impl PassContext {
         );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedBody);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -258,7 +258,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::TypeResolvedSignature,
@@ -278,10 +278,10 @@ impl PassContext {
         );
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedSignature);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -290,7 +290,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::TypeResolvedBody,
@@ -310,10 +310,10 @@ impl PassContext {
         );
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedBody);
-            true
+            Ok(())
         } else {
             self.set_error(cur_item);
-            false
+            Err(())
         }
     }
 
@@ -322,7 +322,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::CyclicRefCheckBody,
@@ -334,7 +334,7 @@ impl PassContext {
 
         todo!();
         self.set_state(cur_item, PassState::CyclicRefCheckBody);
-        true
+        Ok(())
     }
 
     fn ensure_terminal_block_check_body(
@@ -342,7 +342,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::TerminalBlockCheckBody,
@@ -354,7 +354,7 @@ impl PassContext {
 
         todo!();
         self.set_state(cur_item, PassState::TerminalBlockCheckBody);
-        true
+        Ok(())
     }
 
     fn ensure_stack_and_type_checked_body(
@@ -362,7 +362,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::StackAndTypeCheckedBody,
@@ -374,7 +374,7 @@ impl PassContext {
 
         todo!();
         self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
-        true
+        Ok(())
     }
 
     fn ensure_const_prop_body(
@@ -382,7 +382,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::ConstPropBody,
@@ -394,7 +394,7 @@ impl PassContext {
 
         todo!();
         self.set_state(cur_item, PassState::ConstPropBody);
-        true
+        Ok(())
     }
 
     fn ensure_evaluated_consts_asserts(
@@ -402,7 +402,7 @@ impl PassContext {
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
-    ) -> bool {
+    ) -> Result<(), ()> {
         state_check!(
             self,
             PassState::EvaluatedConstsAsserts,
@@ -415,16 +415,21 @@ impl PassContext {
         todo!();
 
         self.set_state(cur_item, PassState::EvaluatedConstsAsserts);
-        true
+        Ok(())
     }
 
-    fn ensure_done(&mut self, ctx: &mut Context, stores: &mut Stores, cur_item: ItemId) -> bool {
+    fn ensure_done(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
         let cur_state = self.states[&cur_item];
         if cur_state.state >= PassState::Done {
-            return true;
+            return Ok(());
         }
         if cur_state.had_error {
-            return false;
+            return Err(());
         }
 
         // Let's just short-circuit to the specific previous state for this one.
@@ -439,24 +444,28 @@ impl PassContext {
             }
         };
 
-        let prev_function: fn(&mut PassContext, &mut Context, &mut Stores, ItemId) -> bool =
-            match needed_prev_state {
-                PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
-                PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
-                PassState::DefineStructs => PassContext::ensure_define_structs,
-                PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
-                PassState::ConstPropBody => PassContext::ensure_const_prop_body,
-                PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
+        let prev_function: fn(
+            &mut PassContext,
+            &mut Context,
+            &mut Stores,
+            ItemId,
+        ) -> Result<(), ()> = match needed_prev_state {
+            PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
+            PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
+            PassState::DefineStructs => PassContext::ensure_define_structs,
+            PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
+            PassState::ConstPropBody => PassContext::ensure_const_prop_body,
+            PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
 
-                _ => panic!("ICE: unexpected previous state: {needed_prev_state:?}"),
-            };
+            _ => panic!("ICE: unexpected previous state: {needed_prev_state:?}"),
+        };
 
         prev_function(self, ctx, stores, cur_item);
 
         // no actual work to be done in this one.
         self.set_state(cur_item, PassState::Done);
 
-        true
+        Ok(())
     }
 }
 
@@ -465,27 +474,9 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
     let mut had_error = false;
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
-        had_error |= !pass_ctx.ensure_done(ctx, stores, cur_item_id);
+        had_error |= pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err();
 
-        // match pass_ctx.can_progress(cur_item_id) {
-        //     CanProgress::No => {
-        //         // We're still waiting on something else to progress.
-        //         pass_ctx.enqueue(cur_item_id);
-        //     }
-        //     CanProgress::Error => {
-        //         // Whatever we were waiting for had an error before it could get to the
-        //         // stage we required. We need to propagate the error flag so our dependencies
-        //         // know we can't progress.
-        //         pass_ctx.set_had_error(cur_item_id);
-        //     }
-        //     CanProgress::Yes => {
-        //         let cur_item_state = pass_ctx.get_state(cur_item_id);
         //         let pass_func = match cur_item_state {
-        //             PassState::IdentResolvedSignature => {
-        //                 passes::ident_resolution::resolve_signature
-        //             }
-        //             PassState::IdentResolvedBody => passes::ident_resolution::resolve_body,
-
         //             PassState::DeclareStructs => passes::structs::declare_struct,
         //             PassState::DefineStructs => passes::structs::define_struct,
 
