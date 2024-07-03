@@ -275,9 +275,21 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::TypeResolvedBody);
-        true
+        let mut had_error = false;
+        passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
+        eprintln!(
+            "TypeBody: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
+        if !had_error {
+            self.set_state(cur_item, PassState::TypeResolvedBody);
+            true
+        } else {
+            self.set_error(cur_item);
+            false
+        }
     }
 
     fn ensure_cyclic_ref_check_body(

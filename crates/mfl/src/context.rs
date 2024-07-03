@@ -2,12 +2,13 @@ use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
-    ir::UnresolvedIdent,
+    ir::{If, OpCode, TerminalBlock, UnresolvedIdent, While},
     option::OptionExt,
-    pass_manager::static_analysis::Analyzer,
+    pass_manager::{static_analysis::Analyzer, PassContext, PassState},
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{TypeId, UnresolvedStruct, UnresolvedTypeIds, UnresolvedTypeTokens},
@@ -46,6 +47,7 @@ pub struct ItemHeader {
     pub lang_item: Option<LangItem>,
 }
 
+#[derive(Debug, Clone)]
 pub struct UnresolvedItemSignature {
     pub exit: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
     pub entry: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
@@ -116,6 +118,7 @@ impl UnresolvedIr {
     }
 }
 
+#[derive(Clone)]
 pub struct NameResolvedItemSignature {
     pub exit: Vec<UnresolvedTypeIds>,
     pub entry: Vec<UnresolvedTypeIds>,
@@ -285,7 +288,7 @@ pub struct Context {
 
     // Bit of a hacky workaround for how I've done the struct resolution.
     generic_structs: Vec<ItemId>,
-    generic_function_cache: HashMap<(ItemId, String), ItemId>,
+    generic_function_cache: HashMap<(ItemId, SmallVec<[TypeId; 4]>), ItemId>,
     generic_template_parameters: HashMap<ItemId, Vec<Spanned<Spur>>>,
 }
 
@@ -359,18 +362,6 @@ impl Context {
     #[track_caller]
     pub fn get_function_template_paramaters(&self, id: ItemId) -> &[Spanned<Spur>] {
         &self.generic_template_parameters[&id]
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn set_new_function_instance(
-        &mut self,
-        base_id: ItemId,
-        new_name: String,
-        instance_id: ItemId,
-    ) {
-        self.generic_function_cache
-            .insert((base_id, new_name), instance_id);
     }
 }
 
@@ -611,6 +602,299 @@ impl Context {
         self.headers[item_id.0 as usize].lang_item = Some(kind);
     }
 
+    // `self` is only used in recursion, but it makes conceptual sense for this to be a method.
+    #[allow(clippy::only_used_in_recursion)]
+    fn expand_generic_params_in_type(
+        &self,
+        base: &UnresolvedTypeIds,
+        param_map: &HashMap<Spur, UnresolvedTypeIds>,
+    ) -> UnresolvedTypeIds {
+        match base {
+            UnresolvedTypeIds::SimpleCustom { .. } | UnresolvedTypeIds::SimpleBuiltin(_) => {
+                base.clone()
+            }
+            UnresolvedTypeIds::SimpleGenericParam(p) => param_map[&p.inner].clone(),
+            UnresolvedTypeIds::Array(inner, len) => {
+                let inner = self.expand_generic_params_in_type(inner, param_map);
+                UnresolvedTypeIds::Array(Box::new(inner), *len)
+            }
+            UnresolvedTypeIds::Pointer(inner) => {
+                let inner = self.expand_generic_params_in_type(inner, param_map);
+                UnresolvedTypeIds::Pointer(Box::new(inner))
+            }
+            UnresolvedTypeIds::GenericInstance {
+                id,
+                id_token,
+                params,
+            } => {
+                let params = params
+                    .iter()
+                    .map(|t| self.expand_generic_params_in_type(t, param_map))
+                    .collect();
+                UnresolvedTypeIds::GenericInstance {
+                    id: *id,
+                    id_token: *id_token,
+                    params,
+                }
+            }
+        }
+    }
+
+    fn expand_generic_params_in_block(
+        &mut self,
+        stores: &mut Stores,
+        pass_ctx: &mut PassContext,
+        body: &[Op<NameResolvedOp>],
+        param_map: &HashMap<Spur, UnresolvedTypeIds>,
+        old_alloc_map: &HashMap<ItemId, ItemId>,
+    ) -> Vec<Op<NameResolvedOp>> {
+        let mut new_body = Vec::new();
+
+        for op in body {
+            let new_code = match &op.code {
+                OpCode::Basic(bo) => OpCode::Basic(*bo),
+                OpCode::Complex(co) => match co {
+                    NameResolvedOp::If(if_op) => {
+                        let resolved_condition = self.expand_generic_params_in_block(
+                            stores,
+                            pass_ctx,
+                            &if_op.condition.block,
+                            param_map,
+                            old_alloc_map,
+                        );
+                        let resolved_then = self.expand_generic_params_in_block(
+                            stores,
+                            pass_ctx,
+                            &if_op.then_block.block,
+                            param_map,
+                            old_alloc_map,
+                        );
+                        let resolved_else = self.expand_generic_params_in_block(
+                            stores,
+                            pass_ctx,
+                            &if_op.else_block.block,
+                            param_map,
+                            old_alloc_map,
+                        );
+
+                        OpCode::Complex(NameResolvedOp::If(Box::new(If {
+                            tokens: (),
+                            condition: TerminalBlock {
+                                block: resolved_condition,
+                                is_terminal: false,
+                            },
+                            then_block: TerminalBlock {
+                                block: resolved_then,
+                                is_terminal: false,
+                            },
+                            else_block: TerminalBlock {
+                                block: resolved_else,
+                                is_terminal: false,
+                            },
+                        })))
+                    }
+                    NameResolvedOp::While(while_op) => {
+                        let resolved_condition = self.expand_generic_params_in_block(
+                            stores,
+                            pass_ctx,
+                            &while_op.condition.block,
+                            param_map,
+                            old_alloc_map,
+                        );
+                        let resolved_body = self.expand_generic_params_in_block(
+                            stores,
+                            pass_ctx,
+                            &while_op.body_block.block,
+                            param_map,
+                            old_alloc_map,
+                        );
+
+                        OpCode::Complex(NameResolvedOp::While(Box::new(While {
+                            tokens: (),
+                            condition: TerminalBlock {
+                                block: resolved_condition,
+                                is_terminal: false,
+                            },
+                            body_block: TerminalBlock {
+                                block: resolved_body,
+                                is_terminal: false,
+                            },
+                        })))
+                    }
+
+                    NameResolvedOp::Cast { id }
+                    | NameResolvedOp::PackStruct { id }
+                    | NameResolvedOp::SizeOf { id } => {
+                        if let Some(type_item) = id.item_id() {
+                            pass_ctx.ensure_declare_structs(self, stores, type_item);
+                        }
+                        let new_id = self.expand_generic_params_in_type(id, param_map);
+                        match &op.code {
+                            OpCode::Complex(NameResolvedOp::Cast { .. }) => {
+                                OpCode::Complex(NameResolvedOp::Cast { id: new_id })
+                            }
+                            OpCode::Complex(NameResolvedOp::PackStruct { .. }) => {
+                                OpCode::Complex(NameResolvedOp::PackStruct { id: new_id })
+                            }
+                            OpCode::Complex(NameResolvedOp::SizeOf { .. }) => {
+                                OpCode::Complex(NameResolvedOp::SizeOf { id: new_id })
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+
+                    NameResolvedOp::Const { id } => {
+                        OpCode::Complex(NameResolvedOp::Const { id: *id })
+                    }
+                    NameResolvedOp::Memory { id, is_global } => {
+                        let id = if let Some(new_id) = old_alloc_map.get(id) {
+                            *new_id
+                        } else {
+                            *id
+                        };
+                        OpCode::Complex(NameResolvedOp::Memory {
+                            id,
+                            is_global: *is_global,
+                        })
+                    }
+
+                    NameResolvedOp::CallFunction { id, generic_params } => {
+                        let new_params = if let Some(gps) = generic_params.as_ref() {
+                            let mut new_params = Vec::new();
+                            for gp in gps {
+                                new_params.push(self.expand_generic_params_in_type(gp, param_map));
+                            }
+
+                            Some(new_params)
+                        } else {
+                            None
+                        };
+
+                        OpCode::Complex(NameResolvedOp::CallFunction {
+                            id: *id,
+                            generic_params: new_params,
+                        })
+                    }
+                },
+            };
+
+            new_body.push(Op {
+                code: new_code,
+                id: op.id,
+                token: op.token,
+            });
+        }
+
+        new_body
+    }
+
+    pub fn get_generic_function_instance(
+        &mut self,
+        stores: &mut Stores,
+        pass_ctx: &mut PassContext,
+        base_fn_id: ItemId,
+        resolved_generic_params: SmallVec<[TypeId; 4]>,
+        unresolved_generic_params: SmallVec<[UnresolvedTypeIds; 4]>,
+    ) -> ItemId {
+        if let Some(id) = self
+            .generic_function_cache
+            .get(&(base_fn_id, resolved_generic_params.clone()))
+        {
+            return *id;
+        }
+
+        let base_fd_params = &self.generic_template_parameters[&base_fn_id];
+        let base_header = self.get_item_header(base_fn_id);
+        assert_eq!(resolved_generic_params.len(), base_fd_params.len());
+        assert_eq!(unresolved_generic_params.len(), base_fd_params.len());
+
+        let param_map: HashMap<_, _> = base_fd_params
+            .iter()
+            .zip(unresolved_generic_params)
+            .map(|(name, ty)| (name.inner, ty))
+            .collect();
+
+        // Essentially we need to do what the parser does what in encounters a non-generic function.
+        let orig_unresolved_sig = self.urir.get_item_signature(base_fn_id).clone();
+        let orig_name_resolved_sig = self.nrir.get_item_signature(base_fn_id);
+        let mut instantiated_sig = NameResolvedItemSignature {
+            exit: Vec::new(),
+            entry: Vec::new(),
+        };
+
+        for stack_item in &orig_name_resolved_sig.exit {
+            let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+            instantiated_sig.exit.push(new_id);
+        }
+
+        for stack_item in &orig_name_resolved_sig.entry {
+            let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+            instantiated_sig.entry.push(new_id);
+        }
+
+        let new_name = stores.build_mangled_name(base_header.name.inner, &resolved_generic_params);
+
+        let new_proc_id = self.new_function(
+            stores,
+            &mut false,
+            new_name.with_span(base_header.name.location),
+            base_header.parent.unwrap(),
+            orig_unresolved_sig.entry,
+            orig_unresolved_sig.exit,
+        );
+        self.nrir.set_item_signature(new_proc_id, instantiated_sig);
+
+        // Clone the memory items.
+        let base_scope = self.nrir.get_scope(base_fn_id).clone();
+        let mut old_alloc_map = HashMap::new();
+        for (&child_name, &child_item) in base_scope.get_child_items() {
+            let child_item_header = self.get_item_header(child_item.inner);
+            if child_item_header.kind != ItemKind::Memory {
+                // We just reuse the existing item, so we need to add it manually.
+                let new_scope = self.nrir.get_scope_mut(new_proc_id);
+                new_scope
+                    .add_child(child_name.with_span(child_item.location), child_item.inner)
+                    .unwrap();
+                continue;
+            }
+
+            let alloc_type_unresolved = self.urir.get_memory_type(child_item_header.id);
+            let new_alloc_id = self.new_memory(
+                stores,
+                &mut false,
+                child_item_header.name,
+                new_proc_id,
+                alloc_type_unresolved.map(|i| i.clone()),
+            );
+            let alloc_type = self.nrir.get_memory_type(child_item_header.id);
+            let new_memory_sig = self.expand_generic_params_in_type(alloc_type, &param_map);
+            self.nrir.set_memory_type(new_alloc_id, new_memory_sig);
+            pass_ctx.add_new_item(
+                new_alloc_id,
+                PassState::IdentResolvedSignature,
+                child_item_header.id,
+            );
+
+            old_alloc_map.insert(child_item_header.id, new_alloc_id);
+        }
+
+        // I don't like having to clone this.
+        let body = self.nrir.get_item_body(base_fn_id).to_owned();
+        let new_body = self.expand_generic_params_in_block(
+            stores,
+            pass_ctx,
+            &body,
+            &param_map,
+            &old_alloc_map,
+        );
+        self.nrir.set_item_body(new_proc_id, new_body);
+        self.generic_function_cache
+            .insert((base_fn_id, resolved_generic_params), new_proc_id);
+        pass_ctx.add_new_item(new_proc_id, PassState::IdentResolvedBody, base_fn_id);
+
+        new_proc_id
+    }
+
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
         // 1. Check ourselves
         if from.name.inner == symbol {
@@ -665,6 +949,7 @@ impl UnresolvedScope {
     }
 }
 
+#[derive(Clone)]
 pub struct NameResolvedScope {
     child_items: HashMap<Spur, Spanned<ItemId>>,
     visible_symbols: HashMap<Spur, Spanned<ItemId>>,

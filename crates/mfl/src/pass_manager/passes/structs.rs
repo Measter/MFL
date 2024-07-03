@@ -67,7 +67,7 @@ pub fn declare_struct(
     }
 }
 
-pub fn define_struct(ctx: &mut Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
+pub fn define_struct(ctx: &Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
     let _span = debug_span!("Defining struct", ?cur_id);
 
     let def = ctx.nrir().get_struct(cur_id);
