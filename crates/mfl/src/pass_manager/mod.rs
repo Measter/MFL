@@ -125,7 +125,12 @@ impl PassContext {
 
         let mut had_error = false;
         passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
-        eprintln!("IdentSig: {cur_item:?} - {had_error}");
+        eprintln!(
+            "IdentSig: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedSignature);
             true
@@ -135,7 +140,7 @@ impl PassContext {
         }
     }
 
-    fn ensure_declare_structs(
+    pub fn ensure_declare_structs(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,
@@ -152,7 +157,12 @@ impl PassContext {
 
         let mut had_error = false;
         passes::structs::declare_struct(ctx, stores, &mut had_error, cur_item);
-        eprintln!("DeclStruct: {cur_item:?} - {had_error}");
+        eprintln!(
+            "DeclStruct: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
         if !had_error {
             self.set_state(cur_item, PassState::DeclareStructs);
             true
@@ -178,7 +188,12 @@ impl PassContext {
         );
 
         let mut had_error = false;
-        eprintln!("DefStruct: {cur_item:?} - {had_error}");
+        eprintln!(
+            "DefStruct: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
 
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
@@ -223,7 +238,12 @@ impl PassContext {
 
         let mut had_error = false;
         passes::ident_resolution::resolve_body(ctx, stores, &mut had_error, cur_item);
-        eprintln!("IdentBody: {cur_item:?} - {had_error}");
+        eprintln!(
+            "IdentBody: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedBody);
             true
@@ -250,7 +270,12 @@ impl PassContext {
 
         let mut had_error = false;
         passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
-        eprintln!("TypeSig: {cur_item:?} - {had_error}");
+        eprintln!(
+            "TypeSig: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedSignature);
             true
@@ -440,7 +465,7 @@ pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
     let mut had_error = false;
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
-        had_error |= pass_ctx.ensure_done(ctx, stores, cur_item_id);
+        had_error |= !pass_ctx.ensure_done(ctx, stores, cur_item_id);
 
         // match pass_ctx.can_progress(cur_item_id) {
         //     CanProgress::No => {
