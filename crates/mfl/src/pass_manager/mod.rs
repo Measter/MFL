@@ -332,9 +332,21 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::CyclicRefCheckBody);
-        Ok(())
+        let mut had_error = false;
+        passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
+        eprintln!(
+            "CycleCheck: {cur_item:?}({}) - {had_error}",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
+        if !had_error {
+            self.set_state(cur_item, PassState::CyclicRefCheckBody);
+            Ok(())
+        } else {
+            self.set_error(cur_item);
+            Err(())
+        }
     }
 
     fn ensure_terminal_block_check_body(
