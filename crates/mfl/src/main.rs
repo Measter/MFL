@@ -18,6 +18,7 @@ use tracing::{debug, debug_span, Level};
 
 use interners::Interner;
 use source_file::SourceStorage;
+use tracing_subscriber::fmt::format::FmtSpan;
 use type_store::{BuiltinTypes, TypeId, TypeStore};
 
 mod backend_llvm;
@@ -248,6 +249,7 @@ fn main() -> Result<()> {
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(max_log_level)
+        .with_span_events(FmtSpan::ACTIVE)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
