@@ -516,44 +516,12 @@ impl PassContext {
 }
 
 pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
+    let _span = debug_span!(stringify!(pass_manager)).entered();
     let mut pass_ctx = PassContext::new(ctx.get_all_items());
     let mut had_error = false;
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
         had_error |= pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err();
-
-        //         let pass_func = match cur_item_state {
-        //             PassState::DeclareStructs => passes::structs::declare_struct,
-        //             PassState::DefineStructs => passes::structs::define_struct,
-
-        //             PassState::TypeResolvedSignature => passes::type_resolution::resolve_signature,
-        //             PassState::TypeResolvedBody => passes::type_resolution::resolve_body,
-
-        //             PassState::CyclicRefCheckBody => todo!(),
-        //             PassState::TerminalBlockCheckBody => todo!(),
-
-        //             PassState::StackAndTypeCheckedBody => todo!(),
-        //             PassState::ConstPropBody => todo!(),
-
-        //             PassState::EvaluatedConstsAsserts => todo!(),
-
-        //             PassState::Done => {
-        //                 continue;
-        //             }
-        //         };
-
-        //         match pass_func(ctx, stores, &mut pass_ctx, &mut had_error, cur_item_id) {
-        //             PassResult::Progress(next) => pass_ctx.progress_state(cur_item_id, next),
-        //             PassResult::Waiting => {}
-        //             PassResult::Error => {
-        //                 pass_ctx.set_had_error(cur_item_id);
-        //                 continue;
-        //             }
-        //         }
-
-        //         pass_ctx.enqueue(cur_item_id);
-        //     }
-        // }
     }
 
     if had_error {
