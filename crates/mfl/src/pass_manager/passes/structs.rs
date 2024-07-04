@@ -1,5 +1,4 @@
 use ariadne::{Color, Label};
-use tracing::debug_span;
 
 use crate::{
     context::{Context, ItemId},
@@ -14,8 +13,6 @@ pub fn declare_struct(
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
-    let _span = debug_span!("Declaring struct", ?cur_id);
-
     let def = ctx.nrir().get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
@@ -67,8 +64,6 @@ pub fn declare_struct(
 }
 
 pub fn define_struct(ctx: &Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
-    let _span = debug_span!("Defining struct", ?cur_id);
-
     let def = ctx.nrir().get_struct(cur_id);
     if def.generic_params.is_some() {
         stores

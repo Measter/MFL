@@ -1,5 +1,4 @@
 use smallvec::SmallVec;
-use tracing::debug_span;
 
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
@@ -16,8 +15,6 @@ pub fn resolve_signature(
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
-    let _span = debug_span!("Type Resolve Signature", ?cur_id);
-
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
         ItemKind::GenericFunction | ItemKind::Module | ItemKind::StructDef => {
@@ -287,8 +284,6 @@ pub fn resolve_body(
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
-    let _span = debug_span!("Type Resolve Body", ?cur_id);
-
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
         ItemKind::GenericFunction | ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {

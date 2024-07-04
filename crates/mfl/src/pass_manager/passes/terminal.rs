@@ -1,20 +1,15 @@
-use tracing::{debug_span, trace};
-
 use crate::{
     context::{Context, ItemId, ItemKind},
     ir::{Basic, Control, Op, OpCode, TypeResolvedOp},
-    Stores,
 };
 
-pub fn determine_terminal_blocks(ctx: &mut Context, stores: &mut Stores, cur_id: ItemId) {
-    let _span = debug_span!("determine_terminal_block").entered();
+pub fn determine_terminal_blocks(ctx: &mut Context, cur_id: ItemId) {
     let item_header = ctx.get_item_header(cur_id);
     match item_header.kind {
         ItemKind::StructDef | ItemKind::Memory | ItemKind::Module => return,
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => (),
     }
 
-    trace!(name = stores.strings.get_symbol_name(ctx, cur_id));
     let body = ctx.trir_mut().get_item_body_mut(cur_id);
     determine_terminal_blocks_in_block(body);
 }

@@ -1,6 +1,5 @@
 use ariadne::{Color, Label};
 use hashbrown::HashSet;
-use tracing::{debug_span, trace};
 
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
@@ -17,10 +16,7 @@ pub fn check_invalid_cycles(
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
-    let _span = debug_span!("Check invalid cyclic references", ?cur_id);
-
     let root_header = ctx.get_item_header(cur_id);
-    trace!(name = stores.strings.get_symbol_name(ctx, cur_id));
 
     if !matches!(root_header.kind, ItemKind::Assert | ItemKind::Const) {
         // Nothing to do here.

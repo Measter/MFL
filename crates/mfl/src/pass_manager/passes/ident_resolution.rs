@@ -1,6 +1,5 @@
 use ariadne::{Color, Label};
 use lasso::Spur;
-use tracing::debug_span;
 
 use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
@@ -266,8 +265,6 @@ pub fn resolve_signature(
     had_error: &mut bool,
     cur_id: ItemId,
 ) {
-    let _span = debug_span!("Ident Resolve Signature", ?cur_id);
-
     let header = ctx.get_item_header(cur_id);
     match header.kind {
         ItemKind::StructDef => {
@@ -602,8 +599,6 @@ fn resolve_idents_in_block(
 }
 
 pub fn resolve_body(ctx: &mut Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
-    let _span = debug_span!("Ident Resolve Body", ?cur_id);
-
     let header = ctx.get_item_header(cur_id);
     match header.kind {
         ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {

@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use color_eyre::{eyre::eyre, Result};
 use hashbrown::HashMap;
+use tracing::{debug, debug_span, trace};
 
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
@@ -123,14 +124,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_signature));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "IdentSig"
+        );
+
         let mut had_error = false;
         passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
-        eprintln!(
-            "IdentSig: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedSignature);
             Ok(())
@@ -155,14 +157,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_declare_structs));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "DeclStruct",
+        );
+
         let mut had_error = false;
         passes::structs::declare_struct(ctx, stores, &mut had_error, cur_item);
-        eprintln!(
-            "DeclStruct: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::DeclareStructs);
             Ok(())
@@ -187,14 +190,14 @@ impl PassContext {
             cur_item
         );
 
-        let mut had_error = false;
-        eprintln!(
-            "DefStruct: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
+        let _span = debug_span!(stringify!(ensure_define_structs));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "DefStruct",
         );
 
+        let mut had_error = false;
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
         let struct_def = ctx.nrir().get_struct(cur_item);
@@ -236,14 +239,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "IdentBody",
+        );
+
         let mut had_error = false;
         passes::ident_resolution::resolve_body(ctx, stores, &mut had_error, cur_item);
-        eprintln!(
-            "IdentBody: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::IdentResolvedBody);
             Ok(())
@@ -268,14 +272,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "TypeSig",
+        );
+
         let mut had_error = false;
         passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
-        eprintln!(
-            "TypeSig: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedSignature);
             Ok(())
@@ -300,14 +305,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "TypeBody",
+        );
+
         let mut had_error = false;
         passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
-        eprintln!(
-            "TypeBody: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::TypeResolvedBody);
             Ok(())
@@ -332,14 +338,15 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "CycleCheck",
+        );
+
         let mut had_error = false;
         passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
-        eprintln!(
-            "CycleCheck: {cur_item:?}({}) - {had_error}",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
-        );
         if !had_error {
             self.set_state(cur_item, PassState::CyclicRefCheckBody);
             Ok(())
@@ -364,13 +371,14 @@ impl PassContext {
             cur_item
         );
 
-        passes::terminal::determine_terminal_blocks(ctx, stores, cur_item);
-        eprintln!(
-            "TerminalCheck: {cur_item:?}({})",
-            stores
-                .strings
-                .resolve(ctx.get_item_header(cur_item).name.inner)
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "TerminalCheck",
         );
+
+        passes::terminal::determine_terminal_blocks(ctx, cur_item);
         self.set_state(cur_item, PassState::TerminalBlockCheckBody);
         Ok(())
     }
@@ -388,6 +396,13 @@ impl PassContext {
             ctx,
             stores,
             cur_item
+        );
+
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "StackTypeCheck",
         );
 
         todo!();
@@ -410,6 +425,13 @@ impl PassContext {
             cur_item
         );
 
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "ConstProp",
+        );
+
         todo!();
         self.set_state(cur_item, PassState::ConstPropBody);
         Ok(())
@@ -430,8 +452,14 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
+        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "EvaluateConstAsserts",
+        );
 
+        todo!();
         self.set_state(cur_item, PassState::EvaluatedConstsAsserts);
         Ok(())
     }
