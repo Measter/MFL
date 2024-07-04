@@ -259,6 +259,12 @@ impl TypeResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn get_item_body_mut(&mut self, id: ItemId) -> &mut [Op<TypeResolvedOp>] {
+        self.item_bodies.get_mut(&id).unwrap()
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op<TypeResolvedOp>>) {
         self.item_bodies.insert(id, body);
     }

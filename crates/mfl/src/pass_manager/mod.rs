@@ -364,7 +364,13 @@ impl PassContext {
             cur_item
         );
 
-        todo!();
+        passes::terminal::determine_terminal_blocks(ctx, stores, cur_item);
+        eprintln!(
+            "TerminalCheck: {cur_item:?}({})",
+            stores
+                .strings
+                .resolve(ctx.get_item_header(cur_item).name.inner)
+        );
         self.set_state(cur_item, PassState::TerminalBlockCheckBody);
         Ok(())
     }
