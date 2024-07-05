@@ -1,21 +1,53 @@
 strict digraph {
-    IdentResolvedSignature;
-    IdentResolvedBody;
+    subgraph passes {
+        label = "Passes";
+
+        IdentResolvedSignature;
+        IdentResolvedBody;
+        DeclareStructs;
+        TypeResolvedSignature;
+        TypeResolvedBody;
+        CyclicRefCheckBody;
+        DefineStructs;
+        TerminalBlockCheckBody;
+        StackAndTypeCheckedBody;
+        ConstPropBody;
+        EvaluatedConstsAsserts;
+    }
+
+    subgraph items {
+        rank = same;
+        node [shape = "box"]
+        label = "Items";
+
+        Module;
+        StructDef;
+        Memory;
+        GenericFunction;
+        Assert;
+        Const;
+        Function;
+    }
 
     DeclareStructs -> IdentResolvedSignature;
-    DefineStructs -> DeclareStructs;
-
     TypeResolvedSignature -> IdentResolvedSignature;
     TypeResolvedBody -> IdentResolvedBody;
-
+    DefineStructs -> DeclareStructs;
     CyclicRefCheckBody -> IdentResolvedBody;
     TerminalBlockCheckBody -> TypeResolvedBody;
-
     StackAndTypeCheckedBody -> TypeResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TerminalBlockCheckBody;
-
     ConstPropBody -> StackAndTypeCheckedBody;
     EvaluatedConstsAsserts -> CyclicRefCheckBody;
     EvaluatedConstsAsserts -> ConstPropBody;
+
+    Module -> IdentResolvedSignature;
+    StructDef -> DefineStructs;
+    Memory -> TypeResolvedSignature;
+    GenericFunction -> IdentResolvedSignature;
+    GenericFunction -> IdentResolvedBody;
+    Assert -> EvaluatedConstsAsserts;
+    Const -> EvaluatedConstsAsserts;
+    Function -> ConstPropBody;
 }
