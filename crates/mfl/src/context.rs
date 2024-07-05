@@ -8,7 +8,7 @@ use crate::{
     diagnostics,
     ir::{If, OpCode, TerminalBlock, UnresolvedIdent, While},
     option::OptionExt,
-    pass_manager::{static_analysis::Analyzer, PassContext, PassState},
+    pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
     type_store::{TypeId, UnresolvedStruct, UnresolvedTypeIds, UnresolvedTypeTokens},
@@ -877,11 +877,7 @@ impl Context {
             let alloc_type = self.nrir.get_memory_type(child_item_header.id);
             let new_memory_sig = self.expand_generic_params_in_type(alloc_type, &param_map);
             self.nrir.set_memory_type(new_alloc_id, new_memory_sig);
-            pass_ctx.add_new_item(
-                new_alloc_id,
-                PassState::IdentResolvedSignature,
-                child_item_header.id,
-            );
+            pass_ctx.add_new_item(new_alloc_id, child_item_header.id);
 
             old_alloc_map.insert(child_item_header.id, new_alloc_id);
         }
@@ -898,7 +894,7 @@ impl Context {
         self.nrir.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
             .insert((base_fn_id, resolved_generic_params), new_proc_id);
-        pass_ctx.add_new_item(new_proc_id, PassState::IdentResolvedBody, base_fn_id);
+        pass_ctx.add_new_item(new_proc_id, base_fn_id);
 
         new_proc_id
     }

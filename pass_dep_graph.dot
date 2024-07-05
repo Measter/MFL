@@ -1,0 +1,21 @@
+strict digraph {
+    IdentResolvedSignature;
+    IdentResolvedBody;
+
+    DeclareStructs -> IdentResolvedSignature;
+    DefineStructs -> DeclareStructs;
+
+    TypeResolvedSignature -> IdentResolvedSignature;
+    TypeResolvedBody -> IdentResolvedBody;
+
+    CyclicRefCheckBody -> IdentResolvedBody;
+    TerminalBlockCheckBody -> TypeResolvedBody;
+
+    StackAndTypeCheckedBody -> TypeResolvedSignature;
+    StackAndTypeCheckedBody -> TypeResolvedBody;
+    StackAndTypeCheckedBody -> TerminalBlockCheckBody;
+
+    ConstPropBody -> StackAndTypeCheckedBody;
+    EvaluatedConstsAsserts -> CyclicRefCheckBody;
+    EvaluatedConstsAsserts -> ConstPropBody;
+}

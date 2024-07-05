@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
 use color_eyre::{eyre::eyre, Result};
+use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
-use tracing::{debug, debug_span, trace};
+use tracing::{debug_span, trace};
 
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
@@ -13,33 +14,80 @@ use crate::{
 mod passes;
 pub mod static_analysis;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PassState {
-    Initial,
-    IdentResolvedSignature,
-    IdentResolvedBody,
-    DeclareStructs,
-    DefineStructs,
-    TypeResolvedSignature,
-    TypeResolvedBody,
-    CyclicRefCheckBody,
-    TerminalBlockCheckBody,
-    StackAndTypeCheckedBody,
-    ConstPropBody,
-    EvaluatedConstsAsserts,
-    Done,
+flags! {
+    enum PassState: u8 {
+        IdentResolvedSignature,
+        IdentResolvedBody,
+        DeclareStructs,
+        DefineStructs,
+        TypeResolvedSignature,
+        TypeResolvedBody,
+        CyclicRefCheckBody,
+        TerminalBlockCheckBody,
+        StackAndTypeCheckedBody,
+        ConstPropBody,
+        EvaluatedConstsAsserts,
+    }
+}
+
+impl PassState {
+    fn get_function(
+        self,
+    ) -> fn(&mut PassContext, &mut Context, &mut Stores, ItemId) -> Result<(), ()> {
+        match self {
+            PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
+            PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
+            PassState::DeclareStructs => PassContext::ensure_declare_structs,
+            PassState::DefineStructs => PassContext::ensure_define_structs,
+            PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
+            PassState::TypeResolvedBody => PassContext::ensure_type_resolved_body,
+            PassState::CyclicRefCheckBody => PassContext::ensure_cyclic_ref_check_body,
+            PassState::TerminalBlockCheckBody => PassContext::ensure_terminal_block_check_body,
+            PassState::StackAndTypeCheckedBody => PassContext::ensure_stack_and_type_checked_body,
+            PassState::ConstPropBody => PassContext::ensure_const_prop_body,
+            PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
+        }
+    }
+
+    fn get_deps(self) -> (FlagSet<PassState>, &'static [PassState]) {
+        use PassState::*;
+        match self {
+            IdentResolvedSignature => (FlagSet::default(), &[]),
+            IdentResolvedBody => (FlagSet::default(), &[]),
+            DeclareStructs => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
+            DefineStructs => (DeclareStructs.into(), &[DeclareStructs]),
+            TypeResolvedSignature => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
+            TypeResolvedBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
+            CyclicRefCheckBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
+            // Technically, this is only needed because the block terminal flags are in the AST.
+            TerminalBlockCheckBody => (TypeResolvedBody.into(), &[TypeResolvedBody]),
+            StackAndTypeCheckedBody => (
+                TypeResolvedSignature | TypeResolvedBody | TerminalBlockCheckBody,
+                &[
+                    TypeResolvedSignature,
+                    TypeResolvedBody,
+                    TerminalBlockCheckBody,
+                ],
+            ),
+            ConstPropBody => (StackAndTypeCheckedBody.into(), &[StackAndTypeCheckedBody]),
+            EvaluatedConstsAsserts => (
+                CyclicRefCheckBody | ConstPropBody,
+                &[CyclicRefCheckBody, ConstPropBody],
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ItemState {
-    state: PassState,
+    state: FlagSet<PassState>,
     had_error: bool,
 }
 
 impl ItemState {
     fn new() -> Self {
         Self {
-            state: PassState::Initial,
+            state: FlagSet::default(),
             had_error: false,
         }
     }
@@ -61,22 +109,17 @@ impl PassContext {
         }
     }
 
-    fn get_state(&self, cur_item: ItemId) -> PassState {
-        self.states[&cur_item].state
-    }
-
     fn set_error(&mut self, cur_item: ItemId) {
         self.states.get_mut(&cur_item).unwrap().had_error = true;
     }
 
     fn set_state(&mut self, cur_item: ItemId, new_state: PassState) {
         let cur_item_state = self.states.get_mut(&cur_item).unwrap();
-        cur_item_state.state = new_state;
+        cur_item_state.state |= new_state;
     }
 
-    pub fn add_new_item(&mut self, id: ItemId, initial_state: PassState, base_id: ItemId) {
-        let mut new_state_info = self.states[&base_id].clone();
-        new_state_info.state = initial_state;
+    pub fn add_new_item(&mut self, id: ItemId, base_id: ItemId) {
+        let new_state_info = self.states[&base_id];
         self.states
             .insert(id, new_state_info)
             .expect_none("ICE: Re-added state for item");
@@ -91,37 +134,42 @@ impl PassContext {
     }
 }
 
-macro_rules! state_check {
-    ($self:expr, $expected_state:expr, $prev_function:ident, $ctx: expr, $stores: expr, $cur_item:expr) => {
-        let cur_state = $self.states[&$cur_item];
-        if cur_state.state >= $expected_state {
+macro_rules! ensure_state_deps {
+    ($self:expr, $ctx:expr, $stores:expr, $cur_item:expr, $this_state:expr) => {
+        let cur_item_state = $self.states[&$cur_item];
+        if cur_item_state.state.contains($this_state) {
             return Ok(());
         }
-        if cur_state.had_error || $self.$prev_function($ctx, $stores, $cur_item).is_err() {
-            return Err(());
+        let (dep_flags, mut dep_list) = $this_state.get_deps();
+        loop {
+            let cur_item_state = $self.states[&$cur_item];
+            if cur_item_state.state.contains(dep_flags) {
+                break;
+            }
+            if cur_item_state.had_error {
+                return Err(());
+            }
+
+            let [first, rest @ ..] = dep_list else { break };
+            dep_list = rest;
+            first.get_function()($self, $ctx, $stores, $cur_item)?;
         }
     };
 }
 
 impl PassContext {
-    fn ensure_initial(&mut self, _: &mut Context, _: &mut Stores, _: ItemId) -> Result<(), ()> {
-        // This is just here to keep the pattern going.
-        Ok(())
-    }
-
     fn ensure_ident_resolved_signature(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
+        ensure_state_deps!(
             self,
-            PassState::IdentResolvedSignature,
-            ensure_initial,
             ctx,
             stores,
-            cur_item
+            cur_item,
+            PassState::IdentResolvedSignature
         );
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_signature));
@@ -148,14 +196,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::DeclareStructs,
-            ensure_ident_resolved_signature,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::DeclareStructs);
 
         let _span = debug_span!(stringify!(ensure_declare_structs));
         trace!(
@@ -181,14 +222,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::DefineStructs,
-            ensure_declare_structs,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::DefineStructs);
 
         let _span = debug_span!(stringify!(ensure_define_structs));
         trace!(
@@ -230,14 +264,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::IdentResolvedBody,
-            ensure_ident_resolved_signature,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::IdentResolvedBody);
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
         trace!(
@@ -263,13 +290,12 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
+        ensure_state_deps!(
             self,
-            PassState::TypeResolvedSignature,
-            ensure_ident_resolved_body,
             ctx,
             stores,
-            cur_item
+            cur_item,
+            PassState::TypeResolvedSignature
         );
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
@@ -296,14 +322,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::TypeResolvedBody,
-            ensure_type_resolved_signature,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::TypeResolvedBody);
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
         trace!(
@@ -329,14 +348,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::CyclicRefCheckBody,
-            ensure_type_resolved_body,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::CyclicRefCheckBody);
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
         trace!(
@@ -362,13 +374,12 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
+        ensure_state_deps!(
             self,
-            PassState::TerminalBlockCheckBody,
-            ensure_cyclic_ref_check_body,
             ctx,
             stores,
-            cur_item
+            cur_item,
+            PassState::TerminalBlockCheckBody
         );
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
@@ -389,13 +400,12 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
+        ensure_state_deps!(
             self,
-            PassState::StackAndTypeCheckedBody,
-            ensure_terminal_block_check_body,
             ctx,
             stores,
-            cur_item
+            cur_item,
+            PassState::StackAndTypeCheckedBody
         );
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
@@ -416,14 +426,7 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
-            self,
-            PassState::ConstPropBody,
-            ensure_stack_and_type_checked_body,
-            ctx,
-            stores,
-            cur_item
-        );
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::ConstPropBody);
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
         trace!(
@@ -443,13 +446,12 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        state_check!(
+        ensure_state_deps!(
             self,
-            PassState::EvaluatedConstsAsserts,
-            ensure_const_prop_body,
             ctx,
             stores,
-            cur_item
+            cur_item,
+            PassState::EvaluatedConstsAsserts
         );
 
         let _span = debug_span!(stringify!(ensure_ident_resolved_body));
@@ -470,46 +472,31 @@ impl PassContext {
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
+        let needed_states = match ctx.get_item_header(cur_item).kind {
+            ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
+            ItemKind::StructDef => &[PassState::DefineStructs],
+            ItemKind::Memory => &[PassState::TypeResolvedSignature],
+            // Type resolution happens after the generic function is instantiated.
+            ItemKind::GenericFunction => &[
+                PassState::IdentResolvedSignature,
+                PassState::IdentResolvedBody,
+            ],
+            ItemKind::Assert | ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
+            ItemKind::Function => &[PassState::ConstPropBody],
+        };
+
+        let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);
         let cur_state = self.states[&cur_item];
-        if cur_state.state >= PassState::Done {
+        if cur_state.state.contains(as_flags) {
             return Ok(());
         }
         if cur_state.had_error {
             return Err(());
         }
 
-        // Let's just short-circuit to the specific previous state for this one.
-        let needed_prev_state = match ctx.get_item_header(cur_item).kind {
-            ItemKind::Module => PassState::IdentResolvedSignature,
-            ItemKind::StructDef => PassState::DefineStructs,
-            ItemKind::Memory => PassState::TypeResolvedSignature,
-            // Type resolution happens after the generic function is instantiated.
-            ItemKind::GenericFunction => PassState::IdentResolvedBody,
-            ItemKind::Function | ItemKind::Assert | ItemKind::Const => {
-                PassState::EvaluatedConstsAsserts
-            }
-        };
-
-        let prev_function: fn(
-            &mut PassContext,
-            &mut Context,
-            &mut Stores,
-            ItemId,
-        ) -> Result<(), ()> = match needed_prev_state {
-            PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
-            PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
-            PassState::DefineStructs => PassContext::ensure_define_structs,
-            PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
-            PassState::ConstPropBody => PassContext::ensure_const_prop_body,
-            PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
-
-            _ => panic!("ICE: unexpected previous state: {needed_prev_state:?}"),
-        };
-
-        prev_function(self, ctx, stores, cur_item);
-
-        // no actual work to be done in this one.
-        self.set_state(cur_item, PassState::Done);
+        for state in needed_states {
+            state.get_function()(self, ctx, stores, cur_item)?;
+        }
 
         Ok(())
     }
