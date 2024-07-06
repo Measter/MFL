@@ -8,7 +8,7 @@ use prettytable::{row, Table};
 use smallvec::SmallVec;
 
 use crate::{
-    context::{Context, ItemId},
+    context::ItemId,
     diagnostics::{self, TABLE_FORMAT},
     ir::{IntKind, Op, OpId, TypeResolvedOp},
     n_ops::HashMapNOps,
@@ -160,7 +160,7 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    fn new_value(
+    pub(super) fn new_value(
         &mut self,
         source_location: SourceLocation,
         parent_value: Option<ValueId>,
@@ -195,7 +195,7 @@ impl Analyzer {
         ids.map(|id| &self.value_lifetime[&id])
     }
 
-    fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
+    pub(super) fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
         let val = self.value_lifetime.get_mut(&value).unwrap();
         val.consumer.push(consumer_id);
     }
@@ -245,7 +245,12 @@ impl Analyzer {
     }
 
     #[track_caller]
-    fn set_op_io(&mut self, op: &Op<TypeResolvedOp>, inputs: &[ValueId], outputs: &[ValueId]) {
+    pub(super) fn set_op_io(
+        &mut self,
+        op: &Op<TypeResolvedOp>,
+        inputs: &[ValueId],
+        outputs: &[ValueId],
+    ) {
         let new_data = OpData {
             creator_token: op.token,
             inputs: inputs.into(),
@@ -386,7 +391,7 @@ fn generate_type_mismatch_diag(
     diagnostics::emit_error(stores, op.token.location, message, labels, None);
 }
 
-fn generate_stack_length_mismatch_diag(
+pub(super) fn generate_stack_length_mismatch_diag(
     stores: &Stores,
     sample_location: SourceLocation,
     error_location: SourceLocation,

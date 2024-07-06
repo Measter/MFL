@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use stack_check::{eat_one_make_one, eat_two_make_one};
 
 use crate::{
     context::{Context, ItemId},
@@ -10,6 +11,9 @@ use crate::{
     },
     Stores,
 };
+
+mod stack_check;
+mod type_check;
 
 fn analyze_block(
     ctx: &mut Context,
@@ -28,17 +32,78 @@ fn analyze_block(
         match &op.code {
             OpCode::Basic(bo) => match bo {
                 Basic::Arithmetic(ao) => match ao {
-                    Arithmetic::Add => todo!(),
-                    Arithmetic::BitAnd => todo!(),
-                    Arithmetic::BitNot => todo!(),
-                    Arithmetic::BitOr => todo!(),
-                    Arithmetic::BitXor => todo!(),
-                    Arithmetic::Div => todo!(),
-                    Arithmetic::Multiply => todo!(),
-                    Arithmetic::Rem => todo!(),
-                    Arithmetic::ShiftLeft => todo!(),
-                    Arithmetic::ShiftRight => todo!(),
-                    Arithmetic::Subtract => todo!(),
+                    Arithmetic::Add => {
+                        let mut local_had_error = false;
+                        eat_two_make_one(stores, analyzer, had_error, stack, op);
+                        if !local_had_error {
+                            type_check::arithmetic::add(stores, analyzer, &mut local_had_error, op);
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+
+                    Arithmetic::BitAnd | Arithmetic::BitOr | Arithmetic::BitXor => {
+                        let mut local_had_error = false;
+                        eat_two_make_one(stores, analyzer, had_error, stack, op);
+                        if !local_had_error {
+                            type_check::arithmetic::bitand_bitor_bitxor(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+
+                    Arithmetic::BitNot => {
+                        let mut local_had_error = false;
+                        eat_one_make_one(stores, analyzer, had_error, stack, op);
+                        if !local_had_error {
+                            type_check::arithmetic::bitnot(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                            );
+                        }
+                        *had_error |= local_had_error;
+                    }
+
+                    Arithmetic::Div
+                    | Arithmetic::Multiply
+                    | Arithmetic::Rem
+                    | Arithmetic::ShiftLeft
+                    | Arithmetic::ShiftRight => {
+                        let mut local_had_error = false;
+                        eat_two_make_one(stores, analyzer, had_error, stack, op);
+                        if !local_had_error {
+                            type_check::arithmetic::multiply_div_rem_shift(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+
+                    Arithmetic::Subtract => {
+                        let mut local_had_error = false;
+                        eat_two_make_one(stores, analyzer, had_error, stack, op);
+                        if !local_had_error {
+                            type_check::arithmetic::subtract(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                 },
                 Basic::Compare(co) => match co {
                     Compare::Equal => todo!(),
