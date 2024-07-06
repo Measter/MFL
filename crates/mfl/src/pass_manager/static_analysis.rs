@@ -18,7 +18,7 @@ use crate::{
     Stores,
 };
 
-fn can_promote_int_unidirectional(from: Integer, to: Integer) -> bool {
+pub fn can_promote_int_unidirectional(from: Integer, to: Integer) -> bool {
     promote_int_type_uni_directional(from, to).is_some()
 }
 
@@ -35,7 +35,7 @@ pub fn promote_int_type_uni_directional(from: Integer, to: Integer) -> Option<In
     }
 }
 
-fn can_promote_int_bidirectional(a: Integer, b: Integer) -> bool {
+pub fn can_promote_int_bidirectional(a: Integer, b: Integer) -> bool {
     promote_int_type_bidirectional(a, b).is_some()
 }
 
@@ -111,9 +111,9 @@ struct Value {
 #[derive(Debug, Clone)]
 pub struct OpData {
     #[allow(unused)] // We need this for a debug print in a panic.
-    creator_token: Spanned<Spur>,
-    inputs: SmallVec<[ValueId; 8]>,
-    outputs: SmallVec<[ValueId; 8]>,
+    pub creator_token: Spanned<Spur>,
+    pub inputs: SmallVec<[ValueId; 8]>,
+    pub outputs: SmallVec<[ValueId; 8]>,
 }
 
 impl OpData {
@@ -204,7 +204,7 @@ impl Analyzer {
         self.value_types.get_n(ids)
     }
 
-    fn set_value_type(&mut self, id: ValueId, kind: TypeId) {
+    pub(super) fn set_value_type(&mut self, id: ValueId, kind: TypeId) {
         self.value_types
             .insert(id, kind)
             .expect_none("ICE: Tried to set a value type twice");
@@ -331,7 +331,7 @@ fn failed_compare_stack_types(
     diagnostics::emit_error(stores, error_location, msg, labels, note.to_string());
 }
 
-fn generate_type_mismatch_diag(
+pub(super) fn generate_type_mismatch_diag(
     stores: &Stores,
     analyzer: &Analyzer,
     operator_str: &str,
