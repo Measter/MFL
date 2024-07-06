@@ -415,9 +415,15 @@ impl PassContext {
             "StackTypeCheck",
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
-        Ok(())
+        let mut had_error = false;
+        passes::stack_type_check::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+        if !had_error {
+            self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
+            Ok(())
+        } else {
+            self.set_error(cur_item);
+            Err(())
+        }
     }
 
     fn ensure_const_prop_body(

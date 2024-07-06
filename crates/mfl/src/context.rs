@@ -288,6 +288,8 @@ pub struct Context {
     analyzers: HashMap<ItemId, Analyzer>,
     const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
 
+    // TODO: Separate out the IRs from the rest of the context so that we don't
+    // need to clone the bodies.
     urir: UnresolvedIr,
     nrir: NameResolvedIr,
     trir: TypeResolvedIr,
@@ -346,6 +348,14 @@ impl Context {
     #[inline]
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
         self.headers[id.0.to_usize()]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_analyzer(&mut self, id: ItemId, analyzer: Analyzer) {
+        self.analyzers
+            .insert(id, analyzer)
+            .expect_none("ICE: replaced existing analyzer");
     }
 
     #[inline]
