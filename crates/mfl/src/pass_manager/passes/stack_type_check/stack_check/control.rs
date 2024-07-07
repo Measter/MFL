@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
 use ariadne::{Color, Label};
+use intcast::IntCast;
+use smallvec::SmallVec;
 
 use crate::{
     context::{Context, ItemId},
@@ -8,8 +10,11 @@ use crate::{
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ValueId},
+    source_file::Spanned,
     Stores,
 };
+
+use super::ensure_stack_depth;
 
 pub(crate) fn epilogue_return(
     ctx: &mut Context,
@@ -80,4 +85,58 @@ pub(crate) fn epilogue_return(
         labels,
         None,
     );
+}
+
+pub(crate) fn prologue(
+    ctx: &mut Context,
+    analyzer: &mut Analyzer,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    item_id: ItemId,
+) {
+    let mut outputs = SmallVec::<[_; 8]>::new();
+    let sig = ctx.urir().get_item_signature(item_id);
+
+    for arg in &sig.entry.inner {
+        let new_id = analyzer.new_value(arg.location, None);
+        outputs.push(new_id);
+        stack.push(new_id);
+    }
+
+    analyzer.set_op_io(op, &[], &outputs);
+}
+
+pub(crate) fn syscall(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    num_args: Spanned<u8>,
+) {
+    if !matches!(num_args.inner, 1..=7) {
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "invalid syscall size",
+            [Label::new(num_args.location)
+                .with_color(Color::Red)
+                .with_message("valid syscall sizes are 1..=7")],
+            None,
+        );
+        *had_error = true;
+        return;
+    }
+
+    let num_args = num_args.inner.to_usize();
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_args);
+
+    let inputs = stack.split_off(stack.len() - num_args);
+    for &value_id in &inputs {
+        analyzer.consume_value(value_id, op.id);
+    }
+
+    let new_id = analyzer.new_value(op.token.location, None);
+    analyzer.set_op_io(op, &inputs, &[new_id]);
+    stack.push(new_id);
 }

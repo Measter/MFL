@@ -1,5 +1,9 @@
+use ariadne::{Color, Label};
+use intcast::IntCast;
+
 use crate::{
     context::{Context, ItemId},
+    diagnostics,
     ir::{Op, TypeResolvedOp},
     pass_manager::static_analysis::{
         can_promote_int_unidirectional, failed_compare_stack_types, Analyzer,
@@ -48,4 +52,61 @@ pub(crate) fn epilogue_return(
         }
     }
     todo!()
+}
+
+pub(crate) fn prologue(
+    ctx: &mut Context,
+    analyzer: &mut Analyzer,
+    op: &Op<TypeResolvedOp>,
+    item_id: ItemId,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let sigs = ctx.trir().get_item_signature(item_id);
+    let outputs = op_data.outputs.clone();
+
+    for (output_id, &output_type) in outputs.into_iter().zip(&sigs.entry) {
+        analyzer.set_value_type(output_id, output_type);
+    }
+}
+
+pub(crate) fn syscall(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+
+    for (idx, &input_value_id) in op_data.inputs.iter().enumerate() {
+        let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+            continue;
+        };
+
+        let input_type_info = stores.types.get_type_info(input_type_id);
+        if matches!(
+            input_type_info.kind,
+            TypeKind::Integer(_) | TypeKind::Pointer(_) | TypeKind::Bool
+        ) {
+            continue;
+        }
+
+        let type_name = stores.strings.resolve(input_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_value_id, idx.to_u64(), type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "invalid syscall parameter",
+            labels,
+            None,
+        );
+        *had_error = true;
+    }
 }

@@ -120,9 +120,35 @@ fn analyze_block(
                         // We're terminated the current block, so don't process any remaining ops.
                         break;
                     }
-                    Control::Exit => todo!(),
-                    Control::Prologue => todo!(),
-                    Control::SysCall { arg_count } => todo!(),
+                    Control::Exit => {
+                        analyzer.set_op_io(op, &[], &[]);
+                        break;
+                    }
+                    Control::Prologue => {
+                        stack_check::control::prologue(ctx, analyzer, stack, op, item_id);
+                        type_check::control::prologue(ctx, analyzer, op, item_id);
+                    }
+                    Control::SysCall { arg_count } => {
+                        let mut local_had_error = false;
+                        stack_check::control::syscall(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *arg_count,
+                        );
+                        if !local_had_error {
+                            type_check::control::syscall(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { emit_array } => todo!(),
