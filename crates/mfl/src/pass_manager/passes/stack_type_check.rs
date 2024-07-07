@@ -15,6 +15,46 @@ use crate::{
 mod stack_check;
 mod type_check;
 
+type StackCheckFn = fn(&Stores, &mut Analyzer, &mut bool, &mut Vec<ValueId>, &Op<TypeResolvedOp>);
+type TypeCheckFn = fn(&mut Stores, &mut Analyzer, &mut bool, &Op<TypeResolvedOp>);
+
+fn get_arith_cmp_fns(bo: &Basic) -> (StackCheckFn, TypeCheckFn) {
+    let (Basic::Arithmetic(_) | Basic::Compare(_)) = bo else {
+        unreachable!()
+    };
+
+    let eat_fn = match bo {
+        Basic::Arithmetic(Arithmetic::BitNot) | Basic::Compare(Compare::IsNull) => eat_one_make_one,
+        _ => eat_two_make_one,
+    };
+
+    let op_fn = match bo {
+        Basic::Arithmetic(ao) => match ao {
+            Arithmetic::Add => type_check::arithmetic::add,
+            Arithmetic::BitAnd | Arithmetic::BitOr | Arithmetic::BitXor => {
+                type_check::arithmetic::bitand_bitor_bitxor
+            }
+            Arithmetic::BitNot => type_check::arithmetic::bitnot,
+            Arithmetic::Div
+            | Arithmetic::Multiply
+            | Arithmetic::Rem
+            | Arithmetic::ShiftLeft
+            | Arithmetic::ShiftRight => type_check::arithmetic::multiply_div_rem_shift,
+            Arithmetic::Subtract => type_check::arithmetic::subtract,
+        },
+        Basic::Compare(co) => match co {
+            Compare::Equal | Compare::NotEq => type_check::comparative::equal,
+            Compare::Less | Compare::LessEqual | Compare::Greater | Compare::GreaterEqual => {
+                type_check::comparative::compare
+            }
+            Compare::IsNull => type_check::comparative::is_null,
+        },
+        _ => unreachable!(),
+    };
+
+    (eat_fn, op_fn)
+}
+
 fn analyze_block(
     ctx: &mut Context,
     stores: &mut Stores,
@@ -31,89 +71,15 @@ fn analyze_block(
     for op in op_iter.by_ref() {
         match &op.code {
             OpCode::Basic(bo) => match bo {
-                Basic::Arithmetic(ao) => match ao {
-                    Arithmetic::Add => {
-                        let mut local_had_error = false;
-                        eat_two_make_one(stores, analyzer, had_error, stack, op);
-                        if !local_had_error {
-                            type_check::arithmetic::add(stores, analyzer, &mut local_had_error, op);
-                        }
-
-                        *had_error |= local_had_error;
+                Basic::Arithmetic(_) | Basic::Compare(_) => {
+                    let (stack_check_fn, type_check_fn) = get_arith_cmp_fns(bo);
+                    let mut local_had_error = false;
+                    stack_check_fn(stores, analyzer, &mut local_had_error, stack, op);
+                    if !local_had_error {
+                        type_check_fn(stores, analyzer, &mut local_had_error, op);
                     }
-
-                    Arithmetic::BitAnd | Arithmetic::BitOr | Arithmetic::BitXor => {
-                        let mut local_had_error = false;
-                        eat_two_make_one(stores, analyzer, had_error, stack, op);
-                        if !local_had_error {
-                            type_check::arithmetic::bitand_bitor_bitxor(
-                                stores,
-                                analyzer,
-                                &mut local_had_error,
-                                op,
-                            );
-                        }
-
-                        *had_error |= local_had_error;
-                    }
-
-                    Arithmetic::BitNot => {
-                        let mut local_had_error = false;
-                        eat_one_make_one(stores, analyzer, had_error, stack, op);
-                        if !local_had_error {
-                            type_check::arithmetic::bitnot(
-                                stores,
-                                analyzer,
-                                &mut local_had_error,
-                                op,
-                            );
-                        }
-                        *had_error |= local_had_error;
-                    }
-
-                    Arithmetic::Div
-                    | Arithmetic::Multiply
-                    | Arithmetic::Rem
-                    | Arithmetic::ShiftLeft
-                    | Arithmetic::ShiftRight => {
-                        let mut local_had_error = false;
-                        eat_two_make_one(stores, analyzer, had_error, stack, op);
-                        if !local_had_error {
-                            type_check::arithmetic::multiply_div_rem_shift(
-                                stores,
-                                analyzer,
-                                &mut local_had_error,
-                                op,
-                            );
-                        }
-
-                        *had_error |= local_had_error;
-                    }
-
-                    Arithmetic::Subtract => {
-                        let mut local_had_error = false;
-                        eat_two_make_one(stores, analyzer, had_error, stack, op);
-                        if !local_had_error {
-                            type_check::arithmetic::subtract(
-                                stores,
-                                analyzer,
-                                &mut local_had_error,
-                                op,
-                            );
-                        }
-
-                        *had_error |= local_had_error;
-                    }
-                },
-                Basic::Compare(co) => match co {
-                    Compare::Equal => todo!(),
-                    Compare::Less => todo!(),
-                    Compare::LessEqual => todo!(),
-                    Compare::Greater => todo!(),
-                    Compare::GreaterEqual => todo!(),
-                    Compare::NotEq => todo!(),
-                    Compare::IsNull => todo!(),
-                },
+                    *had_error |= local_had_error;
+                }
                 Basic::Stack(so) => match so {
                     Stack::Dup { count } => todo!(),
                     Stack::Drop { count } => todo!(),
