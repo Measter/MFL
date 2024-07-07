@@ -94,10 +94,34 @@ fn analyze_block(
                     Stack::Swap { count } => todo!(),
                 },
                 Basic::Control(co) => match co {
-                    Control::Epilogue => todo!(),
+                    Control::Epilogue | Control::Return => {
+                        let mut local_had_error = false;
+                        stack_check::control::epilogue_return(
+                            ctx,
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            item_id,
+                        );
+                        if !local_had_error {
+                            type_check::control::epilogue_return(
+                                ctx,
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                                item_id,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                        // We're terminated the current block, so don't process any remaining ops.
+                        break;
+                    }
                     Control::Exit => todo!(),
                     Control::Prologue => todo!(),
-                    Control::Return => todo!(),
                     Control::SysCall { arg_count } => todo!(),
                 },
                 Basic::Memory(mo) => match mo {

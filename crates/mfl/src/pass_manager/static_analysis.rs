@@ -285,7 +285,7 @@ impl Analyzer {
     }
 }
 
-fn failed_compare_stack_types(
+pub(super) fn failed_compare_stack_types(
     stores: &Stores,
     analyzer: &Analyzer,
     actual_stack: &[ValueId],
