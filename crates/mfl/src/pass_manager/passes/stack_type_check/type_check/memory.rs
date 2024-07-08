@@ -6,7 +6,10 @@ use crate::{
     diagnostics,
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
-    pass_manager::{static_analysis::Analyzer, PassContext},
+    pass_manager::{
+        static_analysis::{can_promote_int_unidirectional, Analyzer},
+        PassContext,
+    },
     source_file::Spanned,
     type_store::{Integer, TypeId, TypeInfo, TypeKind},
     Stores,
@@ -298,4 +301,168 @@ pub(crate) fn extract_struct(
     };
 
     analyzer.set_value_type(output_data_id, field_info.kind);
+}
+
+pub(crate) fn insert_array(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    emit_array: bool,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs.as_arr();
+    let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else {
+        return;
+    };
+    let [data_type_info, array_type_info, idx_type_info] =
+        type_ids.map(|id| stores.types.get_type_info(id));
+
+    if emit_array {
+        let output_id = op_data.outputs[0];
+        analyzer.set_value_type(output_id, array_type_id);
+    }
+
+    let mut make_error_for_aggr = |stores: &mut Stores, note| {
+        let value_type_name = stores.strings.resolve(array_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(array_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot insert into a `{value_type_name}`"),
+            labels,
+            note,
+        );
+
+        *had_error = true;
+    };
+
+    let store_type_id = match array_type_info.kind {
+        TypeKind::Array { type_id, .. } => type_id,
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = stores.types.get_type_info(sub_type);
+            match ptr_type_info.kind {
+                TypeKind::Array { type_id, .. } => type_id,
+                TypeKind::Struct(struct_item_id)
+                | TypeKind::GenericStructInstance(struct_item_id) => {
+                    if pass_ctx
+                        .ensure_define_structs(ctx, stores, struct_item_id)
+                        .is_err()
+                    {
+                        *had_error = true;
+                        return;
+                    };
+                    let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
+                        make_error_for_aggr(
+                            stores,
+                            Some(
+                                "Struct must be slice-like (must have a pointer and length field"
+                                    .to_owned(),
+                            ),
+                        );
+                        return;
+                    };
+                    store_type
+                }
+                _ => {
+                    make_error_for_aggr(stores, None);
+                    return;
+                }
+            }
+        }
+        TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
+            if pass_ctx
+                .ensure_define_structs(ctx, stores, struct_item_id)
+                .is_err()
+            {
+                *had_error = true;
+                return;
+            };
+
+            let Some(store_type) = is_slice_like_struct(stores, array_type_info) else {
+                make_error_for_aggr(
+                    stores,
+                    Some(
+                        "Struct must be slice-like (must have a pointer and length field"
+                            .to_owned(),
+                    ),
+                );
+                return;
+            };
+            store_type
+        }
+        TypeKind::Integer(_) | TypeKind::Bool | TypeKind::GenericStructBase(_) => {
+            make_error_for_aggr(stores, None);
+            return;
+        }
+    };
+
+    let store_type_info = stores.types.get_type_info(store_type_id);
+
+    if !idx_type_info.kind.is_unsigned_int() {
+        let idx_type_name = stores.strings.resolve(idx_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(idx_value_id, 2, idx_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot index an array with `{idx_type_name}`"),
+            labels,
+            None,
+        );
+
+        *had_error = true;
+    }
+
+    if data_type_id != store_type_id
+        && !matches!(
+            (store_type_info.kind, data_type_info.kind),
+            (TypeKind::Integer(to), TypeKind::Integer(from)) if can_promote_int_unidirectional(from, to)
+        )
+    {
+        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let array_type_name = match array_type_info.kind {
+            TypeKind::Array { .. } => stores.strings.resolve(array_type_info.name),
+            TypeKind::Pointer(sub_type_id) => {
+                let sub_type_info = stores.types.get_type_info(sub_type_id);
+                stores.strings.resolve(sub_type_info.name)
+            }
+            _ => unreachable!(),
+        };
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [
+                (data_value_id, 0, data_type_name),
+                (array_value_id, 1, array_type_name),
+            ],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot store a value of type `{data_type_name}` in an array of type `{array_type_name}`"),
+            labels,
+            None
+        );
+
+        *had_error = true;
+    }
 }

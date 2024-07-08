@@ -64,3 +64,29 @@ pub(crate) fn extract_struct(
 
     analyzer.set_op_io(op, &[struct_id], &outputs);
 }
+
+pub(crate) fn insert_array(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    emit_array: bool,
+) {
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+
+    let inputs = stack.popn::<3>().unwrap();
+    for id in inputs {
+        analyzer.consume_value(id, op.id);
+    }
+
+    let mut output = None;
+    if emit_array {
+        // Leave the array on the stack so the user can continue using it.
+        let output_id = analyzer.new_value(op.token.location, Some(inputs[1]));
+        output = Some(output_id);
+        stack.push(output_id);
+    }
+
+    analyzer.set_op_io(op, &inputs, output.as_slice());
+}

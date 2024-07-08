@@ -266,7 +266,29 @@ fn analyze_block(
 
                         *had_error |= local_had_error;
                     }
-                    Memory::InsertArray { emit_array } => todo!(),
+                    Memory::InsertArray { emit_array } => {
+                        let mut local_had_error = false;
+                        stack_check::memory::insert_array(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *emit_array,
+                        );
+                        if !local_had_error {
+                            type_check::memory::insert_array(
+                                ctx,
+                                stores,
+                                analyzer,
+                                pass_ctx,
+                                &mut local_had_error,
+                                op,
+                                *emit_array,
+                            );
+                        };
+                        *had_error |= local_had_error;
+                    }
                     Memory::InsertStruct {
                         emit_struct,
                         field_name,
