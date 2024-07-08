@@ -7,11 +7,10 @@ use crate::{
     diagnostics::{self, TABLE_FORMAT},
     ir::{Op, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ValueId},
-    type_store::Integer,
     Stores,
 };
 
-pub(crate) fn dup(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
+pub(crate) fn dup_over(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
     let op_data = analyzer.get_op_io(op.id);
     let inputs: SmallVec<[ValueId; 20]> = op_data.inputs.as_slice().into();
     let outputs: SmallVec<[ValueId; 20]> = op_data.outputs.as_slice().into();

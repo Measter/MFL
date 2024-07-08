@@ -1,5 +1,5 @@
 use ariadne::{Color, Label};
-use stack_check::{eat_one_make_one, eat_two_make_one};
+use stack_check::{eat_one_make_one, eat_two_make_one, make_one};
 
 use crate::{
     context::{Context, ItemId},
@@ -92,7 +92,7 @@ fn analyze_block(
                             *count,
                         );
                         if !local_had_error {
-                            type_check::stack_ops::dup(analyzer, op);
+                            type_check::stack_ops::dup_over(analyzer, op);
                         }
 
                         *had_error |= local_had_error;
@@ -113,14 +113,48 @@ fn analyze_block(
                             );
                         }
                     }
-                    Stack::Over { depth } => todo!(),
-                    Stack::Reverse { count } => todo!(),
+                    Stack::Over { depth } => {
+                        let mut local_had_error = false;
+                        stack_check::stack_ops::over(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *depth,
+                        );
+                        if !local_had_error {
+                            type_check::stack_ops::dup_over(analyzer, op);
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+                    Stack::Reverse { count } => {
+                        stack_check::stack_ops::reverse(
+                            stores, analyzer, had_error, stack, op, *count,
+                        );
+                    }
                     Stack::Rotate {
                         item_count,
                         direction,
                         shift_count,
-                    } => todo!(),
-                    Stack::Swap { count } => todo!(),
+                    } => {
+                        stack_check::stack_ops::rotate(
+                            stores,
+                            analyzer,
+                            had_error,
+                            stack,
+                            op,
+                            *item_count,
+                            *direction,
+                            *shift_count,
+                        );
+                    }
+                    Stack::Swap { count } => {
+                        stack_check::stack_ops::swap(
+                            stores, analyzer, had_error, stack, op, *count,
+                        );
+                    }
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {
