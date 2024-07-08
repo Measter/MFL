@@ -81,9 +81,38 @@ fn analyze_block(
                     *had_error |= local_had_error;
                 }
                 Basic::Stack(so) => match so {
-                    Stack::Dup { count } => todo!(),
-                    Stack::Drop { count } => todo!(),
-                    Stack::Emit { show_labels } => todo!(),
+                    Stack::Dup { count } => {
+                        let mut local_had_error = false;
+                        stack_check::stack_ops::dup(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *count,
+                        );
+                        if !local_had_error {
+                            type_check::stack_ops::dup(analyzer, op);
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+                    Stack::Drop { count } => {
+                        stack_check::stack_ops::drop(
+                            stores, analyzer, had_error, stack, op, *count,
+                        );
+                    }
+                    Stack::Emit { show_labels } => {
+                        if emit_traces {
+                            type_check::stack_ops::emit_stack(
+                                stores,
+                                analyzer,
+                                stack,
+                                op,
+                                *show_labels,
+                            );
+                        }
+                    }
                     Stack::Over { depth } => todo!(),
                     Stack::Reverse { count } => todo!(),
                     Stack::Rotate {

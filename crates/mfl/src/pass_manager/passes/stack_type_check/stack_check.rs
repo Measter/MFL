@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub mod control;
+pub mod stack_ops;
 
 fn ensure_stack_depth(
     stores: &Stores,
