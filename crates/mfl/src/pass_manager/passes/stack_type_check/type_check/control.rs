@@ -51,7 +51,6 @@ pub(crate) fn epilogue_return(
             }
         }
     }
-    todo!()
 }
 
 pub(crate) fn prologue(

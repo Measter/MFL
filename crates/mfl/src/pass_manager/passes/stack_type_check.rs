@@ -214,11 +214,58 @@ fn analyze_block(
                     }
                 },
                 Basic::Memory(mo) => match mo {
-                    Memory::ExtractArray { emit_array } => todo!(),
+                    Memory::ExtractArray { emit_array } => {
+                        let mut local_had_error = false;
+                        stack_check::memory::extract_array(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *emit_array,
+                        );
+                        if !local_had_error {
+                            type_check::memory::extract_array(
+                                ctx,
+                                stores,
+                                analyzer,
+                                pass_ctx,
+                                &mut local_had_error,
+                                op,
+                                *emit_array,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                     Memory::ExtractStruct {
                         emit_struct,
                         field_name,
-                    } => todo!(),
+                    } => {
+                        let mut local_had_error = false;
+                        stack_check::memory::extract_struct(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *emit_struct,
+                        );
+                        if !local_had_error {
+                            type_check::memory::extract_struct(
+                                ctx,
+                                stores,
+                                analyzer,
+                                pass_ctx,
+                                &mut local_had_error,
+                                op,
+                                *field_name,
+                                *emit_struct,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                     Memory::InsertArray { emit_array } => todo!(),
                     Memory::InsertStruct {
                         emit_struct,
