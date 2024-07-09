@@ -292,9 +292,61 @@ fn analyze_block(
                     Memory::InsertStruct {
                         emit_struct,
                         field_name,
-                    } => todo!(),
-                    Memory::Load => todo!(),
-                    Memory::PackArray { count } => todo!(),
+                    } => {
+                        let mut local_had_error = false;
+                        stack_check::memory::insert_struct(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *emit_struct,
+                        );
+                        if !local_had_error {
+                            type_check::memory::insert_struct(
+                                ctx,
+                                stores,
+                                analyzer,
+                                pass_ctx,
+                                &mut local_had_error,
+                                op,
+                                *field_name,
+                                *emit_struct,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+                    Memory::Load => {
+                        let mut local_had_error = false;
+                        eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
+                        if !local_had_error {
+                            type_check::memory::load(stores, analyzer, &mut local_had_error, op);
+                        }
+                        *had_error |= local_had_error;
+                    }
+                    Memory::PackArray { count } => {
+                        let mut local_had_error = false;
+                        stack_check::memory::pack_array(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                            *count,
+                        );
+                        if !local_had_error {
+                            type_check::memory::pack_array(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op,
+                                *count,
+                            );
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                     Memory::Store => todo!(),
                     Memory::Unpack => todo!(),
                 },

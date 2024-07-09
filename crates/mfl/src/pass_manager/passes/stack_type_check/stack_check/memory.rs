@@ -1,8 +1,9 @@
+use intcast::IntCast;
 use smallvec::SmallVec;
 
 use crate::{
     ir::{Op, TypeResolvedOp},
-    n_ops::VecNOps,
+    n_ops::{SliceNOps, VecNOps},
     pass_manager::static_analysis::{Analyzer, ValueId},
     Stores,
 };
@@ -89,4 +90,53 @@ pub(crate) fn insert_array(
     }
 
     analyzer.set_op_io(op, &inputs, output.as_slice());
+}
+
+pub(crate) fn insert_struct(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    emit_struct: bool,
+) {
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+
+    let inputs = stack.popn::<2>().unwrap();
+    for id in inputs {
+        analyzer.consume_value(id, op.id);
+    }
+
+    let mut output = None;
+    if emit_struct {
+        let output_id = analyzer.new_value(op.token.location, Some(inputs[1]));
+        output = Some(output_id);
+        stack.push(output_id);
+    }
+
+    analyzer.set_op_io(op, &inputs, output.as_slice());
+}
+
+pub(crate) fn pack_array(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    count: u8,
+) {
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, count.to_usize());
+
+    let mut inputs = SmallVec::<[_; 8]>::new();
+    let input_ids = stack.lastn(count.to_usize()).unwrap();
+    for &id in input_ids {
+        inputs.push(id);
+        analyzer.consume_value(id, op.id);
+    }
+
+    stack.truncate(stack.len() - input_ids.len());
+
+    let output = analyzer.new_value(op.token.location, None);
+    stack.push(output);
+    analyzer.set_op_io(op, &inputs, &[output]);
 }

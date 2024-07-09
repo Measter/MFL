@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
@@ -198,6 +199,25 @@ pub(crate) fn extract_struct(
         op_data.outputs[0]
     };
 
+    let not_struct_error = || {
+        let value_type_name = stores.strings.resolve(input_struct_type_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_struct_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot extract field from a `{value_type_name}`"),
+            labels,
+            None,
+        );
+    };
+
     let (actual_struct_type_id, actual_struct_item_id) = match input_struct_type_info.kind {
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             (input_struct_type_id, struct_item_id)
@@ -207,23 +227,7 @@ pub(crate) fn extract_struct(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                let value_type_name = stores.strings.resolve(input_struct_type_info.name);
-                let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
-                    [(input_struct_value_id, 1, value_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    stores,
-                    op.token.location,
-                    format!("cannot extract field from a `{value_type_name}`"),
-                    labels,
-                    None,
-                );
-
+                not_struct_error();
                 *had_error = true;
                 return;
             };
@@ -234,23 +238,7 @@ pub(crate) fn extract_struct(
         | TypeKind::Integer(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            let value_type_name = stores.strings.resolve(input_struct_type_info.name);
-            let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
-                [(input_struct_value_id, 0, value_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
-                op.token.location,
-                format!("cannot extract field from a `{value_type_name}`"),
-                labels,
-                None,
-            );
-
+            not_struct_error();
             *had_error = true;
             return;
         }
@@ -465,4 +453,274 @@ pub(crate) fn insert_array(
 
         *had_error = true;
     }
+}
+
+pub(crate) fn insert_struct(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    field_name: Spanned<Spur>,
+    emit_struct: bool,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs.as_arr();
+    let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else {
+        return;
+    };
+    let [data_type_info, input_struct_info] = type_ids.map(|id| stores.types.get_type_info(id));
+
+    if emit_struct {
+        let output_id = op_data.outputs[0];
+        analyzer.set_value_type(output_id, input_struct_type_id);
+    }
+
+    let not_struct_error = || {
+        let value_type_name = stores.strings.resolve(input_struct_info.name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_struct_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot insert field into a `{value_type_name}`"),
+            labels,
+            None,
+        );
+    };
+
+    let (actual_struct_type_id, actual_struct_item_id) = match input_struct_info.kind {
+        TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
+            (input_struct_type_id, struct_item_id)
+        }
+        TypeKind::Pointer(sub_type) => {
+            let ptr_type_info = stores.types.get_type_info(sub_type);
+            let (TypeKind::Struct(struct_item_id)
+            | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
+            else {
+                not_struct_error();
+                *had_error = true;
+                return;
+            };
+
+            (sub_type, struct_item_id)
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
+            not_struct_error();
+            *had_error = true;
+            return;
+        }
+    };
+
+    if pass_ctx
+        .ensure_define_structs(ctx, stores, actual_struct_item_id)
+        .is_err()
+    {
+        *had_error = true;
+        return;
+    }
+
+    let struct_type_info = stores.types.get_struct_def(actual_struct_type_id);
+    let Some(field_info) = struct_type_info
+        .fields
+        .iter()
+        .find(|fi| fi.name.inner == field_name.inner)
+    else {
+        let unknown_field_name = stores.strings.resolve(field_name.inner);
+        let struct_name = stores.strings.resolve(struct_type_info.name.inner);
+        let value_type_name = stores.strings.resolve(input_struct_info.name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(input_struct_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.extend([
+            Label::new(field_name.location).with_color(Color::Red),
+            Label::new(struct_type_info.name.location)
+                .with_color(Color::Cyan)
+                .with_message("struct defined here"),
+        ]);
+
+        diagnostics::emit_error(
+            stores,
+            field_name.location,
+            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
+            labels,
+            None,
+        );
+
+        return;
+    };
+
+    let field_type_info = stores.types.get_type_info(field_info.kind);
+
+    if data_type_id != field_info.kind
+        && !matches!(
+            (field_type_info.kind, data_type_info.kind),
+            (
+                TypeKind::Integer(to),
+                TypeKind::Integer(from)
+            ) if can_promote_int_unidirectional(from, to)
+        )
+    {
+        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let struct_type_name = match input_struct_info.kind {
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => input_struct_info.name,
+            TypeKind::Pointer(sub_type) => stores.types.get_type_info(sub_type).name,
+            _ => unreachable!(),
+        };
+        let struct_type_name = stores.strings.resolve(struct_type_name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [
+                (data_value_id, 0, data_type_name),
+                (input_struct_value_id, 1, struct_type_name),
+            ],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(
+            Label::new(field_info.name.location)
+                .with_color(Color::Cyan)
+                .with_message("field defined here"),
+        );
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("cannot store a value of type `{data_type_name}` into `{struct_type_name}`"),
+            labels,
+            None,
+        );
+
+        *had_error = true;
+    }
+}
+
+pub(crate) fn load(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let ptr_id = op_data.inputs[0];
+    let Some([ptr_type]) = analyzer.value_types([ptr_id]) else {
+        return;
+    };
+    let ptr_info = stores.types.get_type_info(ptr_type);
+
+    let TypeKind::Pointer(ptee_type_id) = ptr_info.kind else {
+        let ptr_type_name = stores.strings.resolve(ptr_info.name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(ptr_id, 0, ptr_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "value must be a pointer",
+            labels,
+            None,
+        );
+
+        *had_error = true;
+        return;
+    };
+
+    analyzer.set_value_type(op_data.outputs[0], ptee_type_id);
+}
+
+pub(crate) fn pack_array(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    count: u8,
+) {
+    if count == 0 {
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "cannot pack an array of length 0",
+            [Label::new(op.token.location).with_color(Color::Red)],
+            None,
+        );
+
+        *had_error = true;
+        return;
+    }
+
+    let op_data = analyzer.get_op_io(op.id);
+    let [first, rest @ ..] = op_data.inputs.as_slice() else {
+        unreachable!()
+    };
+    let Some([first_value_id]) = analyzer.value_types([*first]) else {
+        return;
+    };
+    let expected_store_type = stores.types.get_type_info(first_value_id);
+
+    for (&other_id, id) in rest.iter().zip(1..) {
+        let Some([value_type_id]) = analyzer.value_types([other_id]) else {
+            continue;
+        };
+        let value_type_info = stores.types.get_type_info(value_type_id);
+        if value_type_id != expected_store_type.id
+            && !matches!(
+                (expected_store_type.kind, value_type_info.kind),
+                (
+                    TypeKind::Integer(to),
+                    TypeKind::Integer(from)
+                ) if can_promote_int_unidirectional(from, to)
+            )
+        {
+            let type_info = stores.types.get_type_info(value_type_id);
+            let other_value_name = stores.strings.resolve(type_info.name);
+            let expected_value_name = stores.strings.resolve(expected_store_type.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [
+                    (other_id, id, other_value_name),
+                    (*first, 0, expected_value_name),
+                ],
+                Color::Yellow,
+                Color::Cyan,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                op.token.location, 
+                format!("unable to pack array: expect `{expected_value_name}`, found `{other_value_name}`"),
+                labels, 
+                format!("Expected `{expected_value_name}` because the first value is that type")
+            );
+            *had_error = true;
+        }
+    }
+
+    let array_type = stores.types.get_array(&mut stores.strings, expected_store_type.id, count.to_usize());
+    let output_id = op_data.outputs[0];
+    analyzer.set_value_type(output_id, array_type.id);
 }
