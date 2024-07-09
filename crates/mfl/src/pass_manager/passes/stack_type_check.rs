@@ -347,8 +347,38 @@ fn analyze_block(
 
                         *had_error |= local_had_error;
                     }
-                    Memory::Store => todo!(),
-                    Memory::Unpack => todo!(),
+                    Memory::Store => {
+                        let mut local_had_error = false;
+                        stack_check::memory::store(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                        );
+                        if !local_had_error {
+                            type_check::memory::store(stores, analyzer, &mut local_had_error, op);
+                        }
+
+                        *had_error |= local_had_error;
+                    }
+                    Memory::Unpack => {
+                        let mut local_had_error = false;
+                        stack_check::memory::unpack(
+                            ctx,
+                            stores,
+                            analyzer,
+                            pass_ctx,
+                            &mut local_had_error,
+                            stack,
+                            op,
+                        );
+                        if !local_had_error {
+                            type_check::memory::unpack(stores, analyzer, &mut local_had_error, op);
+                        }
+
+                        *had_error |= local_had_error;
+                    }
                 },
                 Basic::PushBool(value) => todo!(),
                 Basic::PushInt { width, value } => todo!(),

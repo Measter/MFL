@@ -1,6 +1,7 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 
 use crate::{
     context::Context,
@@ -711,16 +712,144 @@ pub(crate) fn pack_array(
 
             diagnostics::emit_error(
                 stores,
-                op.token.location, 
+                op.token.location,
                 format!("unable to pack array: expect `{expected_value_name}`, found `{other_value_name}`"),
-                labels, 
+                labels,
                 format!("Expected `{expected_value_name}` because the first value is that type")
             );
             *had_error = true;
         }
     }
 
-    let array_type = stores.types.get_array(&mut stores.strings, expected_store_type.id, count.to_usize());
+    let array_type = stores.types.get_array(
+        &mut stores.strings,
+        expected_store_type.id,
+        count.to_usize(),
+    );
     let output_id = op_data.outputs[0];
     analyzer.set_value_type(output_id, array_type.id);
+}
+
+pub(crate) fn store(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
+    let Some([data_type_id, ptr_type_id]) = analyzer.value_types([data_value_id, ptr_value_id])
+    else {
+        return;
+    };
+    let ptr_type_info = stores.types.get_type_info(ptr_type_id);
+    let data_type_info = stores.types.get_type_info(data_type_id);
+
+    let TypeKind::Pointer(ptee_type_id) = ptr_type_info.kind else {
+        let ptr_type_name = stores.strings.resolve(ptr_type_info.name);
+        let data_type_name = stores.strings.resolve(data_type_info.name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(ptr_value_id, 1, ptr_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("found `{ptr_type_name}` expected a `{data_type_name}&`"),
+            labels,
+            None,
+        );
+
+        *had_error = true;
+        return;
+    };
+
+    let pointee_type_info = stores.types.get_type_info(ptee_type_id);
+    let can_promote_int = matches!(
+        (data_type_info.kind, pointee_type_info.kind),
+        (TypeKind::Integer(from), TypeKind::Integer(to))
+        if can_promote_int_unidirectional(from, to)
+    );
+
+    if data_type_id != ptee_type_id && !can_promote_int {
+        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let ptee_type_name = stores.strings.resolve(ptr_type_info.name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(data_value_id, 0, data_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!("value must be a `{ptee_type_name}`"),
+            labels,
+            None,
+        );
+
+        *had_error = true;
+    }
+}
+
+pub(crate) fn unpack(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let outputs: SmallVec<[_; 20]> = op_data.outputs.as_slice().into();
+    let aggr_value_id = op_data.inputs[0];
+    let Some([aggr_type_id]) = analyzer.value_types([aggr_value_id]) else {
+        return;
+    };
+    let aggr_type_info = stores.types.get_type_info(aggr_type_id);
+
+    match aggr_type_info.kind {
+        TypeKind::Array { type_id, .. } => {
+            for output_id in outputs {
+                analyzer.set_value_type(output_id, type_id);
+            }
+        }
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            // The stack check already ensured definition.
+            let struct_info = stores.types.get_struct_def(aggr_type_id);
+            for (output_id, field_info) in outputs.iter().zip(&struct_info.fields) {
+                analyzer.set_value_type(*output_id, field_info.kind);
+            }
+        }
+        TypeKind::Integer(_)
+        | TypeKind::Pointer(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
+            let aggr_type_name = stores.strings.resolve(aggr_type_info.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(aggr_value_id, 0, aggr_type_name)],
+                Color::Yellow,
+                Color::Cyan,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                op.token.location,
+                format!("expected array or struct, found `{aggr_type_name}`"),
+                labels,
+                None,
+            );
+
+            *had_error = true;
+        }
+    }
 }
