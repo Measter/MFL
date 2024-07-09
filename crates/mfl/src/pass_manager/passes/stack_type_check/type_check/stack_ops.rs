@@ -7,6 +7,7 @@ use crate::{
     diagnostics::{self, TABLE_FORMAT},
     ir::{Op, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ValueId},
+    type_store::{BuiltinTypes, Integer},
     Stores,
 };
 
@@ -63,4 +64,39 @@ pub(crate) fn emit_stack(
         labels,
         note.to_string(),
     );
+}
+
+pub(crate) fn push_bool(stores: &mut Stores, analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
+    let op_data = analyzer.get_op_io(op.id);
+    analyzer.set_value_type(
+        op_data.outputs[0],
+        stores.types.get_builtin(BuiltinTypes::Bool).id,
+    );
+}
+
+pub(crate) fn push_int(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    op: &Op<TypeResolvedOp>,
+    int: Integer,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    analyzer.set_value_type(op_data.outputs[0], stores.types.get_builtin(int.into()).id);
+}
+
+pub(crate) fn push_str(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    op: &Op<TypeResolvedOp>,
+    is_c_str: bool,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+
+    let kind = if is_c_str {
+        stores.types.get_builtin_ptr(BuiltinTypes::U8).id
+    } else {
+        stores.types.get_builtin(BuiltinTypes::String).id
+    };
+
+    analyzer.set_value_type(op_data.outputs[0], kind);
 }

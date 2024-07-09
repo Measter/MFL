@@ -380,9 +380,23 @@ fn analyze_block(
                         *had_error |= local_had_error;
                     }
                 },
-                Basic::PushBool(value) => todo!(),
-                Basic::PushInt { width, value } => todo!(),
-                Basic::PushStr { id, is_c_str } => todo!(),
+                Basic::PushBool(_) => {
+                    make_one(analyzer, stack, op);
+                    type_check::stack_ops::push_bool(stores, analyzer, op);
+                }
+                Basic::PushInt { width, value } => {
+                    make_one(analyzer, stack, op);
+                    type_check::stack_ops::push_int(
+                        stores,
+                        analyzer,
+                        op,
+                        (*width, value.to_signedness()).into(),
+                    );
+                }
+                Basic::PushStr { is_c_str, .. } => {
+                    make_one(analyzer, stack, op);
+                    type_check::stack_ops::push_str(stores, analyzer, op, *is_c_str);
+                }
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => todo!(),
