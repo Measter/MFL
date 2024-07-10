@@ -1,10 +1,12 @@
+use std::ops::ControlFlow;
+
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
 
 use crate::{
-    context::Context,
+    context::{Context, ItemId},
     diagnostics,
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
@@ -13,7 +15,7 @@ use crate::{
         PassContext,
     },
     source_file::Spanned,
-    type_store::{Integer, TypeId, TypeInfo, TypeKind},
+    type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     Stores,
 };
 
@@ -852,4 +854,262 @@ pub(crate) fn unpack(
             *had_error = true;
         }
     }
+}
+
+pub(crate) fn pack_struct(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    struct_type_id: TypeId,
+) {
+    // Let's see if we can determine the field type from our inputs for generic structs.
+    let struct_type_id = if let TypeKind::GenericStructBase(struct_item_id) =
+        stores.types.get_type_info(struct_type_id).kind
+    {
+        let ControlFlow::Continue(id) = pack_struct_infer_generic(
+            stores,
+            analyzer,
+            had_error,
+            struct_type_id,
+            struct_item_id,
+            op,
+        ) else {
+            return;
+        };
+
+        id
+    } else {
+        struct_type_id
+    };
+
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs = &op_data.inputs;
+    let struct_type_info = stores.types.get_struct_def(struct_type_id);
+
+    if struct_type_info.is_union {
+        let Some([input_type_id]) = analyzer.value_types([inputs[0]]) else {
+            return;
+        };
+
+        let mut found_field = false;
+        for field_def in &struct_type_info.fields {
+            if input_type_id == field_def.kind {
+                found_field = true;
+                break;
+            }
+        }
+
+        if !found_field {
+            let input_type_info = stores.types.get_type_info(input_type_id);
+            let input_type_name = stores.strings.resolve(input_type_info.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(inputs[0], 0, input_type_name)],
+                Color::Yellow,
+                Color::Cyan,
+            );
+            labels.push(
+                Label::new(struct_type_info.name.location)
+                    .with_color(Color::Cyan)
+                    .with_message(format!(
+                        "expected a field with type `{input_type_name}` in this union"
+                    )),
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                op.token.location,
+                "unable to pack union",
+                labels,
+                None,
+            );
+
+            *had_error = true;
+        }
+    } else {
+        for ((field_def, &input_value_id), value_idx) in
+            struct_type_info.fields.iter().zip(inputs).zip(1..)
+        {
+            let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+                continue;
+            };
+            let field_type_info = stores.types.get_type_info(field_def.kind);
+            let input_type_info = stores.types.get_type_info(input_type_id);
+
+            let input_type_name = stores.strings.resolve(input_type_info.name);
+            let field_type_name = stores.strings.resolve(field_type_info.name);
+            dbg!(input_type_name, field_type_name);
+
+            if input_type_id != field_def.kind
+                && !matches!(
+                    (field_type_info.kind, input_type_info.kind),
+                    (TypeKind::Integer(to), TypeKind::Integer(from))
+                    if can_promote_int_unidirectional(from, to)
+                )
+            {
+                let input_type_name = stores.strings.resolve(input_type_info.name);
+                let field_type_name = stores.strings.resolve(field_type_info.name);
+
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(input_value_id, value_idx, input_type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+                labels.push(
+                    Label::new(field_def.name.location)
+                        .with_color(Color::Cyan)
+                        .with_message("expected type defined here..."),
+                );
+                labels.push(
+                    Label::new(struct_type_info.name.location)
+                        .with_color(Color::Cyan)
+                        .with_message("... in this struct"),
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "unable to pack struct: mismatched input types",
+                    labels,
+                    format!("Expected type `{field_type_name}`, found `{input_type_name}`"),
+                );
+
+                *had_error = true;
+            }
+        }
+    }
+
+    let output_value_id = op_data.outputs[0];
+    analyzer.set_value_type(output_value_id, struct_type_id);
+}
+
+fn pack_struct_infer_generic(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    struct_type_id: TypeId,
+    struct_item_id: ItemId,
+    op: &Op<TypeResolvedOp>,
+) -> ControlFlow<(), TypeId> {
+    let generic_def = stores.types.get_generic_base_def(struct_type_id);
+    let op_data = analyzer.get_op_io(op.id);
+    let inputs = &op_data.inputs;
+
+    // We can't infer generic parameters for a union, as there may be multiple parameters, but we only
+    // take a single input.
+    if generic_def.is_union && generic_def.generic_params.len() != 1 {
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "unable to infer parameters of generic unions with more than 1 generic parameter",
+            [Label::new(op.token.location).with_color(Color::Red)],
+            None,
+        );
+
+        *had_error = true;
+        return ControlFlow::Break(());
+    }
+
+    let mut param_types = Vec::new();
+
+    if generic_def.is_union {
+        let Some([input_type_id]) = analyzer.value_types([inputs[0]]) else {
+            return ControlFlow::Break(());
+        };
+
+        // If we're a generic union, we won't be able to infer the generic paramater if our input is one of the
+        // non-generic fields.
+        for field in &generic_def.fields {
+            let GenericPartiallyResolvedFieldKind::Fixed(field_type_id) = field.kind else {
+                continue;
+            };
+            // We've found a fixed field, so we can't infer the generic parameter.
+            if field_type_id == input_type_id {
+                let input_type_info = stores.types.get_type_info(input_type_id);
+                let input_type_name = stores.strings.resolve(input_type_info.name);
+
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(inputs[0], 0, input_type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+                labels.push(
+                    Label::new(field.name.location)
+                        .with_color(Color::Green)
+                        .with_message("input type matches this non-generic field"),
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "unable to infer type parameter of generic union",
+                    labels,
+                    None,
+                );
+
+                *had_error = true;
+                return ControlFlow::Break(());
+            }
+        }
+
+        param_types.push(input_type_id);
+    } else {
+        // Iterate over each of the generic parameters, then search each of the fields looking for a type
+        // we can pattern match against to infer the generic type parameter.
+        // We are looking for field types of the form `T`, `T&`, and `T[N]`.
+        // If we find one such field, we break and go to the next generic parameter.
+        for param in &generic_def.generic_params {
+            let mut found_field = false;
+            for (field, &input_value_id) in generic_def.fields.iter().zip(inputs) {
+                let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+                    continue;
+                };
+                let input_type_kind = stores.types.get_type_info(input_type_id).kind;
+
+                let Some(inferred_type_id) =
+                    field
+                        .kind
+                        .match_generic_type(param.inner, input_type_id, input_type_kind)
+                else {
+                    // Not an inferrable pattern.
+                    continue;
+                };
+
+                param_types.push(inferred_type_id);
+                found_field = true;
+                break;
+            }
+
+            if !found_field {
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    "unable to infer type parameter",
+                    [
+                        Label::new(op.token.location).with_color(Color::Red),
+                        Label::new(param.location).with_color(Color::Cyan),
+                    ],
+                    None,
+                );
+
+                *had_error = true;
+            }
+        }
+    }
+
+    let instance_type_info = stores.types.instantiate_generic_struct(
+        &mut stores.strings,
+        struct_item_id,
+        struct_type_id,
+        param_types,
+    );
+
+    ControlFlow::Continue(instance_type_info.id)
 }

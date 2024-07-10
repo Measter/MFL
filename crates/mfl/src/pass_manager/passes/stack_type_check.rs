@@ -440,7 +440,29 @@ fn analyze_block(
                     *had_error |= local_had_error;
                 }
                 TypeResolvedOp::If(_) => todo!(),
-                TypeResolvedOp::PackStruct { id } => todo!(),
+                TypeResolvedOp::PackStruct { id } => {
+                    let mut local_had_error = false;
+                    stack_check::memory::pack_struct(
+                        ctx,
+                        stores,
+                        analyzer,
+                        pass_ctx,
+                        &mut local_had_error,
+                        stack,
+                        op,
+                        *id,
+                    );
+                    if !local_had_error {
+                        type_check::memory::pack_struct(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            op,
+                            *id,
+                        );
+                        *had_error |= local_had_error;
+                    }
+                }
                 TypeResolvedOp::Memory { id, is_global } => todo!(),
                 TypeResolvedOp::SizeOf { id } => todo!(),
                 TypeResolvedOp::While(_) => todo!(),

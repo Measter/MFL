@@ -11,7 +11,7 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    type_store::TypeKind,
+    type_store::{TypeId, TypeKind},
     Stores,
 };
 
@@ -233,4 +233,76 @@ pub(crate) fn unpack(
     }
 
     analyzer.set_op_io(op, &[input_value_id], &outputs);
+}
+
+pub(crate) fn pack_struct(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    target_type_id: TypeId,
+) {
+    let type_info = stores.types.get_type_info(target_type_id);
+    let (TypeKind::Struct(struct_item_id)
+    | TypeKind::GenericStructInstance(struct_item_id)
+    | TypeKind::GenericStructBase(struct_item_id)) = type_info.kind
+    else {
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            "cannot pack that type",
+            [Label::new(op.token.location).with_color(Color::Red)],
+            None,
+        );
+        *had_error = true;
+        return;
+    };
+
+    if pass_ctx
+        .ensure_define_structs(ctx, stores, struct_item_id)
+        .is_err()
+    {
+        analyzer.set_op_io(op, &[], &[]);
+        *had_error = true;
+    }
+
+    let num_fields = match type_info.kind {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            let struct_def = stores.types.get_struct_def(target_type_id);
+            if struct_def.is_union {
+                1
+            } else {
+                struct_def.fields.len()
+            }
+        }
+        TypeKind::GenericStructBase(_) => {
+            let struct_def = stores.types.get_generic_base_def(target_type_id);
+            if struct_def.is_union {
+                1
+            } else {
+                struct_def.fields.len()
+            }
+        }
+        TypeKind::Array { .. } | TypeKind::Integer(_) | TypeKind::Pointer(_) | TypeKind::Bool => {
+            unreachable!()
+        }
+    };
+
+    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_fields);
+
+    let mut inputs = SmallVec::<[_; 20]>::new();
+    let input_value_ids = stack.lastn(num_fields).unwrap();
+    for &input_value_id in input_value_ids {
+        inputs.push(input_value_id);
+        analyzer.consume_value(input_value_id, op.id);
+    }
+
+    stack.truncate(stack.len() - input_value_ids.len());
+
+    let output = analyzer.new_value(op.token.location, None);
+    stack.push(output);
+    analyzer.set_op_io(op, &inputs, &[output]);
 }
