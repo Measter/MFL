@@ -399,9 +399,46 @@ fn analyze_block(
                 }
             },
             OpCode::Complex(co) => match co {
-                TypeResolvedOp::Cast { id } => todo!(),
-                TypeResolvedOp::CallFunction { id } => todo!(),
-                TypeResolvedOp::Const { id } => todo!(),
+                TypeResolvedOp::Cast { id } => {
+                    let mut local_had_error = false;
+                    eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
+                    if !local_had_error {
+                        type_check::stack_ops::cast(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            op,
+                            *id,
+                        );
+                    }
+
+                    *had_error |= local_had_error;
+                }
+                TypeResolvedOp::CallFunction { id } | TypeResolvedOp::Const { id } => {
+                    let mut local_had_error = false;
+                    stack_check::control::call_function_const(
+                        ctx,
+                        stores,
+                        analyzer,
+                        &mut local_had_error,
+                        stack,
+                        op,
+                        *id,
+                    );
+                    if !local_had_error {
+                        type_check::control::call_function_const(
+                            ctx,
+                            stores,
+                            analyzer,
+                            pass_ctx,
+                            &mut local_had_error,
+                            op,
+                            *id,
+                        );
+                    }
+
+                    *had_error |= local_had_error;
+                }
                 TypeResolvedOp::If(_) => todo!(),
                 TypeResolvedOp::PackStruct { id } => todo!(),
                 TypeResolvedOp::Memory { id, is_global } => todo!(),

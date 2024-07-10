@@ -6,8 +6,8 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
     ir::{Op, TypeResolvedOp},
-    pass_manager::static_analysis::{Analyzer, ValueId},
-    type_store::{BuiltinTypes, Integer},
+    pass_manager::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
+    type_store::{BuiltinTypes, Integer, TypeId, TypeKind},
     Stores,
 };
 
@@ -99,4 +99,178 @@ pub(crate) fn push_str(
     };
 
     analyzer.set_value_type(op_data.outputs[0], kind);
+}
+
+pub(crate) fn cast(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    target_id: TypeId,
+) {
+    let output_type_info = stores.types.get_type_info(target_id);
+    match output_type_info.kind {
+        TypeKind::Integer(int) => cast_to_int(stores, analyzer, had_error, op, target_id, int),
+        TypeKind::Pointer(_) => cast_to_ptr(stores, analyzer, had_error, op, target_id),
+        TypeKind::Array { .. }
+        | TypeKind::Bool
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::GenericStructInstance(_) => {
+            let output_type_name = stores.strings.resolve(output_type_info.name);
+            diagnostics::emit_error(
+                stores,
+                op.token.location,
+                format!("cannot cast to `{output_type_name}`"),
+                [Label::new(op.token.location).with_color(Color::Red)],
+                None,
+            );
+            *had_error = true;
+        }
+    }
+}
+
+fn cast_to_ptr(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    to_id: TypeId,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let input_value_id = op_data.inputs[0];
+    let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+        return;
+    };
+    let input_type_info = stores.types.get_type_info(input_type_id);
+
+    match input_type_info.kind {
+        TypeKind::Pointer(_) if input_type_id == to_id => {
+            let ptr_type_name = stores.strings.resolve(input_type_info.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(input_value_id, 0, ptr_type_name)],
+                Color::Green,
+                Color::Cyan,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Yellow));
+
+            diagnostics::emit_warning(stores, op.token.location, "unnecessary cast", labels, None);
+        }
+        TypeKind::Integer(Integer::U64) | TypeKind::Pointer(_) => {}
+
+        TypeKind::Integer(int_kind) => {
+            let input_type_name = stores.strings.resolve(input_type_info.name);
+            let ptr_type_info = stores.types.get_type_info(to_id);
+            let ptr_type_name = stores.strings.resolve(ptr_type_info.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(input_value_id, 0, input_type_name)],
+                Color::Yellow,
+                Color::Cyan,
+            );
+            labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                op.token.location,
+                format!("cannot cast `{input_type_name}` to `{ptr_type_name}`"),
+                labels,
+                "Can only cast U64 to pointers".to_owned(),
+            );
+            *had_error = true;
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::Bool
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::GenericStructInstance(_) => {
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_value_id]);
+            *had_error = true;
+            return;
+        }
+    }
+
+    analyzer.set_value_type(op_data.outputs[0], to_id);
+}
+
+fn cast_to_int(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    to_id: TypeId,
+    to_int: Integer,
+) {
+    let op_data = analyzer.get_op_io(op.id);
+    let input_value_id = op_data.inputs[0];
+    let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+        return;
+    };
+    let input_type_info = stores.types.get_type_info(input_type_id);
+
+    match input_type_info.kind {
+        TypeKind::Bool => {}
+        TypeKind::Pointer(_) => {
+            if to_int != Integer::U64 {
+                let input_type_name = stores.strings.resolve(input_type_info.name);
+                let output_type_info = stores.types.get_type_info(to_id);
+                let output_type_name = stores.strings.resolve(output_type_info.name);
+
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(input_value_id, 0, input_type_name)],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Red));
+
+                diagnostics::emit_error(
+                    stores,
+                    op.token.location,
+                    format!("cannot cast `{input_type_name}` to `{output_type_name}`"),
+                    labels,
+                    None,
+                );
+
+                *had_error = true;
+            }
+        }
+        TypeKind::Integer(_) => {
+            if input_type_id == to_id {
+                let input_type_name = stores.strings.resolve(input_type_info.name);
+
+                let mut labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [(input_value_id, 0, input_type_name)],
+                    Color::Green,
+                    Color::Cyan,
+                );
+                labels.push(Label::new(op.token.location).with_color(Color::Yellow));
+
+                diagnostics::emit_warning(
+                    stores,
+                    op.token.location,
+                    "unnecessary cast",
+                    labels,
+                    None,
+                );
+            }
+        }
+        TypeKind::Array { .. }
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::GenericStructInstance(_) => {
+            let lexeme = stores.strings.resolve(op.token.inner);
+            generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_value_id]);
+            *had_error = true;
+            return;
+        }
+    }
+
+    analyzer.set_value_type(op_data.outputs[0], to_id);
 }

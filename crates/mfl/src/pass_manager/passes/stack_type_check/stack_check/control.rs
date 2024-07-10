@@ -140,3 +140,55 @@ pub(crate) fn syscall(
     analyzer.set_op_io(op, &inputs, &[new_id]);
     stack.push(new_id);
 }
+
+pub(crate) fn call_function_const(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    stack: &mut Vec<ValueId>,
+    op: &Op<TypeResolvedOp>,
+    callee_id: ItemId,
+) {
+    let callee_sig = ctx.urir().get_item_signature(callee_id);
+    let entry_arg_count = callee_sig.entry.inner.len();
+
+    if stack.len() < entry_arg_count {
+        diagnostics::emit_error(
+            stores,
+            op.token.location,
+            format!(
+                "procedure takes {entry_arg_count} arguments, found {}",
+                stack.len()
+            ),
+            [
+                Label::new(op.token.location).with_color(Color::Red),
+                Label::new(callee_sig.entry.location)
+                    .with_color(Color::Cyan)
+                    .with_message("signature defined here"),
+            ],
+            None,
+        );
+        *had_error = true;
+
+        let num_missing = usize::saturating_sub(entry_arg_count, stack.len());
+        for _ in 0..num_missing {
+            let pad_value = analyzer.new_value(op.token.location, None);
+            stack.push(pad_value);
+        }
+    }
+
+    let inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - entry_arg_count..).collect();
+    for &value_id in &inputs {
+        analyzer.consume_value(value_id, op.id);
+    }
+
+    let mut outputs = SmallVec::<[_; 8]>::new();
+    for _ in &callee_sig.exit.inner {
+        let new_id = analyzer.new_value(op.token.location, None);
+        outputs.push(new_id);
+        stack.push(new_id);
+    }
+
+    analyzer.set_op_io(op, &inputs, &outputs);
+}

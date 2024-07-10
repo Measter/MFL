@@ -5,8 +5,9 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     ir::{Op, TypeResolvedOp},
-    pass_manager::static_analysis::{
-        can_promote_int_unidirectional, failed_compare_stack_types, Analyzer,
+    pass_manager::{
+        static_analysis::{can_promote_int_unidirectional, failed_compare_stack_types, Analyzer},
+        PassContext,
     },
     type_store::TypeKind,
     Stores,
@@ -107,5 +108,63 @@ pub(crate) fn syscall(
             None,
         );
         *had_error = true;
+    }
+}
+
+pub(crate) fn call_function_const(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    callee_id: ItemId,
+) {
+    if pass_ctx
+        .ensure_type_resolved_signature(ctx, stores, callee_id)
+        .is_err()
+    {
+        *had_error = true;
+        return;
+    }
+
+    let op_data = analyzer.get_op_io(op.id);
+    let callee_sig_urir = ctx.urir().get_item_signature(callee_id);
+    let callee_sig_trir = ctx.trir().get_item_signature(callee_id);
+
+    for (&actual_value_id, &expected_type_id) in op_data.inputs.iter().zip(&callee_sig_trir.entry) {
+        let Some([actual_type_id]) = analyzer.value_types([actual_value_id]) else {
+            continue;
+        };
+
+        if actual_type_id != expected_type_id {
+            let actual_type_info = stores.types.get_type_info(actual_type_id);
+            let expected_type_info = stores.types.get_type_info(expected_type_id);
+
+            if !matches!((actual_type_info.kind, expected_type_info.kind),
+                (
+                    TypeKind::Integer(actual),
+                    TypeKind::Integer(expected)
+                ) if can_promote_int_unidirectional(actual, expected))
+            {
+                failed_compare_stack_types(
+                    stores,
+                    analyzer,
+                    &op_data.inputs,
+                    &callee_sig_trir.entry,
+                    callee_sig_urir.entry.location,
+                    op.token.location,
+                    "procedure call signature mismatch",
+                );
+                *had_error = true;
+                // Break because the above call lists all inputs/args.
+                break;
+            }
+        }
+    }
+
+    let ouput_ids = op_data.outputs.clone();
+    for (&output_type_id, output_value_id) in callee_sig_trir.exit.iter().zip(ouput_ids) {
+        analyzer.set_value_type(output_value_id, output_type_id);
     }
 }
