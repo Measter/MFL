@@ -500,7 +500,34 @@ fn analyze_block(
                     make_one(analyzer, stack, op);
                     type_check::stack_ops::push_int(stores, analyzer, op, Integer::U64);
                 }
-                TypeResolvedOp::While(_) => todo!(),
+                TypeResolvedOp::While(while_op) => {
+                    let mut local_had_error = false;
+                    stack_check::control::analyze_while(
+                        ctx,
+                        stores,
+                        analyzer,
+                        pass_ctx,
+                        &mut local_had_error,
+                        item_id,
+                        stack,
+                        max_stack_depth,
+                        op,
+                        while_op,
+                        false,
+                    );
+
+                    if !local_had_error {
+                        type_check::control::analyze_while(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            op,
+                            while_op,
+                        );
+                    }
+
+                    *had_error |= local_had_error;
+                }
             },
         }
     }

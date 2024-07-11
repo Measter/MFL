@@ -4,15 +4,16 @@ use intcast::IntCast;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    ir::{If, Op, TypeResolvedOp},
+    ir::{If, Op, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
             can_promote_int_bidirectional, can_promote_int_unidirectional,
-            failed_compare_stack_types, promote_int_type_bidirectional, Analyzer,
+            failed_compare_stack_types, promote_int_type_bidirectional, Analyzer, ValueId,
         },
         PassContext,
     },
-    type_store::{BuiltinTypes, TypeKind},
+    source_file::SourceLocation,
+    type_store::{BuiltinTypes, TypeId, TypeKind},
     Stores,
 };
 
@@ -213,28 +214,14 @@ pub(crate) fn analyze_if(
     let op_data = analyzer.get_op_io(op.id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
-        if condition_type_id != stores.types.get_builtin(BuiltinTypes::Bool).id {
-            let condition_type_info = stores.types.get_type_info(condition_type_id);
-            let condition_type_name = stores.strings.resolve(condition_type_info.name);
-
-            let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
-                [(condition_value_id, 0, condition_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(if_op.tokens.do_token).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
-                if_op.tokens.do_token,
-                "condition must evaluate to a boolean",
-                labels,
-                None,
-            );
-
-            *had_error = true;
-        }
+        condition_type_check(
+            condition_type_id,
+            stores,
+            analyzer,
+            condition_value_id,
+            if_op.tokens.do_token,
+            had_error,
+        );
     }
 
     let Some(merges) = analyzer.get_if_merges(op.id).cloned() else {
@@ -288,5 +275,109 @@ pub(crate) fn analyze_if(
         };
 
         analyzer.set_value_type(merge_pair.output_value, final_type_id);
+    }
+}
+
+pub(crate) fn analyze_while(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    while_op: &While<TypeResolvedOp>,
+) {
+    // The stack check has already done the full check on each block, so we don't have to repeat it here.
+
+    let op_data = analyzer.get_op_io(op.id);
+    let condition_value_id = op_data.inputs[0];
+    if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
+        condition_type_check(
+            condition_type_id,
+            stores,
+            analyzer,
+            condition_value_id,
+            while_op.tokens.do_token,
+            had_error,
+        );
+    }
+
+    let Some(merge_info) = analyzer.get_while_merges(op.id).cloned() else {
+        panic!("ICE: While block should have merge info");
+    };
+
+    // Unlike the If-block handling above, this is not setting the type, only checking that
+    // they are compatible.
+    for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
+        let [condition_value_info] = analyzer.values([merge_pair.condition_value]);
+        let Some([pre_type_id, condition_type_id]) =
+            analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value])
+        else {
+            continue;
+        };
+
+        let pre_type_info = stores.types.get_type_info(pre_type_id);
+        let condition_type_info = stores.types.get_type_info(condition_type_id);
+
+        if pre_type_id != condition_type_id
+            && !matches!(
+                (pre_type_info.kind, condition_type_info.kind),
+                (TypeKind::Integer(pre_int), TypeKind::Integer(condition_int))
+                if can_promote_int_unidirectional(condition_int, pre_int)
+            )
+        {
+            let pre_type_name = stores.strings.resolve(pre_type_info.name);
+            let condition_type_name = stores.strings.resolve(condition_type_info.name);
+
+            let labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [
+                    (merge_pair.pre_value, 0, pre_type_name),
+                    (merge_pair.condition_value, 1, condition_type_name),
+                ],
+                Color::Yellow,
+                Color::Cyan,
+            );
+
+            diagnostics::emit_error(
+                stores,
+                condition_value_info.source_location,
+                "while loop condition or body may not change types on the stack",
+                labels,
+                None,
+            );
+
+            *had_error = true;
+        }
+    }
+}
+
+fn condition_type_check(
+    condition_type_id: TypeId,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    condition_value_id: ValueId,
+    error_location: SourceLocation,
+    had_error: &mut bool,
+) {
+    if condition_type_id != stores.types.get_builtin(BuiltinTypes::Bool).id {
+        let condition_type_info = stores.types.get_type_info(condition_type_id);
+        let condition_type_name = stores.strings.resolve(condition_type_info.name);
+
+        let mut labels = diagnostics::build_creator_label_chain(
+            analyzer,
+            [(condition_value_id, 0, condition_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(error_location).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            error_location,
+            "condition must evaluate to a boolean",
+            labels,
+            None,
+        );
+
+        *had_error = true;
     }
 }

@@ -230,7 +230,7 @@ impl Analyzer {
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    fn set_while_merges(&mut self, op: &Op<TypeResolvedOp>, merges: WhileMerges) {
+    pub(super) fn set_while_merges(&mut self, op: &Op<TypeResolvedOp>, merges: WhileMerges) {
         self.op_while_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");

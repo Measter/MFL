@@ -8,10 +8,13 @@ use tracing::trace;
 use crate::{
     context::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
-    ir::{If, Op, TypeResolvedOp},
+    ir::{If, Op, TypeResolvedOp, While},
     n_ops::SliceNOps,
     pass_manager::{
-        static_analysis::{generate_stack_length_mismatch_diag, Analyzer, IfMerge, ValueId},
+        static_analysis::{
+            generate_stack_length_mismatch_diag, Analyzer, IfMerge, ValueId, WhileMerge,
+            WhileMerges,
+        },
         PassContext,
     },
     source_file::Spanned,
@@ -334,4 +337,164 @@ pub(crate) fn analyze_if(
 
     analyzer.set_op_io(op, &condition_values, &[]);
     analyzer.set_if_merges(op, body_merges);
+}
+
+pub(crate) fn analyze_while(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    item_id: ItemId,
+    stack: &mut Vec<ValueId>,
+    max_stack_depth: &mut usize,
+    op: &Op<TypeResolvedOp>,
+    while_op: &While<TypeResolvedOp>,
+    emit_traces: bool,
+) {
+    let pre_condition_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+
+    // Evaluate the condition.
+    super::super::analyze_block(
+        ctx,
+        stores,
+        analyzer,
+        pass_ctx,
+        had_error,
+        item_id,
+        &while_op.condition.block,
+        stack,
+        max_stack_depth,
+        emit_traces,
+    );
+
+    // We expect there to be a boolean value on teh top of the stack afterwards.
+    if stack.is_empty() {
+        generate_stack_length_mismatch_diag(
+            stores,
+            while_op.tokens.do_token,
+            while_op.tokens.do_token,
+            stack.len(),
+            1,
+            None,
+        );
+
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logic makes sense.
+        stack.push(analyzer.new_value(op.token.location, None));
+    }
+    let condition_value = stack.pop().unwrap();
+
+    // The condition cannot be allowed to otherwise change the depth of the stack, as it could be
+    // executed an arbitrary number of times.
+    // TODO: Allow the condition to alter the stack, as long as the body restores it.
+    if stack.len() != pre_condition_stack.len() {
+        generate_stack_length_mismatch_diag(
+            stores,
+            op.token.location,
+            while_op.tokens.do_token,
+            stack.len(),
+            pre_condition_stack.len(),
+            None,
+        );
+
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logict makes sense.
+        for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
+            stack.push(analyzer.new_value(op.token.location, None));
+        }
+    }
+
+    let mut condition_merges = SmallVec::new();
+
+    // Now we need to see which value IDs have been changed.
+    for (&pre_value_id, &condition_value_id) in pre_condition_stack
+        .iter()
+        .zip(&*stack)
+        .filter(|(a, b)| a != b)
+    {
+        {
+            trace!(
+                ?condition_value_id,
+                ?pre_value_id,
+                "defining merges for While condition"
+            );
+
+            condition_merges.push(WhileMerge {
+                pre_value: pre_value_id,
+                condition_value: condition_value_id,
+            });
+        }
+    }
+
+    // Because the condition cannot change the stack state, we'll just restore to the pre-condition stack for the body.
+    stack.clear();
+    stack.extend_from_slice(&pre_condition_stack);
+
+    // Now do the same, but with the body.
+    super::super::analyze_block(
+        ctx,
+        stores,
+        analyzer,
+        pass_ctx,
+        had_error,
+        item_id,
+        &while_op.body_block.block,
+        stack,
+        max_stack_depth,
+        emit_traces,
+    );
+
+    // Again, the body cannot change the depth of the stack.
+    if stack.len() != pre_condition_stack.len() {
+        generate_stack_length_mismatch_diag(
+            stores,
+            op.token.location,
+            while_op.tokens.end_token,
+            stack.len(),
+            pre_condition_stack.len(),
+            Some("Loop body cannot change the depth or types on the stack".to_owned()),
+        );
+
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logict makes sense.
+        for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
+            stack.push(analyzer.new_value(op.token.location, None));
+        }
+    }
+
+    let mut body_merges = SmallVec::new();
+    for (&pre_value_id, &condition_value_id) in pre_condition_stack
+        .iter()
+        .zip(&*stack)
+        .filter(|(a, b)| a != b)
+    {
+        trace!(
+            ?condition_value_id,
+            ?pre_value_id,
+            "defining merge for While body"
+        );
+
+        body_merges.push(WhileMerge {
+            pre_value: pre_value_id,
+            condition_value: condition_value_id,
+        });
+    }
+
+    // Need to revert the stack to before the loop executed.
+    stack.clear();
+    stack.extend_from_slice(&pre_condition_stack);
+
+    analyzer.set_while_merges(
+        op,
+        WhileMerges {
+            condition: condition_merges,
+            body: body_merges,
+        },
+    );
+    analyzer.set_op_io(op, &[condition_value], &[]);
+    analyzer.consume_value(condition_value, op.id);
 }
