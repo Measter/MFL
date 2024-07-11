@@ -162,7 +162,7 @@ macro_rules! ensure_state_deps {
 }
 
 impl PassContext {
-    fn ensure_ident_resolved_signature(
+    pub fn ensure_ident_resolved_signature(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,

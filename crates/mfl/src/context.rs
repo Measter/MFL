@@ -815,12 +815,21 @@ impl Context {
         base_fn_id: ItemId,
         resolved_generic_params: SmallVec<[TypeId; 4]>,
         unresolved_generic_params: SmallVec<[UnresolvedTypeIds; 4]>,
-    ) -> ItemId {
+    ) -> Result<ItemId, ()> {
         if let Some(id) = self
             .generic_function_cache
             .get(&(base_fn_id, resolved_generic_params.clone()))
         {
-            return *id;
+            return Ok(*id);
+        }
+
+        // We need to make sure the generic function has been ident-resolved before this step.
+        let resolve_res = pass_ctx.ensure_ident_resolved_signature(self, stores, base_fn_id);
+        let resolve_res =
+            resolve_res.and_then(|_| pass_ctx.ensure_ident_resolved_body(self, stores, base_fn_id));
+        if resolve_res.is_err() {
+            had_error.set();
+            return Err(());
         }
 
         let base_fd_params = &self.generic_template_parameters[&base_fn_id];
@@ -908,7 +917,7 @@ impl Context {
             .insert((base_fn_id, resolved_generic_params), new_proc_id);
         pass_ctx.add_new_item(new_proc_id, base_fn_id);
 
-        new_proc_id
+        Ok(new_proc_id)
     }
 
     pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {

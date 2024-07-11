@@ -158,13 +158,17 @@ fn resolve_block(
                         unresolved_generic_params_sm.push(ugp.clone());
                     }
 
-                    let new_id = ctx.get_generic_function_instance(
+                    let Ok(new_id) = ctx.get_generic_function_instance(
                         stores,
                         pass_ctx,
+                        had_error,
                         *id,
                         resolved_generic_params,
                         unresolved_generic_params_sm,
-                    );
+                    ) else {
+                        had_error.set();
+                        continue;
+                    };
 
                     resolved_block.push(Op {
                         code: OpCode::Complex(TypeResolvedOp::CallFunction { id: new_id }),
