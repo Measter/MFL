@@ -9,6 +9,7 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
+    type_store::Integer,
     Stores,
 };
 
@@ -463,8 +464,16 @@ fn analyze_block(
                         *had_error |= local_had_error;
                     }
                 }
-                TypeResolvedOp::Memory { id, is_global } => todo!(),
-                TypeResolvedOp::SizeOf { id } => todo!(),
+                TypeResolvedOp::Memory { id, is_global } => {
+                    make_one(analyzer, stack, op);
+                    type_check::control::memory(
+                        ctx, stores, analyzer, pass_ctx, had_error, op, *id,
+                    );
+                }
+                TypeResolvedOp::SizeOf { id } => {
+                    make_one(analyzer, stack, op);
+                    type_check::stack_ops::push_int(stores, analyzer, op, Integer::U64);
+                }
                 TypeResolvedOp::While(_) => todo!(),
             },
         }

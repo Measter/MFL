@@ -168,3 +168,31 @@ pub(crate) fn call_function_const(
         analyzer.set_value_type(output_value_id, output_type_id);
     }
 }
+
+pub(crate) fn memory(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    memory_item_id: ItemId,
+) {
+    if pass_ctx
+        .ensure_type_resolved_signature(ctx, stores, memory_item_id)
+        .is_err()
+    {
+        *had_error = true;
+        return;
+    }
+
+    let op_data = analyzer.get_op_io(op.id);
+    let output_value_id = op_data.outputs[0];
+
+    let memory_type_id = ctx.trir().get_memory_type(memory_item_id);
+
+    let ptr_type_id = stores
+        .types
+        .get_pointer(&mut stores.strings, memory_type_id);
+    analyzer.set_value_type(output_value_id, ptr_type_id.id);
+}
