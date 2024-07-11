@@ -91,7 +91,6 @@ pub struct While<OpType> {
 
 #[derive(Debug, Copy, Clone)]
 pub struct IfTokens {
-    pub open_token: SourceLocation,
     pub do_token: SourceLocation,
     pub else_token: SourceLocation,
     pub end_token: SourceLocation,
@@ -197,12 +196,16 @@ impl Compare {
     }
 
     pub fn get_bool_binary_op(self) -> fn(bool, bool) -> bool {
+        // We allow the bool comparison in here so the relation to the compare operation is more clear.
+
         use Compare::*;
         match self {
             Equal => |a, b| a == b,
             NotEq => |a, b| a != b,
+            #[allow(clippy::bool_comparison)]
             Greater => |a, b| a > b,
             GreaterEqual => |a, b| a >= b,
+            #[allow(clippy::bool_comparison)]
             Less => |a, b| a < b,
             LessEqual => |a, b| a <= b,
             IsNull => unimplemented!(),

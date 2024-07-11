@@ -160,7 +160,7 @@ fn cast_to_ptr(
         }
         TypeKind::Integer(Integer::U64) | TypeKind::Pointer(_) => {}
 
-        TypeKind::Integer(int_kind) => {
+        TypeKind::Integer(_) => {
             let input_type_name = stores.strings.resolve(input_type_info.name);
             let ptr_type_info = stores.types.get_type_info(to_id);
             let ptr_type_name = stores.strings.resolve(ptr_type_info.name);

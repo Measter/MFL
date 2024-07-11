@@ -143,7 +143,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
     let mut context = Context::new();
     let entry_module_id = program::load_program(&mut context, &mut stores, args)?;
 
-    pass_manager::run(&mut context, &mut stores)?;
+    pass_manager::run(&mut context, &mut stores, args.print_analyzer_stats)?;
 
     let mut top_level_symbols = Vec::new();
 

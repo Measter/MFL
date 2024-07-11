@@ -808,7 +808,6 @@ pub fn parse_if<'a>(
     // Normalize into an `if <cond> do <body> else <body> end` structure.
     while let Some((open_token, condition, do_token, then_block, else_token)) = elif_blocks.pop() {
         let if_tokens = IfTokens {
-            open_token: open_token.location,
             do_token: do_token.location,
             else_token: else_token.location,
             end_token: close_token.location,
@@ -838,7 +837,6 @@ pub fn parse_if<'a>(
     }
 
     let if_tokens = IfTokens {
-        open_token: keyword.location,
         do_token: condition_tokens.close.location,
         else_token: else_token.location,
         end_token: close_token.location,

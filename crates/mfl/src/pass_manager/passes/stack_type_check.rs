@@ -490,13 +490,13 @@ fn analyze_block(
                         *had_error |= local_had_error;
                     }
                 }
-                TypeResolvedOp::Memory { id, is_global } => {
+                TypeResolvedOp::Memory { id, .. } => {
                     make_one(analyzer, stack, op);
                     type_check::control::memory(
                         ctx, stores, analyzer, pass_ctx, had_error, op, *id,
                     );
                 }
-                TypeResolvedOp::SizeOf { id } => {
+                TypeResolvedOp::SizeOf { .. } => {
                     make_one(analyzer, stack, op);
                     type_check::stack_ops::push_int(stores, analyzer, op, Integer::U64);
                 }
@@ -530,6 +530,8 @@ fn analyze_block(
                 }
             },
         }
+
+        *max_stack_depth = stack.len().max(*max_stack_depth);
     }
 
     for op in op_iter {
@@ -572,6 +574,7 @@ pub fn analyze_item(
         had_error,
         item_id,
         // TODO: Fix this shit
+        #[allow(clippy::unnecessary_to_owned)]
         &ctx.trir().get_item_body(item_id).to_owned(),
         &mut stack,
         &mut max_stack_depth,

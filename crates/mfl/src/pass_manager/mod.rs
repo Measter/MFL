@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use color_eyre::{eyre::eyre, Result};
 use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
+use prettytable::{row, Table};
 use tracing::{debug_span, trace};
 
 use crate::{
@@ -97,6 +98,7 @@ pub struct PassContext {
     states: HashMap<ItemId, ItemState>,
     queue: VecDeque<ItemId>,
     defined_generic_structs: bool,
+    stack_stats_table: Table,
 }
 
 impl PassContext {
@@ -106,6 +108,7 @@ impl PassContext {
             states,
             queue,
             defined_generic_structs: false,
+            stack_stats_table: Table::new(),
         }
     }
 
@@ -416,7 +419,14 @@ impl PassContext {
         );
 
         let mut had_error = false;
-        passes::stack_type_check::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+        let stats =
+            passes::stack_type_check::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+
+        self.stack_stats_table.add_row(row![
+            stores.strings.get_symbol_name(ctx, cur_item),
+            stats.max_stack_depth,
+            stats.unique_item_count
+        ]);
         if !had_error {
             self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
             Ok(())
@@ -508,13 +518,17 @@ impl PassContext {
     }
 }
 
-pub fn run(ctx: &mut Context, stores: &mut Stores) -> Result<()> {
+pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
     let _span = debug_span!(stringify!(pass_manager)).entered();
     let mut pass_ctx = PassContext::new(ctx.get_all_items());
     let mut had_error = false;
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
         had_error |= pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err();
+    }
+
+    if print_stack_stats {
+        println!("\n{}", pass_ctx.stack_stats_table);
     }
 
     if had_error {
