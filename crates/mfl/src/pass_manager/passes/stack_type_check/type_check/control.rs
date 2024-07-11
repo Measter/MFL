@@ -4,12 +4,15 @@ use intcast::IntCast;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    ir::{Op, TypeResolvedOp},
+    ir::{If, Op, TypeResolvedOp},
     pass_manager::{
-        static_analysis::{can_promote_int_unidirectional, failed_compare_stack_types, Analyzer},
+        static_analysis::{
+            can_promote_int_bidirectional, can_promote_int_unidirectional,
+            failed_compare_stack_types, promote_int_type_bidirectional, Analyzer,
+        },
         PassContext,
     },
-    type_store::TypeKind,
+    type_store::{BuiltinTypes, TypeKind},
     Stores,
 };
 
@@ -195,4 +198,95 @@ pub(crate) fn memory(
         .types
         .get_pointer(&mut stores.strings, memory_type_id);
     analyzer.set_value_type(output_value_id, ptr_type_id.id);
+}
+
+pub(crate) fn analyze_if(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    had_error: &mut bool,
+    op: &Op<TypeResolvedOp>,
+    if_op: &If<TypeResolvedOp>,
+) {
+    // The stack check has already done the full check on each block, so we don't have to repeat it here.
+
+    // All conditions are stored in the op inputs.
+    let op_data = analyzer.get_op_io(op.id);
+    let condition_value_id = op_data.inputs[0];
+    if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
+        if condition_type_id != stores.types.get_builtin(BuiltinTypes::Bool).id {
+            let condition_type_info = stores.types.get_type_info(condition_type_id);
+            let condition_type_name = stores.strings.resolve(condition_type_info.name);
+
+            let mut labels = diagnostics::build_creator_label_chain(
+                analyzer,
+                [(condition_value_id, 0, condition_type_name)],
+                Color::Yellow,
+                Color::Cyan,
+            );
+            labels.push(Label::new(if_op.tokens.do_token).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                if_op.tokens.do_token,
+                "condition must evaluate to a boolean",
+                labels,
+                None,
+            );
+
+            *had_error = true;
+        }
+    }
+
+    let Some(merges) = analyzer.get_if_merges(op.id).cloned() else {
+        panic!("ICE: Missing merges in If block")
+    };
+
+    for merge_pair in merges {
+        let [then_value_info] = analyzer.values([merge_pair.then_value]);
+        let Some([then_type_id, else_type_id]) =
+            analyzer.value_types([merge_pair.then_value, merge_pair.else_value])
+        else {
+            continue;
+        };
+
+        let then_type_info = stores.types.get_type_info(then_type_id);
+        let else_type_info = stores.types.get_type_info(else_type_id);
+
+        let final_type_id = match (then_type_info.kind, else_type_info.kind) {
+            (TypeKind::Integer(then_int), TypeKind::Integer(else_int))
+                if can_promote_int_bidirectional(then_int, else_int) =>
+            {
+                let kind = promote_int_type_bidirectional(then_int, else_int).unwrap();
+                stores.types.get_builtin(kind.into()).id
+            }
+            _ if then_type_id != else_type_id => {
+                let then_type_name = stores.strings.resolve(then_type_info.name);
+                let else_type_name = stores.strings.resolve(else_type_info.name);
+
+                let labels = diagnostics::build_creator_label_chain(
+                    analyzer,
+                    [
+                        (merge_pair.then_value, 0, then_type_name),
+                        (merge_pair.else_value, 1, else_type_name),
+                    ],
+                    Color::Yellow,
+                    Color::Cyan,
+                );
+
+                diagnostics::emit_error(
+                    stores,
+                    then_value_info.source_location,
+                    "conditional body cannot change types on the stack",
+                    labels,
+                    None,
+                );
+
+                *had_error = true;
+                then_type_id
+            }
+            _ => then_type_id,
+        };
+
+        analyzer.set_value_type(merge_pair.output_value, final_type_id);
+    }
 }

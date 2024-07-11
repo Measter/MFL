@@ -440,7 +440,33 @@ fn analyze_block(
 
                     *had_error |= local_had_error;
                 }
-                TypeResolvedOp::If(_) => todo!(),
+                TypeResolvedOp::If(if_op) => {
+                    let mut local_had_error = false;
+                    stack_check::control::analyze_if(
+                        ctx,
+                        stores,
+                        analyzer,
+                        pass_ctx,
+                        &mut local_had_error,
+                        item_id,
+                        stack,
+                        max_stack_depth,
+                        op,
+                        if_op,
+                        emit_traces,
+                    );
+                    if !local_had_error {
+                        type_check::control::analyze_if(
+                            stores,
+                            analyzer,
+                            &mut local_had_error,
+                            op,
+                            if_op,
+                        );
+                    }
+
+                    *had_error |= local_had_error;
+                }
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = false;
                     stack_check::memory::pack_struct(

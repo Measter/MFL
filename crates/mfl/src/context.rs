@@ -694,7 +694,7 @@ impl Context {
                         );
 
                         OpCode::Complex(NameResolvedOp::If(Box::new(If {
-                            tokens: (),
+                            tokens: if_op.tokens,
                             condition: TerminalBlock {
                                 block: resolved_condition,
                                 is_terminal: false,
@@ -726,7 +726,7 @@ impl Context {
                         );
 
                         OpCode::Complex(NameResolvedOp::While(Box::new(While {
-                            tokens: (),
+                            tokens: while_op.tokens,
                             condition: TerminalBlock {
                                 block: resolved_condition,
                                 is_terminal: false,

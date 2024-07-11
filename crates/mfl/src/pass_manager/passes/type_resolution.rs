@@ -195,7 +195,7 @@ fn resolve_block(
 
                 resolved_block.push(Op {
                     code: OpCode::Complex(TypeResolvedOp::If(Box::new(If {
-                        tokens: (),
+                        tokens: if_op.tokens,
                         condition: TerminalBlock {
                             block: resolved_condition,
                             is_terminal: false,
@@ -221,7 +221,7 @@ fn resolve_block(
 
                 resolved_block.push(Op {
                     code: OpCode::Complex(TypeResolvedOp::While(Box::new(While {
-                        tokens: (),
+                        tokens: while_op.tokens,
                         condition: TerminalBlock {
                             block: resolved_condition,
                             is_terminal: false,

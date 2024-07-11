@@ -102,10 +102,10 @@ impl Display for ValueId {
 }
 
 #[derive(Debug, Clone)]
-struct Value {
-    source_location: SourceLocation,
-    parent_value: Option<ValueId>,
-    consumer: SmallVec<[OpId; 4]>,
+pub(super) struct Value {
+    pub(super) source_location: SourceLocation,
+    pub(super) parent_value: Option<ValueId>,
+    pub(super) consumer: SmallVec<[OpId; 4]>,
 }
 
 #[derive(Debug, Clone)]
@@ -191,7 +191,7 @@ impl Analyzer {
         self.value_lifetime.len()
     }
 
-    fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
+    pub(super) fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
         ids.map(|id| &self.value_lifetime[&id])
     }
 
@@ -224,7 +224,7 @@ impl Analyzer {
         self.value_consts.remove(&id);
     }
 
-    fn set_if_merges(&mut self, op: &Op<TypeResolvedOp>, merges: Vec<IfMerge>) {
+    pub(super) fn set_if_merges(&mut self, op: &Op<TypeResolvedOp>, merges: Vec<IfMerge>) {
         self.op_if_merges
             .insert(op.id, merges)
             .expect_none("ICE: Tried to overwrite merges");

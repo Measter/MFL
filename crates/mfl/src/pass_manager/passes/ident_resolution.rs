@@ -398,7 +398,7 @@ fn resolve_idents_in_block(
 
                     resolved_block.push(Op {
                         code: OpCode::Complex(NameResolvedOp::If(Box::new(If {
-                            tokens: (),
+                            tokens: if_op.tokens,
                             condition: TerminalBlock {
                                 block: condition,
                                 is_terminal: false,
@@ -436,7 +436,7 @@ fn resolve_idents_in_block(
 
                     resolved_block.push(Op {
                         code: OpCode::Complex(NameResolvedOp::While(Box::new(While {
-                            tokens: (),
+                            tokens: while_op.tokens,
                             condition: TerminalBlock {
                                 block: condition,
                                 is_terminal: false,

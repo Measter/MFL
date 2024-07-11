@@ -3,13 +3,17 @@ use std::cmp::Ordering;
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
+use tracing::trace;
 
 use crate::{
     context::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
-    ir::{Op, TypeResolvedOp},
+    ir::{If, Op, TypeResolvedOp},
     n_ops::SliceNOps,
-    pass_manager::static_analysis::{Analyzer, ValueId},
+    pass_manager::{
+        static_analysis::{generate_stack_length_mismatch_diag, Analyzer, IfMerge, ValueId},
+        PassContext,
+    },
     source_file::Spanned,
     Stores,
 };
@@ -191,4 +195,143 @@ pub(crate) fn call_function_const(
     }
 
     analyzer.set_op_io(op, &inputs, &outputs);
+}
+
+pub(crate) fn analyze_if(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    had_error: &mut bool,
+    item_id: ItemId,
+    stack: &mut Vec<ValueId>,
+    max_stack_depth: &mut usize,
+    op: &Op<TypeResolvedOp>,
+    if_op: &If<TypeResolvedOp>,
+    emit_traces: bool,
+) {
+    let mut condition_values = SmallVec::<[_; 1]>::new();
+
+    // Evaluate condition.
+    super::super::analyze_block(
+        ctx,
+        stores,
+        analyzer,
+        pass_ctx,
+        had_error,
+        item_id,
+        &if_op.condition.block,
+        stack,
+        max_stack_depth,
+        emit_traces,
+    );
+
+    // We expect there to be a boolean value on teh top of the stack afterwards.
+    if stack.is_empty() {
+        generate_stack_length_mismatch_diag(
+            stores,
+            if_op.tokens.do_token,
+            if_op.tokens.do_token,
+            stack.len(),
+            1,
+            None,
+        );
+
+        *had_error = true;
+
+        // Pad the stack out to the expected length so the rest of the logic makes sense.
+        stack.push(analyzer.new_value(op.token.location, None));
+    }
+    condition_values.push(stack.pop().unwrap());
+    let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+
+    // Now we can do the then-block
+    super::super::analyze_block(
+        ctx,
+        stores,
+        analyzer,
+        pass_ctx,
+        had_error,
+        item_id,
+        &if_op.then_block.block,
+        stack,
+        max_stack_depth,
+        emit_traces,
+    );
+
+    // We always have an else block, so save our current stack state for comparison.
+    let then_block_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+    let then_block_sample_location = if_op.tokens.else_token;
+
+    // Restore our stack back to after the condition.
+    stack.clear();
+    stack.extend_from_slice(&initial_stack);
+
+    // Now analyze the else block.
+    super::super::analyze_block(
+        ctx,
+        stores,
+        analyzer,
+        pass_ctx,
+        had_error,
+        item_id,
+        &if_op.else_block.block,
+        stack,
+        max_stack_depth,
+        emit_traces,
+    );
+
+    let mut body_merges = Vec::new();
+
+    if if_op.then_block.is_terminal && if_op.else_block.is_terminal {
+        // Both are terminal, so we don't need to do any checking.
+        trace!("both branches terminate");
+    } else if if_op.then_block.is_terminal {
+        // We only need to "merge" for the else block, so we can just take the result of the else block as
+        // the stack state.
+        trace!("then-branch terminates, leaving stack as else-branch resulted");
+    } else if if_op.else_block.is_terminal {
+        // Same logic as the previous branch, except for the then-block.
+        stack.clear();
+        stack.extend_from_slice(&then_block_stack);
+        trace!("else-branch terminates, leaving stack as then-branch resulted");
+    } else {
+        // Neither diverge, so we need to check that they both left the stack the same length,
+        // and create merge values for values that differ.
+        if stack.len() != then_block_stack.len() {
+            generate_stack_length_mismatch_diag(
+                stores,
+                then_block_sample_location,
+                if_op.tokens.end_token,
+                stack.len(),
+                then_block_stack.len(),
+                None,
+            );
+            *had_error = true;
+        }
+
+        for (then_value_id, else_value_id) in then_block_stack
+            .into_iter()
+            .zip(stack)
+            .filter(|(a, b)| &a != b)
+        {
+            let output_value_id = analyzer.new_value(op.token.location, None);
+            trace!(
+                ?then_value_id,
+                ?else_value_id,
+                ?output_value_id,
+                "defining merge for IF"
+            );
+
+            body_merges.push(IfMerge {
+                then_value: then_value_id,
+                else_value: *else_value_id,
+                output_value: output_value_id,
+            });
+            *else_value_id = output_value_id;
+        }
+    }
+
+    analyzer.set_op_io(op, &condition_values, &[]);
+    analyzer.set_if_merges(op, body_merges);
 }

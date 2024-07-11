@@ -83,8 +83,8 @@ pub struct WhileTokens {
 }
 
 #[derive(Debug, Clone)]
-pub struct While<OpType, TokenType = ()> {
-    pub tokens: TokenType,
+pub struct While<OpType> {
+    pub tokens: WhileTokens,
     pub condition: TerminalBlock<OpType>,
     pub body_block: TerminalBlock<OpType>,
 }
@@ -98,8 +98,8 @@ pub struct IfTokens {
 }
 
 #[derive(Debug, Clone)]
-pub struct If<OpType, TokenType = ()> {
-    pub tokens: TokenType,
+pub struct If<OpType> {
+    pub tokens: IfTokens,
     pub condition: TerminalBlock<OpType>,
     pub then_block: TerminalBlock<OpType>,
     pub else_block: TerminalBlock<OpType>,
@@ -311,10 +311,10 @@ impl PartialEq for UnresolvedIdent {
 pub enum UnresolvedOp {
     Cast { id: UnresolvedTypeTokens },
     Ident(UnresolvedIdent),
-    If(Box<If<Self, IfTokens>>),
+    If(Box<If<Self>>),
     PackStruct { id: UnresolvedTypeTokens },
     SizeOf { id: UnresolvedTypeTokens },
-    While(Box<While<Self, WhileTokens>>),
+    While(Box<While<Self>>),
 }
 
 #[derive(Debug, Clone)]
