@@ -8,6 +8,7 @@ use tracing::trace;
 use crate::{
     context::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
+    error_signal::ErrorSignal,
     ir::{If, Op, TypeResolvedOp, While},
     n_ops::SliceNOps,
     pass_manager::{
@@ -27,7 +28,7 @@ pub(crate) fn epilogue_return(
     ctx: &mut Context,
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     item_id: ItemId,
@@ -49,7 +50,7 @@ pub(crate) fn epilogue_return(
         return;
     }
 
-    *had_error = true;
+    had_error.set();
 
     let mut labels = vec![
         Label::new(op.token.location)
@@ -116,7 +117,7 @@ pub(crate) fn prologue(
 pub(crate) fn syscall(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     num_args: Spanned<u8>,
@@ -131,7 +132,7 @@ pub(crate) fn syscall(
                 .with_message("valid syscall sizes are 1..=7")],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -152,7 +153,7 @@ pub(crate) fn call_function_const(
     ctx: &mut Context,
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     callee_id: ItemId,
@@ -176,7 +177,7 @@ pub(crate) fn call_function_const(
             ],
             None,
         );
-        *had_error = true;
+        had_error.set();
 
         let num_missing = usize::saturating_sub(entry_arg_count, stack.len());
         for _ in 0..num_missing {
@@ -205,7 +206,7 @@ pub(crate) fn analyze_if(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
@@ -240,7 +241,7 @@ pub(crate) fn analyze_if(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         stack.push(analyzer.new_value(op.token.location, None));
@@ -310,7 +311,7 @@ pub(crate) fn analyze_if(
                 then_block_stack.len(),
                 None,
             );
-            *had_error = true;
+            had_error.set();
         }
 
         for (then_value_id, else_value_id) in then_block_stack
@@ -344,7 +345,7 @@ pub(crate) fn analyze_while(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
@@ -379,7 +380,7 @@ pub(crate) fn analyze_while(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
         stack.push(analyzer.new_value(op.token.location, None));
@@ -399,7 +400,7 @@ pub(crate) fn analyze_while(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
@@ -458,7 +459,7 @@ pub(crate) fn analyze_while(
             Some("Loop body cannot change the depth or types on the stack".to_owned()),
         );
 
-        *had_error = true;
+        had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {

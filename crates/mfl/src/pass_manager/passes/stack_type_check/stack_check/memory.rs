@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 use crate::{
     context::Context,
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{
@@ -20,7 +21,7 @@ use super::ensure_stack_depth;
 pub(crate) fn extract_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     emit_array: bool,
@@ -49,7 +50,7 @@ pub(crate) fn extract_array(
 pub(crate) fn extract_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     emit_struct: bool,
@@ -76,7 +77,7 @@ pub(crate) fn extract_struct(
 pub(crate) fn insert_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     emit_array: bool,
@@ -102,7 +103,7 @@ pub(crate) fn insert_array(
 pub(crate) fn insert_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     emit_struct: bool,
@@ -127,7 +128,7 @@ pub(crate) fn insert_struct(
 pub(crate) fn pack_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     count: u8,
@@ -151,7 +152,7 @@ pub(crate) fn pack_array(
 pub(crate) fn store(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
 ) {
@@ -170,7 +171,7 @@ pub(crate) fn unpack(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
 ) {
@@ -192,7 +193,7 @@ pub(crate) fn unpack(
                 .is_err()
             {
                 analyzer.set_op_io(op, &[input_value_id], &[]);
-                *had_error = true;
+                had_error.set();
 
                 0
             } else {
@@ -218,7 +219,7 @@ pub(crate) fn unpack(
                 "value must be an array or struct".to_owned(),
             );
 
-            *had_error = true;
+            had_error.set();
 
             0
         }
@@ -240,7 +241,7 @@ pub(crate) fn pack_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     target_type_id: TypeId,
@@ -257,7 +258,7 @@ pub(crate) fn pack_struct(
             [Label::new(op.token.location).with_color(Color::Red)],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     };
 
@@ -266,7 +267,7 @@ pub(crate) fn pack_struct(
         .is_err()
     {
         analyzer.set_op_io(op, &[], &[]);
-        *had_error = true;
+        had_error.set();
     }
 
     let num_fields = match type_info.kind {

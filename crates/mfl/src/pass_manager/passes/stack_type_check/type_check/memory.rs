@@ -8,6 +8,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::{
@@ -54,7 +55,7 @@ pub(crate) fn extract_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     emit_array: bool,
 ) {
@@ -91,7 +92,7 @@ pub(crate) fn extract_array(
             note,
         );
 
-        *had_error = true;
+        had_error.set();
     };
 
     let store_type = match array_type_info.kind {
@@ -105,7 +106,7 @@ pub(crate) fn extract_array(
                         .ensure_define_structs(ctx, stores, item_id)
                         .is_err()
                     {
-                        *had_error = true;
+                        had_error.set();
                         return;
                     };
                     let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
@@ -132,7 +133,7 @@ pub(crate) fn extract_array(
                 .ensure_define_structs(ctx, stores, item_id)
                 .is_err()
             {
-                *had_error = true;
+                had_error.set();
                 return;
             }
             let Some(store_type) = is_slice_like_struct(stores, array_type_info) else {
@@ -170,7 +171,7 @@ pub(crate) fn extract_array(
             labels,
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -182,7 +183,7 @@ pub(crate) fn extract_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     field_name: Spanned<Spur>,
     emit_struct: bool,
@@ -231,7 +232,7 @@ pub(crate) fn extract_struct(
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
                 not_struct_error();
-                *had_error = true;
+                had_error.set();
                 return;
             };
             (sub_type, struct_item_id)
@@ -242,7 +243,7 @@ pub(crate) fn extract_struct(
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             not_struct_error();
-            *had_error = true;
+            had_error.set();
             return;
         }
     };
@@ -251,7 +252,7 @@ pub(crate) fn extract_struct(
         .ensure_define_structs(ctx, stores, actual_struct_item_id)
         .is_err()
     {
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -287,7 +288,7 @@ pub(crate) fn extract_struct(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
         return;
     };
 
@@ -299,7 +300,7 @@ pub(crate) fn insert_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     emit_array: bool,
 ) {
@@ -334,7 +335,7 @@ pub(crate) fn insert_array(
             note,
         );
 
-        *had_error = true;
+        had_error.set();
     };
 
     let store_type_id = match array_type_info.kind {
@@ -349,7 +350,7 @@ pub(crate) fn insert_array(
                         .ensure_define_structs(ctx, stores, struct_item_id)
                         .is_err()
                     {
-                        *had_error = true;
+                        had_error.set();
                         return;
                     };
                     let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
@@ -375,7 +376,7 @@ pub(crate) fn insert_array(
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {
-                *had_error = true;
+                had_error.set();
                 return;
             };
 
@@ -417,7 +418,7 @@ pub(crate) fn insert_array(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
     }
 
     if data_type_id != store_type_id
@@ -454,7 +455,7 @@ pub(crate) fn insert_array(
             None
         );
 
-        *had_error = true;
+        had_error.set();
     }
 }
 
@@ -463,7 +464,7 @@ pub(crate) fn insert_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     field_name: Spanned<Spur>,
     emit_struct: bool,
@@ -509,7 +510,7 @@ pub(crate) fn insert_struct(
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
                 not_struct_error();
-                *had_error = true;
+                had_error.set();
                 return;
             };
 
@@ -521,7 +522,7 @@ pub(crate) fn insert_struct(
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             not_struct_error();
-            *had_error = true;
+            had_error.set();
             return;
         }
     };
@@ -530,7 +531,7 @@ pub(crate) fn insert_struct(
         .ensure_define_structs(ctx, stores, actual_struct_item_id)
         .is_err()
     {
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -611,14 +612,14 @@ pub(crate) fn insert_struct(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
     }
 }
 
 pub(crate) fn load(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -647,7 +648,7 @@ pub(crate) fn load(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
         return;
     };
 
@@ -657,7 +658,7 @@ pub(crate) fn load(
 pub(crate) fn pack_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     count: u8,
 ) {
@@ -670,7 +671,7 @@ pub(crate) fn pack_array(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -719,7 +720,7 @@ pub(crate) fn pack_array(
                 labels,
                 format!("Expected `{expected_value_name}` because the first value is that type")
             );
-            *had_error = true;
+            had_error.set();
         }
     }
 
@@ -735,7 +736,7 @@ pub(crate) fn pack_array(
 pub(crate) fn store(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -767,7 +768,7 @@ pub(crate) fn store(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
         return;
     };
 
@@ -798,14 +799,14 @@ pub(crate) fn store(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
     }
 }
 
 pub(crate) fn unpack(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -851,7 +852,7 @@ pub(crate) fn unpack(
                 None,
             );
 
-            *had_error = true;
+            had_error.set();
         }
     }
 }
@@ -859,7 +860,7 @@ pub(crate) fn unpack(
 pub(crate) fn pack_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     struct_type_id: TypeId,
 ) {
@@ -927,7 +928,7 @@ pub(crate) fn pack_struct(
                 None,
             );
 
-            *had_error = true;
+            had_error.set();
         }
     } else {
         for ((field_def, &input_value_id), value_idx) in
@@ -979,7 +980,7 @@ pub(crate) fn pack_struct(
                     format!("Expected type `{field_type_name}`, found `{input_type_name}`"),
                 );
 
-                *had_error = true;
+                had_error.set();
             }
         }
     }
@@ -991,7 +992,7 @@ pub(crate) fn pack_struct(
 fn pack_struct_infer_generic(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     struct_type_id: TypeId,
     struct_item_id: ItemId,
     op: &Op<TypeResolvedOp>,
@@ -1011,7 +1012,7 @@ fn pack_struct_infer_generic(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
         return ControlFlow::Break(());
     }
 
@@ -1054,7 +1055,7 @@ fn pack_struct_infer_generic(
                     None,
                 );
 
-                *had_error = true;
+                had_error.set();
                 return ControlFlow::Break(());
             }
         }
@@ -1099,7 +1100,7 @@ fn pack_struct_infer_generic(
                     None,
                 );
 
-                *had_error = true;
+                had_error.set();
             }
         }
     }

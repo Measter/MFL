@@ -8,6 +8,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
+    error_signal::ErrorSignal,
     option::OptionExt,
     Stores,
 };
@@ -182,14 +183,14 @@ impl PassContext {
             "IdentSig"
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::IdentResolvedSignature);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::IdentResolvedSignature);
+            Ok(())
         }
     }
 
@@ -208,14 +209,14 @@ impl PassContext {
             "DeclStruct",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::structs::declare_struct(ctx, stores, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::DeclareStructs);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::DeclareStructs);
+            Ok(())
         }
     }
 
@@ -234,34 +235,37 @@ impl PassContext {
             "DefStruct",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
         let struct_def = ctx.nrir().get_struct(cur_item);
         if struct_def.generic_params.is_none() && !self.defined_generic_structs {
             let all_generic_structs = ctx.get_generic_structs().to_owned();
             for gsi in all_generic_structs {
-                had_error |= self.ensure_define_structs(ctx, stores, gsi).is_err();
+                if self.ensure_define_structs(ctx, stores, gsi).is_err() {
+                    had_error.set();
+                }
             }
             self.defined_generic_structs = true;
         }
 
-        if had_error {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             return Err(());
         }
 
+        let mut had_error = ErrorSignal::new();
         passes::structs::define_struct(ctx, stores, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::DefineStructs);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::DefineStructs);
+            Ok(())
         }
     }
 
-    fn ensure_ident_resolved_body(
+    pub fn ensure_ident_resolved_body(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,
@@ -276,14 +280,14 @@ impl PassContext {
             "IdentBody",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::ident_resolution::resolve_body(ctx, stores, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::IdentResolvedBody);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::IdentResolvedBody);
+            Ok(())
         }
     }
 
@@ -308,14 +312,14 @@ impl PassContext {
             "TypeSig",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::TypeResolvedSignature);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::TypeResolvedSignature);
+            Ok(())
         }
     }
 
@@ -334,14 +338,14 @@ impl PassContext {
             "TypeBody",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::TypeResolvedBody);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::TypeResolvedBody);
+            Ok(())
         }
     }
 
@@ -360,14 +364,14 @@ impl PassContext {
             "CycleCheck",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
-        if !had_error {
-            self.set_state(cur_item, PassState::CyclicRefCheckBody);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::CyclicRefCheckBody);
+            Ok(())
         }
     }
 
@@ -418,7 +422,7 @@ impl PassContext {
             "StackTypeCheck",
         );
 
-        let mut had_error = false;
+        let mut had_error = ErrorSignal::new();
         let stats =
             passes::stack_type_check::analyze_item(ctx, stores, self, &mut had_error, cur_item);
 
@@ -427,12 +431,12 @@ impl PassContext {
             stats.max_stack_depth,
             stats.unique_item_count
         ]);
-        if !had_error {
-            self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
-            Ok(())
-        } else {
+        if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
+        } else {
+            self.set_state(cur_item, PassState::StackAndTypeCheckedBody);
+            Ok(())
         }
     }
 
@@ -521,17 +525,19 @@ impl PassContext {
 pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
     let _span = debug_span!(stringify!(pass_manager)).entered();
     let mut pass_ctx = PassContext::new(ctx.get_all_items());
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
-        had_error |= pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err();
+        if pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err() {
+            had_error.set();
+        }
     }
 
     if print_stack_stats {
         println!("\n{}", pass_ctx.stack_stats_table);
     }
 
-    if had_error {
+    if had_error.into_bool() {
         Err(eyre!("Error during static analysis"))
     } else {
         Ok(())

@@ -4,6 +4,7 @@ use intcast::IntCast;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{If, Op, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
@@ -21,7 +22,7 @@ pub(crate) fn epilogue_return(
     ctx: &mut Context,
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     item_id: ItemId,
 ) {
@@ -51,7 +52,7 @@ pub(crate) fn epilogue_return(
                     op.token.location,
                     "item return stack mismatch",
                 );
-                *had_error = true;
+                had_error.set();
                 break;
             }
         }
@@ -76,7 +77,7 @@ pub(crate) fn prologue(
 pub(crate) fn syscall(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -111,7 +112,7 @@ pub(crate) fn syscall(
             labels,
             None,
         );
-        *had_error = true;
+        had_error.set();
     }
 }
 
@@ -120,7 +121,7 @@ pub(crate) fn call_function_const(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     callee_id: ItemId,
 ) {
@@ -128,7 +129,7 @@ pub(crate) fn call_function_const(
         .ensure_type_resolved_signature(ctx, stores, callee_id)
         .is_err()
     {
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -160,7 +161,7 @@ pub(crate) fn call_function_const(
                     op.token.location,
                     "procedure call signature mismatch",
                 );
-                *had_error = true;
+                had_error.set();
                 // Break because the above call lists all inputs/args.
                 break;
             }
@@ -178,7 +179,7 @@ pub(crate) fn memory(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     memory_item_id: ItemId,
 ) {
@@ -186,7 +187,7 @@ pub(crate) fn memory(
         .ensure_type_resolved_signature(ctx, stores, memory_item_id)
         .is_err()
     {
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -204,7 +205,7 @@ pub(crate) fn memory(
 pub(crate) fn analyze_if(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     if_op: &If<TypeResolvedOp>,
 ) {
@@ -268,7 +269,7 @@ pub(crate) fn analyze_if(
                     None,
                 );
 
-                *had_error = true;
+                had_error.set();
                 then_type_id
             }
             _ => then_type_id,
@@ -281,7 +282,7 @@ pub(crate) fn analyze_if(
 pub(crate) fn analyze_while(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     while_op: &While<TypeResolvedOp>,
 ) {
@@ -345,7 +346,7 @@ pub(crate) fn analyze_while(
                 None,
             );
 
-            *had_error = true;
+            had_error.set();
         }
     }
 }
@@ -356,7 +357,7 @@ fn condition_type_check(
     analyzer: &mut Analyzer,
     condition_value_id: ValueId,
     error_location: SourceLocation,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
 ) {
     if condition_type_id != stores.types.get_builtin(BuiltinTypes::Bool).id {
         let condition_type_info = stores.types.get_type_info(condition_type_id);
@@ -378,6 +379,6 @@ fn condition_type_check(
             None,
         );
 
-        *had_error = true;
+        had_error.set();
     }
 }

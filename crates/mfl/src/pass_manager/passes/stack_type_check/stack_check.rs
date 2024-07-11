@@ -1,4 +1,5 @@
 use crate::{
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     n_ops::VecNOps,
     pass_manager::static_analysis::{generate_stack_length_mismatch_diag, Analyzer, ValueId},
@@ -12,7 +13,7 @@ pub mod stack_ops;
 fn ensure_stack_depth(
     stores: &Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     depth: usize,
@@ -26,7 +27,7 @@ fn ensure_stack_depth(
             depth,
             None,
         );
-        *had_error = true;
+        had_error.set();
 
         let num_missing = usize::saturating_sub(depth, stack.len());
         for _ in 0..num_missing {
@@ -39,7 +40,7 @@ fn ensure_stack_depth(
 pub(super) fn eat_one_make_one(
     stores: &Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
 ) {
@@ -56,7 +57,7 @@ pub(super) fn eat_one_make_one(
 pub(super) fn eat_two_make_one(
     stores: &Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
 ) {

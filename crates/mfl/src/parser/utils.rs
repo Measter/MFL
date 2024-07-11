@@ -5,6 +5,7 @@ use num_traits::{PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp},
     lexer::{Integer, Token, TokenKind},
     source_file::{SourceLocation, Spanned, WithSpan},
@@ -15,15 +16,15 @@ use crate::{
 pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
 
 pub trait Recover<T, E> {
-    fn recover(self, had_error: &mut bool, fallback: T) -> T;
+    fn recover(self, had_error: &mut ErrorSignal, fallback: T) -> T;
 }
 
 impl<T, E> Recover<T, E> for Result<T, E> {
-    fn recover(self, had_error: &mut bool, fallback: T) -> T {
+    fn recover(self, had_error: &mut ErrorSignal, fallback: T) -> T {
         match self {
             Ok(kk) => kk,
             Err(_) => {
-                *had_error = true;
+                had_error.set();
                 fallback
             }
         }
@@ -116,7 +117,7 @@ pub fn get_delimited_tokens<'a>(
     inner_tokens: (&'static str, fn(TokenKind) -> bool),
     close_token: (&'static str, fn(TokenKind) -> bool),
 ) -> Result<Delimited, ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let (_, open_token) = expect_token(stores, token_iter, open_delim_str, open_delim_fn, prev)
         .recover(&mut had_error, (0, prev));
 
@@ -129,7 +130,7 @@ pub fn get_delimited_tokens<'a>(
         close_token,
     )?;
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(Delimited {
@@ -148,7 +149,7 @@ pub fn get_terminated_tokens<'a>(
     (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
     (close_delim_str, close_delim_fn): (&'static str, fn(TokenKind) -> bool),
 ) -> Result<Terminated, ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let mut tokens = Vec::new();
     let mut depth = 0;
     let mut prev = open_token;
@@ -177,7 +178,7 @@ pub fn get_terminated_tokens<'a>(
 
         let Ok((_, item_token)) = expect_token(stores, token_iter, token_str, token_fn, prev)
         else {
-            had_error = true;
+            had_error.set();
 
             // If it's not the close token, we should consume it so we can continue.
             if !close_delim_fn(next_token.inner.kind) {
@@ -203,11 +204,11 @@ pub fn get_terminated_tokens<'a>(
                 [Label::new(range).with_color(Color::Red)],
                 None,
             );
-            had_error = true;
+            had_error.set();
         }
     }
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(Terminated {
@@ -222,7 +223,7 @@ pub fn parse_unresolved_types(
     prev: Spanned<Token>,
     tokens: &[Spanned<Token>],
 ) -> Result<Vec<Spanned<UnresolvedTypeTokens>>, ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let mut types: Vec<Spanned<UnresolvedTypeTokens>> = Vec::new();
     let mut token_iter = tokens.iter().enumerate().peekable();
 
@@ -234,14 +235,14 @@ pub fn parse_unresolved_types(
             |t| t == TokenKind::Ident || t == TokenKind::ColonColon,
             prev,
         ) else {
-            had_error = true;
+            had_error.set();
             token_iter.next(); // Consume the token so we can progress.
             continue;
         };
 
         let Ok((ident, last_token)) = parse_ident(stores, &mut had_error, &mut token_iter, ident)
         else {
-            had_error = true;
+            had_error.set();
             continue;
         };
 
@@ -271,7 +272,7 @@ pub fn parse_unresolved_types(
                         ("integer", |t| matches!(t, TokenKind::Integer { .. })),
                         ("]", |t| t == TokenKind::SquareBracketClosed),
                     ) else {
-                        had_error = true;
+                        had_error.set();
                         continue;
                     };
 
@@ -297,12 +298,12 @@ pub fn parse_unresolved_types(
         types.push(parsed_type.with_span(type_span));
     }
 
-    had_error.not().then_some(types).ok_or(())
+    had_error.into_bool().not().then_some(types).ok_or(())
 }
 
 pub fn parse_ident<'a>(
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     mut token: Spanned<Token>,
 ) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
@@ -323,7 +324,7 @@ pub fn parse_ident<'a>(
                 Some(Label::new(token.location).with_color(Color::Red)),
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
 
@@ -352,7 +353,7 @@ pub fn parse_ident<'a>(
                 Some(Label::new(colons.location).with_color(Color::Red)),
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
 
@@ -375,14 +376,14 @@ pub fn parse_ident<'a>(
             ("Ident", valid_type_token),
             (")", |t| t == TokenKind::ParenthesisClosed),
         ) else {
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
         token.location = token.location.merge(delim.close.location);
 
         let span = delim.span();
         let Ok(unresolved_types) = parse_unresolved_types(stores, delim.open, &delim.list) else {
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
 
@@ -394,7 +395,7 @@ pub fn parse_ident<'a>(
                 [Label::new(span).with_color(Color::Red)],
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         }
 
@@ -477,7 +478,7 @@ pub fn parse_integer_param<'a>(
 
 pub fn parse_stack_def<'a>(
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev_token: Spanned<Token>,
 ) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {

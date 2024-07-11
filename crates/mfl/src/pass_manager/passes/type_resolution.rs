@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
+    error_signal::ErrorSignal,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, TypeResolvedOp, While},
     pass_manager::PassContext,
     type_store::{emit_type_error_diag, TypeId, UnresolvedTypeIds},
@@ -12,7 +13,7 @@ pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);
@@ -31,20 +32,23 @@ pub fn resolve_signature(
                 entry: Vec::new(),
             };
 
-            let mut local_had_error = false;
+            let mut local_had_error = ErrorSignal::new();
 
             let mut process_sig = |unresolved: &[UnresolvedTypeIds], resolved: &mut Vec<TypeId>| {
                 for kind in unresolved {
                     if let Some(type_item) = kind.item_id() {
-                        *had_error |= pass_ctx
+                        if pass_ctx
                             .ensure_declare_structs(ctx, stores, type_item)
-                            .is_err();
+                            .is_err()
+                        {
+                            had_error.set();
+                        }
                     }
 
                     let info = match stores.types.resolve_type(&mut stores.strings, kind) {
                         Ok(info) => info,
                         Err(tk) => {
-                            local_had_error = true;
+                            local_had_error.set();
                             emit_type_error_diag(stores, tk);
                             continue;
                         }
@@ -57,8 +61,8 @@ pub fn resolve_signature(
             process_sig(&unresolved_sig.entry, &mut resolved_sig.entry);
             process_sig(&unresolved_sig.exit, &mut resolved_sig.exit);
 
-            *had_error |= local_had_error;
-            if local_had_error {
+            if local_had_error.into_bool() {
+                had_error.set();
                 return;
             }
 
@@ -75,9 +79,12 @@ pub fn resolve_signature(
 
             let memory_type_unresolved = ctx.nrir().get_memory_type(cur_id).clone();
             if let Some(type_item) = memory_type_unresolved.item_id() {
-                *had_error |= pass_ctx
+                if pass_ctx
                     .ensure_declare_structs(ctx, stores, type_item)
-                    .is_err();
+                    .is_err()
+                {
+                    had_error.set();
+                }
             }
             let info = match stores
                 .types
@@ -85,7 +92,7 @@ pub fn resolve_signature(
             {
                 Ok(info) => info,
                 Err(tk) => {
-                    *had_error = true;
+                    had_error.set();
                     emit_type_error_diag(stores, tk);
                     return;
                 }
@@ -100,7 +107,7 @@ fn resolve_block(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     unresolved_block: &[Op<NameResolvedOp>],
 ) -> Vec<Op<TypeResolvedOp>> {
     let mut resolved_block = Vec::new();
@@ -124,23 +131,25 @@ fn resolve_block(
                         token: op.token,
                     });
                 } else if let Some(unresolved_generic_params) = generic_params.as_deref() {
-                    dbg!(unresolved_generic_params);
                     let mut resolved_generic_params = SmallVec::<[TypeId; 4]>::new();
                     let mut unresolved_generic_params_sm =
                         SmallVec::<[UnresolvedTypeIds; 4]>::new();
 
                     for ugp in unresolved_generic_params {
                         if let Some(type_item) = ugp.item_id() {
-                            *had_error |= pass_ctx
+                            if pass_ctx
                                 .ensure_declare_structs(ctx, stores, type_item)
-                                .is_err();
+                                .is_err()
+                            {
+                                had_error.set();
+                            }
                         }
 
                         let type_info = match stores.types.resolve_type(&mut stores.strings, ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
                                 emit_type_error_diag(stores, err_token);
-                                *had_error = true;
+                                had_error.set();
                                 continue;
                             }
                         };
@@ -240,15 +249,18 @@ fn resolve_block(
             | OpCode::Complex(NameResolvedOp::PackStruct { id })
             | OpCode::Complex(NameResolvedOp::SizeOf { id }) => {
                 if let Some(type_item) = id.item_id() {
-                    *had_error |= pass_ctx
+                    if pass_ctx
                         .ensure_declare_structs(ctx, stores, type_item)
-                        .is_err();
+                        .is_err()
+                    {
+                        had_error.set();
+                    }
                 }
                 let type_info = match stores.types.resolve_type(&mut stores.strings, id) {
                     Ok(info) => info,
                     Err(err_token) => {
                         emit_type_error_diag(stores, err_token);
-                        *had_error = true;
+                        had_error.set();
                         continue;
                     }
                 };
@@ -281,7 +293,7 @@ pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);

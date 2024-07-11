@@ -4,6 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{Direction, Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ValueId},
@@ -16,7 +17,7 @@ use super::ensure_stack_depth;
 pub(crate) fn dup(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     count: Spanned<u8>,
@@ -31,7 +32,7 @@ pub(crate) fn dup(
                 .with_message("cannot duplicate 0 item")],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -54,7 +55,7 @@ pub(crate) fn dup(
 pub(crate) fn drop(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     count: Spanned<u8>,
@@ -69,7 +70,7 @@ pub(crate) fn drop(
                 .with_message("cannot drop 0 items")],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
 
@@ -89,7 +90,7 @@ pub(crate) fn drop(
 pub(crate) fn over(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     depth: Spanned<u8>,
@@ -119,7 +120,7 @@ pub(crate) fn over(
 pub(crate) fn reverse(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     count: Spanned<u8>,
@@ -158,7 +159,7 @@ pub(crate) fn reverse(
 pub(crate) fn rotate(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     item_count: Spanned<u8>,
@@ -175,7 +176,7 @@ pub(crate) fn rotate(
                 .with_message("cannot rotate 0 items")],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
     if shift_count.inner >= item_count.inner {
@@ -220,7 +221,7 @@ pub(crate) fn rotate(
 pub(crate) fn swap(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op: &Op<TypeResolvedOp>,
     count: Spanned<u8>,

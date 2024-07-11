@@ -4,6 +4,7 @@ use lasso::Spur;
 use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
     source_file::{FileId, Spanned, WithSpan},
     type_store::{
@@ -16,7 +17,7 @@ use crate::{
 fn resolved_single_ident(
     ctx: &Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
     ident: &UnresolvedIdent,
 ) -> Result<ItemId, ()> {
@@ -34,7 +35,7 @@ fn resolved_single_ident(
                 [Label::new(first_ident.location).with_color(Color::Red)],
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
         tlm
@@ -51,7 +52,7 @@ fn resolved_single_ident(
                 None,
             );
 
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
         start_item
@@ -73,7 +74,7 @@ fn resolved_single_ident(
                 ],
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         }
 
@@ -86,7 +87,7 @@ fn resolved_single_ident(
                 [Label::new(sub_ident.location).with_color(Color::Red)],
                 None,
             );
-            *had_error = true;
+            had_error.set();
             return Err(());
         };
 
@@ -100,7 +101,7 @@ fn resolved_single_ident(
 fn resolve_idents_in_type(
     ctx: &Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
     unresolved_type: &UnresolvedTypeTokens,
     generic_params: Option<&[Spanned<Spur>]>,
@@ -128,7 +129,7 @@ fn resolve_idents_in_type(
                     [Label::new(unresolved_ident.span).with_color(Color::Red)],
                     None,
                 );
-                *had_error = true;
+                had_error.set();
                 return Err(());
             }
 
@@ -193,7 +194,7 @@ fn resolve_idents_in_type(
 fn resolve_idents_in_struct_def(
     ctx: &Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
     def: &UnresolvedStruct,
 ) -> UnresolvedStruct {
@@ -217,7 +218,7 @@ fn resolve_idents_in_struct_def(
             field_kind,
             def.generic_params.as_deref(),
         ) else {
-            *had_error = true;
+            had_error.set();
             continue;
         };
 
@@ -233,7 +234,7 @@ fn resolve_idents_in_struct_def(
 fn resolve_idents_in_module_imports(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let unresolved_imports = ctx.urir().get_scope(cur_id).imports().to_owned();
@@ -241,7 +242,7 @@ fn resolve_idents_in_module_imports(
     for import in unresolved_imports {
         let Ok(resolved_item_id) = resolved_single_ident(ctx, stores, had_error, cur_id, &import)
         else {
-            *had_error = true;
+            had_error.set();
             continue;
         };
 
@@ -252,7 +253,7 @@ fn resolve_idents_in_module_imports(
         {
             Ok(_) => {}
             Err(prev_loc) => {
-                *had_error = true;
+                had_error.set();
                 make_symbol_redef_error(stores, import.span, prev_loc);
             }
         }
@@ -262,7 +263,7 @@ fn resolve_idents_in_module_imports(
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let header = ctx.get_item_header(cur_id);
@@ -292,7 +293,7 @@ pub fn resolve_signature(
                 unresolved_memory_type.inner,
                 generic_params,
             ) else {
-                *had_error = true;
+                had_error.set();
                 return;
             };
 
@@ -316,7 +317,7 @@ pub fn resolve_signature(
                 entry: Vec::new(),
             };
 
-            let mut local_had_error = false;
+            let mut local_had_error = ErrorSignal::new();
 
             let mut process_sig =
                 |unresolved: &[Spanned<UnresolvedTypeTokens>],
@@ -330,7 +331,7 @@ pub fn resolve_signature(
                             &kind.inner,
                             generic_params,
                         ) else {
-                            local_had_error = true;
+                            local_had_error.set();
                             continue;
                         };
 
@@ -341,8 +342,8 @@ pub fn resolve_signature(
             process_sig(&unresolved_sig.entry.inner, &mut resolved_sig.entry);
             process_sig(&unresolved_sig.exit.inner, &mut resolved_sig.exit);
 
-            *had_error |= local_had_error;
-            if local_had_error {
+            if local_had_error.into_bool() {
+                had_error.set();
                 return;
             }
 
@@ -354,7 +355,7 @@ pub fn resolve_signature(
 fn resolve_idents_in_block(
     ctx: &Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
     block: &[Op<UnresolvedOp>],
     generic_params: Option<&[Spanned<Spur>]>,
@@ -455,7 +456,7 @@ fn resolve_idents_in_block(
                     let Ok(new_ty) =
                         resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
-                        *had_error = true;
+                        had_error.set();
                         continue;
                     };
 
@@ -469,7 +470,7 @@ fn resolve_idents_in_block(
                     let Ok(new_ty) =
                         resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
-                        *had_error = true;
+                        had_error.set();
                         continue;
                     };
 
@@ -483,7 +484,7 @@ fn resolve_idents_in_block(
                     let Ok(new_ty) =
                         resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
                     else {
-                        *had_error = true;
+                        had_error.set();
                         continue;
                     };
 
@@ -547,7 +548,7 @@ fn resolve_idents_in_block(
                                 &ty,
                                 generic_params,
                             ) else {
-                                *had_error = true;
+                                had_error.set();
                                 continue;
                             };
 
@@ -555,7 +556,7 @@ fn resolve_idents_in_block(
                         }
 
                         ItemKind::Assert | ItemKind::Module => {
-                            *had_error = true;
+                            had_error.set();
                             let mut labels =
                                 vec![Label::new(op.token.location).with_color(Color::Red)];
                             // This would be the case if the item was a top-level mmodule.
@@ -598,7 +599,12 @@ fn resolve_idents_in_block(
     resolved_block
 }
 
-pub fn resolve_body(ctx: &mut Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
+pub fn resolve_body(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    cur_id: ItemId,
+) {
     let header = ctx.get_item_header(cur_id);
     match header.kind {
         ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {

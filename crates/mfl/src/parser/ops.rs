@@ -7,6 +7,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, Op, OpCode,
         OpId, Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
@@ -69,7 +70,7 @@ pub fn parse_extract_insert_struct<'a>(
     let mut idents = Vec::new();
 
     // We want to make sure the Dots exist, but we don't actually want them.
-    let mut local_had_error = false;
+    let mut local_had_error = ErrorSignal::new();
     let mut prev_token = delim.open;
     loop {
         let Ok(next) = expect_token(
@@ -79,7 +80,7 @@ pub fn parse_extract_insert_struct<'a>(
             |t| t == TokenKind::Ident,
             prev_token,
         ) else {
-            local_had_error = true;
+            local_had_error.set();
             break;
         };
         idents.push(next.1);
@@ -94,7 +95,7 @@ pub fn parse_extract_insert_struct<'a>(
         break;
     }
 
-    if local_had_error {
+    if local_had_error.into_bool() {
         return Err(());
     }
 
@@ -255,11 +256,11 @@ fn parse_ident_op<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let mut local_had_error = false;
+    let mut local_had_error = ErrorSignal::new();
 
     let (ident, last_token) = parse_ident(stores, &mut local_had_error, token_iter, token)?;
 
-    if local_had_error {
+    if local_had_error.into_bool() {
         return Err(());
     }
 
@@ -466,12 +467,12 @@ fn parse_integer_op<'a>(
     token: Spanned<Token>,
     is_known_negative: bool,
 ) -> ParseOpResult {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let mut overall_location = token.location;
     let literal_value: u64 = match parse_integer_lexeme(stores, token) {
         Ok(lit) => lit,
         Err(_) => {
-            had_error = true;
+            had_error.set();
             0
         }
     };
@@ -613,7 +614,7 @@ fn parse_integer_op<'a>(
     };
 
     // Return down here so that we consume any given parameters.
-    if had_error {
+    if had_error.into_bool() {
         return Err(());
     }
 

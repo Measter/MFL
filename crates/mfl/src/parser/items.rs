@@ -6,6 +6,7 @@ use lasso::Spur;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{Basic, Control, Op, OpCode, OpId, UnresolvedOp},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
@@ -63,7 +64,7 @@ fn try_get_lang_item<'a>(
 fn parse_item_body<'a>(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     name_token: Spanned<Token>,
     parent_id: ItemId,
@@ -115,7 +116,7 @@ pub fn parse_function<'a>(
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
 
     let lang_item = try_get_lang_item(stores, token_iter).recover(&mut had_error, None);
 
@@ -195,7 +196,7 @@ pub fn parse_function<'a>(
 
     ctx.urir_mut().set_item_body(item_id, body);
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(())
@@ -209,7 +210,7 @@ pub fn parse_assert<'a>(
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let name_token = expect_token(
         stores,
         token_iter,
@@ -231,7 +232,7 @@ pub fn parse_assert<'a>(
 
     ctx.urir_mut().set_item_body(item_id, body);
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(())
@@ -245,7 +246,7 @@ pub fn parse_const<'a>(
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let name_token = expect_token(
         stores,
         token_iter,
@@ -272,7 +273,7 @@ pub fn parse_const<'a>(
 
     ctx.urir_mut().set_item_body(item_id, body);
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(())
@@ -286,7 +287,7 @@ pub fn parse_memory<'a>(
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let name_token = expect_token(
         stores,
         token_iter,
@@ -328,7 +329,7 @@ pub fn parse_memory<'a>(
             [Label::new(store_type_location).with_color(Color::Red)],
             None,
         );
-        had_error = true;
+        had_error.set();
     }
 
     // TODO: Make this not crash on an empty store type
@@ -342,7 +343,7 @@ pub fn parse_memory<'a>(
         memory_type,
     );
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(())
@@ -356,7 +357,7 @@ pub fn parse_struct_or_union<'a>(
     module_id: ItemId,
     keyword: Spanned<Token>,
 ) -> Result<(), ()> {
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
 
     let lang_item = try_get_lang_item(stores, token_iter).recover(&mut had_error, None);
 
@@ -443,7 +444,7 @@ pub fn parse_struct_or_union<'a>(
                 [Label::new(store_type_location).with_color(Color::Red)],
                 None,
             );
-            had_error = true;
+            had_error.set()
         }
 
         fields.push(UnresolvedField {
@@ -469,10 +470,10 @@ pub fn parse_struct_or_union<'a>(
         ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
     }
 
-    if !had_error {
-        Ok(())
-    } else {
+    if had_error.into_bool() {
         Err(())
+    } else {
+        Ok(())
     }
 }
 
@@ -502,7 +503,7 @@ pub fn parse_module<'a>(
 pub fn parse_import<'a>(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     token: Spanned<Token>,
     module_id: ItemId,
@@ -516,7 +517,7 @@ pub fn parse_import<'a>(
     )?;
 
     let Ok((path, _)) = parse_ident(stores, had_error, token_iter, root_name) else {
-        *had_error = true;
+        had_error.set();
         return Ok(());
     };
 

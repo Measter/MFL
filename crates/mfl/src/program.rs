@@ -8,7 +8,9 @@ use tracing::debug_span;
 
 use crate::{
     context::{Context, ItemId},
-    diagnostics, lexer,
+    diagnostics,
+    error_signal::ErrorSignal,
+    lexer,
     source_file::{FileId, SourceLocation, Spanned, WithSpan},
     Args, Stores,
 };
@@ -25,7 +27,7 @@ pub enum ModuleQueueType {
 
 pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Result<ItemId> {
     let _span = debug_span!(stringify!(Program::load_program)).entered();
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
 
     let builtin_structs_module_name = stores.strings.intern("builtins");
     let builtin_module = ctx.new_module(
@@ -58,7 +60,7 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
 
     for lib in &args.library_paths {
         let module_name = lib.file_stem().and_then(OsStr::to_str).unwrap();
-        had_error |= load_library(
+        let res = load_library(
             ctx,
             stores,
             &mut had_error,
@@ -67,9 +69,13 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
             lib,
         )
         .is_err();
+
+        if res {
+            had_error.set();
+        }
     }
 
-    if had_error {
+    if had_error.into_bool() {
         return Err(eyre!("Error loading program"));
     }
 
@@ -81,7 +87,7 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
 fn load_library(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     lib_name: &str,
     lib_filename: &OsStr,
     lib_path: &Path,
@@ -134,7 +140,7 @@ fn load_library(
                             [Label::new(token.location).with_color(Color::Red)],
                             None,
                         );
-                        *had_error = true;
+                        had_error.set();
                         root.pop();
                         continue;
                     }
@@ -155,7 +161,9 @@ fn load_library(
         first_module = first_module.or(Some(module_id));
         let res = load_module(ctx, stores, module_id, &root, &contents, &mut module_queue);
 
-        *had_error |= res.is_err();
+        if res.is_err() {
+            had_error.set();
+        }
 
         root.pop();
     }

@@ -6,6 +6,7 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{If, OpCode, TerminalBlock, UnresolvedIdent, While},
     option::OptionExt,
     pass_manager::{static_analysis::Analyzer, PassContext},
@@ -401,14 +402,14 @@ impl Context {
     fn add_to_parent(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         parent_id: ItemId,
         child_name: Spanned<Spur>,
         child_id: ItemId,
     ) {
         let parent_scope = &mut self.nrir.scopes[parent_id.0.to_usize()];
         if let Err(prev_loc) = parent_scope.add_child(child_name, child_id) {
-            *had_error = true;
+            had_error.set();
             make_symbol_redef_error(stores, child_name.location, prev_loc);
         }
     }
@@ -439,7 +440,7 @@ impl Context {
     pub fn new_module(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
         is_top_level: bool,
@@ -460,7 +461,7 @@ impl Context {
     pub fn new_function(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         entry_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
@@ -482,7 +483,7 @@ impl Context {
     pub fn new_assert(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> ItemId {
@@ -512,7 +513,7 @@ impl Context {
     pub fn new_const(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         exit_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
@@ -534,7 +535,7 @@ impl Context {
     pub fn new_generic_function(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         entry_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
@@ -559,7 +560,7 @@ impl Context {
     pub fn new_struct(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         module: ItemId,
         def: UnresolvedStruct,
     ) -> ItemId {
@@ -578,7 +579,7 @@ impl Context {
     pub fn new_memory(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         memory_type: Spanned<UnresolvedTypeTokens>,
@@ -592,7 +593,7 @@ impl Context {
     pub fn set_lang_item(
         &mut self,
         stores: &Stores,
-        had_error: &mut bool,
+        had_error: &mut ErrorSignal,
         lang_item_token: Spanned<Spur>,
         item_id: ItemId,
     ) {
@@ -609,7 +610,7 @@ impl Context {
                     [Label::new(lang_item_token.location).with_color(Color::Red)],
                     None,
                 );
-                *had_error = true;
+                had_error.set();
                 return;
             }
         };
@@ -810,6 +811,7 @@ impl Context {
         &mut self,
         stores: &mut Stores,
         pass_ctx: &mut PassContext,
+        had_error: &mut ErrorSignal,
         base_fn_id: ItemId,
         resolved_generic_params: SmallVec<[TypeId; 4]>,
         unresolved_generic_params: SmallVec<[UnresolvedTypeIds; 4]>,
@@ -854,7 +856,7 @@ impl Context {
 
         let new_proc_id = self.new_function(
             stores,
-            &mut false,
+            had_error,
             new_name.with_span(base_header.name.location),
             base_header.parent.unwrap(),
             orig_unresolved_sig.entry,
@@ -879,7 +881,7 @@ impl Context {
             let alloc_type_unresolved = self.urir.get_memory_type(child_item_header.id);
             let new_alloc_id = self.new_memory(
                 stores,
-                &mut false,
+                had_error,
                 child_item_header.name,
                 new_proc_id,
                 alloc_type_unresolved.map(|i| i.clone()),

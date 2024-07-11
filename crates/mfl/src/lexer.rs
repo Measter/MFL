@@ -6,6 +6,7 @@ use tracing::debug_span;
 
 use crate::{
     diagnostics,
+    error_signal::ErrorSignal,
     source_file::{FileId, SourceLocation, Spanned, WithSpan},
     Stores,
 };
@@ -346,7 +347,7 @@ pub(crate) fn lex_file(
         line_start_idx: 0,
     };
 
-    let mut had_error = false;
+    let mut had_error = ErrorSignal::new();
     let mut ops = Vec::new();
 
     let mut lexer = TokenKind::lexer_with_extras(contents, context).spanned();
@@ -363,7 +364,7 @@ pub(crate) fn lex_file(
                 [Label::new(location).with_color(Color::Red)],
                 None,
             );
-            had_error = true;
+            had_error.set();
             continue;
         };
 
@@ -392,7 +393,7 @@ pub(crate) fn lex_file(
                         [Label::new(location).with_color(Color::Red)],
                         None,
                     );
-                    had_error = true;
+                    had_error.set();
                     continue;
                 }
                 *ch = escaped.chars().next().unwrap();
@@ -413,7 +414,7 @@ pub(crate) fn lex_file(
         ops.push(Token::new(kind, lexeme).with_span(location));
     }
 
-    if had_error {
+    if had_error.into_bool() {
         Err(())
     } else {
         Ok(ops)

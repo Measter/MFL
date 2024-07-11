@@ -1,4 +1,5 @@
 use crate::{
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{
@@ -12,7 +13,7 @@ use crate::{
 pub(crate) fn add(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -41,7 +42,7 @@ pub(crate) fn add(
 
         // Type mismatch
         _ => {
-            *had_error = true;
+            had_error.set();
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
@@ -55,7 +56,7 @@ pub(crate) fn add(
 pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -74,7 +75,7 @@ pub(crate) fn multiply_div_rem_shift(
         }
         _ => {
             // Type mismatch
-            *had_error = true;
+            had_error.set();
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
             return;
@@ -88,7 +89,7 @@ pub(crate) fn multiply_div_rem_shift(
 pub(crate) fn subtract(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -112,7 +113,7 @@ pub(crate) fn subtract(
 
         _ => {
             // Type mismatch
-            *had_error = true;
+            had_error.set();
 
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
@@ -127,7 +128,7 @@ pub(crate) fn subtract(
 pub(crate) fn bitnot(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -141,7 +142,7 @@ pub(crate) fn bitnot(
         TypeKind::Integer(_) | TypeKind::Bool => input,
         _ => {
             // Type mismatch
-            *had_error = true;
+            had_error.set();
 
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_id]);
@@ -156,7 +157,7 @@ pub(crate) fn bitnot(
 pub(crate) fn bitand_bitor_bitxor(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -177,7 +178,7 @@ pub(crate) fn bitand_bitor_bitxor(
 
         _ => {
             // Type mismatch
-            *had_error = true;
+            had_error.set();
 
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);

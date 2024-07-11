@@ -24,6 +24,7 @@ use type_store::{BuiltinTypes, TypeId, TypeStore};
 mod backend_llvm;
 mod context;
 mod diagnostics;
+mod error_signal;
 mod interners;
 mod ir;
 mod lexer;

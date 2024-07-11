@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     pass_manager::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
     type_store::{BuiltinTypes, Integer, TypeId, TypeKind},
@@ -104,7 +105,7 @@ pub(crate) fn push_str(
 pub(crate) fn cast(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     target_id: TypeId,
 ) {
@@ -125,7 +126,7 @@ pub(crate) fn cast(
                 [Label::new(op.token.location).with_color(Color::Red)],
                 None,
             );
-            *had_error = true;
+            had_error.set();
         }
     }
 }
@@ -133,7 +134,7 @@ pub(crate) fn cast(
 fn cast_to_ptr(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     to_id: TypeId,
 ) {
@@ -180,7 +181,7 @@ fn cast_to_ptr(
                 labels,
                 "Can only cast U64 to pointers".to_owned(),
             );
-            *had_error = true;
+            had_error.set();
         }
 
         TypeKind::Array { .. }
@@ -190,7 +191,7 @@ fn cast_to_ptr(
         | TypeKind::GenericStructInstance(_) => {
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_value_id]);
-            *had_error = true;
+            had_error.set();
             return;
         }
     }
@@ -201,7 +202,7 @@ fn cast_to_ptr(
 fn cast_to_int(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
     to_id: TypeId,
     to_int: Integer,
@@ -237,7 +238,7 @@ fn cast_to_int(
                     None,
                 );
 
-                *had_error = true;
+                had_error.set();
             }
         }
         TypeKind::Integer(_) => {
@@ -267,7 +268,7 @@ fn cast_to_int(
         | TypeKind::GenericStructInstance(_) => {
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_value_id]);
-            *had_error = true;
+            had_error.set();
             return;
         }
     }

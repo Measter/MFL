@@ -1,4 +1,5 @@
 use crate::{
+    error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{
@@ -14,7 +15,7 @@ use crate::{
 pub(crate) fn equal(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -33,7 +34,7 @@ pub(crate) fn equal(
         [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {}
         _ => {
             // Type mismatch.
-            *had_error = true;
+            had_error.set();
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
         }
@@ -43,7 +44,7 @@ pub(crate) fn equal(
 pub(crate) fn compare(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -61,7 +62,7 @@ pub(crate) fn compare(
         [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {}
         _ => {
             // Type mismatch.
-            *had_error = true;
+            had_error.set();
             let lexeme = stores.strings.resolve(op.token.inner);
             generate_type_mismatch_diag(stores, analyzer, lexeme, op, &input_ids);
         }
@@ -71,7 +72,7 @@ pub(crate) fn compare(
 pub(crate) fn is_null(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     op: &Op<TypeResolvedOp>,
 ) {
     let op_data = analyzer.get_op_io(op.id);
@@ -86,7 +87,7 @@ pub(crate) fn is_null(
     let input_type_info = stores.types.get_type_info(input);
     if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {
         // Type mismatch.
-        *had_error = true;
+        had_error.set();
         let lexeme = stores.strings.resolve(op.token.inner);
         generate_type_mismatch_diag(stores, analyzer, lexeme, op, &[input_id]);
     }

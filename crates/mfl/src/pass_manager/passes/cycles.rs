@@ -4,6 +4,7 @@ use hashbrown::HashSet;
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
     diagnostics,
+    error_signal::ErrorSignal,
     ir::{NameResolvedOp, Op, OpCode},
     pass_manager::PassContext,
     Stores,
@@ -13,7 +14,7 @@ pub fn check_invalid_cycles(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let root_header = ctx.get_item_header(cur_id);
@@ -28,10 +29,12 @@ pub fn check_invalid_cycles(
 
     while let Some(item) = check_queue.pop() {
         let header = ctx.get_item_header(cur_id);
-        if item != cur_id {
-            *had_error |= pass_ctx
+        if item != cur_id
+            && pass_ctx
                 .ensure_ident_resolved_body(ctx, stores, item)
-                .is_err();
+                .is_err()
+        {
+            had_error.set();
         }
 
         check_invalid_cyclic_refs_in_block(
@@ -48,7 +51,7 @@ pub fn check_invalid_cycles(
 
 fn check_invalid_cyclic_refs_in_block(
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     root_header: ItemHeader,
     block: &[Op<NameResolvedOp>],
     cur_header: ItemHeader,
@@ -120,7 +123,7 @@ fn check_invalid_cyclic_refs_in_block(
                 }
 
                 if *id == root_header.id {
-                    *had_error = true;
+                    had_error.set();
                     diagnostics::emit_error(
                         stores,
                         cur_header.name.location,

@@ -3,6 +3,7 @@ use ariadne::{Color, Label};
 use crate::{
     context::{Context, ItemId},
     diagnostics,
+    error_signal::ErrorSignal,
     type_store::{TypeKind, UnresolvedTypeIds},
     Stores,
 };
@@ -10,7 +11,7 @@ use crate::{
 pub fn declare_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    had_error: &mut bool,
+    had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let def = ctx.nrir().get_struct(cur_id);
@@ -47,7 +48,7 @@ pub fn declare_struct(
             );
         }
 
-        *had_error = true;
+        had_error.set();
     }
 
     if def.generic_params.is_some() {
@@ -63,7 +64,12 @@ pub fn declare_struct(
     }
 }
 
-pub fn define_struct(ctx: &Context, stores: &mut Stores, had_error: &mut bool, cur_id: ItemId) {
+pub fn define_struct(
+    ctx: &Context,
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    cur_id: ItemId,
+) {
     let def = ctx.nrir().get_struct(cur_id);
     if def.generic_params.is_some() {
         stores
@@ -87,7 +93,7 @@ pub fn define_struct(ctx: &Context, stores: &mut Stores, had_error: &mut bool, c
             ],
             None,
         );
-        *had_error = true;
+        had_error.set();
         return;
     }
 }
