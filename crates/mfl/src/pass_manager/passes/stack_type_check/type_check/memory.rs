@@ -940,10 +940,6 @@ pub(crate) fn pack_struct(
             let field_type_info = stores.types.get_type_info(field_def.kind);
             let input_type_info = stores.types.get_type_info(input_type_id);
 
-            let input_type_name = stores.strings.resolve(input_type_info.name);
-            let field_type_name = stores.strings.resolve(field_type_info.name);
-            dbg!(input_type_name, field_type_name);
-
             if input_type_id != field_def.kind
                 && !matches!(
                     (field_type_info.kind, input_type_info.kind),
