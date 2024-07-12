@@ -367,6 +367,14 @@ impl Context {
 
     #[inline]
     #[track_caller]
+    pub fn take_analyzer(&mut self, id: ItemId) -> Analyzer {
+        self.analyzers
+            .remove(&id)
+            .expect("ICE: Tried to take non-existant Analyzer")
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
         self.const_vals.get(&id).map(|v| &**v)
     }

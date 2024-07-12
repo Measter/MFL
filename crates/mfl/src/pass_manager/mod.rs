@@ -455,9 +455,16 @@ impl PassContext {
             "ConstProp",
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::ConstPropBody);
-        Ok(())
+        let mut had_error = ErrorSignal::new();
+        passes::const_prop::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+
+        if had_error.into_bool() {
+            self.set_error(cur_item);
+            Err(())
+        } else {
+            self.set_state(cur_item, PassState::ConstPropBody);
+            Ok(())
+        }
     }
 
     fn ensure_evaluated_consts_asserts(
