@@ -457,6 +457,9 @@ impl TypeStore {
 
         if let TypeKind::Struct(struct_id) | TypeKind::GenericStructBase(struct_id) = kind {
             self.struct_id_map.insert(struct_id, id);
+            if self.lang_item_ids.get(&struct_id) == Some(&LangItem::String) {
+                self.builtins[BuiltinTypes::String as usize] = id;
+            }
         }
 
         id
@@ -835,10 +838,6 @@ impl TypeStore {
         };
 
         let type_id = self.struct_id_map[&struct_id];
-
-        if self.lang_item_ids.get(&struct_id) == Some(&LangItem::String) {
-            self.builtins[BuiltinTypes::String as usize] = type_id;
-        }
         self.fixed_struct_defs.insert(type_id, def);
 
         Ok(type_id)

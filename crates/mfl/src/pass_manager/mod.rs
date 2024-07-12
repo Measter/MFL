@@ -7,7 +7,7 @@ use prettytable::{row, Table};
 use tracing::{debug_span, trace};
 
 use crate::{
-    context::{Context, ItemHeader, ItemId, ItemKind},
+    context::{Context, ItemHeader, ItemId, ItemKind, LangItem},
     error_signal::ErrorSignal,
     option::OptionExt,
     Stores,
@@ -526,6 +526,15 @@ pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> R
     let _span = debug_span!(stringify!(pass_manager)).entered();
     let mut pass_ctx = PassContext::new(ctx.get_all_items());
     let mut had_error = ErrorSignal::new();
+
+    // Need to make sure the String type is declared before anything else.
+    let string_id = ctx.get_lang_items()[&LangItem::String];
+    if pass_ctx
+        .ensure_declare_structs(ctx, stores, string_id)
+        .is_err()
+    {
+        panic!("ICE: Failed to declared String type");
+    };
 
     while let Some(cur_item_id) = pass_ctx.next_item() {
         if pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err() {
