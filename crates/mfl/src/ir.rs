@@ -155,6 +155,16 @@ impl Arithmetic {
             Arithmetic::BitNot => panic!("ICE: Tried to get binary_op of a BitNot"),
         }
     }
+
+    pub fn get_bool_binary_op(self) -> fn(bool, bool) -> bool {
+        use Arithmetic::*;
+        match self {
+            BitAnd => |a, b| a & b,
+            BitOr => |a, b| a | b,
+            BitXor => |a, b| a ^ b,
+            _ => panic!("ICE: Unsupported binary op on Bool"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

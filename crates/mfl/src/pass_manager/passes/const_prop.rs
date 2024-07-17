@@ -19,22 +19,25 @@ fn analyze_block(
     block: &[Op<TypeResolvedOp>],
     emit_traces: bool,
 ) {
-    let mut op_iter = block.iter();
-    for op in op_iter.by_ref() {
+    for op in block {
         match &op.code {
             OpCode::Basic(bo) => match bo {
                 Basic::Arithmetic(ao) => match ao {
                     Arithmetic::Add => arithmetic::add(stores, analyzer, op, *ao),
-                    Arithmetic::BitAnd => todo!(),
-                    Arithmetic::BitNot => todo!(),
-                    Arithmetic::BitOr => todo!(),
-                    Arithmetic::BitXor => todo!(),
-                    Arithmetic::Div => todo!(),
-                    Arithmetic::Multiply => todo!(),
-                    Arithmetic::Rem => todo!(),
-                    Arithmetic::ShiftLeft => todo!(),
-                    Arithmetic::ShiftRight => todo!(),
-                    Arithmetic::Subtract => todo!(),
+                    Arithmetic::BitAnd | Arithmetic::BitOr | Arithmetic::BitXor => {
+                        arithmetic::bitand_bitor_bitxor(stores, analyzer, op, *ao)
+                    }
+                    Arithmetic::BitNot => arithmetic::bitnot(stores, analyzer, op),
+                    Arithmetic::Div
+                    | Arithmetic::Multiply
+                    | Arithmetic::Rem
+                    | Arithmetic::ShiftLeft
+                    | Arithmetic::ShiftRight => {
+                        arithmetic::multiply_div_rem_shift(stores, analyzer, had_error, op, *ao)
+                    }
+                    Arithmetic::Subtract => {
+                        arithmetic::subtract(stores, analyzer, had_error, op, *ao)
+                    }
                 },
                 Basic::Compare(_) => todo!(),
                 Basic::Stack(_) => todo!(),
