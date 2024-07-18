@@ -1,7 +1,7 @@
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Op, OpCode, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Op, OpCode, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
     Stores,
 };
@@ -39,7 +39,18 @@ fn analyze_block(
                         arithmetic::subtract(stores, analyzer, had_error, op, *ao)
                     }
                 },
-                Basic::Compare(_) => todo!(),
+                Basic::Compare(co) => match co {
+                    Compare::Equal | Compare::NotEq => {
+                        comparative::equal(stores, analyzer, had_error, op, *co)
+                    }
+                    Compare::Less
+                    | Compare::LessEqual
+                    | Compare::Greater
+                    | Compare::GreaterEqual => {
+                        comparative::compare(stores, analyzer, had_error, op, *co)
+                    }
+                    Compare::IsNull => comparative::is_null(analyzer, op),
+                },
                 Basic::Stack(_) => todo!(),
                 Basic::Control(_) => todo!(),
                 Basic::Memory(_) => todo!(),
