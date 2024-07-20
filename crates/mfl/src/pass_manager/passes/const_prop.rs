@@ -1,13 +1,14 @@
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Compare, Op, OpCode, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Op, OpCode, Stack, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
     Stores,
 };
 
 mod arithmetic;
 mod comparative;
+mod stack_ops;
 
 fn analyze_block(
     ctx: &mut Context,
@@ -51,8 +52,17 @@ fn analyze_block(
                     }
                     Compare::IsNull => comparative::is_null(analyzer, op),
                 },
-                Basic::Stack(_) => todo!(),
-                Basic::Control(_) => todo!(),
+                Basic::Stack(so) => match so {
+                    Stack::Dup { .. } | Stack::Over { .. } => stack_ops::dup_over(analyzer, op),
+
+                    // These just change the order of the virtual stack, so there's no work to do here.
+                    Stack::Drop { .. }
+                    | Stack::Emit { .. }
+                    | Stack::Reverse { .. }
+                    | Stack::Rotate { .. }
+                    | Stack::Swap { .. } => {}
+                },
+                Basic::Control(co) => todo!(),
                 Basic::Memory(_) => todo!(),
                 Basic::PushBool(_) => todo!(),
                 Basic::PushInt { width, value } => todo!(),
