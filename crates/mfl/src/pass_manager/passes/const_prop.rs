@@ -1,13 +1,14 @@
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Compare, Op, OpCode, Stack, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Control, Op, OpCode, Stack, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
     Stores,
 };
 
 mod arithmetic;
 mod comparative;
+mod control;
 mod stack_ops;
 
 fn analyze_block(
@@ -62,7 +63,14 @@ fn analyze_block(
                     | Stack::Rotate { .. }
                     | Stack::Swap { .. } => {}
                 },
-                Basic::Control(co) => todo!(),
+                Basic::Control(co) => match co {
+                    Control::Epilogue | Control::Return => {
+                        control::epilogue_return(ctx, stores, analyzer, had_error, op)
+                    }
+
+                    // Nothing to do here.
+                    Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
+                },
                 Basic::Memory(_) => todo!(),
                 Basic::PushBool(_) => todo!(),
                 Basic::PushInt { width, value } => todo!(),
