@@ -1,6 +1,6 @@
 use crate::{
-    ir::{Op, TypeResolvedOp},
-    pass_manager::static_analysis::Analyzer,
+    ir::{IntKind, Op, TypeResolvedOp},
+    pass_manager::static_analysis::{Analyzer, ConstVal},
 };
 
 pub(crate) fn dup_over(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
@@ -13,4 +13,14 @@ pub(crate) fn dup_over(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
 
         analyzer.set_value_const(output_value_id, input_const_val);
     }
+}
+
+pub(crate) fn push_bool(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>, value: bool) {
+    let op_data = analyzer.get_op_io(op.id);
+    analyzer.set_value_const(op_data.outputs[0], ConstVal::Bool(value));
+}
+
+pub(crate) fn push_int(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>, value: IntKind) {
+    let op_data = analyzer.get_op_io(op.id);
+    analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(value));
 }

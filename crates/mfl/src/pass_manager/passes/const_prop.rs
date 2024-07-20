@@ -86,9 +86,9 @@ fn analyze_block(
                     | Memory::Store
                     | Memory::Unpack => {}
                 },
-                Basic::PushBool(_) => todo!(),
-                Basic::PushInt { width, value } => todo!(),
-                Basic::PushStr { id, is_c_str } => todo!(),
+                Basic::PushBool(value) => stack_ops::push_bool(analyzer, op, *value),
+                Basic::PushInt { value, .. } => stack_ops::push_int(analyzer, op, *value),
+                Basic::PushStr { .. } => {}
             },
             OpCode::Complex(_) => todo!(),
         }
