@@ -1,7 +1,9 @@
+use arithmetic::add;
+
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Compare, Control, Op, OpCode, Stack, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Control, Memory, Op, OpCode, Stack, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
     Stores,
 };
@@ -9,6 +11,7 @@ use crate::{
 mod arithmetic;
 mod comparative;
 mod control;
+mod memory;
 mod stack_ops;
 
 fn analyze_block(
@@ -71,7 +74,18 @@ fn analyze_block(
                     // Nothing to do here.
                     Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
                 },
-                Basic::Memory(_) => todo!(),
+                Basic::Memory(mo) => match mo {
+                    Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
+                        memory::insert_extract_array(stores, analyzer, had_error, op)
+                    }
+                    // Nothing to do here.
+                    Memory::ExtractStruct { .. }
+                    | Memory::InsertStruct { .. }
+                    | Memory::Load
+                    | Memory::PackArray { .. }
+                    | Memory::Store
+                    | Memory::Unpack => {}
+                },
                 Basic::PushBool(_) => todo!(),
                 Basic::PushInt { width, value } => todo!(),
                 Basic::PushStr { id, is_c_str } => todo!(),
