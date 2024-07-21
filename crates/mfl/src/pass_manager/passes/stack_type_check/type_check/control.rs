@@ -114,6 +114,12 @@ pub(crate) fn syscall(
         );
         had_error.set();
     }
+
+    // The output is always an int
+    analyzer.set_value_type(
+        op_data.outputs[0],
+        stores.types.get_builtin(BuiltinTypes::U64).id,
+    );
 }
 
 pub(crate) fn call_function_const(
