@@ -100,3 +100,13 @@ pub(crate) fn memory(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>, memory_it
         },
     );
 }
+
+pub(crate) fn analyze_while(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
+    // Because the while loop may overwrite pre-values, we need to clear their
+    // const values if they have any.
+
+    let merges = analyzer.get_while_merges(op.id).unwrap().clone();
+    for merge in merges.condition.into_iter().chain(merges.body) {
+        analyzer.clear_value_const(merge.pre_value);
+    }
+}

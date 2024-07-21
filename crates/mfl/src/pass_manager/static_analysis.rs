@@ -220,7 +220,7 @@ impl Analyzer {
             .expect_none("ICE: Tried to overwrite const value");
     }
 
-    fn clear_value_const(&mut self, id: ValueId) {
+    pub(super) fn clear_value_const(&mut self, id: ValueId) {
         self.value_consts.remove(&id);
     }
 

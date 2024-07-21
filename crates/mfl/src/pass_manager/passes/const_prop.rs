@@ -95,15 +95,16 @@ fn analyze_block(
                 TypeResolvedOp::Const { id } => {
                     control::cp_const(ctx, stores, analyzer, pass_ctx, op, *id)
                 }
-                TypeResolvedOp::If(_) => todo!(),
                 TypeResolvedOp::Memory { id, .. } => control::memory(analyzer, op, *id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(ctx, stores, analyzer, pass_ctx, op, *id)
                 }
-                TypeResolvedOp::While(_) => todo!(),
+                TypeResolvedOp::While(_) => control::analyze_while(analyzer, op),
 
                 // Nothing to do here.
-                TypeResolvedOp::CallFunction { .. } | TypeResolvedOp::PackStruct { .. } => {}
+                TypeResolvedOp::CallFunction { .. }
+                | TypeResolvedOp::PackStruct { .. }
+                | TypeResolvedOp::If(_) => {}
             },
         }
     }
