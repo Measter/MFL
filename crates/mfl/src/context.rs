@@ -903,6 +903,14 @@ impl Context {
                 continue;
             }
 
+            if pass_ctx
+                .ensure_ident_resolved_signature(self, stores, child_item_header.id)
+                .is_err()
+            {
+                had_error.set();
+                continue;
+            }
+
             let alloc_type_unresolved = self.urir.get_memory_type(child_item_header.id);
             let new_alloc_id = self.new_memory(
                 stores,
