@@ -464,6 +464,10 @@ fn analyze_block(
                     }
 
                     had_error.merge_with(local_had_error);
+
+                    if if_op.else_block.is_terminal && if_op.then_block.is_terminal {
+                        break;
+                    }
                 }
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = ErrorSignal::new();

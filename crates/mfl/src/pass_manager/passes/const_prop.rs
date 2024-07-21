@@ -64,7 +64,10 @@ fn analyze_block(
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {
-                        control::epilogue_return(ctx, stores, analyzer, had_error, op)
+                        control::epilogue_return(ctx, stores, analyzer, had_error, op);
+
+                        // We're terminated the current block, so don't process any remaining ops.
+                        break;
                     }
 
                     // Nothing to do here.
@@ -91,6 +94,11 @@ fn analyze_block(
                 TypeResolvedOp::Const { id } => {
                     control::cp_const(ctx, stores, analyzer, pass_ctx, op, *id)
                 }
+                TypeResolvedOp::If(if_op) => {
+                    if if_op.else_block.is_terminal && if_op.then_block.is_terminal {
+                        break;
+                    }
+                }
                 TypeResolvedOp::Memory { id, .. } => control::memory(analyzer, op, *id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(ctx, stores, analyzer, pass_ctx, op, *id)
@@ -98,9 +106,7 @@ fn analyze_block(
                 TypeResolvedOp::While(_) => control::analyze_while(analyzer, op),
 
                 // Nothing to do here.
-                TypeResolvedOp::CallFunction { .. }
-                | TypeResolvedOp::PackStruct { .. }
-                | TypeResolvedOp::If(_) => {}
+                TypeResolvedOp::CallFunction { .. } | TypeResolvedOp::PackStruct { .. } => {}
             },
         }
     }
