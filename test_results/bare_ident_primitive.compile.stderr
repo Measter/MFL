@@ -5,4 +5,4 @@
 [38;5;246m───╯[0m
 
 [31mError[39m: unable to compile program
-  Failed at stage: error during ident resolation
+  Failed at stage: Error during static analysis
