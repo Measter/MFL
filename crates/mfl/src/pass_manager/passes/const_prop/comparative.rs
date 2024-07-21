@@ -5,7 +5,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Compare, IntKind, Op, TypeResolvedOp},
     n_ops::SliceNOps,
-    pass_manager::static_analysis::{Analyzer, ConstVal},
+    pass_manager::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
     type_store::TypeKind,
     Stores,
 };
@@ -19,24 +19,23 @@ pub(crate) fn equal(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
+    let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
         return;
     };
 
-    let Some([output_type_id]) = analyzer.value_types(*op_data.outputs.as_arr()) else {
-        return;
-    };
-    let output_type_info = stores.types.get_type_info(output_type_id);
-
     let output_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer(output_int) = output_type_info.kind else {
+            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            else {
                 unreachable!()
             };
 
             // The casts are already type checked.
-            let a_kind = a.cast(output_int);
-            let b_kind = b.cast(output_int);
+            let biggest_input_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
+            let a_kind = a.cast(biggest_input_int);
+            let b_kind = b.cast(biggest_input_int);
             match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
@@ -121,24 +120,24 @@ pub(crate) fn compare(
 ) {
     let op_data = analyzer.get_op_io(op.id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
+    let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
         return;
     };
 
-    let Some([output_type_id]) = analyzer.value_types(*op_data.outputs.as_arr()) else {
-        return;
-    };
-    let output_type_info = stores.types.get_type_info(output_type_id);
-
     let output_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
-            let TypeKind::Integer(output_int) = output_type_info.kind else {
+            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            else {
                 unreachable!()
             };
 
             // The casts are already type checked.
-            let a_kind = a.cast(output_int);
-            let b_kind = b.cast(output_int);
+            let biggest_input_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
+            let a_kind = a.cast(biggest_input_int);
+            let b_kind = b.cast(biggest_input_int);
+
             match (a_kind, b_kind) {
                 (IntKind::Signed(a), IntKind::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
