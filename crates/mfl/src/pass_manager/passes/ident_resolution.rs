@@ -6,6 +6,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
+    pass_manager::PassContext,
     source_file::{FileId, Spanned, WithSpan},
     type_store::{
         BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,
@@ -260,20 +261,45 @@ fn resolve_idents_in_module_imports(
     }
 }
 
+fn get_parent_module(ctx: &Context, mut cur_id: ItemId) -> ItemId {
+    loop {
+        let header = ctx.get_item_header(cur_id);
+        let Some(parent_id) = header.parent else {
+            panic!("ICE: Tried to get parent of orphaned item {:?}", header.id);
+        };
+
+        let parent_header = ctx.get_item_header(parent_id);
+        if parent_header.kind == ItemKind::Module {
+            return parent_header.id;
+        }
+
+        cur_id = parent_id;
+    }
+}
+
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let header = ctx.get_item_header(cur_id);
     match header.kind {
         ItemKind::StructDef => {
+            let parent_module = get_parent_module(ctx, cur_id);
+            // Just give a best-effort if this fails.
+            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+
             let def = ctx.urir().get_struct(cur_id);
             let resolved = resolve_idents_in_struct_def(ctx, stores, had_error, cur_id, def);
             ctx.nrir_mut().set_struct(cur_id, resolved);
         }
         ItemKind::Memory => {
+            let parent_module = get_parent_module(ctx, cur_id);
+            // Just give a best-effort if this fails.
+            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+
             let generic_params = match header.parent {
                 Some(parent_id)
                     if ctx.get_item_header(parent_id).kind == ItemKind::GenericFunction =>
@@ -304,6 +330,10 @@ pub fn resolve_signature(
         }
         // These are all treated the same.
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
+            let parent_module = get_parent_module(ctx, cur_id);
+            // Just give a best-effort if this fails.
+            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+
             let unresolved_sig = ctx.urir().get_item_signature(cur_id);
 
             let generic_params = if header.kind == ItemKind::GenericFunction {
@@ -602,6 +632,7 @@ fn resolve_idents_in_block(
 pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -611,6 +642,10 @@ pub fn resolve_body(
             // Nothing to do.
         }
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
+            let parent_module = get_parent_module(ctx, cur_id);
+            // Just give a best-effort if this fails.
+            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+
             let generic_params = if header.kind == ItemKind::GenericFunction {
                 Some(ctx.get_function_template_paramaters(cur_id))
             } else {

@@ -191,7 +191,7 @@ impl PassContext {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::ident_resolution::resolve_signature(ctx, stores, &mut had_error, cur_item);
+        passes::ident_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
@@ -288,7 +288,7 @@ impl PassContext {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::ident_resolution::resolve_body(ctx, stores, &mut had_error, cur_item);
+        passes::ident_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
