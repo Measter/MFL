@@ -10,6 +10,8 @@ use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind, LangItem},
     error_signal::ErrorSignal,
     option::OptionExt,
+    simulate::{simulate_execute_program, SimulatorValue},
+    type_store::TypeKind,
     Stores,
 };
 
@@ -467,7 +469,7 @@ impl PassContext {
         }
     }
 
-    fn ensure_evaluated_consts_asserts(
+    pub fn ensure_evaluated_consts_asserts(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,
@@ -488,9 +490,41 @@ impl PassContext {
             "EvaluateConstAsserts",
         );
 
-        todo!();
-        self.set_state(cur_item, PassState::EvaluatedConstsAsserts);
-        Ok(())
+        let result = simulate_execute_program(ctx, stores, self, cur_item);
+        match result {
+            Ok(stack) => {
+                let type_sig = ctx.trir().get_item_signature(cur_item);
+                let const_vals = stack
+                    .into_iter()
+                    .zip(&type_sig.exit)
+                    .map(|(val, ty)| {
+                        let expected_type = stores.types.get_type_info(*ty);
+                        // Implicit casting the integer.
+                        match val {
+                            SimulatorValue::Int { kind, .. } => {
+                                let TypeKind::Integer(int) = expected_type.kind else {
+                                    unreachable!()
+                                };
+                                SimulatorValue::Int {
+                                    width: int.width,
+                                    kind: kind.cast(int),
+                                }
+                            }
+                            SimulatorValue::Bool(_) => val,
+                        }
+                    })
+                    .collect();
+
+                ctx.set_consts(cur_item, const_vals);
+
+                self.set_state(cur_item, PassState::EvaluatedConstsAsserts);
+                Ok(())
+            }
+            Err(_) => {
+                self.set_error(cur_item);
+                Err(())
+            }
+        }
     }
 
     fn ensure_done(

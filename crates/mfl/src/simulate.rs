@@ -9,7 +9,7 @@ use crate::{
         Arithmetic, Basic, Compare, Control, Direction, IntKind, Op, OpCode, Stack, TypeResolvedOp,
     },
     n_ops::{SliceNOps, VecNOps},
-    pass_manager::static_analysis::promote_int_type_bidirectional,
+    pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
     type_store::IntWidth,
     Stores,
 };
@@ -17,7 +17,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimulationError {
     UnsupportedOp,
-    UnreadyConst,
+    UnavailableConst,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,8 +106,9 @@ fn apply_bool_op(
 }
 
 fn simulate_execute_program_block(
-    program: &Context,
+    ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     block: &[Op<TypeResolvedOp>],
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
@@ -245,8 +246,9 @@ fn simulate_execute_program_block(
 
             OpCode::Complex(TypeResolvedOp::If(if_op)) => {
                 simulate_execute_program_block(
-                    program,
+                    ctx,
                     stores,
+                    pass_ctx,
                     &if_op.condition.block,
                     value_stack,
                 )?;
@@ -254,15 +256,17 @@ fn simulate_execute_program_block(
                 let a = value_stack.pop().unwrap();
                 if a == SimulatorValue::Bool(true) {
                     simulate_execute_program_block(
-                        program,
+                        ctx,
                         stores,
+                        pass_ctx,
                         &if_op.then_block.block,
                         value_stack,
                     )?;
                 } else {
                     simulate_execute_program_block(
-                        program,
+                        ctx,
                         stores,
+                        pass_ctx,
                         &if_op.else_block.block,
                         value_stack,
                     )?;
@@ -277,8 +281,9 @@ fn simulate_execute_program_block(
             }
             OpCode::Complex(TypeResolvedOp::While(while_op)) => loop {
                 simulate_execute_program_block(
-                    program,
+                    ctx,
                     stores,
+                    pass_ctx,
                     &while_op.condition.block,
                     value_stack,
                 )?;
@@ -287,17 +292,25 @@ fn simulate_execute_program_block(
                     break;
                 }
                 simulate_execute_program_block(
-                    program,
+                    ctx,
                     stores,
+                    pass_ctx,
                     &while_op.body_block.block,
                     value_stack,
                 )?;
             },
             OpCode::Complex(TypeResolvedOp::Const { id }) => {
-                let Some(vals) = program.get_consts(*id) else {
-                    return Err(SimulationError::UnreadyConst);
+                if pass_ctx
+                    .ensure_evaluated_consts_asserts(ctx, stores, *id)
+                    .is_err()
+                {
+                    return Err(SimulationError::UnavailableConst);
+                }
+
+                let Some(vals) = ctx.get_consts(*id) else {
+                    unreachable!();
                 };
-                value_stack.extend(vals.iter().map(|(_, v)| *v));
+                value_stack.extend(vals.iter().copied());
             }
         }
 
@@ -318,19 +331,16 @@ fn emit_unsupported_diag(stores: &mut Stores, op: &Op<TypeResolvedOp>) {
 }
 
 pub(crate) fn simulate_execute_program(
-    program: &Context,
+    ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     item_id: ItemId,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
-    simulate_execute_program_block(
-        program,
-        stores,
-        program.trir().get_item_body(item_id),
-        &mut value_stack,
-    )?;
+    let block = ctx.trir().get_item_body(item_id).to_owned();
+    simulate_execute_program_block(ctx, stores, pass_ctx, &block, &mut value_stack)?;
 
     Ok(value_stack)
 }

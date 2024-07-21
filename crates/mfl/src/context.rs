@@ -287,7 +287,7 @@ pub struct Context {
 
     headers: Vec<ItemHeader>,
     analyzers: HashMap<ItemId, Analyzer>,
-    const_vals: HashMap<ItemId, Vec<(TypeId, SimulatorValue)>>,
+    const_vals: HashMap<ItemId, Vec<SimulatorValue>>,
 
     // TODO: Separate out the IRs from the rest of the context so that we don't
     // need to clone the bodies.
@@ -375,8 +375,16 @@ impl Context {
 
     #[inline]
     #[track_caller]
-    pub fn get_consts(&self, id: ItemId) -> Option<&[(TypeId, SimulatorValue)]> {
+    pub fn get_consts(&self, id: ItemId) -> Option<&[SimulatorValue]> {
         self.const_vals.get(&id).map(|v| &**v)
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_consts(&mut self, id: ItemId, consts: Vec<SimulatorValue>) {
+        self.const_vals
+            .insert(id, consts)
+            .expect_none("ICE: replaced existing const values");
     }
 
     pub fn get_generic_structs(&self) -> &[ItemId] {

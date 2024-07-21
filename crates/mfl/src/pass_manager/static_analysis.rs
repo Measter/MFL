@@ -76,7 +76,6 @@ fn test_promote_int() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PtrId {
     Mem(ItemId),
-    Str(Spur),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -214,7 +214,7 @@ impl<'ctx> CodeGen<'ctx> {
             panic!("ICE: Const wasn't ready during codegen");
         };
 
-        for (&out_id, (_, sim_val)) in output_ids.iter().zip(const_vals) {
+        for (&out_id, sim_val) in output_ids.iter().zip(const_vals) {
             use crate::simulate::SimulatorValue;
             // These can't use the build_push_bool and build_push_int functions above because they
             // assume a single output value.

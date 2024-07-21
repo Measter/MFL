@@ -79,7 +79,7 @@ pub(crate) fn cp_const(
     };
 
     let output_value_ids = &op_data.outputs.clone();
-    for (&value_id, (_, const_value)) in output_value_ids.into_iter().zip(output_const_vals) {
+    for (&value_id, const_value) in output_value_ids.into_iter().zip(output_const_vals) {
         let output_const_value = match const_value {
             SimulatorValue::Int { kind, .. } => ConstVal::Int(*kind),
             SimulatorValue::Bool(b) => ConstVal::Bool(*b),
