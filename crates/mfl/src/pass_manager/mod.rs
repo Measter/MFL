@@ -17,7 +17,7 @@ mod passes;
 pub mod static_analysis;
 
 flags! {
-    enum PassState: u8 {
+    enum PassState: u16 {
         IdentResolvedSignature,
         IdentResolvedBody,
         DeclareStructs,
