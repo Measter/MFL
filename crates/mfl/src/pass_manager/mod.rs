@@ -130,6 +130,7 @@ impl PassContext {
     }
 
     pub fn add_new_item(&mut self, id: ItemId, base_id: ItemId) {
+        self.queue.push_back(id);
         let new_state_info = self.states[&base_id];
         self.states
             .insert(id, new_state_info)
