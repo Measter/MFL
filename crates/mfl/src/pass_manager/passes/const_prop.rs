@@ -1,5 +1,3 @@
-use arithmetic::add;
-
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
@@ -20,9 +18,7 @@ fn analyze_block(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    item_id: ItemId,
     block: &[Op<TypeResolvedOp>],
-    emit_traces: bool,
 ) {
     for op in block {
         match &op.code {
@@ -125,11 +121,9 @@ pub fn analyze_item(
         &mut analyzer,
         pass_ctx,
         had_error,
-        item_id,
         // TODO: Fix this shit
         #[allow(clippy::unnecessary_to_owned)]
         &ctx.trir().get_item_body(item_id).to_owned(),
-        true,
     );
 
     ctx.set_analyzer(item_id, analyzer);

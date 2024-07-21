@@ -212,7 +212,6 @@ pub(crate) fn analyze_if(
     max_stack_depth: &mut usize,
     op: &Op<TypeResolvedOp>,
     if_op: &If<TypeResolvedOp>,
-    emit_traces: bool,
 ) {
     let mut condition_values = SmallVec::<[_; 1]>::new();
 
@@ -227,7 +226,6 @@ pub(crate) fn analyze_if(
         &if_op.condition.block,
         stack,
         max_stack_depth,
-        emit_traces,
     );
 
     // We expect there to be a boolean value on teh top of the stack afterwards.
@@ -260,7 +258,6 @@ pub(crate) fn analyze_if(
         &if_op.then_block.block,
         stack,
         max_stack_depth,
-        emit_traces,
     );
 
     // We always have an else block, so save our current stack state for comparison.
@@ -282,7 +279,6 @@ pub(crate) fn analyze_if(
         &if_op.else_block.block,
         stack,
         max_stack_depth,
-        emit_traces,
     );
 
     let mut body_merges = Vec::new();
@@ -351,7 +347,6 @@ pub(crate) fn analyze_while(
     max_stack_depth: &mut usize,
     op: &Op<TypeResolvedOp>,
     while_op: &While<TypeResolvedOp>,
-    emit_traces: bool,
 ) {
     let pre_condition_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
 
@@ -366,7 +361,6 @@ pub(crate) fn analyze_while(
         &while_op.condition.block,
         stack,
         max_stack_depth,
-        emit_traces,
     );
 
     // We expect there to be a boolean value on teh top of the stack afterwards.
@@ -445,7 +439,6 @@ pub(crate) fn analyze_while(
         &while_op.body_block.block,
         stack,
         max_stack_depth,
-        emit_traces,
     );
 
     // Again, the body cannot change the depth of the stack.

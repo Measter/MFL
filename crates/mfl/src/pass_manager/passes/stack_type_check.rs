@@ -68,7 +68,6 @@ fn analyze_block(
     block: &[Op<TypeResolvedOp>],
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    emit_traces: bool,
 ) {
     let mut op_iter = block.iter();
     for op in op_iter.by_ref() {
@@ -106,15 +105,13 @@ fn analyze_block(
                         );
                     }
                     Stack::Emit { show_labels } => {
-                        if emit_traces {
-                            type_check::stack_ops::emit_stack(
-                                stores,
-                                analyzer,
-                                stack,
-                                op,
-                                *show_labels,
-                            );
-                        }
+                        type_check::stack_ops::emit_stack(
+                            stores,
+                            analyzer,
+                            stack,
+                            op,
+                            *show_labels,
+                        );
                     }
                     Stack::Over { depth } => {
                         let mut local_had_error = ErrorSignal::new();
@@ -455,7 +452,6 @@ fn analyze_block(
                         max_stack_depth,
                         op,
                         if_op,
-                        emit_traces,
                     );
                     if local_had_error.is_ok() {
                         type_check::control::analyze_if(
@@ -515,7 +511,6 @@ fn analyze_block(
                         max_stack_depth,
                         op,
                         while_op,
-                        false,
                     );
 
                     if local_had_error.is_ok() {
@@ -580,7 +575,6 @@ pub fn analyze_item(
         &ctx.trir().get_item_body(item_id).to_owned(),
         &mut stack,
         &mut max_stack_depth,
-        true,
     );
 
     let analyzer_stats = AnalyzerStats {
