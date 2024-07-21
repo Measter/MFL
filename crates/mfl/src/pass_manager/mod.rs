@@ -587,7 +587,7 @@ pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> R
         println!("\n{}", pass_ctx.stack_stats_table);
     }
 
-    if !had_error.into_bool() {
+    if had_error.into_bool() {
         Err(eyre!("Error during static analysis"))
     } else {
         Ok(())
