@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use ariadne::{Color, Label};
 use color_eyre::{eyre::eyre, Result};
 use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
@@ -8,6 +9,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind, LangItem},
+    diagnostics,
     error_signal::ErrorSignal,
     option::OptionExt,
     simulate::{simulate_execute_program, SimulatorValue},
@@ -31,6 +33,7 @@ flags! {
         StackAndTypeCheckedBody,
         ConstPropBody,
         EvaluatedConstsAsserts,
+        CheckAsserts,
     }
 }
 
@@ -50,6 +53,7 @@ impl PassState {
             PassState::StackAndTypeCheckedBody => PassContext::ensure_stack_and_type_checked_body,
             PassState::ConstPropBody => PassContext::ensure_const_prop_body,
             PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
+            PassState::CheckAsserts => PassContext::ensure_check_asserts,
         }
     }
 
@@ -78,6 +82,7 @@ impl PassState {
                 CyclicRefCheckBody | ConstPropBody,
                 &[CyclicRefCheckBody, ConstPropBody],
             ),
+            CheckAsserts => (EvaluatedConstsAsserts.into(), &[EvaluatedConstsAsserts]),
         }
     }
 }
@@ -527,6 +532,46 @@ impl PassContext {
         }
     }
 
+    fn ensure_check_asserts(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::CheckAsserts);
+
+        let _span = debug_span!(stringify!(ensure_check_asserts));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "CheckAsserts",
+        );
+
+        // Type check and const prop ensure this value exists.
+        let Some([SimulatorValue::Bool(assert_is_true)]) = ctx.get_consts(cur_item) else {
+            unreachable!()
+        };
+
+        if !assert_is_true {
+            let item_header = ctx.get_item_header(cur_item);
+            diagnostics::emit_error(
+                stores,
+                item_header.name.location,
+                "assert failure",
+                [Label::new(item_header.name.location)
+                    .with_color(Color::Red)
+                    .with_message("evaluated to false")],
+                None,
+            );
+
+            self.set_error(cur_item);
+            Err(())
+        } else {
+            self.set_state(cur_item, PassState::CheckAsserts);
+            Ok(())
+        }
+    }
+
     fn ensure_done(
         &mut self,
         ctx: &mut Context,
@@ -542,7 +587,8 @@ impl PassContext {
                 PassState::IdentResolvedSignature,
                 PassState::IdentResolvedBody,
             ],
-            ItemKind::Assert | ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
+            ItemKind::Assert => &[PassState::CheckAsserts],
+            ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
             ItemKind::Function => &[PassState::ConstPropBody],
         };
 
