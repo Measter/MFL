@@ -1,11 +1,15 @@
 use ariadne::Color;
 
 use crate::{
-    context::Context,
+    context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
-    pass_manager::static_analysis::{Analyzer, ConstVal, PtrId},
+    pass_manager::{
+        static_analysis::{Analyzer, ConstVal, PtrId},
+        PassContext,
+    },
+    simulate::SimulatorValue,
     Stores,
 };
 
@@ -52,4 +56,47 @@ pub(crate) fn epilogue_return(
 
         had_error.set();
     }
+}
+
+pub(crate) fn cp_const(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    pass_ctx: &mut PassContext,
+    op: &Op<TypeResolvedOp>,
+    const_item_id: ItemId,
+) {
+    if pass_ctx
+        .ensure_evaluated_consts_asserts(ctx, stores, const_item_id)
+        .is_err()
+    {
+        return;
+    }
+
+    let op_data = analyzer.get_op_io(op.id);
+    let Some(output_const_vals) = ctx.get_consts(const_item_id) else {
+        return;
+    };
+
+    let output_value_ids = &op_data.outputs.clone();
+    for (&value_id, (_, const_value)) in output_value_ids.into_iter().zip(output_const_vals) {
+        let output_const_value = match const_value {
+            SimulatorValue::Int { kind, .. } => ConstVal::Int(*kind),
+            SimulatorValue::Bool(b) => ConstVal::Bool(*b),
+        };
+
+        analyzer.set_value_const(value_id, output_const_value);
+    }
+}
+
+pub(crate) fn memory(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>, memory_item_id: ItemId) {
+    let op_data = analyzer.get_op_io(op.id);
+    analyzer.set_value_const(
+        op_data.outputs[0],
+        ConstVal::Ptr {
+            id: PtrId::Mem(memory_item_id),
+            src_op_loc: op.token.location,
+            offset: Some(0),
+        },
+    );
 }

@@ -754,6 +754,7 @@ impl TypeStore {
 
         let type_info = *self.kinds.get(&id).unwrap();
         let size_info = match type_info.kind {
+            // TODO: Integrate with PassContext
             TypeKind::Array { type_id, length } => {
                 let mut inner_size = self.get_size_info(type_id);
                 inner_size.byte_width =
