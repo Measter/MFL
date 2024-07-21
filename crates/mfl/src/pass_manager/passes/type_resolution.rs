@@ -9,6 +9,34 @@ use crate::{
     Stores,
 };
 
+fn ensure_structs_declared_in_type(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    unresolved: &UnresolvedTypeIds,
+) {
+    match unresolved {
+        UnresolvedTypeIds::SimpleCustom { id, .. } => {
+            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+                had_error.set();
+            }
+        }
+        UnresolvedTypeIds::GenericInstance { id, params, .. } => {
+            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+                had_error.set();
+            }
+            for p in params {
+                ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, p);
+            }
+        }
+        UnresolvedTypeIds::SimpleBuiltin(_) | UnresolvedTypeIds::SimpleGenericParam(_) => {}
+        UnresolvedTypeIds::Array(sub_type, _) | UnresolvedTypeIds::Pointer(sub_type) => {
+            ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
+        }
+    };
+}
+
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
@@ -36,12 +64,18 @@ pub fn resolve_signature(
 
             let mut process_sig = |unresolved: &[UnresolvedTypeIds], resolved: &mut Vec<TypeId>| {
                 for kind in unresolved {
-                    if let Some(type_item) = kind.item_id() {
-                        if pass_ctx
-                            .ensure_declare_structs(ctx, stores, type_item)
-                            .is_err()
-                        {
-                            had_error.set();
+                    {
+                        let mut single_check_error = ErrorSignal::new();
+                        ensure_structs_declared_in_type(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            &mut single_check_error,
+                            kind,
+                        );
+                        if single_check_error.into_bool() {
+                            local_had_error.set();
+                            continue;
                         }
                     }
 
@@ -49,6 +83,7 @@ pub fn resolve_signature(
                         Ok(info) => info,
                         Err(tk) => {
                             local_had_error.set();
+                            dbg!();
                             emit_type_error_diag(stores, tk);
                             continue;
                         }
@@ -136,13 +171,17 @@ fn resolve_block(
                         SmallVec::<[UnresolvedTypeIds; 4]>::new();
 
                     for ugp in unresolved_generic_params {
-                        if let Some(type_item) = ugp.item_id() {
-                            if pass_ctx
-                                .ensure_declare_structs(ctx, stores, type_item)
-                                .is_err()
-                            {
-                                had_error.set();
-                            }
+                        let mut local_had_error = ErrorSignal::new();
+                        ensure_structs_declared_in_type(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            &mut local_had_error,
+                            ugp,
+                        );
+                        if local_had_error.into_bool() {
+                            had_error.set();
+                            continue;
                         }
 
                         let type_info = match stores.types.resolve_type(&mut stores.strings, ugp) {
@@ -252,14 +291,13 @@ fn resolve_block(
             OpCode::Complex(NameResolvedOp::Cast { id })
             | OpCode::Complex(NameResolvedOp::PackStruct { id })
             | OpCode::Complex(NameResolvedOp::SizeOf { id }) => {
-                if let Some(type_item) = id.item_id() {
-                    if pass_ctx
-                        .ensure_declare_structs(ctx, stores, type_item)
-                        .is_err()
-                    {
-                        had_error.set();
-                    }
+                let mut local_had_error = ErrorSignal::new();
+                ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
+                if local_had_error.into_bool() {
+                    had_error.set();
+                    continue;
                 }
+
                 let type_info = match stores.types.resolve_type(&mut stores.strings, id) {
                     Ok(info) => info,
                     Err(err_token) => {
