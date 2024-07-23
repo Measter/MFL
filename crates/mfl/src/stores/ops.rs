@@ -1,8 +1,12 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
+use intcast::IntCast;
 use lasso::Spur;
 
-use crate::ir::OpCode;
+use crate::{
+    ir::{NameResolvedOp, OpCode, TypeResolvedOp, UnresolvedOp},
+    option::OptionExt,
+};
 
 use super::source::Spanned;
 
@@ -29,10 +33,66 @@ impl<T> Op<T> {
     }
 }
 
-pub struct OpStore {}
+pub struct OpStore {
+    unresolved: Vec<Op<UnresolvedOp>>,
+    name_resolved: HashMap<OpId, Op<NameResolvedOp>>,
+    type_resolved: HashMap<OpId, Op<TypeResolvedOp>>,
+}
 
 impl OpStore {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            unresolved: Vec::new(),
+            name_resolved: HashMap::new(),
+            type_resolved: HashMap::new(),
+        }
+    }
+
+    pub fn new_op(&mut self, code: OpCode<UnresolvedOp>, token: Spanned<Spur>) -> OpId {
+        let new_id = OpId(self.unresolved.len().to_u32().expect("ICE: OpID overflow"));
+
+        let op = Op {
+            code,
+            id: new_id,
+            token,
+        };
+
+        self.unresolved.push(op);
+
+        new_id
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_unresolved(&self, id: OpId) -> &Op<UnresolvedOp> {
+        &self.unresolved[id.0.to_usize()]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_name_resolved(&self, id: OpId) -> &Op<NameResolvedOp> {
+        &self.name_resolved[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_name_resolved(&mut self, id: OpId, op: Op<NameResolvedOp>) {
+        self.name_resolved
+            .insert(id, op)
+            .expect_none("ICE: Inserted multiple ops at id");
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_type_resolved(&self, id: OpId) -> &Op<TypeResolvedOp> {
+        &self.type_resolved[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_type_resolved(&mut self, id: OpId, op: Op<TypeResolvedOp>) {
+        self.type_resolved
+            .insert(id, op)
+            .expect_none("ICE: Inserted multiple ops at id");
     }
 }
