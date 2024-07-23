@@ -5,7 +5,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{If, NameResolvedOp, NameResolvedType, Op, OpCode, TerminalBlock, TypeResolvedOp, While},
     pass_manager::PassContext,
-    type_store::{emit_type_error_diag, TypeId},
+    stores::type_store::{emit_type_error_diag, TypeId},
     Stores,
 };
 

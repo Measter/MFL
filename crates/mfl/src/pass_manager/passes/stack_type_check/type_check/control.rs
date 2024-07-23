@@ -14,7 +14,7 @@ use crate::{
         PassContext,
     },
     source_file::SourceLocation,
-    type_store::{BuiltinTypes, TypeId, TypeKind},
+    stores::type_store::{BuiltinTypes, TypeId, TypeKind},
     Stores,
 };
 

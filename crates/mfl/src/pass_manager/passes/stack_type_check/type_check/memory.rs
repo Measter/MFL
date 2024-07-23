@@ -16,7 +16,7 @@ use crate::{
         PassContext,
     },
     source_file::Spanned,
-    type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
+    stores::type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     Stores,
 };
 

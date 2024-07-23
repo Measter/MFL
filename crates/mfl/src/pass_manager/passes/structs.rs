@@ -5,7 +5,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
-    type_store::TypeKind,
+    stores::type_store::TypeKind,
     Stores,
 };
 

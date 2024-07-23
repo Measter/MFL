@@ -14,7 +14,7 @@ use crate::{
     n_ops::HashMapNOps,
     option::OptionExt,
     source_file::{SourceLocation, Spanned},
-    type_store::{Integer, Signedness, TypeId},
+    stores::type_store::{Integer, Signedness, TypeId},
     Stores,
 };
 
@@ -45,7 +45,7 @@ pub fn promote_int_type_bidirectional(a: Integer, b: Integer) -> Option<Integer>
 
 #[test]
 fn test_promote_int() {
-    use crate::type_store::IntWidth::*;
+    use crate::stores::type_store::IntWidth::*;
     use Signedness::*;
 
     assert_eq!(

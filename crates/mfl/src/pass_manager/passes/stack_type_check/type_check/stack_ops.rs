@@ -8,7 +8,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Op, TypeResolvedOp},
     pass_manager::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
-    type_store::{BuiltinTypes, Integer, TypeId, TypeKind},
+    stores::type_store::{BuiltinTypes, Integer, TypeId, TypeKind},
     Stores,
 };
 

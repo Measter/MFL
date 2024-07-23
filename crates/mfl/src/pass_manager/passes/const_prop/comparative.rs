@@ -6,7 +6,7 @@ use crate::{
     ir::{Compare, IntKind, Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
-    type_store::TypeKind,
+    stores::type_store::TypeKind,
     Stores,
 };
 

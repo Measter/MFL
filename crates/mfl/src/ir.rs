@@ -4,7 +4,7 @@ use lasso::Spur;
 
 use crate::{
     source_file::{SourceLocation, Spanned},
-    type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
+    stores::type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
 };
 
 use super::ItemId;

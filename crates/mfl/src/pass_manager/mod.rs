@@ -13,7 +13,7 @@ use crate::{
     error_signal::ErrorSignal,
     option::OptionExt,
     simulate::{simulate_execute_program, SimulatorValue},
-    type_store::TypeKind,
+    stores::type_store::TypeKind,
     Stores,
 };
 

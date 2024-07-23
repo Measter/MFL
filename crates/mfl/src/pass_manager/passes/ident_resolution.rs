@@ -11,7 +11,7 @@ use crate::{
     },
     pass_manager::PassContext,
     source_file::{FileId, Spanned, WithSpan},
-    type_store::BuiltinTypes,
+    stores::type_store::BuiltinTypes,
     Stores,
 };
 

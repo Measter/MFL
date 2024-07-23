@@ -5,7 +5,7 @@ use crate::{
     pass_manager::static_analysis::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, Analyzer,
     },
-    type_store::{BuiltinTypes, TypeKind},
+    stores::type_store::{BuiltinTypes, TypeKind},
     Stores,
 };
 

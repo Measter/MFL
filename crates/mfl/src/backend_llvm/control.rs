@@ -6,7 +6,7 @@ use crate::{
     context::ItemId,
     ir::{If, Op, TypeResolvedOp, While},
     source_file::Spanned,
-    type_store::TypeKind,
+    stores::type_store::TypeKind,
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

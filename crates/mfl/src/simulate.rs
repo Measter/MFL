@@ -10,7 +10,7 @@ use crate::{
     },
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
-    type_store::IntWidth,
+    stores::type_store::IntWidth,
     Stores,
 };
 

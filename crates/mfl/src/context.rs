@@ -15,7 +15,7 @@ use crate::{
     pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
-    type_store::TypeId,
+    stores::type_store::TypeId,
     Stores,
 };
 
