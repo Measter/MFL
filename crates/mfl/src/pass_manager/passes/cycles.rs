@@ -19,17 +19,42 @@ pub fn check_invalid_cycles(
 ) {
     let root_header = ctx.get_item_header(cur_id);
 
-    if !matches!(root_header.kind, ItemKind::Assert | ItemKind::Const) {
+    match root_header.kind {
+        ItemKind::Assert | ItemKind::Const => {
+            check_invalid_cycles_const_assert(ctx, stores, pass_ctx, had_error, cur_id)
+        }
+        ItemKind::StructDef => {
+            check_invalid_cycles_structs(ctx, stores, pass_ctx, had_error, cur_id)
+        }
         // Nothing to do here.
-        return;
+        ItemKind::Memory | ItemKind::Function | ItemKind::GenericFunction | ItemKind::Module => {}
     }
+}
 
-    let mut check_queue = vec![cur_id];
+fn check_invalid_cycles_structs(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    cur_id: ItemId,
+) {
+    // todo!()
+}
+
+fn check_invalid_cycles_const_assert(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    root_id: ItemId,
+) {
+    let root_header = ctx.get_item_header(root_id);
+    let mut check_queue = vec![root_id];
     let mut checked_items = HashSet::new();
 
     while let Some(item) = check_queue.pop() {
-        let header = ctx.get_item_header(cur_id);
-        if item != cur_id
+        let header = ctx.get_item_header(root_id);
+        if item != root_id
             && pass_ctx
                 .ensure_ident_resolved_body(ctx, stores, item)
                 .is_err()

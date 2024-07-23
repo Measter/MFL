@@ -26,6 +26,7 @@ flags! {
         IdentResolvedBody,
         DeclareStructs,
         DefineStructs,
+        SelfContainingStruct,
         TypeResolvedSignature,
         TypeResolvedBody,
         CyclicRefCheckBody,
@@ -46,6 +47,7 @@ impl PassState {
             PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
             PassState::DeclareStructs => PassContext::ensure_declare_structs,
             PassState::DefineStructs => PassContext::ensure_define_structs,
+            PassState::SelfContainingStruct => PassContext::ensure_self_containing_structs,
             PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
             PassState::TypeResolvedBody => PassContext::ensure_type_resolved_body,
             PassState::CyclicRefCheckBody => PassContext::ensure_cyclic_ref_check_body,
@@ -64,6 +66,7 @@ impl PassState {
             IdentResolvedBody => (FlagSet::default(), &[]),
             DeclareStructs => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
             DefineStructs => (DeclareStructs.into(), &[DeclareStructs]),
+            SelfContainingStruct => (DefineStructs.into(), &[DefineStructs]),
             TypeResolvedSignature => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
             TypeResolvedBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
             CyclicRefCheckBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
@@ -269,6 +272,32 @@ impl PassContext {
             Err(())
         } else {
             self.set_state(cur_item, PassState::DefineStructs);
+            Ok(())
+        }
+    }
+
+    fn ensure_self_containing_structs(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::SelfContainingStruct);
+
+        let _span = debug_span!(stringify!(ensure_self_containing_structs));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "SelfContainingStruct",
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
+        if had_error.into_bool() {
+            self.set_error(cur_item);
+            Err(())
+        } else {
+            self.set_state(cur_item, PassState::SelfContainingStruct);
             Ok(())
         }
     }
@@ -581,7 +610,7 @@ impl PassContext {
     ) -> Result<(), ()> {
         let needed_states = match ctx.get_item_header(cur_item).kind {
             ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
-            ItemKind::StructDef => &[PassState::DefineStructs],
+            ItemKind::StructDef => &[PassState::SelfContainingStruct],
             ItemKind::Memory => &[PassState::TypeResolvedSignature],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
