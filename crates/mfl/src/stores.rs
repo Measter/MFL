@@ -14,6 +14,18 @@ pub struct Stores {
 }
 
 impl Stores {
+    pub fn new() -> Stores {
+        let source_storage = SourceStorage::new();
+        let mut interner = Interner::new();
+        let type_store = TypeStore::new(&mut interner);
+
+        Stores {
+            source: source_storage,
+            strings: interner,
+            types: type_store,
+        }
+    }
+
     pub fn build_mangled_name(&mut self, inner: lasso::Spur, generic_params: &[TypeId]) -> Spur {
         let mut name = self.strings.resolve(inner).to_owned();
         name.push_str("$GO$");

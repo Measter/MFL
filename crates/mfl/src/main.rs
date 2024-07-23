@@ -15,12 +15,7 @@ use color_eyre::{
 use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
-use stores::{
-    interner::Interner,
-    source::SourceStorage,
-    type_store::{BuiltinTypes, TypeStore},
-    Stores,
-};
+use stores::{type_store::BuiltinTypes, Stores};
 use tracing_subscriber::fmt::format::FmtSpan;
 
 mod backend_llvm;
@@ -103,15 +98,7 @@ fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature
 
 fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
-    let source_storage = SourceStorage::new();
-    let mut interner = Interner::new();
-    let type_store = TypeStore::new(&mut interner);
-
-    let mut stores = Stores {
-        source: source_storage,
-        strings: interner,
-        types: type_store,
-    };
+    let mut stores = Stores::new();
 
     let mut context = Context::new();
     let entry_module_id = program::load_program(&mut context, &mut stores, args)?;
