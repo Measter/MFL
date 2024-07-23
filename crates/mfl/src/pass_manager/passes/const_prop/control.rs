@@ -4,12 +4,13 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     pass_manager::{
         static_analysis::{Analyzer, ConstVal, PtrId},
         PassContext,
     },
     simulate::SimulatorValue,
+    stores::ops::Op,
     Stores,
 };
 

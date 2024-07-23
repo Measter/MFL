@@ -9,11 +9,12 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, Op, OpCode,
-        OpId, Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
+        Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, OpCode,
+        Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
     },
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
     stores::{
+        ops::{Op, OpId},
         source::{Spanned, WithSpan},
         types::{IntWidth, Signedness},
     },

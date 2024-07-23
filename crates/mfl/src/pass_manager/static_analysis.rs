@@ -10,10 +10,11 @@ use smallvec::SmallVec;
 use crate::{
     context::ItemId,
     diagnostics::{self, TABLE_FORMAT},
-    ir::{IntKind, Op, OpId, TypeResolvedOp},
+    ir::{IntKind, TypeResolvedOp},
     n_ops::HashMapNOps,
     option::OptionExt,
     stores::{
+        ops::{Op, OpId},
         source::{SourceLocation, Spanned},
         types::{Integer, Signedness, TypeId},
     },

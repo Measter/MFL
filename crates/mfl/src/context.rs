@@ -15,13 +15,14 @@ use crate::{
     pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     stores::{
+        ops::Op,
         source::{SourceLocation, Spanned, WithSpan},
         types::TypeId,
     },
     Stores,
 };
 
-use super::ir::{NameResolvedOp, Op, TypeResolvedOp, UnresolvedOp};
+use super::ir::{NameResolvedOp, TypeResolvedOp, UnresolvedOp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangItem {

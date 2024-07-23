@@ -4,8 +4,8 @@ use tracing::trace;
 
 use crate::{
     context::ItemId,
-    ir::{If, Op, TypeResolvedOp, While},
-    stores::{source::Spanned, types::TypeKind},
+    ir::{If, TypeResolvedOp, While},
+    stores::{ops::Op, source::Spanned, types::TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

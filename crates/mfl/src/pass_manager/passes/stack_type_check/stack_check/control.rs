@@ -9,7 +9,7 @@ use crate::{
     context::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
-    ir::{If, Op, TypeResolvedOp, While},
+    ir::{If, TypeResolvedOp, While},
     n_ops::SliceNOps,
     pass_manager::{
         static_analysis::{
@@ -18,7 +18,7 @@ use crate::{
         },
         PassContext,
     },
-    stores::source::Spanned,
+    stores::{ops::Op, source::Spanned},
     Stores,
 };
 

@@ -5,7 +5,7 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, Op, TypeResolvedOp, While},
+    ir::{If, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
             can_promote_int_bidirectional, can_promote_int_unidirectional,
@@ -14,6 +14,7 @@ use crate::{
         PassContext,
     },
     stores::{
+        ops::Op,
         source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},
     },

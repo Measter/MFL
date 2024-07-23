@@ -1,8 +1,9 @@
 use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Compare, Control, Memory, Op, OpCode, Stack, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
+    stores::ops::Op,
     Stores,
 };
 

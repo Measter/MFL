@@ -1,6 +1,7 @@
 use crate::{
     context::{Context, ItemId, ItemKind},
-    ir::{Basic, Control, Op, OpCode, TypeResolvedOp},
+    ir::{Basic, Control, OpCode, TypeResolvedOp},
+    stores::ops::Op,
 };
 
 pub fn determine_terminal_blocks(ctx: &mut Context, cur_id: ItemId) {

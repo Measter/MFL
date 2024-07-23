@@ -5,10 +5,10 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Direction, Op, TypeResolvedOp},
+    ir::{Direction, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ValueId},
-    stores::source::Spanned,
+    stores::{ops::Op, source::Spanned},
     Stores,
 };
 

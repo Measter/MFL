@@ -4,9 +4,9 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{IntKind, Op, TypeResolvedOp},
+    ir::{IntKind, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::types::TypeKind,
+    stores::{ops::Op, types::TypeKind},
     Stores,
 };
 

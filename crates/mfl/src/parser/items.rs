@@ -7,10 +7,13 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Basic, Control, Op, OpCode, OpId, StructDef, StructDefField, UnresolvedOp},
+    ir::{Basic, Control, OpCode, StructDef, StructDefField, UnresolvedOp},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
-    stores::source::Spanned,
+    stores::{
+        ops::{Op, OpId},
+        source::Spanned,
+    },
     Stores,
 };
 

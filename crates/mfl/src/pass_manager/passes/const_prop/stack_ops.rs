@@ -1,11 +1,14 @@
 use crate::{
     context::Context,
-    ir::{IntKind, Op, TypeResolvedOp},
+    ir::{IntKind, TypeResolvedOp},
     pass_manager::{
         static_analysis::{Analyzer, ConstVal},
         PassContext,
     },
-    stores::types::{Integer, TypeId, TypeKind},
+    stores::{
+        ops::Op,
+        types::{Integer, TypeId, TypeKind},
+    },
     Stores,
 };
 

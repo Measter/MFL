@@ -1,8 +1,9 @@
 use crate::{
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     n_ops::VecNOps,
     pass_manager::static_analysis::{generate_stack_length_mismatch_diag, Analyzer, ValueId},
+    stores::ops::Op,
     Stores,
 };
 

@@ -5,12 +5,10 @@ use tracing::info;
 use crate::{
     context::{Context, ItemId},
     diagnostics,
-    ir::{
-        Arithmetic, Basic, Compare, Control, Direction, IntKind, Op, OpCode, Stack, TypeResolvedOp,
-    },
+    ir::{Arithmetic, Basic, Compare, Control, Direction, IntKind, OpCode, Stack, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
-    stores::types::IntWidth,
+    stores::{ops::Op, types::IntWidth},
     Stores,
 };
 

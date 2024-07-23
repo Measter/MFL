@@ -3,9 +3,12 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
     error_signal::ErrorSignal,
-    ir::{If, NameResolvedOp, NameResolvedType, Op, OpCode, TerminalBlock, TypeResolvedOp, While},
+    ir::{If, NameResolvedOp, NameResolvedType, OpCode, TerminalBlock, TypeResolvedOp, While},
     pass_manager::PassContext,
-    stores::types::{emit_type_error_diag, TypeId},
+    stores::{
+        ops::Op,
+        types::{emit_type_error_diag, TypeId},
+    },
     Stores,
 };
 

@@ -3,10 +3,10 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Arithmetic, IntKind, Op, TypeResolvedOp},
+    ir::{Arithmetic, IntKind, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::types::TypeKind,
+    stores::{ops::Op, types::TypeKind},
     Stores,
 };
 

@@ -6,11 +6,12 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        If, NameResolvedOp, NameResolvedType, Op, OpCode, StructDef, StructDefField, TerminalBlock,
+        If, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField, TerminalBlock,
         UnresolvedIdent, UnresolvedOp, UnresolvedType, While,
     },
     pass_manager::PassContext,
     stores::{
+        ops::Op,
         source::{FileId, Spanned, WithSpan},
         types::BuiltinTypes,
     },

@@ -5,9 +5,9 @@ use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{NameResolvedOp, NameResolvedType, Op, OpCode},
+    ir::{NameResolvedOp, NameResolvedType, OpCode},
     pass_manager::PassContext,
-    stores::source::SourceLocation,
+    stores::{ops::Op, source::SourceLocation},
     Stores,
 };
 

@@ -4,8 +4,11 @@ use lasso::Spur;
 
 use crate::{
     context::ItemId,
-    ir::{IntKind, Op, TypeResolvedOp},
-    stores::types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
+    ir::{IntKind, TypeResolvedOp},
+    stores::{
+        ops::Op,
+        types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
+    },
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

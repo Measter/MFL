@@ -5,12 +5,12 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Arithmetic, Basic, Compare, Control, Memory, Op, OpCode, Stack, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    stores::types::Integer,
+    stores::{ops::Op, types::Integer},
     Stores,
 };
 

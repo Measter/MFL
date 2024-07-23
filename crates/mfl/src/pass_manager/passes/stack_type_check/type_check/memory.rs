@@ -9,13 +9,14 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     n_ops::SliceNOps,
     pass_manager::{
         static_analysis::{can_promote_int_unidirectional, Analyzer},
         PassContext,
     },
     stores::{
+        ops::Op,
         source::Spanned,
         types::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     },

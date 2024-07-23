@@ -6,13 +6,16 @@ use crate::{
     context::Context,
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    stores::types::{TypeId, TypeKind},
+    stores::{
+        ops::Op,
+        types::{TypeId, TypeKind},
+    },
     Stores,
 };
 

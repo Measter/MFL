@@ -1,12 +1,15 @@
 use crate::{
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     n_ops::SliceNOps,
     pass_manager::static_analysis::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
         Analyzer,
     },
-    stores::types::{BuiltinTypes, TypeKind},
+    stores::{
+        ops::Op,
+        types::{BuiltinTypes, TypeKind},
+    },
     Stores,
 };
 

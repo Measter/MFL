@@ -12,10 +12,11 @@ use lasso::Spur;
 
 use crate::{
     context::ItemId,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     n_ops::SliceNOps,
     pass_manager::static_analysis::ValueId,
     stores::{
+        ops::Op,
         source::{SourceLocation, Spanned},
         types::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
     },

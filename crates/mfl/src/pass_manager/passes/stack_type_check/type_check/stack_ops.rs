@@ -6,9 +6,12 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
     error_signal::ErrorSignal,
-    ir::{Op, TypeResolvedOp},
+    ir::TypeResolvedOp,
     pass_manager::static_analysis::{generate_type_mismatch_diag, Analyzer, ValueId},
-    stores::types::{BuiltinTypes, Integer, TypeId, TypeKind},
+    stores::{
+        ops::Op,
+        types::{BuiltinTypes, Integer, TypeId, TypeKind},
+    },
     Stores,
 };
 

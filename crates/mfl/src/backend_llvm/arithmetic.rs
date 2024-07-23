@@ -1,10 +1,13 @@
 use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace, IntPredicate};
 
 use crate::{
-    ir::{Arithmetic, Basic, Op, OpCode, TypeResolvedOp},
+    ir::{Arithmetic, Basic, OpCode, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::promote_int_type_bidirectional,
-    stores::types::{Signedness, TypeKind},
+    stores::{
+        ops::Op,
+        types::{Signedness, TypeKind},
+    },
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
