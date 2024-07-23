@@ -4,7 +4,7 @@ use lasso::Spur;
 
 use crate::{
     source_file::{SourceLocation, Spanned},
-    type_store::{IntWidth, Integer, Signedness, TypeId, UnresolvedTypeIds, UnresolvedTypeTokens},
+    type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
 };
 
 use super::ItemId;
@@ -65,6 +65,57 @@ impl IntKind {
             }
             (IntKind::Unsigned(v), Signedness::Signed) => {
                 IntKind::Signed((v & to.width.mask()) as i64)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDef<Kind> {
+    pub name: Spanned<Spur>,
+    pub fields: Vec<StructDefField<Kind>>,
+    pub generic_params: Option<Vec<Spanned<Spur>>>,
+    pub is_union: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDefField<Kind> {
+    pub name: Spanned<Spur>,
+    pub kind: Kind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UnresolvedType {
+    Simple(UnresolvedIdent),
+    Array(Box<UnresolvedType>, usize),
+    Pointer(Box<UnresolvedType>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NameResolvedType {
+    SimpleCustom {
+        id: ItemId,
+        token: Spanned<Spur>,
+    },
+    SimpleBuiltin(BuiltinTypes),
+    SimpleGenericParam(Spanned<Spur>),
+    Array(Box<NameResolvedType>, usize),
+    Pointer(Box<NameResolvedType>),
+    GenericInstance {
+        id: ItemId,
+        id_token: Spanned<Spur>,
+        params: Vec<NameResolvedType>,
+    },
+}
+
+impl NameResolvedType {
+    pub fn item_id(&self) -> Option<ItemId> {
+        match self {
+            NameResolvedType::SimpleCustom { id, .. }
+            | NameResolvedType::GenericInstance { id, .. } => Some(*id),
+            NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => None,
+            NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
+                sub_type.item_id()
             }
         }
     }
@@ -301,7 +352,7 @@ pub struct UnresolvedIdent {
     pub span: SourceLocation,
     pub is_from_root: bool,
     pub path: Vec<Spanned<Spur>>,
-    pub generic_params: Option<Vec<UnresolvedTypeTokens>>,
+    pub generic_params: Option<Vec<UnresolvedType>>,
 }
 
 impl std::hash::Hash for UnresolvedIdent {
@@ -322,36 +373,36 @@ impl PartialEq for UnresolvedIdent {
 
 #[derive(Debug, Clone)]
 pub enum UnresolvedOp {
-    Cast { id: UnresolvedTypeTokens },
+    Cast { id: UnresolvedType },
     Ident(UnresolvedIdent),
     If(Box<If<Self>>),
-    PackStruct { id: UnresolvedTypeTokens },
-    SizeOf { id: UnresolvedTypeTokens },
+    PackStruct { id: UnresolvedType },
+    SizeOf { id: UnresolvedType },
     While(Box<While<Self>>),
 }
 
 #[derive(Debug, Clone)]
 pub enum NameResolvedOp {
     Cast {
-        id: UnresolvedTypeIds,
+        id: NameResolvedType,
     },
     CallFunction {
         id: ItemId,
-        generic_params: Option<Vec<UnresolvedTypeIds>>,
+        generic_params: Option<Vec<NameResolvedType>>,
     },
     Const {
         id: ItemId,
     },
     If(Box<If<Self>>),
     PackStruct {
-        id: UnresolvedTypeIds,
+        id: NameResolvedType,
     },
     Memory {
         id: ItemId,
         is_global: bool,
     },
     SizeOf {
-        id: UnresolvedTypeIds,
+        id: NameResolvedType,
     },
     While(Box<While<Self>>),
 }

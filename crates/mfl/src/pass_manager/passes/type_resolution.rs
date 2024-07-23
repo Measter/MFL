@@ -3,9 +3,9 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
     error_signal::ErrorSignal,
-    ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, TypeResolvedOp, While},
+    ir::{If, NameResolvedOp, NameResolvedType, Op, OpCode, TerminalBlock, TypeResolvedOp, While},
     pass_manager::PassContext,
-    type_store::{emit_type_error_diag, TypeId, UnresolvedTypeIds},
+    type_store::{emit_type_error_diag, TypeId},
     Stores,
 };
 
@@ -14,15 +14,15 @@ fn ensure_structs_declared_in_type(
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    unresolved: &UnresolvedTypeIds,
+    unresolved: &NameResolvedType,
 ) {
     match unresolved {
-        UnresolvedTypeIds::SimpleCustom { id, .. } => {
+        NameResolvedType::SimpleCustom { id, .. } => {
             if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
                 had_error.set();
             }
         }
-        UnresolvedTypeIds::GenericInstance { id, params, .. } => {
+        NameResolvedType::GenericInstance { id, params, .. } => {
             if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
                 had_error.set();
             }
@@ -30,8 +30,8 @@ fn ensure_structs_declared_in_type(
                 ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, p);
             }
         }
-        UnresolvedTypeIds::SimpleBuiltin(_) | UnresolvedTypeIds::SimpleGenericParam(_) => {}
-        UnresolvedTypeIds::Array(sub_type, _) | UnresolvedTypeIds::Pointer(sub_type) => {
+        NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
+        NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
             ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
         }
     };
@@ -62,7 +62,7 @@ pub fn resolve_signature(
 
             let mut local_had_error = ErrorSignal::new();
 
-            let mut process_sig = |unresolved: &[UnresolvedTypeIds], resolved: &mut Vec<TypeId>| {
+            let mut process_sig = |unresolved: &[NameResolvedType], resolved: &mut Vec<TypeId>| {
                 for kind in unresolved {
                     {
                         let mut single_check_error = ErrorSignal::new();
@@ -167,8 +167,7 @@ fn resolve_block(
                     });
                 } else if let Some(unresolved_generic_params) = generic_params.as_deref() {
                     let mut resolved_generic_params = SmallVec::<[TypeId; 4]>::new();
-                    let mut unresolved_generic_params_sm =
-                        SmallVec::<[UnresolvedTypeIds; 4]>::new();
+                    let mut unresolved_generic_params_sm = SmallVec::<[NameResolvedType; 4]>::new();
 
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();

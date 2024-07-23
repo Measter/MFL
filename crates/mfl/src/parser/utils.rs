@@ -6,10 +6,9 @@ use num_traits::{PrimInt, Unsigned};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{OpCode, UnresolvedIdent, UnresolvedOp},
+    ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{Integer, Token, TokenKind},
     source_file::{SourceLocation, Spanned, WithSpan},
-    type_store::UnresolvedTypeTokens,
     Stores,
 };
 
@@ -222,9 +221,9 @@ pub fn parse_unresolved_types(
     stores: &mut Stores,
     prev: Spanned<Token>,
     tokens: &[Spanned<Token>],
-) -> Result<Vec<Spanned<UnresolvedTypeTokens>>, ()> {
+) -> Result<Vec<Spanned<UnresolvedType>>, ()> {
     let mut had_error = ErrorSignal::new();
-    let mut types: Vec<Spanned<UnresolvedTypeTokens>> = Vec::new();
+    let mut types: Vec<Spanned<UnresolvedType>> = Vec::new();
     let mut token_iter = tokens.iter().enumerate().peekable();
 
     while token_iter.peek().is_some() {
@@ -247,7 +246,7 @@ pub fn parse_unresolved_types(
         };
 
         let mut type_span = ident.span;
-        let mut parsed_type = UnresolvedTypeTokens::Simple(ident);
+        let mut parsed_type = UnresolvedType::Simple(ident);
 
         // This looks ugly
         while token_iter.peek().is_some_and(|(_, t)| {
@@ -280,7 +279,7 @@ pub fn parse_unresolved_types(
                     let length = parse_integer_lexeme(stores, len_token)?;
 
                     type_span = type_span.merge(delim.close.location);
-                    parsed_type = UnresolvedTypeTokens::Array(Box::new(parsed_type), length);
+                    parsed_type = UnresolvedType::Array(Box::new(parsed_type), length);
                 }
                 TokenKind::Ampersand => {
                     // Parsing a pointer!
@@ -289,7 +288,7 @@ pub fn parse_unresolved_types(
                     };
 
                     type_span = type_span.merge(next.location);
-                    parsed_type = UnresolvedTypeTokens::Pointer(Box::new(parsed_type));
+                    parsed_type = UnresolvedType::Pointer(Box::new(parsed_type));
                 }
                 _ => unreachable!(),
             }
@@ -481,7 +480,7 @@ pub fn parse_stack_def<'a>(
     had_error: &mut ErrorSignal,
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     prev_token: Spanned<Token>,
-) -> Spanned<Vec<Spanned<UnresolvedTypeTokens>>> {
+) -> Spanned<Vec<Spanned<UnresolvedType>>> {
     let stack = get_delimited_tokens(
         stores,
         token_iter,

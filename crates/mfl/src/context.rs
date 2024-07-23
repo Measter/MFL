@@ -7,12 +7,15 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, OpCode, TerminalBlock, UnresolvedIdent, While},
+    ir::{
+        If, NameResolvedType, OpCode, StructDef, TerminalBlock, UnresolvedIdent, UnresolvedType,
+        While,
+    },
     option::OptionExt,
     pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     source_file::{SourceLocation, Spanned, WithSpan},
-    type_store::{TypeId, UnresolvedStruct, UnresolvedTypeIds, UnresolvedTypeTokens},
+    type_store::TypeId,
     Stores,
 };
 
@@ -50,15 +53,15 @@ pub struct ItemHeader {
 
 #[derive(Debug, Clone)]
 pub struct UnresolvedItemSignature {
-    pub exit: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
-    pub entry: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
+    pub exit: Spanned<Vec<Spanned<UnresolvedType>>>,
+    pub entry: Spanned<Vec<Spanned<UnresolvedType>>>,
 }
 
 pub struct UnresolvedIr {
     item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
-    memory_type: HashMap<ItemId, Spanned<UnresolvedTypeTokens>>,
+    memory_type: HashMap<ItemId, Spanned<UnresolvedType>>,
     item_bodies: HashMap<ItemId, Vec<Op<UnresolvedOp>>>,
-    structs: HashMap<ItemId, UnresolvedStruct>,
+    structs: HashMap<ItemId, StructDef<UnresolvedType>>,
     scopes: Vec<UnresolvedScope>,
 }
 
@@ -71,7 +74,7 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_memory_type(&self, id: ItemId) -> Spanned<&UnresolvedTypeTokens> {
+    pub fn get_memory_type(&self, id: ItemId) -> Spanned<&UnresolvedType> {
         let v = &self.memory_type[&id];
         (&v.inner).with_span(v.location)
     }
@@ -102,7 +105,7 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_struct(&self, id: ItemId) -> &UnresolvedStruct {
+    pub fn get_struct(&self, id: ItemId) -> &StructDef<UnresolvedType> {
         &self.structs[&id]
     }
 }
@@ -121,16 +124,16 @@ impl UnresolvedIr {
 
 #[derive(Clone)]
 pub struct NameResolvedItemSignature {
-    pub exit: Vec<UnresolvedTypeIds>,
-    pub entry: Vec<UnresolvedTypeIds>,
+    pub exit: Vec<NameResolvedType>,
+    pub entry: Vec<NameResolvedType>,
 }
 
 pub struct NameResolvedIr {
     item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
-    memory_type: HashMap<ItemId, UnresolvedTypeIds>,
+    memory_type: HashMap<ItemId, NameResolvedType>,
     item_bodies: HashMap<ItemId, Vec<Op<NameResolvedOp>>>,
     // Need to split this UnresolvedStruct business.
-    structs: HashMap<ItemId, UnresolvedStruct>,
+    structs: HashMap<ItemId, StructDef<NameResolvedType>>,
     scopes: Vec<NameResolvedScope>,
 }
 
@@ -151,13 +154,13 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_memory_type(&self, id: ItemId) -> &UnresolvedTypeIds {
+    pub fn get_memory_type(&self, id: ItemId) -> &NameResolvedType {
         &self.memory_type[&id]
     }
 
     #[inline]
     #[track_caller]
-    pub fn set_memory_type(&mut self, id: ItemId, def: UnresolvedTypeIds) {
+    pub fn set_memory_type(&mut self, id: ItemId, def: NameResolvedType) {
         self.memory_type
             .insert(id, def)
             .expect_none("Redefined memory type");
@@ -189,13 +192,13 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_struct(&self, id: ItemId) -> &UnresolvedStruct {
+    pub fn get_struct(&self, id: ItemId) -> &StructDef<NameResolvedType> {
         &self.structs[&id]
     }
 
     #[inline]
     #[track_caller]
-    pub fn set_struct(&mut self, id: ItemId, def: UnresolvedStruct) {
+    pub fn set_struct(&mut self, id: ItemId, def: StructDef<NameResolvedType>) {
         self.structs.insert(id, def).expect_none("Redefined struct");
     }
 }
@@ -480,8 +483,8 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
-        exit_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::Function);
         self.urir.item_signatures.insert(
@@ -510,7 +513,7 @@ impl Context {
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {
-                exit: vec![UnresolvedTypeTokens::Simple(UnresolvedIdent {
+                exit: vec![UnresolvedType::Simple(UnresolvedIdent {
                     span: name.location,
                     is_from_root: false,
                     path: vec![bool_symbol.with_span(name.location)],
@@ -532,7 +535,7 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        exit_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::Const);
 
@@ -554,8 +557,8 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
-        exit_stack: Spanned<Vec<Spanned<UnresolvedTypeTokens>>>,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::GenericFunction);
@@ -578,7 +581,7 @@ impl Context {
         stores: &Stores,
         had_error: &mut ErrorSignal,
         module: ItemId,
-        def: UnresolvedStruct,
+        def: StructDef<UnresolvedType>,
     ) -> ItemId {
         let name = def.name;
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
@@ -598,7 +601,7 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        memory_type: Spanned<UnresolvedTypeTokens>,
+        memory_type: Spanned<UnresolvedType>,
     ) -> ItemId {
         let header = self.new_header(name, Some(parent), ItemKind::Memory);
         self.urir.memory_type.insert(header.id, memory_type);
@@ -639,23 +642,23 @@ impl Context {
     #[allow(clippy::only_used_in_recursion)]
     fn expand_generic_params_in_type(
         &self,
-        base: &UnresolvedTypeIds,
-        param_map: &HashMap<Spur, UnresolvedTypeIds>,
-    ) -> UnresolvedTypeIds {
+        base: &NameResolvedType,
+        param_map: &HashMap<Spur, NameResolvedType>,
+    ) -> NameResolvedType {
         match base {
-            UnresolvedTypeIds::SimpleCustom { .. } | UnresolvedTypeIds::SimpleBuiltin(_) => {
+            NameResolvedType::SimpleCustom { .. } | NameResolvedType::SimpleBuiltin(_) => {
                 base.clone()
             }
-            UnresolvedTypeIds::SimpleGenericParam(p) => param_map[&p.inner].clone(),
-            UnresolvedTypeIds::Array(inner, len) => {
+            NameResolvedType::SimpleGenericParam(p) => param_map[&p.inner].clone(),
+            NameResolvedType::Array(inner, len) => {
                 let inner = self.expand_generic_params_in_type(inner, param_map);
-                UnresolvedTypeIds::Array(Box::new(inner), *len)
+                NameResolvedType::Array(Box::new(inner), *len)
             }
-            UnresolvedTypeIds::Pointer(inner) => {
+            NameResolvedType::Pointer(inner) => {
                 let inner = self.expand_generic_params_in_type(inner, param_map);
-                UnresolvedTypeIds::Pointer(Box::new(inner))
+                NameResolvedType::Pointer(Box::new(inner))
             }
-            UnresolvedTypeIds::GenericInstance {
+            NameResolvedType::GenericInstance {
                 id,
                 id_token,
                 params,
@@ -664,7 +667,7 @@ impl Context {
                     .iter()
                     .map(|t| self.expand_generic_params_in_type(t, param_map))
                     .collect();
-                UnresolvedTypeIds::GenericInstance {
+                NameResolvedType::GenericInstance {
                     id: *id,
                     id_token: *id_token,
                     params,
@@ -678,7 +681,7 @@ impl Context {
         stores: &mut Stores,
         pass_ctx: &mut PassContext,
         body: &[Op<NameResolvedOp>],
-        param_map: &HashMap<Spur, UnresolvedTypeIds>,
+        param_map: &HashMap<Spur, NameResolvedType>,
         old_alloc_map: &HashMap<ItemId, ItemId>,
     ) -> Vec<Op<NameResolvedOp>> {
         let mut new_body = Vec::new();
@@ -830,7 +833,7 @@ impl Context {
         had_error: &mut ErrorSignal,
         base_fn_id: ItemId,
         resolved_generic_params: SmallVec<[TypeId; 4]>,
-        unresolved_generic_params: SmallVec<[UnresolvedTypeIds; 4]>,
+        unresolved_generic_params: SmallVec<[NameResolvedType; 4]>,
     ) -> Result<ItemId, ()> {
         if let Some(id) = self
             .generic_function_cache

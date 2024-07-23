@@ -7,11 +7,10 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Basic, Control, Op, OpCode, OpId, UnresolvedOp},
+    ir::{Basic, Control, Op, OpCode, OpId, StructDef, StructDefField, UnresolvedOp},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
     source_file::Spanned,
-    type_store::{UnresolvedField, UnresolvedStruct, UnresolvedType},
     Stores,
 };
 
@@ -447,9 +446,9 @@ pub fn parse_struct_or_union<'a>(
             had_error.set()
         }
 
-        fields.push(UnresolvedField {
+        fields.push(StructDefField {
             name: type_tokens.open.map(|t| t.lexeme),
-            kind: UnresolvedType::Tokens(unresolved_store_type.pop().unwrap().inner),
+            kind: unresolved_store_type.pop().unwrap().inner,
         });
         prev_token = type_tokens.close;
 
@@ -458,7 +457,7 @@ pub fn parse_struct_or_union<'a>(
         }
     }
 
-    let struct_def = UnresolvedStruct {
+    let struct_def = StructDef {
         name: name_token.map(|t| t.lexeme),
         fields,
         generic_params,

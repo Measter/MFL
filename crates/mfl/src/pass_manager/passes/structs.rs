@@ -4,7 +4,8 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    type_store::{TypeKind, UnresolvedTypeIds},
+    ir::NameResolvedType,
+    type_store::TypeKind,
     Stores,
 };
 
@@ -18,7 +19,7 @@ pub fn declare_struct(
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
         &mut stores.strings,
-        &UnresolvedTypeIds::SimpleCustom {
+        &NameResolvedType::SimpleCustom {
             id: cur_id,
             token: def.name,
         },

@@ -5,13 +5,13 @@ use crate::{
     context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, NameResolvedOp, Op, OpCode, TerminalBlock, UnresolvedIdent, UnresolvedOp, While},
+    ir::{
+        If, NameResolvedOp, NameResolvedType, Op, OpCode, StructDef, StructDefField, TerminalBlock,
+        UnresolvedIdent, UnresolvedOp, UnresolvedType, While,
+    },
     pass_manager::PassContext,
     source_file::{FileId, Spanned, WithSpan},
-    type_store::{
-        BuiltinTypes, UnresolvedField, UnresolvedStruct, UnresolvedType, UnresolvedTypeIds,
-        UnresolvedTypeTokens,
-    },
+    type_store::BuiltinTypes,
     Stores,
 };
 
@@ -104,11 +104,11 @@ fn resolve_idents_in_type(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
-    unresolved_type: &UnresolvedTypeTokens,
+    unresolved_type: &UnresolvedType,
     generic_params: Option<&[Spanned<Spur>]>,
-) -> Result<UnresolvedTypeIds, ()> {
+) -> Result<NameResolvedType, ()> {
     let res = match unresolved_type {
-        UnresolvedTypeTokens::Simple(unresolved_ident) => {
+        UnresolvedType::Simple(unresolved_ident) => {
             let item_name = unresolved_ident
                 .path
                 .last()
@@ -135,7 +135,7 @@ fn resolve_idents_in_type(
             }
 
             if let Some(builtin) = builtin_name {
-                UnresolvedTypeIds::SimpleBuiltin(builtin)
+                NameResolvedType::SimpleBuiltin(builtin)
             } else if unresolved_ident.path.len() == 1
                 && !unresolved_ident.is_from_root
                 && unresolved_ident.generic_params.is_none()
@@ -143,7 +143,7 @@ fn resolve_idents_in_type(
                     .and_then(|t| t.iter().find(|tp| tp.inner == item_name.inner))
                     .is_some()
             {
-                UnresolvedTypeIds::SimpleGenericParam(*item_name)
+                NameResolvedType::SimpleGenericParam(*item_name)
             } else {
                 let ident =
                     resolved_single_ident(ctx, stores, had_error, cur_id, unresolved_ident)?;
@@ -164,28 +164,28 @@ fn resolve_idents_in_type(
                             })
                             .collect::<Result<_, _>>()?;
 
-                        UnresolvedTypeIds::GenericInstance {
+                        NameResolvedType::GenericInstance {
                             id: ident,
                             id_token: item_name.inner.with_span(unresolved_ident.span),
                             params,
                         }
                     }
-                    None => UnresolvedTypeIds::SimpleCustom {
+                    None => NameResolvedType::SimpleCustom {
                         id: ident,
                         token: item_name.inner.with_span(unresolved_ident.span),
                     },
                 }
             }
         }
-        UnresolvedTypeTokens::Array(sub_type, length) => {
+        UnresolvedType::Array(sub_type, length) => {
             let sub_type =
                 resolve_idents_in_type(ctx, stores, had_error, cur_id, sub_type, generic_params)?;
-            UnresolvedTypeIds::Array(Box::new(sub_type), *length)
+            NameResolvedType::Array(Box::new(sub_type), *length)
         }
-        UnresolvedTypeTokens::Pointer(sub_type) => {
+        UnresolvedType::Pointer(sub_type) => {
             let sub_type =
                 resolve_idents_in_type(ctx, stores, had_error, cur_id, sub_type, generic_params)?;
-            UnresolvedTypeIds::Pointer(Box::new(sub_type))
+            NameResolvedType::Pointer(Box::new(sub_type))
         }
     };
 
@@ -197,9 +197,9 @@ fn resolve_idents_in_struct_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
-    def: &UnresolvedStruct,
-) -> UnresolvedStruct {
-    let mut resolved = UnresolvedStruct {
+    def: &StructDef<UnresolvedType>,
+) -> StructDef<NameResolvedType> {
+    let mut resolved = StructDef {
         name: def.name,
         fields: Vec::new(),
         generic_params: def.generic_params.clone(),
@@ -207,25 +207,21 @@ fn resolve_idents_in_struct_def(
     };
 
     for field in &def.fields {
-        let UnresolvedType::Tokens(field_kind) = &field.kind else {
-            unreachable!()
-        };
-
         let Ok(new_kind) = resolve_idents_in_type(
             ctx,
             stores,
             had_error,
             cur_id,
-            field_kind,
+            &field.kind,
             def.generic_params.as_deref(),
         ) else {
             had_error.set();
             continue;
         };
 
-        resolved.fields.push(UnresolvedField {
+        resolved.fields.push(StructDefField {
             name: field.name,
-            kind: UnresolvedType::Id(new_kind),
+            kind: new_kind,
         });
     }
 
@@ -350,8 +346,7 @@ pub fn resolve_signature(
             let mut local_had_error = ErrorSignal::new();
 
             let mut process_sig =
-                |unresolved: &[Spanned<UnresolvedTypeTokens>],
-                 resolved: &mut Vec<UnresolvedTypeIds>| {
+                |unresolved: &[Spanned<UnresolvedType>], resolved: &mut Vec<NameResolvedType>| {
                     for kind in unresolved {
                         let Ok(new_kind) = resolve_idents_in_type(
                             ctx,
@@ -569,7 +564,7 @@ fn resolve_idents_in_block(
 
                         // This is the same as PackStruct
                         ItemKind::StructDef => {
-                            let ty = UnresolvedTypeTokens::Simple(ident.clone());
+                            let ty = UnresolvedType::Simple(ident.clone());
                             let Ok(new_ty) = resolve_idents_in_type(
                                 ctx,
                                 stores,
