@@ -9,3 +9,15 @@ struct Foo is
     field foo Foo
     field bar s32
 end
+
+struct Bar is
+    field baz Baz
+end
+
+struct Baz is
+    field bar Bar
+end
+
+struct Quux is
+    field k Quux[5]
+end
