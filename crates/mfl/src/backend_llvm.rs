@@ -27,7 +27,7 @@ use crate::{
     pass_manager::static_analysis::{Analyzer, ValueId},
     stores::{
         interner::Interner,
-        source::SourceStorage,
+        source::SourceStore,
         types::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,
@@ -120,7 +120,7 @@ struct DataStore<'a> {
     interner: &'a mut Interner,
     analyzer: &'a Analyzer,
     type_store: &'a mut TypeStore,
-    source_store: &'a SourceStorage,
+    source_store: &'a SourceStore,
 }
 
 #[derive(Debug)]
@@ -715,7 +715,7 @@ impl<'ctx> CodeGen<'ctx> {
         program: &MflContext,
         id: ItemId,
         function: FunctionValue<'ctx>,
-        source_store: &SourceStorage,
+        source_store: &SourceStore,
         interner: &mut Interner,
         type_store: &mut TypeStore,
     ) -> InkwellResult {
@@ -816,7 +816,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build(
         &mut self,
         program: &MflContext,
-        source_store: &SourceStorage,
+        source_store: &SourceStore,
         interner: &mut Interner,
         type_store: &mut TypeStore,
     ) -> InkwellResult {

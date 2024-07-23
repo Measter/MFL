@@ -109,13 +109,13 @@ struct LoadedSource {
 }
 
 #[derive(Default)]
-pub struct SourceStorage {
+pub struct SourceStore {
     files: Vec<LoadedSource>,
 }
 
-impl SourceStorage {
+impl SourceStore {
     pub const fn new() -> Self {
-        SourceStorage { files: Vec::new() }
+        SourceStore { files: Vec::new() }
     }
 
     pub fn add(&mut self, name: &Path, source: &str) -> FileId {
@@ -140,7 +140,7 @@ impl SourceStorage {
     }
 }
 
-impl Cache<FileId> for &SourceStorage {
+impl Cache<FileId> for &SourceStore {
     type Storage = String;
 
     #[inline]
