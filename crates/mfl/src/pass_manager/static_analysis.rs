@@ -13,8 +13,10 @@ use crate::{
     ir::{IntKind, Op, OpId, TypeResolvedOp},
     n_ops::HashMapNOps,
     option::OptionExt,
-    source_file::{SourceLocation, Spanned},
-    stores::type_store::{Integer, Signedness, TypeId},
+    stores::{
+        source::{SourceLocation, Spanned},
+        type_store::{Integer, Signedness, TypeId},
+    },
     Stores,
 };
 

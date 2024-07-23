@@ -9,8 +9,10 @@ use crate::{
     context::{ItemId, LangItem},
     diagnostics,
     ir::{NameResolvedType, StructDef, StructDefField},
-    source_file::{SourceLocation, Spanned},
-    stores::interner::Interner,
+    stores::{
+        interner::Interner,
+        source::{SourceLocation, Spanned},
+    },
     Stores,
 };
 

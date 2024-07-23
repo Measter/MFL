@@ -25,9 +25,9 @@ use crate::{
     context::{Context as MflContext, ItemId, ItemKind},
     ir::{Arithmetic, Basic, Compare, Control, IntKind, Memory, Op, OpCode, Stack, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ValueId},
-    source_file::SourceStorage,
     stores::{
         interner::Interner,
+        source::SourceStorage,
         type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,

@@ -18,7 +18,7 @@ use crate::{
         },
         PassContext,
     },
-    source_file::Spanned,
+    stores::source::Spanned,
     Stores,
 };
 

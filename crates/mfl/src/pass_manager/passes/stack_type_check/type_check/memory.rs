@@ -15,8 +15,10 @@ use crate::{
         static_analysis::{can_promote_int_unidirectional, Analyzer},
         PassContext,
     },
-    source_file::Spanned,
-    stores::type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
+    stores::{
+        source::Spanned,
+        type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
+    },
     Stores,
 };
 

@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{NameResolvedOp, NameResolvedType, Op, OpCode},
     pass_manager::PassContext,
-    source_file::SourceLocation,
+    stores::source::SourceLocation,
     Stores,
 };
 

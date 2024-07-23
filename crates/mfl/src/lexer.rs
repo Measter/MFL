@@ -7,7 +7,7 @@ use tracing::debug_span;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    source_file::{FileId, SourceLocation, Spanned, WithSpan},
+    stores::source::{FileId, SourceLocation, Spanned, WithSpan},
     Stores,
 };
 

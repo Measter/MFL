@@ -5,7 +5,7 @@ use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
     pass_manager::static_analysis::{Analyzer, ValueId},
-    source_file::SourceLocation,
+    stores::source::SourceLocation,
     Stores,
 };
 

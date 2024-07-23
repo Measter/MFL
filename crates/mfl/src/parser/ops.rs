@@ -13,8 +13,10 @@ use crate::{
         OpId, Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
     },
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
-    source_file::{Spanned, WithSpan},
-    stores::type_store::{IntWidth, Signedness},
+    stores::{
+        source::{Spanned, WithSpan},
+        type_store::{IntWidth, Signedness},
+    },
     Stores,
 };
 

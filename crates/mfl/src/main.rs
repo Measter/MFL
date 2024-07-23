@@ -15,9 +15,9 @@ use color_eyre::{
 use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
-use source_file::SourceStorage;
 use stores::{
     interner::Interner,
+    source::SourceStorage,
     type_store::{BuiltinTypes, TypeStore},
     Stores,
 };
@@ -35,7 +35,6 @@ mod parser;
 mod pass_manager;
 mod program;
 mod simulate;
-mod source_file;
 mod stores;
 
 #[derive(Debug, Parser)]

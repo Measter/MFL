@@ -10,7 +10,7 @@ use crate::{
     ir::{Basic, Control, Op, OpCode, OpId, StructDef, StructDefField, UnresolvedOp},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
-    source_file::Spanned,
+    stores::source::Spanned,
     Stores,
 };
 

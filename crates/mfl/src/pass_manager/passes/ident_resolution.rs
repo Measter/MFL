@@ -10,8 +10,10 @@ use crate::{
         UnresolvedIdent, UnresolvedOp, UnresolvedType, While,
     },
     pass_manager::PassContext,
-    source_file::{FileId, Spanned, WithSpan},
-    stores::type_store::BuiltinTypes,
+    stores::{
+        source::{FileId, Spanned, WithSpan},
+        type_store::BuiltinTypes,
+    },
     Stores,
 };
 

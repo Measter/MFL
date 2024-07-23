@@ -5,8 +5,7 @@ use tracing::trace;
 use crate::{
     context::ItemId,
     ir::{If, Op, TypeResolvedOp, While},
-    source_file::Spanned,
-    stores::type_store::TypeKind,
+    stores::{source::Spanned, type_store::TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

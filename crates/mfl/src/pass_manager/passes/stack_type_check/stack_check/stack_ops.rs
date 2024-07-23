@@ -8,7 +8,7 @@ use crate::{
     ir::{Direction, Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ValueId},
-    source_file::Spanned,
+    stores::source::Spanned,
     Stores,
 };
 

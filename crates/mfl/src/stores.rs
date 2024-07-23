@@ -1,10 +1,10 @@
 use interner::Interner;
 use lasso::Spur;
+use source::SourceStorage;
 use type_store::{TypeId, TypeStore};
 
-use crate::source_file::SourceStorage;
-
 pub mod interner;
+pub mod source;
 pub mod type_store;
 
 pub struct Stores {

@@ -15,8 +15,10 @@ use crate::{
     ir::{Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::ValueId,
-    source_file::{SourceLocation, Spanned},
-    stores::type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
+    stores::{
+        source::{SourceLocation, Spanned},
+        type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
+    },
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

@@ -8,7 +8,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{Integer, Token, TokenKind},
-    source_file::{SourceLocation, Spanned, WithSpan},
+    stores::source::{SourceLocation, Spanned, WithSpan},
     Stores,
 };
 

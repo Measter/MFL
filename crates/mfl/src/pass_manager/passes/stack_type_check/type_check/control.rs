@@ -13,8 +13,10 @@ use crate::{
         },
         PassContext,
     },
-    source_file::SourceLocation,
-    stores::type_store::{BuiltinTypes, TypeId, TypeKind},
+    stores::{
+        source::SourceLocation,
+        type_store::{BuiltinTypes, TypeId, TypeKind},
+    },
     Stores,
 };
 

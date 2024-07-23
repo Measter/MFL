@@ -11,7 +11,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     lexer,
-    source_file::{FileId, SourceLocation, Spanned, WithSpan},
+    stores::source::{FileId, SourceLocation, Spanned, WithSpan},
     Args, Stores,
 };
 
