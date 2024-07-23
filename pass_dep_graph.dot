@@ -9,10 +9,12 @@ strict digraph {
         TypeResolvedBody;
         CyclicRefCheckBody;
         DefineStructs;
+        SelfContainingStruct;
         TerminalBlockCheckBody;
         StackAndTypeCheckedBody;
         ConstPropBody;
         EvaluatedConstsAsserts;
+        CheckAsserts;
     }
 
     subgraph items {
@@ -33,6 +35,7 @@ strict digraph {
     TypeResolvedSignature -> IdentResolvedSignature;
     TypeResolvedBody -> IdentResolvedBody;
     DefineStructs -> DeclareStructs;
+    SelfContainingStruct -> IdentResolvedSignature;
     CyclicRefCheckBody -> IdentResolvedBody;
     TerminalBlockCheckBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TypeResolvedSignature;
@@ -41,13 +44,15 @@ strict digraph {
     ConstPropBody -> StackAndTypeCheckedBody;
     EvaluatedConstsAsserts -> CyclicRefCheckBody;
     EvaluatedConstsAsserts -> ConstPropBody;
+    CheckAsserts -> EvaluatedConstsAsserts;
 
     Module -> IdentResolvedSignature;
+    StructDef -> SelfContainingStruct;
     StructDef -> DefineStructs;
     Memory -> TypeResolvedSignature;
     GenericFunction -> IdentResolvedSignature;
     GenericFunction -> IdentResolvedBody;
-    Assert -> EvaluatedConstsAsserts;
+    Assert -> CheckAsserts;
     Const -> EvaluatedConstsAsserts;
     Function -> ConstPropBody;
 }

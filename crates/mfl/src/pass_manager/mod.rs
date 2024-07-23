@@ -64,9 +64,9 @@ impl PassState {
         match self {
             IdentResolvedSignature => (FlagSet::default(), &[]),
             IdentResolvedBody => (FlagSet::default(), &[]),
+            SelfContainingStruct => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
             DeclareStructs => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
             DefineStructs => (DeclareStructs.into(), &[DeclareStructs]),
-            SelfContainingStruct => (DefineStructs.into(), &[DefineStructs]),
             TypeResolvedSignature => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
             TypeResolvedBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
             CyclicRefCheckBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
@@ -610,7 +610,7 @@ impl PassContext {
     ) -> Result<(), ()> {
         let needed_states = match ctx.get_item_header(cur_item).kind {
             ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
-            ItemKind::StructDef => &[PassState::SelfContainingStruct],
+            ItemKind::StructDef => &[PassState::SelfContainingStruct, PassState::DefineStructs],
             ItemKind::Memory => &[PassState::TypeResolvedSignature],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
