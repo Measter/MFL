@@ -23,11 +23,13 @@ use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
     context::{Context as MflContext, ItemId, ItemKind},
-    interners::Interner,
     ir::{Arithmetic, Basic, Compare, Control, IntKind, Memory, Op, OpCode, Stack, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ValueId},
     source_file::SourceStorage,
-    stores::type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    stores::{
+        interner::Interner,
+        type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+    },
     Args, Stores,
 };
 

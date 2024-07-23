@@ -8,9 +8,9 @@ use lasso::Spur;
 use crate::{
     context::{ItemId, LangItem},
     diagnostics,
-    interners::Interner,
     ir::{NameResolvedType, StructDef, StructDefField},
     source_file::{SourceLocation, Spanned},
+    stores::interner::Interner,
     Stores,
 };
 

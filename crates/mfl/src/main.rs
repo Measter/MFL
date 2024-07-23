@@ -15,9 +15,9 @@ use color_eyre::{
 use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
-use interners::Interner;
 use source_file::SourceStorage;
 use stores::{
+    interner::Interner,
     type_store::{BuiltinTypes, TypeStore},
     Stores,
 };
@@ -27,7 +27,6 @@ mod backend_llvm;
 mod context;
 mod diagnostics;
 mod error_signal;
-mod interners;
 mod ir;
 mod lexer;
 mod n_ops;
