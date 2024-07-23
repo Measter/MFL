@@ -6,7 +6,7 @@ use crate::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
         Analyzer,
     },
-    stores::type_store::{BuiltinTypes, TypeKind},
+    stores::types::{BuiltinTypes, TypeKind},
     Stores,
 };
 

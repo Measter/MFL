@@ -28,7 +28,7 @@ use crate::{
     stores::{
         interner::Interner,
         source::SourceStorage,
-        type_store::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+        types::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,
 };

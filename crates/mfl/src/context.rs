@@ -16,7 +16,7 @@ use crate::{
     simulate::SimulatorValue,
     stores::{
         source::{SourceLocation, Spanned, WithSpan},
-        type_store::TypeId,
+        types::TypeId,
     },
     Stores,
 };

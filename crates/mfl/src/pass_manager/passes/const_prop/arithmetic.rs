@@ -6,7 +6,7 @@ use crate::{
     ir::{Arithmetic, IntKind, Op, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::type_store::TypeKind,
+    stores::types::TypeKind,
     Stores,
 };
 

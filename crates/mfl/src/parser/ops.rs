@@ -15,7 +15,7 @@ use crate::{
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
     stores::{
         source::{Spanned, WithSpan},
-        type_store::{IntWidth, Signedness},
+        types::{IntWidth, Signedness},
     },
     Stores,
 };

@@ -6,7 +6,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{IntKind, Op, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::type_store::TypeKind,
+    stores::types::TypeKind,
     Stores,
 };
 

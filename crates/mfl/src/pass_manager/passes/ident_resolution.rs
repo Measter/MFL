@@ -12,7 +12,7 @@ use crate::{
     pass_manager::PassContext,
     stores::{
         source::{FileId, Spanned, WithSpan},
-        type_store::BuiltinTypes,
+        types::BuiltinTypes,
     },
     Stores,
 };

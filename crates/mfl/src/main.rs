@@ -15,7 +15,7 @@ use color_eyre::{
 use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
-use stores::{type_store::BuiltinTypes, Stores};
+use stores::{types::BuiltinTypes, Stores};
 use tracing_subscriber::fmt::format::FmtSpan;
 
 mod backend_llvm;

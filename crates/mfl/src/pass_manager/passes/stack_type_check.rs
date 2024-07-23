@@ -10,7 +10,7 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    stores::type_store::Integer,
+    stores::types::Integer,
     Stores,
 };
 

@@ -15,7 +15,7 @@ use crate::{
     },
     stores::{
         source::SourceLocation,
-        type_store::{BuiltinTypes, TypeId, TypeKind},
+        types::{BuiltinTypes, TypeId, TypeKind},
     },
     Stores,
 };

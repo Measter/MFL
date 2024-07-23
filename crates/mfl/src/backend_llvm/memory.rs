@@ -17,7 +17,7 @@ use crate::{
     pass_manager::static_analysis::ValueId,
     stores::{
         source::{SourceLocation, Spanned},
-        type_store::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
+        types::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
     },
 };
 

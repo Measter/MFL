@@ -4,7 +4,7 @@ use crate::{
     ir::{Arithmetic, Basic, Op, OpCode, TypeResolvedOp},
     n_ops::SliceNOps,
     pass_manager::static_analysis::promote_int_type_bidirectional,
-    stores::type_store::{Signedness, TypeKind},
+    stores::types::{Signedness, TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};

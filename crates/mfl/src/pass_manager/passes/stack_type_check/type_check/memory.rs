@@ -17,7 +17,7 @@ use crate::{
     },
     stores::{
         source::Spanned,
-        type_store::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
+        types::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     },
     Stores,
 };

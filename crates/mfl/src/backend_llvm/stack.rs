@@ -5,7 +5,7 @@ use lasso::Spur;
 use crate::{
     context::ItemId,
     ir::{IntKind, Op, TypeResolvedOp},
-    stores::type_store::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
+    stores::types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
