@@ -3,20 +3,20 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Arithmetic, IntKind, TypeResolvedOp},
+    ir::{Arithmetic, IntKind},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::{ops::Op, types::TypeKind},
+    stores::{ops::OpId, types::TypeKind},
     Stores,
 };
 
 pub(crate) fn add(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
         return;
@@ -78,10 +78,10 @@ pub(crate) fn add(
 pub(crate) fn bitand_bitor_bitxor(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
         return;
@@ -122,8 +122,8 @@ pub(crate) fn bitand_bitor_bitxor(
     analyzer.set_value_const(output_value_id, output_const_val);
 }
 
-pub(crate) fn bitnot(stores: &mut Stores, analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
-    let op_data = analyzer.get_op_io(op.id);
+pub(crate) fn bitnot(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+    let op_data = analyzer.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
         return;
@@ -158,10 +158,11 @@ pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
         return;
@@ -200,10 +201,10 @@ pub(crate) fn multiply_div_rem_shift(
                     Color::Cyan,
                     Color::Green,
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Yellow));
+                labels.push(Label::new(op_loc).with_color(Color::Yellow));
                 diagnostics::emit_warning(
                     stores,
-                    op.token.location,
+                    op_loc,
                     "shift value out of range",
                     labels,
                     format!(
@@ -222,8 +223,8 @@ pub(crate) fn multiply_div_rem_shift(
                     Color::Cyan,
                     Color::Green,
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Yellow));
-                diagnostics::emit_error(stores, op.token.location, "division by 0", labels, None);
+                labels.push(Label::new(op_loc).with_color(Color::Yellow));
+                diagnostics::emit_error(stores, op_loc, "division by 0", labels, None);
 
                 had_error.set();
                 return;
@@ -254,10 +255,11 @@ pub(crate) fn subtract(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
         return;
@@ -312,10 +314,10 @@ pub(crate) fn subtract(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            labels.push(Label::new(op_loc).with_color(Color::Red));
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 "subtracting pointers of different sources",
                 labels,
                 None,
@@ -347,11 +349,11 @@ pub(crate) fn subtract(
                     Color::Yellow,
                     Color::Cyan,
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
+                labels.push(Label::new(op_loc).with_color(Color::Red));
 
                 diagnostics::emit_error(
                     stores,
-                    op.token.location,
+                    op_loc,
                     "subtracting end of array from start",
                     labels,
                     None,

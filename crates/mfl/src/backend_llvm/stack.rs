@@ -4,9 +4,9 @@ use lasso::Spur;
 
 use crate::{
     context::ItemId,
-    ir::{IntKind, TypeResolvedOp},
+    ir::IntKind,
     stores::{
-        ops::Op,
+        ops::OpId,
         types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
     },
 };
@@ -18,10 +18,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         to_type_id: TypeId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let to_type_info = ds.type_store.get_type_info(to_type_id);
         match to_type_info.kind {
@@ -113,9 +113,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
             let value = value_store.load_value(self, input_id, ds)?;
@@ -129,11 +129,11 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         width: IntWidth,
         value: IntKind,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let int_type = width.get_int_type(self.ctx);
         let value = match value {
@@ -155,10 +155,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         value: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let value = self.ctx.bool_type().const_int(value as _, false).into();
         value_store.store_value(self, op_io.outputs()[0], value)?;
@@ -170,11 +170,11 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         str_id: Spur,
         is_c_str: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let str_ptr = value_store.get_string_literal(self, ds.interner, str_id)?;
 
         let store_value = if is_c_str {
@@ -207,10 +207,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         const_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let output_ids = op_io.outputs();
 
         let Some(const_vals) = ds.context.get_consts(const_id) else {

@@ -4,9 +4,9 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{IntKind, TypeResolvedOp},
+    ir::IntKind,
     pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::{ops::Op, types::TypeKind},
+    stores::{ops::OpId, types::TypeKind},
     Stores,
 };
 
@@ -14,9 +14,9 @@ pub(crate) fn insert_extract_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };
@@ -60,15 +60,10 @@ pub(crate) fn insert_extract_array(
         Color::Yellow,
         Color::Cyan,
     );
-    labels.push(Label::new(op.token.location).with_color(Color::Red));
+    let op_loc = stores.ops.get_token(op_id).location;
+    labels.push(Label::new(op_loc).with_color(Color::Red));
 
-    diagnostics::emit_error(
-        stores,
-        op.token.location,
-        "index out of bounds",
-        labels,
-        None,
-    );
+    diagnostics::emit_error(stores, op_loc, "index out of bounds", labels, None);
 
     had_error.set();
 }

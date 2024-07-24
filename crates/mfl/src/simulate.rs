@@ -8,7 +8,7 @@ use crate::{
     ir::{Arithmetic, Basic, Compare, Control, Direction, IntKind, OpCode, Stack, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
-    stores::{ops::Op, types::IntWidth},
+    stores::{ops::OpId, types::IntWidth},
     Stores,
 };
 
@@ -107,12 +107,12 @@ fn simulate_execute_program_block(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    block: &[Op<TypeResolvedOp>],
+    block: &[OpId],
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
-    while let Some(op) = block.get(ip) {
-        match &op.code {
+    while let Some(&op_id) = block.get(ip) {
+        match stores.ops.get_type_resolved(op_id).clone() {
             OpCode::Basic(Basic::Arithmetic(ar_op)) => match ar_op {
                 Arithmetic::Add
                 | Arithmetic::BitAnd
@@ -148,8 +148,8 @@ fn simulate_execute_program_block(
                 }
             },
             OpCode::Basic(Basic::Compare(co_op)) => {
-                if *co_op == Compare::IsNull {
-                    emit_unsupported_diag(stores, op);
+                if co_op == Compare::IsNull {
+                    emit_unsupported_diag(stores, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
 
@@ -167,23 +167,20 @@ fn simulate_execute_program_block(
                 Control::Epilogue | Control::Prologue => {}
                 Control::Return => break,
                 Control::Exit | Control::SysCall { .. } => {
-                    emit_unsupported_diag(stores, op);
+                    emit_unsupported_diag(stores, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
             },
             OpCode::Basic(Basic::Memory(_)) => {
-                emit_unsupported_diag(stores, op);
+                emit_unsupported_diag(stores, op_id);
                 return Err(SimulationError::UnsupportedOp);
             }
-            OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(*val)),
+            OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(val)),
             OpCode::Basic(Basic::PushInt { width, value }) => {
-                value_stack.push(SimulatorValue::Int {
-                    width: *width,
-                    kind: *value,
-                })
+                value_stack.push(SimulatorValue::Int { width, kind: value })
             }
             OpCode::Basic(Basic::PushStr { .. }) => {
-                emit_unsupported_diag(stores, op);
+                emit_unsupported_diag(stores, op_id);
                 return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
@@ -238,7 +235,7 @@ fn simulate_execute_program_block(
                 | TypeResolvedOp::Memory { .. }
                 | TypeResolvedOp::PackStruct { .. },
             ) => {
-                emit_unsupported_diag(stores, op);
+                emit_unsupported_diag(stores, op_id);
                 return Err(SimulationError::UnsupportedOp);
             }
 
@@ -271,7 +268,7 @@ fn simulate_execute_program_block(
                 }
             }
             OpCode::Complex(TypeResolvedOp::SizeOf { id }) => {
-                let size = stores.types.get_size_info(*id);
+                let size = stores.types.get_size_info(id);
                 value_stack.push(SimulatorValue::Int {
                     width: IntWidth::I64,
                     kind: IntKind::Unsigned(size.byte_width),
@@ -299,13 +296,13 @@ fn simulate_execute_program_block(
             },
             OpCode::Complex(TypeResolvedOp::Const { id }) => {
                 if pass_ctx
-                    .ensure_evaluated_consts_asserts(ctx, stores, *id)
+                    .ensure_evaluated_consts_asserts(ctx, stores, id)
                     .is_err()
                 {
                     return Err(SimulationError::UnavailableConst);
                 }
 
-                let Some(vals) = ctx.get_consts(*id) else {
+                let Some(vals) = ctx.get_consts(id) else {
                     unreachable!();
                 };
                 value_stack.extend(vals.iter().copied());
@@ -318,12 +315,13 @@ fn simulate_execute_program_block(
     Ok(())
 }
 
-fn emit_unsupported_diag(stores: &mut Stores, op: &Op<TypeResolvedOp>) {
+fn emit_unsupported_diag(stores: &mut Stores, op_id: OpId) {
+    let op_location = stores.ops.get_token(op_id).location;
     diagnostics::emit_error(
         stores,
-        op.token.location,
+        op_location,
         "operation not supported during const evaluation",
-        [Label::new(op.token.location).with_color(Color::Red)],
+        [Label::new(op_location).with_color(Color::Red)],
         None,
     );
 }
@@ -337,7 +335,7 @@ pub(crate) fn simulate_execute_program(
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
-    let block = ctx.trir().get_item_body(item_id).to_owned();
+    let block = ctx.get_item_body(item_id).to_owned();
     simulate_execute_program_block(ctx, stores, pass_ctx, &block, &mut value_stack)?;
 
     Ok(value_stack)

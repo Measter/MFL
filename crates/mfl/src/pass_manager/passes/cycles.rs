@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{NameResolvedOp, NameResolvedType, OpCode},
     pass_manager::PassContext,
-    stores::{ops::Op, source::SourceLocation},
+    stores::{ops::OpId, source::SourceLocation},
     Stores,
 };
 
@@ -159,7 +159,7 @@ fn check_invalid_cycles_const_assert(
             stores,
             had_error,
             root_header,
-            ctx.nrir().get_item_body(item),
+            ctx.get_item_body(item),
             header,
             &mut checked_items,
             &mut check_queue,
@@ -171,7 +171,7 @@ fn check_invalid_cyclic_refs_in_block(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     root_header: ItemHeader,
-    block: &[Op<NameResolvedOp>],
+    block: &[OpId],
     cur_header: ItemHeader,
     checked_items: &mut HashSet<ItemId>,
     check_queue: &mut Vec<ItemId>,
@@ -182,8 +182,9 @@ fn check_invalid_cyclic_refs_in_block(
         _ => unreachable!(),
     };
 
-    for op in block {
-        match &op.code {
+    for &op_id in block {
+        let op_code = stores.ops.get_name_resolved(op_id).clone();
+        match op_code {
             OpCode::Complex(NameResolvedOp::If(if_op)) => {
                 check_invalid_cyclic_refs_in_block(
                     stores,
@@ -236,12 +237,13 @@ fn check_invalid_cyclic_refs_in_block(
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 // False means that the value was already in the set.
                 #[allow(clippy::bool_comparison)]
-                if checked_items.insert(*id) == false {
+                if checked_items.insert(id) == false {
                     continue;
                 }
 
-                if *id == root_header.id {
+                if id == root_header.id {
                     had_error.set();
+                    let op_loc = stores.ops.get_token(op_id).location;
                     diagnostics::emit_error(
                         stores,
                         cur_header.name.location,
@@ -250,14 +252,14 @@ fn check_invalid_cyclic_refs_in_block(
                             Label::new(root_header.name.location)
                                 .with_color(Color::Red)
                                 .with_message(format!("in this {kind_str}")),
-                            Label::new(op.token.location)
+                            Label::new(op_loc)
                                 .with_color(Color::Cyan)
                                 .with_message("cyclic reference"),
                         ],
                         None,
                     );
                 } else {
-                    check_queue.push(*id);
+                    check_queue.push(id);
                 }
             }
             _ => (),

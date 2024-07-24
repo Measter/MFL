@@ -3,10 +3,10 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
     error_signal::ErrorSignal,
-    ir::{If, NameResolvedOp, NameResolvedType, OpCode, TerminalBlock, TypeResolvedOp, While},
+    ir::{NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
     pass_manager::PassContext,
     stores::{
-        ops::Op,
+        ops::OpId,
         types::{emit_type_error_diag, TypeId},
     },
     Stores,
@@ -146,28 +146,17 @@ fn resolve_block(
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    unresolved_block: &[Op<NameResolvedOp>],
-) -> Vec<Op<TypeResolvedOp>> {
-    let mut resolved_block = Vec::new();
-
-    for op in unresolved_block {
-        match &op.code {
-            OpCode::Basic(bo) => {
-                resolved_block.push(Op {
-                    code: OpCode::Basic(*bo),
-                    id: op.id,
-                    token: op.token,
-                });
-            }
+    unresolved_block: &[OpId],
+) {
+    for &op_id in unresolved_block {
+        let old_code = stores.ops.get_name_resolved(op_id).clone();
+        let new_code = match old_code {
+            OpCode::Basic(bo) => OpCode::Basic(bo),
 
             OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
-                let called_item_header = ctx.get_item_header(*id);
+                let called_item_header = ctx.get_item_header(id);
                 if called_item_header.kind != ItemKind::GenericFunction {
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(TypeResolvedOp::CallFunction { id: *id }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(TypeResolvedOp::CallFunction { id })
                 } else if let Some(unresolved_generic_params) = generic_params.as_deref() {
                     let mut resolved_generic_params = SmallVec::<[TypeId; 4]>::new();
                     let mut unresolved_generic_params_sm = SmallVec::<[NameResolvedType; 4]>::new();
@@ -203,7 +192,7 @@ fn resolve_block(
                         stores,
                         pass_ctx,
                         had_error,
-                        *id,
+                        id,
                         resolved_generic_params,
                         unresolved_generic_params_sm,
                     ) else {
@@ -211,88 +200,34 @@ fn resolve_block(
                         continue;
                     };
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(TypeResolvedOp::CallFunction { id: new_id }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(TypeResolvedOp::CallFunction { id: new_id })
                 } else {
                     // No parameters were provided, we'll try to resolve this during type checking.
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(TypeResolvedOp::CallFunction { id: *id }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(TypeResolvedOp::CallFunction { id })
                 }
             }
-            OpCode::Complex(NameResolvedOp::Const { id }) => resolved_block.push(Op {
-                code: OpCode::Complex(TypeResolvedOp::Const { id: *id }),
-                id: op.id,
-                token: op.token,
-            }),
-            OpCode::Complex(NameResolvedOp::Memory { id, is_global }) => resolved_block.push(Op {
-                code: OpCode::Complex(TypeResolvedOp::Memory {
-                    id: *id,
-                    is_global: *is_global,
-                }),
-                id: op.id,
-                token: op.token,
-            }),
+            OpCode::Complex(NameResolvedOp::Const { id }) => {
+                OpCode::Complex(TypeResolvedOp::Const { id })
+            }
+            OpCode::Complex(NameResolvedOp::Memory { id, is_global }) => {
+                OpCode::Complex(TypeResolvedOp::Memory { id, is_global })
+            }
 
             OpCode::Complex(NameResolvedOp::If(if_op)) => {
-                let resolved_condition =
-                    resolve_block(ctx, stores, pass_ctx, had_error, &if_op.condition.block);
-                let resolved_then =
-                    resolve_block(ctx, stores, pass_ctx, had_error, &if_op.then_block.block);
-                let resolved_else =
-                    resolve_block(ctx, stores, pass_ctx, had_error, &if_op.else_block.block);
-
-                resolved_block.push(Op {
-                    code: OpCode::Complex(TypeResolvedOp::If(Box::new(If {
-                        tokens: if_op.tokens,
-                        condition: TerminalBlock {
-                            block: resolved_condition,
-                            is_terminal: false,
-                        },
-                        then_block: TerminalBlock {
-                            block: resolved_then,
-                            is_terminal: false,
-                        },
-                        else_block: TerminalBlock {
-                            block: resolved_else,
-                            is_terminal: false,
-                        },
-                    }))),
-                    id: op.id,
-                    token: op.token,
-                })
+                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.condition.block);
+                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.then_block.block);
+                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.else_block.block);
+                OpCode::Complex(TypeResolvedOp::If(if_op.clone()))
             }
             OpCode::Complex(NameResolvedOp::While(while_op)) => {
-                let resolved_condition =
-                    resolve_block(ctx, stores, pass_ctx, had_error, &while_op.condition.block);
-                let resolved_body =
-                    resolve_block(ctx, stores, pass_ctx, had_error, &while_op.body_block.block);
-
-                resolved_block.push(Op {
-                    code: OpCode::Complex(TypeResolvedOp::While(Box::new(While {
-                        tokens: while_op.tokens,
-                        condition: TerminalBlock {
-                            block: resolved_condition,
-                            is_terminal: false,
-                        },
-                        body_block: TerminalBlock {
-                            block: resolved_body,
-                            is_terminal: false,
-                        },
-                    }))),
-                    id: op.id,
-                    token: op.token,
-                })
+                resolve_block(ctx, stores, pass_ctx, had_error, &while_op.condition.block);
+                resolve_block(ctx, stores, pass_ctx, had_error, &while_op.body_block.block);
+                OpCode::Complex(TypeResolvedOp::While(while_op.clone()))
             }
 
-            OpCode::Complex(NameResolvedOp::Cast { id })
-            | OpCode::Complex(NameResolvedOp::PackStruct { id })
-            | OpCode::Complex(NameResolvedOp::SizeOf { id }) => {
+            OpCode::Complex(NameResolvedOp::Cast { ref id })
+            | OpCode::Complex(NameResolvedOp::PackStruct { ref id })
+            | OpCode::Complex(NameResolvedOp::SizeOf { ref id }) => {
                 let mut local_had_error = ErrorSignal::new();
                 ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
                 if local_had_error.into_bool() {
@@ -308,7 +243,7 @@ fn resolve_block(
                         continue;
                     }
                 };
-                let new_code = match &op.code {
+                let new_code = match old_code {
                     OpCode::Complex(NameResolvedOp::Cast { .. }) => {
                         TypeResolvedOp::Cast { id: type_info.id }
                     }
@@ -321,16 +256,12 @@ fn resolve_block(
                     _ => unreachable!(),
                 };
 
-                resolved_block.push(Op {
-                    code: OpCode::Complex(new_code),
-                    id: op.id,
-                    token: op.token,
-                });
+                OpCode::Complex(new_code)
             }
-        }
-    }
+        };
 
-    resolved_block
+        stores.ops.set_type_resolved(op_id, new_code);
+    }
 }
 
 pub fn resolve_body(
@@ -350,9 +281,8 @@ pub fn resolve_body(
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
-            let unresolved_body = ctx.nrir().get_item_body(cur_id).to_owned();
-            let resolved_body = resolve_block(ctx, stores, pass_ctx, had_error, &unresolved_body);
-            ctx.trir_mut().set_item_body(cur_id, resolved_body);
+            let unresolved_body = ctx.get_item_body(cur_id).to_owned();
+            resolve_block(ctx, stores, pass_ctx, had_error, &unresolved_body);
         }
     };
 }

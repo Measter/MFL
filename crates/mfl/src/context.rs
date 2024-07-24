@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
@@ -15,14 +17,14 @@ use crate::{
     pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     stores::{
-        ops::Op,
+        ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
         types::TypeId,
     },
     Stores,
 };
 
-use super::ir::{NameResolvedOp, TypeResolvedOp, UnresolvedOp};
+use super::ir::NameResolvedOp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangItem {
@@ -63,7 +65,6 @@ pub struct UnresolvedItemSignature {
 pub struct UnresolvedIr {
     item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
     memory_type: HashMap<ItemId, Spanned<UnresolvedType>>,
-    item_bodies: HashMap<ItemId, Vec<Op<UnresolvedOp>>>,
     structs: HashMap<ItemId, StructDef<UnresolvedType>>,
     scopes: Vec<UnresolvedScope>,
 }
@@ -80,18 +81,6 @@ impl UnresolvedIr {
     pub fn get_memory_type(&self, id: ItemId) -> Spanned<&UnresolvedType> {
         let v = &self.memory_type[&id];
         (&v.inner).with_span(v.location)
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn get_item_body(&self, id: ItemId) -> &[Op<UnresolvedOp>] {
-        &self.item_bodies[&id]
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op<UnresolvedOp>>) {
-        self.item_bodies.insert(id, body);
     }
 
     #[inline]
@@ -118,7 +107,6 @@ impl UnresolvedIr {
         UnresolvedIr {
             item_signatures: HashMap::new(),
             memory_type: HashMap::new(),
-            item_bodies: HashMap::new(),
             structs: HashMap::new(),
             scopes: Vec::new(),
         }
@@ -134,7 +122,6 @@ pub struct NameResolvedItemSignature {
 pub struct NameResolvedIr {
     item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
     memory_type: HashMap<ItemId, NameResolvedType>,
-    item_bodies: HashMap<ItemId, Vec<Op<NameResolvedOp>>>,
     // Need to split this UnresolvedStruct business.
     structs: HashMap<ItemId, StructDef<NameResolvedType>>,
     scopes: Vec<NameResolvedScope>,
@@ -171,18 +158,6 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_item_body(&self, id: ItemId) -> &[Op<NameResolvedOp>] {
-        &self.item_bodies[&id]
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op<NameResolvedOp>>) {
-        self.item_bodies.insert(id, body);
-    }
-
-    #[inline]
-    #[track_caller]
     pub fn get_scope(&self, id: ItemId) -> &NameResolvedScope {
         &self.scopes[id.0.to_usize()]
     }
@@ -211,7 +186,6 @@ impl NameResolvedIr {
         NameResolvedIr {
             item_signatures: HashMap::new(),
             memory_type: HashMap::new(),
-            item_bodies: HashMap::new(),
             structs: HashMap::new(),
             scopes: Vec::new(),
         }
@@ -226,7 +200,6 @@ pub struct TypeResolvedItemSignature {
 pub struct TypeResolvedIr {
     item_signatures: HashMap<ItemId, TypeResolvedItemSignature>,
     memory_type: HashMap<ItemId, TypeId>,
-    item_bodies: HashMap<ItemId, Vec<Op<TypeResolvedOp>>>,
 }
 
 impl TypeResolvedIr {
@@ -257,24 +230,6 @@ impl TypeResolvedIr {
             .insert(id, mem_type)
             .expect_none("Redefined memory type");
     }
-
-    #[inline]
-    #[track_caller]
-    pub fn get_item_body(&self, id: ItemId) -> &[Op<TypeResolvedOp>] {
-        &self.item_bodies[&id]
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn get_item_body_mut(&mut self, id: ItemId) -> &mut [Op<TypeResolvedOp>] {
-        self.item_bodies.get_mut(&id).unwrap()
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn set_item_body(&mut self, id: ItemId, body: Vec<Op<TypeResolvedOp>>) {
-        self.item_bodies.insert(id, body);
-    }
 }
 
 impl TypeResolvedIr {
@@ -282,7 +237,6 @@ impl TypeResolvedIr {
         TypeResolvedIr {
             item_signatures: HashMap::new(),
             memory_type: HashMap::new(),
-            item_bodies: HashMap::new(),
         }
     }
 }
@@ -294,6 +248,7 @@ pub struct Context {
     headers: Vec<ItemHeader>,
     analyzers: HashMap<ItemId, Analyzer>,
     const_vals: HashMap<ItemId, Vec<SimulatorValue>>,
+    item_body: HashMap<ItemId, Vec<OpId>>,
 
     // TODO: Separate out the IRs from the rest of the context so that we don't
     // need to clone the bodies.
@@ -359,6 +314,20 @@ impl Context {
 
     #[inline]
     #[track_caller]
+    pub fn get_item_body(&self, id: ItemId) -> &[OpId] {
+        &self.item_body[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_item_body(&mut self, id: ItemId, body: Vec<OpId>) {
+        self.item_body
+            .insert(id, body)
+            .expect_none("ICE: Set same item body multiple times");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn set_analyzer(&mut self, id: ItemId, analyzer: Analyzer) {
         self.analyzers
             .insert(id, analyzer)
@@ -410,6 +379,7 @@ impl Context {
             top_level_modules: HashMap::new(),
             lang_items: HashMap::new(),
             headers: Vec::new(),
+            item_body: HashMap::new(),
             analyzers: HashMap::new(),
             const_vals: HashMap::new(),
             urir: UnresolvedIr::new(),
@@ -683,15 +653,16 @@ impl Context {
         &mut self,
         stores: &mut Stores,
         pass_ctx: &mut PassContext,
-        body: &[Op<NameResolvedOp>],
+        body: &[OpId],
         param_map: &HashMap<Spur, NameResolvedType>,
         old_alloc_map: &HashMap<ItemId, ItemId>,
-    ) -> Vec<Op<NameResolvedOp>> {
+    ) -> Vec<OpId> {
         let mut new_body = Vec::new();
 
-        for op in body {
-            let new_code = match &op.code {
-                OpCode::Basic(bo) => OpCode::Basic(*bo),
+        for &op_id in body {
+            let op_code = stores.ops.get_name_resolved(op_id).clone();
+            let new_code = match op_code {
+                OpCode::Basic(bo) => OpCode::Basic(bo),
                 OpCode::Complex(co) => match co {
                     NameResolvedOp::If(if_op) => {
                         let resolved_condition = self.expand_generic_params_in_block(
@@ -716,7 +687,7 @@ impl Context {
                             old_alloc_map,
                         );
 
-                        OpCode::Complex(NameResolvedOp::If(Box::new(If {
+                        OpCode::Complex(NameResolvedOp::If(If {
                             tokens: if_op.tokens,
                             condition: TerminalBlock {
                                 block: resolved_condition,
@@ -730,7 +701,7 @@ impl Context {
                                 block: resolved_else,
                                 is_terminal: false,
                             },
-                        })))
+                        }))
                     }
                     NameResolvedOp::While(while_op) => {
                         let resolved_condition = self.expand_generic_params_in_block(
@@ -748,7 +719,7 @@ impl Context {
                             old_alloc_map,
                         );
 
-                        OpCode::Complex(NameResolvedOp::While(Box::new(While {
+                        OpCode::Complex(NameResolvedOp::While(While {
                             tokens: while_op.tokens,
                             condition: TerminalBlock {
                                 block: resolved_condition,
@@ -758,45 +729,40 @@ impl Context {
                                 block: resolved_body,
                                 is_terminal: false,
                             },
-                        })))
+                        }))
                     }
 
-                    NameResolvedOp::Cast { id }
-                    | NameResolvedOp::PackStruct { id }
-                    | NameResolvedOp::SizeOf { id } => {
+                    ref op_code @ (NameResolvedOp::Cast { ref id }
+                    | NameResolvedOp::PackStruct { ref id }
+                    | NameResolvedOp::SizeOf { ref id }) => {
                         if let Some(type_item) = id.item_id() {
                             pass_ctx
                                 .ensure_declare_structs(self, stores, type_item)
                                 .unwrap();
                         }
                         let new_id = self.expand_generic_params_in_type(id, param_map);
-                        match &op.code {
-                            OpCode::Complex(NameResolvedOp::Cast { .. }) => {
+                        match op_code {
+                            NameResolvedOp::Cast { .. } => {
                                 OpCode::Complex(NameResolvedOp::Cast { id: new_id })
                             }
-                            OpCode::Complex(NameResolvedOp::PackStruct { .. }) => {
+                            NameResolvedOp::PackStruct { .. } => {
                                 OpCode::Complex(NameResolvedOp::PackStruct { id: new_id })
                             }
-                            OpCode::Complex(NameResolvedOp::SizeOf { .. }) => {
+                            NameResolvedOp::SizeOf { .. } => {
                                 OpCode::Complex(NameResolvedOp::SizeOf { id: new_id })
                             }
                             _ => unreachable!(),
                         }
                     }
 
-                    NameResolvedOp::Const { id } => {
-                        OpCode::Complex(NameResolvedOp::Const { id: *id })
-                    }
+                    NameResolvedOp::Const { id } => OpCode::Complex(NameResolvedOp::Const { id }),
                     NameResolvedOp::Memory { id, is_global } => {
-                        let id = if let Some(new_id) = old_alloc_map.get(id) {
+                        let id = if let Some(new_id) = old_alloc_map.get(&id) {
                             *new_id
                         } else {
-                            *id
+                            id
                         };
-                        OpCode::Complex(NameResolvedOp::Memory {
-                            id,
-                            is_global: *is_global,
-                        })
+                        OpCode::Complex(NameResolvedOp::Memory { id, is_global })
                     }
 
                     NameResolvedOp::CallFunction { id, generic_params } => {
@@ -812,18 +778,19 @@ impl Context {
                         };
 
                         OpCode::Complex(NameResolvedOp::CallFunction {
-                            id: *id,
+                            id,
                             generic_params: new_params,
                         })
                     }
                 },
             };
 
-            new_body.push(Op {
-                code: new_code,
-                id: op.id,
-                token: op.token,
-            });
+            let old_token = stores.ops.get_token(op_id);
+            let old_unresolved = stores.ops.get_unresolved(op_id).clone();
+            let new_op_id = stores.ops.new_op(old_unresolved, old_token);
+            stores.ops.set_name_resolved(new_op_id, new_code);
+
+            new_body.push(new_op_id);
         }
 
         new_body
@@ -934,7 +901,7 @@ impl Context {
         }
 
         // I don't like having to clone this.
-        let body = self.nrir.get_item_body(base_fn_id).to_owned();
+        let body = self.get_item_body(base_fn_id).to_owned();
         let new_body = self.expand_generic_params_in_block(
             stores,
             pass_ctx,
@@ -942,7 +909,7 @@ impl Context {
             &param_map,
             &old_alloc_map,
         );
-        self.nrir.set_item_body(new_proc_id, new_body);
+        self.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
             .insert((base_fn_id, resolved_generic_params), new_proc_id);
         pass_ctx.add_new_item(new_proc_id, base_fn_id);

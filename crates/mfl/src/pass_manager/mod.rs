@@ -433,7 +433,7 @@ impl PassContext {
             "TerminalCheck",
         );
 
-        passes::terminal::determine_terminal_blocks(ctx, cur_item);
+        passes::terminal::determine_terminal_blocks(ctx, stores, cur_item);
         self.set_state(cur_item, PassState::TerminalBlockCheckBody);
         Ok(())
     }

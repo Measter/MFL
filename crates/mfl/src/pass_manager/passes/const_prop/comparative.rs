@@ -3,10 +3,10 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Compare, IntKind, TypeResolvedOp},
+    ir::{Compare, IntKind},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
-    stores::{ops::Op, types::TypeKind},
+    stores::{ops::OpId, types::TypeKind},
     Stores,
 };
 
@@ -14,10 +14,11 @@ pub(crate) fn equal(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     comp_code: Compare,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
@@ -61,11 +62,11 @@ pub(crate) fn equal(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 "pointers have different sources",
                 labels,
                 None,
@@ -98,8 +99,8 @@ pub(crate) fn equal(
                 Color::Cyan,
                 Color::Green,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Yellow));
-            diagnostics::emit_error(stores, op.token.location, msg, labels, None);
+            labels.push(Label::new(op_loc).with_color(Color::Yellow));
+            diagnostics::emit_error(stores, op_loc, msg, labels, None);
 
             comp_code.get_unsigned_binary_op()(offset1, offset2) != 0
         }
@@ -115,10 +116,10 @@ pub(crate) fn compare(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     comp_code: Compare,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
@@ -161,11 +162,12 @@ pub(crate) fn compare(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            let op_loc = stores.ops.get_token(op_id).location;
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 "pointers have different sources",
                 labels,
                 None,
@@ -191,8 +193,8 @@ pub(crate) fn compare(
     analyzer.set_value_const(output_value_value, ConstVal::Bool(output_const_val));
 }
 
-pub(crate) fn is_null(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
-    let op_data = analyzer.get_op_io(op.id);
+pub(crate) fn is_null(analyzer: &mut Analyzer, op_id: OpId) {
+    let op_data = analyzer.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     if analyzer.value_consts([input_value_id]).is_none() {
         return;

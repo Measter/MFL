@@ -6,12 +6,12 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        If, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField, TerminalBlock,
-        UnresolvedIdent, UnresolvedOp, UnresolvedType, While,
+        NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField, UnresolvedIdent,
+        UnresolvedOp, UnresolvedType,
     },
     pass_manager::PassContext,
     stores::{
-        ops::Op,
+        ops::OpId,
         source::{FileId, Spanned, WithSpan},
         types::BuiltinTypes,
     },
@@ -385,22 +385,19 @@ fn resolve_idents_in_block(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
-    block: &[Op<UnresolvedOp>],
+    block: &[OpId],
     generic_params: Option<&[Spanned<Spur>]>,
-) -> Vec<Op<NameResolvedOp>> {
-    let mut resolved_block = Vec::with_capacity(block.len());
-
-    for op in block {
-        match &op.code {
+) {
+    for &op_id in block {
+        // TODO: Try to avoid this clone.
+        let old_code = stores.ops.get_unresolved(op_id).clone();
+        let new_code = match old_code {
             // These don't get resolved, so just copy it onward.
-            OpCode::Basic(bo) => resolved_block.push(Op {
-                code: OpCode::Basic(*bo),
-                id: op.id,
-                token: op.token,
-            }),
+            OpCode::Basic(bo) => OpCode::Basic(bo),
+
             OpCode::Complex(comp) => match comp {
                 UnresolvedOp::If(if_op) => {
-                    let condition = resolve_idents_in_block(
+                    resolve_idents_in_block(
                         ctx,
                         stores,
                         had_error,
@@ -408,7 +405,7 @@ fn resolve_idents_in_block(
                         &if_op.condition.block,
                         generic_params,
                     );
-                    let then_block = resolve_idents_in_block(
+                    resolve_idents_in_block(
                         ctx,
                         stores,
                         had_error,
@@ -416,7 +413,7 @@ fn resolve_idents_in_block(
                         &if_op.then_block.block,
                         generic_params,
                     );
-                    let else_block = resolve_idents_in_block(
+                    resolve_idents_in_block(
                         ctx,
                         stores,
                         had_error,
@@ -425,28 +422,10 @@ fn resolve_idents_in_block(
                         generic_params,
                     );
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(NameResolvedOp::If(Box::new(If {
-                            tokens: if_op.tokens,
-                            condition: TerminalBlock {
-                                block: condition,
-                                is_terminal: false,
-                            },
-                            then_block: TerminalBlock {
-                                block: then_block,
-                                is_terminal: false,
-                            },
-                            else_block: TerminalBlock {
-                                block: else_block,
-                                is_terminal: false,
-                            },
-                        }))),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(NameResolvedOp::If(if_op.clone()))
                 }
                 UnresolvedOp::While(while_op) => {
-                    let condition = resolve_idents_in_block(
+                    resolve_idents_in_block(
                         ctx,
                         stores,
                         had_error,
@@ -454,7 +433,7 @@ fn resolve_idents_in_block(
                         &while_op.condition.block,
                         generic_params,
                     );
-                    let body = resolve_idents_in_block(
+                    resolve_idents_in_block(
                         ctx,
                         stores,
                         had_error,
@@ -463,69 +442,43 @@ fn resolve_idents_in_block(
                         generic_params,
                     );
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(NameResolvedOp::While(Box::new(While {
-                            tokens: while_op.tokens,
-                            condition: TerminalBlock {
-                                block: condition,
-                                is_terminal: false,
-                            },
-                            body_block: TerminalBlock {
-                                block: body,
-                                is_terminal: false,
-                            },
-                        }))),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(NameResolvedOp::While(while_op.clone()))
                 }
 
                 UnresolvedOp::Cast { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
                     else {
                         had_error.set();
                         continue;
                     };
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(NameResolvedOp::Cast { id: new_ty }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
                 }
                 UnresolvedOp::PackStruct { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
                     else {
                         had_error.set();
                         continue;
                     };
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty })
                 }
                 UnresolvedOp::SizeOf { id } => {
                     let Ok(new_ty) =
-                        resolve_idents_in_type(ctx, stores, had_error, cur_id, id, generic_params)
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)
                     else {
                         had_error.set();
                         continue;
                     };
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(NameResolvedOp::SizeOf { id: new_ty }),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(NameResolvedOp::SizeOf { id: new_ty })
                 }
 
                 UnresolvedOp::Ident(ident) => {
                     let Ok(resolved_ident) =
-                        resolved_single_ident(ctx, stores, had_error, cur_id, ident)
+                        resolved_single_ident(ctx, stores, had_error, cur_id, &ident)
                     else {
                         continue;
                     };
@@ -585,8 +538,8 @@ fn resolve_idents_in_block(
 
                         ItemKind::Assert | ItemKind::Module => {
                             had_error.set();
-                            let mut labels =
-                                vec![Label::new(op.token.location).with_color(Color::Red)];
+                            let op_loc = stores.ops.get_token(op_id).location;
+                            let mut labels = vec![Label::new(op_loc).with_color(Color::Red)];
                             // This would be the case if the item was a top-level mmodule.
                             let note = if found_item_header.name.location.file_id != FileId::dud() {
                                 labels.push(
@@ -605,7 +558,7 @@ fn resolve_idents_in_block(
 
                             diagnostics::emit_error(
                                 stores,
-                                op.token.location,
+                                op_loc,
                                 format!("cannot refer to a {:?} here", found_item_header.kind),
                                 labels,
                                 note,
@@ -614,17 +567,13 @@ fn resolve_idents_in_block(
                         }
                     };
 
-                    resolved_block.push(Op {
-                        code: OpCode::Complex(new_code),
-                        id: op.id,
-                        token: op.token,
-                    });
+                    OpCode::Complex(new_code)
                 }
             },
-        }
-    }
+        };
 
-    resolved_block
+        stores.ops.set_name_resolved(op_id, new_code);
+    }
 }
 
 pub fn resolve_body(
@@ -650,10 +599,8 @@ pub fn resolve_body(
                 None
             };
 
-            let body = ctx.urir().get_item_body(cur_id);
-            let resolved_body =
-                resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
-            ctx.nrir_mut().set_item_body(cur_id, resolved_body);
+            let body = ctx.get_item_body(cur_id);
+            resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
         }
     }
 }

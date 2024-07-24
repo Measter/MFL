@@ -1,7 +1,7 @@
 use lasso::Spur;
 
 use crate::stores::{
-    ops::Op,
+    ops::OpId,
     source::{SourceLocation, Spanned},
     types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
 };
@@ -111,8 +111,8 @@ impl NameResolvedType {
 }
 
 #[derive(Debug, Clone)]
-pub struct TerminalBlock<T> {
-    pub block: Vec<Op<T>>,
+pub struct TerminalBlock {
+    pub block: Vec<OpId>,
     pub is_terminal: bool,
 }
 
@@ -123,10 +123,10 @@ pub struct WhileTokens {
 }
 
 #[derive(Debug, Clone)]
-pub struct While<OpType> {
+pub struct While {
     pub tokens: WhileTokens,
-    pub condition: TerminalBlock<OpType>,
-    pub body_block: TerminalBlock<OpType>,
+    pub condition: TerminalBlock,
+    pub body_block: TerminalBlock,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -137,11 +137,11 @@ pub struct IfTokens {
 }
 
 #[derive(Debug, Clone)]
-pub struct If<OpType> {
+pub struct If {
     pub tokens: IfTokens,
-    pub condition: TerminalBlock<OpType>,
-    pub then_block: TerminalBlock<OpType>,
-    pub else_block: TerminalBlock<OpType>,
+    pub condition: TerminalBlock,
+    pub then_block: TerminalBlock,
+    pub else_block: TerminalBlock,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -364,10 +364,10 @@ impl PartialEq for UnresolvedIdent {
 pub enum UnresolvedOp {
     Cast { id: UnresolvedType },
     Ident(UnresolvedIdent),
-    If(Box<If<Self>>),
+    If(If),
     PackStruct { id: UnresolvedType },
     SizeOf { id: UnresolvedType },
-    While(Box<While<Self>>),
+    While(While),
 }
 
 #[derive(Debug, Clone)]
@@ -382,7 +382,7 @@ pub enum NameResolvedOp {
     Const {
         id: ItemId,
     },
-    If(Box<If<Self>>),
+    If(If),
     PackStruct {
         id: NameResolvedType,
     },
@@ -393,7 +393,7 @@ pub enum NameResolvedOp {
     SizeOf {
         id: NameResolvedType,
     },
-    While(Box<While<Self>>),
+    While(While),
 }
 
 #[derive(Debug, Clone)]
@@ -401,11 +401,11 @@ pub enum TypeResolvedOp {
     Cast { id: TypeId },
     CallFunction { id: ItemId },
     Const { id: ItemId },
-    If(Box<If<Self>>),
+    If(If),
     PackStruct { id: TypeId },
     Memory { id: ItemId, is_global: bool },
     SizeOf { id: TypeId },
-    While(Box<While<Self>>),
+    While(While),
 }
 
 #[derive(Debug, Clone)]

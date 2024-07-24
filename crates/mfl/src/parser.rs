@@ -7,11 +7,10 @@ use crate::{
     context::Context,
     diagnostics,
     error_signal::ErrorSignal,
-    ir::UnresolvedOp,
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
     stores::{
-        ops::{Op, OpId},
+        ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
     },
     ItemId, Stores,
@@ -30,9 +29,8 @@ pub fn parse_item_body_contents(
     ctx: &mut Context,
     stores: &mut Stores,
     tokens: &[Spanned<Token>],
-    op_id_gen: &mut impl FnMut() -> OpId,
     parent_id: ItemId,
-) -> Result<Vec<Op<UnresolvedOp>>, ()> {
+) -> Result<Vec<OpId>, ()> {
     let mut ops = Vec::new();
     let mut had_error = ErrorSignal::new();
 
@@ -44,8 +42,7 @@ pub fn parse_item_body_contents(
                     .peek()
                     .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
-                    let new_ops =
-                        parse_extract_insert_struct(stores, &mut token_iter, op_id_gen, token)?;
+                    let new_ops = parse_extract_insert_struct(stores, &mut token_iter, token)?;
                     ops.extend(new_ops);
                     continue;
                 } else {
@@ -53,8 +50,7 @@ pub fn parse_item_body_contents(
                 }
             }
             TokenKind::While => {
-                let Ok(code) =
-                    ops::parse_while(ctx, stores, &mut token_iter, token, op_id_gen, parent_id)
+                let Ok(code) = ops::parse_while(ctx, stores, &mut token_iter, token, parent_id)
                 else {
                     had_error.set();
                     continue;
@@ -62,9 +58,7 @@ pub fn parse_item_body_contents(
                 code
             }
             TokenKind::If => {
-                let Ok(code) =
-                    ops::parse_if(ctx, stores, &mut token_iter, token, op_id_gen, parent_id)
-                else {
+                let Ok(code) = ops::parse_if(ctx, stores, &mut token_iter, token, parent_id) else {
                     had_error.set();
                     continue;
                 };
@@ -142,7 +136,7 @@ pub fn parse_item_body_contents(
         };
 
         let token = token.inner.lexeme.with_span(token.location.merge(op_end));
-        ops.push(Op::new(op_id_gen(), kind, token));
+        ops.push(stores.ops.new_op(kind, token));
     }
 
     had_error.into_bool().not().then_some(ops).ok_or(())

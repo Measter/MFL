@@ -6,14 +6,13 @@ use crate::{
     context::Context,
     diagnostics,
     error_signal::ErrorSignal,
-    ir::TypeResolvedOp,
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
     stores::{
-        ops::Op,
+        ops::OpId,
         types::{TypeId, TypeKind},
     },
     Stores,
@@ -26,28 +25,29 @@ pub(crate) fn extract_array(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_array: bool,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 2);
 
     let [array_id, idx] = stack.popn().unwrap();
-    analyzer.consume_value(array_id, op.id);
-    analyzer.consume_value(idx, op.id);
+    analyzer.consume_value(array_id, op_id);
+    analyzer.consume_value(idx, op_id);
 
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_array {
-        let output_array = analyzer.new_value(op.token.location, Some(array_id));
+        let output_array = analyzer.new_value(op_loc, Some(array_id));
         outputs.push(output_array);
         stack.push(output_array);
     }
 
-    let output_value = analyzer.new_value(op.token.location, None);
+    let output_value = analyzer.new_value(op_loc, None);
     outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op, &[array_id, idx], &outputs);
+    analyzer.set_op_io(op_id, &[array_id, idx], &outputs);
 }
 
 pub(crate) fn extract_struct(
@@ -55,26 +55,27 @@ pub(crate) fn extract_struct(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_struct: bool,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 1);
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 1);
 
     let struct_id = stack.pop().unwrap();
-    analyzer.consume_value(struct_id, op.id);
+    analyzer.consume_value(struct_id, op_id);
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_struct {
-        let output_struct = analyzer.new_value(op.token.location, Some(struct_id));
+        let output_struct = analyzer.new_value(op_loc, Some(struct_id));
         outputs.push(output_struct);
         stack.push(output_struct);
     }
 
-    let output_value = analyzer.new_value(op.token.location, None);
+    let output_value = analyzer.new_value(op_loc, None);
     outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op, &[struct_id], &outputs);
+    analyzer.set_op_io(op_id, &[struct_id], &outputs);
 }
 
 pub(crate) fn insert_array(
@@ -82,25 +83,26 @@ pub(crate) fn insert_array(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_array: bool,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 2);
 
     let inputs = stack.popn::<3>().unwrap();
     for id in inputs {
-        analyzer.consume_value(id, op.id);
+        analyzer.consume_value(id, op_id);
     }
 
     let mut output = None;
     if emit_array {
         // Leave the array on the stack so the user can continue using it.
-        let output_id = analyzer.new_value(op.token.location, Some(inputs[1]));
+        let output_id = analyzer.new_value(op_loc, Some(inputs[1]));
         output = Some(output_id);
         stack.push(output_id);
     }
 
-    analyzer.set_op_io(op, &inputs, output.as_slice());
+    analyzer.set_op_io(op_id, &inputs, output.as_slice());
 }
 
 pub(crate) fn insert_struct(
@@ -108,24 +110,25 @@ pub(crate) fn insert_struct(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_struct: bool,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for id in inputs {
-        analyzer.consume_value(id, op.id);
+        analyzer.consume_value(id, op_id);
     }
 
     let mut output = None;
     if emit_struct {
-        let output_id = analyzer.new_value(op.token.location, Some(inputs[1]));
+        let output_id = analyzer.new_value(op_loc, Some(inputs[1]));
         output = Some(output_id);
         stack.push(output_id);
     }
 
-    analyzer.set_op_io(op, &inputs, output.as_slice());
+    analyzer.set_op_io(op_id, &inputs, output.as_slice());
 }
 
 pub(crate) fn pack_array(
@@ -133,23 +136,24 @@ pub(crate) fn pack_array(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     count: u8,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, count.to_usize());
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, count.to_usize());
 
     let mut inputs = SmallVec::<[_; 8]>::new();
     let input_ids = stack.lastn(count.to_usize()).unwrap();
     for &id in input_ids {
         inputs.push(id);
-        analyzer.consume_value(id, op.id);
+        analyzer.consume_value(id, op_id);
     }
 
     stack.truncate(stack.len() - input_ids.len());
 
-    let output = analyzer.new_value(op.token.location, None);
+    let output = analyzer.new_value(op_loc, None);
     stack.push(output);
-    analyzer.set_op_io(op, &inputs, &[output]);
+    analyzer.set_op_io(op_id, &inputs, &[output]);
 }
 
 pub(crate) fn store(
@@ -157,16 +161,16 @@ pub(crate) fn store(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 2);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {
-        analyzer.consume_value(value_id, op.id);
+        analyzer.consume_value(value_id, op_id);
     }
 
-    analyzer.set_op_io(op, &inputs, &[]);
+    analyzer.set_op_io(op_id, &inputs, &[]);
 }
 
 pub(crate) fn unpack(
@@ -176,14 +180,15 @@ pub(crate) fn unpack(
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, 1);
+    let op_loc = stores.ops.get_token(op_id).location;
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 1);
     let input_value_id = stack.pop().unwrap();
 
     // To find out how any values we create, we need to look up the type of our input.
     let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
-        analyzer.set_op_io(op, &[input_value_id], &[]);
+        analyzer.set_op_io(op_id, &[input_value_id], &[]);
         return;
     };
 
@@ -195,7 +200,7 @@ pub(crate) fn unpack(
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {
-                analyzer.set_op_io(op, &[input_value_id], &[]);
+                analyzer.set_op_io(op_id, &[input_value_id], &[]);
                 had_error.set();
 
                 0
@@ -212,11 +217,11 @@ pub(crate) fn unpack(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 format!("unable to unpack a `{input_type_name}`"),
                 labels,
                 "value must be an array or struct".to_owned(),
@@ -231,12 +236,12 @@ pub(crate) fn unpack(
     let mut outputs = SmallVec::<[_; 20]>::new();
 
     for _ in 0..length {
-        let id = analyzer.new_value(op.token.location, None);
+        let id = analyzer.new_value(op_loc, None);
         stack.push(id);
         outputs.push(id);
     }
 
-    analyzer.set_op_io(op, &[input_value_id], &outputs);
+    analyzer.set_op_io(op_id, &[input_value_id], &outputs);
 }
 
 pub(crate) fn pack_struct(
@@ -246,9 +251,10 @@ pub(crate) fn pack_struct(
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     target_type_id: TypeId,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
     let type_info = stores.types.get_type_info(target_type_id);
     let (TypeKind::Struct(struct_item_id)
     | TypeKind::GenericStructInstance(struct_item_id)
@@ -256,9 +262,9 @@ pub(crate) fn pack_struct(
     else {
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             "cannot pack that type",
-            [Label::new(op.token.location).with_color(Color::Red)],
+            [Label::new(op_loc).with_color(Color::Red)],
             None,
         );
         had_error.set();
@@ -269,7 +275,7 @@ pub(crate) fn pack_struct(
         .ensure_define_structs(ctx, stores, struct_item_id)
         .is_err()
     {
-        analyzer.set_op_io(op, &[], &[]);
+        analyzer.set_op_io(op_id, &[], &[]);
         had_error.set();
     }
 
@@ -295,18 +301,18 @@ pub(crate) fn pack_struct(
         }
     };
 
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_fields);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, num_fields);
 
     let mut inputs = SmallVec::<[_; 20]>::new();
     let input_value_ids = stack.lastn(num_fields).unwrap();
     for &input_value_id in input_value_ids {
         inputs.push(input_value_id);
-        analyzer.consume_value(input_value_id, op.id);
+        analyzer.consume_value(input_value_id, op_id);
     }
 
     stack.truncate(stack.len() - input_value_ids.len());
 
-    let output = analyzer.new_value(op.token.location, None);
+    let output = analyzer.new_value(op_loc, None);
     stack.push(output);
-    analyzer.set_op_io(op, &inputs, &[output]);
+    analyzer.set_op_io(op_id, &inputs, &[output]);
 }

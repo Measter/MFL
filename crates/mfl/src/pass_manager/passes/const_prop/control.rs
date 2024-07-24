@@ -4,13 +4,12 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::TypeResolvedOp,
     pass_manager::{
         static_analysis::{Analyzer, ConstVal, PtrId},
         PassContext,
     },
     simulate::SimulatorValue,
-    stores::ops::Op,
+    stores::ops::OpId,
     Stores,
 };
 
@@ -19,9 +18,9 @@ pub(crate) fn epilogue_return(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
 
     for &input_value_id in &op_data.inputs {
         let Some(
@@ -47,9 +46,10 @@ pub(crate) fn epilogue_return(
             Color::Cyan,
         );
 
+        let op_loc = stores.ops.get_token(op_id).location;
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             "returning pointer to local memory",
             labels,
             None,
@@ -64,7 +64,7 @@ pub(crate) fn cp_const(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     const_item_id: ItemId,
 ) {
     if pass_ctx
@@ -74,7 +74,7 @@ pub(crate) fn cp_const(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let Some(output_const_vals) = ctx.get_consts(const_item_id) else {
         return;
     };
@@ -90,23 +90,29 @@ pub(crate) fn cp_const(
     }
 }
 
-pub(crate) fn memory(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>, memory_item_id: ItemId) {
-    let op_data = analyzer.get_op_io(op.id);
+pub(crate) fn memory(
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    op_id: OpId,
+    memory_item_id: ItemId,
+) {
+    let op_data = analyzer.get_op_io(op_id);
+    let src_op_loc = stores.ops.get_token(op_id).location;
     analyzer.set_value_const(
         op_data.outputs[0],
         ConstVal::Ptr {
             id: PtrId::Mem(memory_item_id),
-            src_op_loc: op.token.location,
+            src_op_loc,
             offset: Some(0),
         },
     );
 }
 
-pub(crate) fn analyze_while(analyzer: &mut Analyzer, op: &Op<TypeResolvedOp>) {
+pub(crate) fn analyze_while(analyzer: &mut Analyzer, op_id: OpId) {
     // Because the while loop may overwrite pre-values, we need to clear their
     // const values if they have any.
 
-    let merges = analyzer.get_while_merges(op.id).unwrap().clone();
+    let merges = analyzer.get_while_merges(op_id).unwrap().clone();
     for merge in merges.condition.into_iter().chain(merges.body) {
         analyzer.clear_value_const(merge.pre_value);
     }

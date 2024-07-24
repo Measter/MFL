@@ -9,14 +9,13 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::TypeResolvedOp,
     n_ops::SliceNOps,
     pass_manager::{
         static_analysis::{can_promote_int_unidirectional, Analyzer},
         PassContext,
     },
     stores::{
-        ops::Op,
+        ops::OpId,
         source::Spanned,
         types::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
     },
@@ -59,10 +58,11 @@ pub(crate) fn extract_array(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_array: bool,
 ) {
-    let op_data = analyzer.get_op_io(op.id).clone();
+    let op_data = analyzer.get_op_io(op_id).clone();
+    let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids) = analyzer.value_types(inputs) else {
         return;
@@ -85,11 +85,11 @@ pub(crate) fn extract_array(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot extract a `{value_type_name}`"),
             labels,
             note,
@@ -165,11 +165,11 @@ pub(crate) fn extract_array(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot index an array with `{idx_type_name}`"),
             labels,
             None,
@@ -187,11 +187,11 @@ pub(crate) fn extract_struct(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let input_struct_value_id = op_data.inputs[0];
     let Some([input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else {
         return;
@@ -214,11 +214,12 @@ pub(crate) fn extract_struct(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        let op_loc = stores.ops.get_token(op_id).location;
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot extract field from a `{value_type_name}`"),
             labels,
             None,
@@ -304,10 +305,11 @@ pub(crate) fn insert_array(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     emit_array: bool,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else {
         return;
@@ -328,11 +330,11 @@ pub(crate) fn insert_array(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot insert into a `{value_type_name}`"),
             labels,
             note,
@@ -411,11 +413,11 @@ pub(crate) fn insert_array(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot index an array with `{idx_type_name}`"),
             labels,
             None,
@@ -448,11 +450,11 @@ pub(crate) fn insert_array(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot store a value of type `{data_type_name}` in an array of type `{array_type_name}`"),
             labels,
             None
@@ -468,11 +470,12 @@ pub(crate) fn insert_struct(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else {
         return;
@@ -492,11 +495,11 @@ pub(crate) fn insert_struct(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot insert field into a `{value_type_name}`"),
             labels,
             None,
@@ -600,7 +603,7 @@ pub(crate) fn insert_struct(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
         labels.push(
             Label::new(field_info.name.location)
                 .with_color(Color::Cyan)
@@ -609,7 +612,7 @@ pub(crate) fn insert_struct(
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("cannot store a value of type `{data_type_name}` into `{struct_type_name}`"),
             labels,
             None,
@@ -623,9 +626,9 @@ pub(crate) fn load(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let ptr_id = op_data.inputs[0];
     let Some([ptr_type]) = analyzer.value_types([ptr_id]) else {
         return;
@@ -641,15 +644,10 @@ pub(crate) fn load(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        let op_loc = stores.ops.get_token(op_id).location;
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
-            op.token.location,
-            "value must be a pointer",
-            labels,
-            None,
-        );
+        diagnostics::emit_error(stores, op_loc, "value must be a pointer", labels, None);
 
         had_error.set();
         return;
@@ -662,15 +660,17 @@ pub(crate) fn pack_array(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     count: u8,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
+
     if count == 0 {
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             "cannot pack an array of length 0",
-            [Label::new(op.token.location).with_color(Color::Red)],
+            [Label::new(op_loc).with_color(Color::Red)],
             None,
         );
 
@@ -678,7 +678,7 @@ pub(crate) fn pack_array(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let [first, rest @ ..] = op_data.inputs.as_slice() else {
         unreachable!()
     };
@@ -714,11 +714,11 @@ pub(crate) fn pack_array(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 format!("unable to pack array: expect `{expected_value_name}`, found `{other_value_name}`"),
                 labels,
                 format!("Expected `{expected_value_name}` because the first value is that type")
@@ -740,9 +740,10 @@ pub(crate) fn store(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
     let Some([data_type_id, ptr_type_id]) = analyzer.value_types([data_value_id, ptr_value_id])
     else {
@@ -761,11 +762,11 @@ pub(crate) fn store(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("found `{ptr_type_name}` expected a `{data_type_name}&`"),
             labels,
             None,
@@ -792,11 +793,11 @@ pub(crate) fn store(
             Color::Yellow,
             Color::Cyan,
         );
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!("value must be a `{ptee_type_name}`"),
             labels,
             None,
@@ -810,9 +811,9 @@ pub(crate) fn unpack(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let outputs: SmallVec<[_; 20]> = op_data.outputs.as_slice().into();
     let aggr_value_id = op_data.inputs[0];
     let Some([aggr_type_id]) = analyzer.value_types([aggr_value_id]) else {
@@ -845,11 +846,12 @@ pub(crate) fn unpack(
                 Color::Yellow,
                 Color::Cyan,
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            let op_loc = stores.ops.get_token(op_id).location;
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
             diagnostics::emit_error(
                 stores,
-                op.token.location,
+                op_loc,
                 format!("expected array or struct, found `{aggr_type_name}`"),
                 labels,
                 None,
@@ -864,7 +866,7 @@ pub(crate) fn pack_struct(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     struct_type_id: TypeId,
 ) {
     // Let's see if we can determine the field type from our inputs for generic structs.
@@ -877,7 +879,7 @@ pub(crate) fn pack_struct(
             had_error,
             struct_type_id,
             struct_item_id,
-            op,
+            op_id,
         ) else {
             return;
         };
@@ -887,7 +889,8 @@ pub(crate) fn pack_struct(
         struct_type_id
     };
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let inputs = &op_data.inputs;
     let struct_type_info = stores.types.get_struct_def(struct_type_id);
 
@@ -921,15 +924,9 @@ pub(crate) fn pack_struct(
                         "expected a field with type `{input_type_name}` in this union"
                     )),
             );
-            labels.push(Label::new(op.token.location).with_color(Color::Red));
+            labels.push(Label::new(op_loc).with_color(Color::Red));
 
-            diagnostics::emit_error(
-                stores,
-                op.token.location,
-                "unable to pack union",
-                labels,
-                None,
-            );
+            diagnostics::emit_error(stores, op_loc, "unable to pack union", labels, None);
 
             had_error.set();
         }
@@ -969,11 +966,11 @@ pub(crate) fn pack_struct(
                         .with_color(Color::Cyan)
                         .with_message("... in this struct"),
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
+                labels.push(Label::new(op_loc).with_color(Color::Red));
 
                 diagnostics::emit_error(
                     stores,
-                    op.token.location,
+                    op_loc,
                     "unable to pack struct: mismatched input types",
                     labels,
                     format!("Expected type `{field_type_name}`, found `{input_type_name}`"),
@@ -994,10 +991,11 @@ fn pack_struct_infer_generic(
     had_error: &mut ErrorSignal,
     struct_type_id: TypeId,
     struct_item_id: ItemId,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) -> ControlFlow<(), TypeId> {
     let generic_def = stores.types.get_generic_base_def(struct_type_id);
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let inputs = &op_data.inputs;
 
     // We can't infer generic parameters for a union, as there may be multiple parameters, but we only
@@ -1005,9 +1003,9 @@ fn pack_struct_infer_generic(
     if generic_def.is_union && generic_def.generic_params.len() != 1 {
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             "unable to infer parameters of generic unions with more than 1 generic parameter",
-            [Label::new(op.token.location).with_color(Color::Red)],
+            [Label::new(op_loc).with_color(Color::Red)],
             None,
         );
 
@@ -1044,11 +1042,11 @@ fn pack_struct_infer_generic(
                         .with_color(Color::Green)
                         .with_message("input type matches this non-generic field"),
                 );
-                labels.push(Label::new(op.token.location).with_color(Color::Red));
+                labels.push(Label::new(op_loc).with_color(Color::Red));
 
                 diagnostics::emit_error(
                     stores,
-                    op.token.location,
+                    op_loc,
                     "unable to infer type parameter of generic union",
                     labels,
                     None,
@@ -1090,10 +1088,10 @@ fn pack_struct_infer_generic(
             if !found_field {
                 diagnostics::emit_error(
                     stores,
-                    op.token.location,
+                    op_loc,
                     "unable to infer type parameter",
                     [
-                        Label::new(op.token.location).with_color(Color::Red),
+                        Label::new(op_loc).with_color(Color::Red),
                         Label::new(param.location).with_color(Color::Cyan),
                     ],
                     None,

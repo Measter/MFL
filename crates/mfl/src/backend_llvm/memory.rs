@@ -12,12 +12,11 @@ use lasso::Spur;
 
 use crate::{
     context::ItemId,
-    ir::TypeResolvedOp,
     n_ops::SliceNOps,
     pass_manager::static_analysis::ValueId,
     stores::{
-        ops::Op,
-        source::{SourceLocation, Spanned},
+        ops::OpId,
+        source::Spanned,
         types::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
     },
 };
@@ -34,10 +33,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         item_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let ptr = value_store.variable_map[&item_id];
         value_store.store_value(self, op_io.outputs()[0], ptr.into())?;
@@ -49,10 +48,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         mut aggr_value: AggregateValueEnum<'ctx>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let output_id = op_io.outputs()[0];
         let [output_type_id] = ds.analyzer.value_types([output_id]).unwrap();
         let output_type_info = ds.type_store.get_type_info(output_type_id);
@@ -99,9 +98,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let output_id = op_io.outputs()[0];
         let input_id = op_io.inputs()[0];
         let [input_type_id, output_type_id] =
@@ -133,9 +132,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let output_id = op_io.outputs()[0];
         let [output_type_id] = ds.analyzer.value_types([output_id]).unwrap();
         let output_type_info = ds.type_store.get_type_info(output_type_id);
@@ -145,15 +144,15 @@ impl<'ctx> CodeGen<'ctx> {
         match output_type_info.kind {
             TypeKind::Array { .. } => {
                 let aggr_value = aggr_value.into_array_value().as_aggregate_value_enum();
-                self.build_pack_aggregate(ds, value_store, op, aggr_value)?;
+                self.build_pack_aggregate(ds, value_store, op_id, aggr_value)?;
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_info = ds.type_store.get_struct_def(output_type_id);
                 if struct_info.is_union {
-                    self.build_pack_union(ds, value_store, op)?;
+                    self.build_pack_union(ds, value_store, op_id)?;
                 } else {
                     let aggr_value = aggr_value.into_struct_value().as_aggregate_value_enum();
-                    self.build_pack_aggregate(ds, value_store, op, aggr_value)?;
+                    self.build_pack_aggregate(ds, value_store, op_id, aggr_value)?;
                 }
             }
             _ => unreachable!(),
@@ -166,9 +165,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let input_value_id = op_io.inputs()[0];
         let [input_type_id] = ds.analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = ds.type_store.get_type_info(input_type_id);
@@ -198,7 +197,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_bounds_check(
         &mut self,
         ds: &mut DataStore,
-        op_loc: SourceLocation,
+        op_id: OpId,
         function: FunctionValue,
         idx: IntValue,
         length: IntValue,
@@ -219,6 +218,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(fail_block);
         // Crash and burn
+        let op_loc = ds.op_store.get_token(op_id).location;
         let file_name = ds.source_store.name(op_loc.file_id);
         let (_, line, column) = ds
             .source_store
@@ -315,10 +315,10 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         emit_array: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let [array_value_id, idx_value_id] = *op_io.inputs().as_arr();
         let array_val = value_store.load_value(self, array_value_id, ds)?;
         let idx_val = value_store.load_value(self, idx_value_id, ds)?;
@@ -413,7 +413,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         )?;
 
-        self.build_bounds_check(ds, op.token.location, function, idx_val, length)?;
+        self.build_bounds_check(ds, op_id, function, idx_val, length)?;
 
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
         let offset_idxs: &[IntValue] = match ptr_kind {
@@ -454,10 +454,10 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         emit_array: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let [data_value_id, array_value_id, idx_value_id] = *op_io.inputs().as_arr();
         let data_val = value_store.load_value(self, data_value_id, ds)?;
         let array_val = value_store.load_value(self, array_value_id, ds)?;
@@ -555,7 +555,7 @@ impl<'ctx> CodeGen<'ctx> {
             Signedness::Unsigned,
         )?;
 
-        self.build_bounds_check(ds, op.token.location, function, idx_val, length)?;
+        self.build_bounds_check(ds, op_id, function, idx_val, length)?;
 
         // And finally actually build the insert
         let idxs = [self.ctx.i64_type().const_zero(), idx_val];
@@ -610,11 +610,11 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         field_name: Spanned<Spur>,
         emit_struct: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let [data_value_id, input_struct_value_id] = *op_io.inputs().as_arr();
         let data_val = value_store.load_value(self, data_value_id, ds)?;
         let input_struct_val = value_store.load_value(self, input_struct_value_id, ds)?;
@@ -741,11 +741,11 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         field_name: Spanned<Spur>,
         emit_struct: bool,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let [input_struct_value_id] = *op_io.inputs().as_arr();
         let input_struct_val = value_store.load_value(self, input_struct_value_id, ds)?;
 
@@ -836,9 +836,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let ptr_value_id = op_io.inputs()[0];
         let [ptr_type_id] = ds.analyzer.value_types([ptr_value_id]).unwrap();
@@ -862,9 +862,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let input_ids @ [data, ptr] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(input_ids).unwrap();

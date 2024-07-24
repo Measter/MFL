@@ -7,13 +7,10 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Basic, Control, OpCode, StructDef, StructDefField, UnresolvedOp},
+    ir::{Basic, Control, OpCode, StructDef, StructDefField},
     lexer::{Token, TokenKind},
     program::ModuleQueueType,
-    stores::{
-        ops::{Op, OpId},
-        source::Spanned,
-    },
+    stores::{ops::OpId, source::Spanned},
     Stores,
 };
 
@@ -70,14 +67,7 @@ fn parse_item_body<'a>(
     token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
     name_token: Spanned<Token>,
     parent_id: ItemId,
-) -> Vec<Op<UnresolvedOp>> {
-    let mut op_id = 0;
-    let mut op_id_gen = || {
-        let id = op_id;
-        op_id += 1;
-        OpId(id)
-    };
-
+) -> Vec<OpId> {
     let body_delim = get_delimited_tokens(
         stores,
         token_iter,
@@ -89,24 +79,21 @@ fn parse_item_body<'a>(
     )
     .recover(had_error, Delimited::fallback(name_token));
 
-    let mut body =
-        parse_item_body_contents(ctx, stores, &body_delim.list, &mut op_id_gen, parent_id)
-            .recover(had_error, Vec::new());
+    let mut body = parse_item_body_contents(ctx, stores, &body_delim.list, parent_id)
+        .recover(had_error, Vec::new());
 
     // Makes later logic easier if we always have a prologue and epilogue.
     body.insert(
         0,
-        Op {
-            code: OpCode::Basic(Basic::Control(Control::Prologue)),
-            id: op_id_gen(),
-            token: body_delim.open.map(|t| t.lexeme),
-        },
+        stores.ops.new_op(
+            OpCode::Basic(Basic::Control(Control::Prologue)),
+            body_delim.open.map(|t| t.lexeme),
+        ),
     );
-    body.push(Op {
-        code: OpCode::Basic(Basic::Control(Control::Epilogue)),
-        id: op_id_gen(),
-        token: body_delim.close.map(|t| t.lexeme),
-    });
+    body.push(stores.ops.new_op(
+        OpCode::Basic(Basic::Control(Control::Epilogue)),
+        body_delim.close.map(|t| t.lexeme),
+    ));
 
     body
 }
@@ -196,7 +183,7 @@ pub fn parse_function<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir_mut().set_item_body(item_id, body);
+    ctx.set_item_body(item_id, body);
 
     if had_error.into_bool() {
         Err(())
@@ -232,7 +219,7 @@ pub fn parse_assert<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir_mut().set_item_body(item_id, body);
+    ctx.set_item_body(item_id, body);
 
     if had_error.into_bool() {
         Err(())
@@ -273,7 +260,7 @@ pub fn parse_const<'a>(
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
 
-    ctx.urir_mut().set_item_body(item_id, body);
+    ctx.set_item_body(item_id, body);
 
     if had_error.into_bool() {
         Err(())

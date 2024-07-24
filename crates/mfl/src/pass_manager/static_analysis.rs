@@ -3,19 +3,18 @@ use std::fmt::{Display, Write};
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
-use lasso::Spur;
 use prettytable::{row, Table};
 use smallvec::SmallVec;
 
 use crate::{
     context::ItemId,
     diagnostics::{self, TABLE_FORMAT},
-    ir::{IntKind, TypeResolvedOp},
+    ir::IntKind,
     n_ops::HashMapNOps,
     option::OptionExt,
     stores::{
-        ops::{Op, OpId},
-        source::{SourceLocation, Spanned},
+        ops::OpId,
+        source::SourceLocation,
         types::{Integer, Signedness, TypeId},
     },
     Stores,
@@ -112,8 +111,6 @@ pub(super) struct Value {
 
 #[derive(Debug, Clone)]
 pub struct OpData {
-    #[allow(unused)] // We need this for a debug print in a panic.
-    pub creator_token: Spanned<Spur>,
     pub inputs: SmallVec<[ValueId; 8]>,
     pub outputs: SmallVec<[ValueId; 8]>,
 }
@@ -226,15 +223,15 @@ impl Analyzer {
         self.value_consts.remove(&id);
     }
 
-    pub(super) fn set_if_merges(&mut self, op: &Op<TypeResolvedOp>, merges: Vec<IfMerge>) {
+    pub(super) fn set_if_merges(&mut self, op_id: OpId, merges: Vec<IfMerge>) {
         self.op_if_merges
-            .insert(op.id, merges)
+            .insert(op_id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    pub(super) fn set_while_merges(&mut self, op: &Op<TypeResolvedOp>, merges: WhileMerges) {
+    pub(super) fn set_while_merges(&mut self, op_id: OpId, merges: WhileMerges) {
         self.op_while_merges
-            .insert(op.id, merges)
+            .insert(op_id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
@@ -247,21 +244,15 @@ impl Analyzer {
     }
 
     #[track_caller]
-    pub(super) fn set_op_io(
-        &mut self,
-        op: &Op<TypeResolvedOp>,
-        inputs: &[ValueId],
-        outputs: &[ValueId],
-    ) {
+    pub(super) fn set_op_io(&mut self, op_id: OpId, inputs: &[ValueId], outputs: &[ValueId]) {
         let new_data = OpData {
-            creator_token: op.token,
             inputs: inputs.into(),
             outputs: outputs.into(),
         };
-        if let Some(prev) = self.op_io_data.get(&op.id) {
-            panic!("Set operands twice - cur_token: {op:#?}, new_data: {new_data:#?}, prev_data: {prev:#?}");
+        if let Some(prev) = self.op_io_data.get(&op_id) {
+            panic!("Set operands twice - cur_token: {op_id}, new_data: {new_data:#?}, prev_data: {prev:#?}");
         }
-        self.op_io_data.insert(op.id, new_data);
+        self.op_io_data.insert(op_id, new_data);
     }
 
     #[track_caller]
@@ -337,7 +328,7 @@ pub(super) fn generate_type_mismatch_diag(
     stores: &Stores,
     analyzer: &Analyzer,
     operator_str: &str,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     types: &[ValueId],
 ) {
     let mut message = format!("cannot use `{operator_str}` on ");
@@ -389,8 +380,9 @@ pub(super) fn generate_type_mismatch_diag(
 
     let mut labels =
         diagnostics::build_creator_label_chain(analyzer, bad_values, Color::Yellow, Color::Cyan);
-    labels.push(Label::new(op.token.location).with_color(Color::Red));
-    diagnostics::emit_error(stores, op.token.location, message, labels, None);
+    let op_loc = stores.ops.get_token(op_id).location;
+    labels.push(Label::new(op_loc).with_color(Color::Red));
+    diagnostics::emit_error(stores, op_loc, message, labels, None);
 }
 
 pub(super) fn generate_stack_length_mismatch_diag(

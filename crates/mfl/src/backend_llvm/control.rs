@@ -4,8 +4,8 @@ use tracing::trace;
 
 use crate::{
     context::ItemId,
-    ir::{If, TypeResolvedOp, While},
-    stores::{ops::Op, source::Spanned, types::TypeKind},
+    ir::{If, While},
+    stores::{ops::OpId, source::Spanned, types::TypeKind},
 };
 
 use super::{CodeGen, DataStore, InkwellResult, ValueStore};
@@ -15,10 +15,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         callee_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
@@ -78,9 +78,9 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         self_id: ItemId,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         if op_io.inputs().is_empty() {
             self.builder.build_return(None)?;
@@ -137,10 +137,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let params = function.get_param_iter();
         for (id, param) in op_io.outputs().iter().zip(params) {
@@ -154,10 +154,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
         arg_count: Spanned<u8>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let callee_value = self.syscall_wrappers[arg_count.inner.to_usize() - 1];
 
         let args: Vec<BasicMetadataValueEnum> = op_io
@@ -205,40 +205,40 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
-        op: &Op<TypeResolvedOp>,
-        if_op: &If<TypeResolvedOp>,
+        op_id: OpId,
+        if_op: &If,
     ) -> InkwellResult {
         let current_block = self.builder.get_insert_block().unwrap();
 
         // Generate new blocks for Then, Else, and Post.
         let then_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("if_{}_then", op.id));
+            .append_basic_block(function, &format!("if_{}_then", op_id));
         let else_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("if_{}_else", op.id));
+            .append_basic_block(function, &format!("if_{}_else", op_id));
 
         let post_basic_block = if if_op.then_block.is_terminal && if_op.else_block.is_terminal {
             None
         } else {
             Some(
                 self.ctx
-                    .append_basic_block(function, &format!("if_{}_post", op.id)),
+                    .append_basic_block(function, &format!("if_{}_post", op_id)),
             )
         };
 
         self.builder.position_at_end(current_block);
         // Compile condition
-        trace!("Compiling condition for {:?}", op.id);
+        trace!("Compiling condition for {:?}", op_id);
         self.compile_block(ds, value_store, id, &if_op.condition.block, function)?;
 
         if if_op.condition.is_terminal {
             return Ok(());
         }
 
-        trace!("Compiling jump for {:?}", op.id);
+        trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let bool_value = value_store
             .load_value(self, op_io.inputs()[0], ds)?
             .into_int_value();
@@ -247,12 +247,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         // Compile Then
         self.builder.position_at_end(then_basic_block);
-        trace!("Compiling then-block for {:?}", op.id);
+        trace!("Compiling then-block for {:?}", op_id);
         self.compile_block(ds, value_store, id, &if_op.then_block.block, function)?;
 
-        trace!("Transfering to merge vars for {:?}", op.id);
+        trace!("Transfering to merge vars for {:?}", op_id);
         if !if_op.then_block.is_terminal {
-            let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
@@ -285,12 +285,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         // Compile Else
         self.builder.position_at_end(else_basic_block);
-        trace!("Compiling else-block for {:?}", op.id);
+        trace!("Compiling else-block for {:?}", op_id);
         self.compile_block(ds, value_store, id, &if_op.else_block.block, function)?;
 
-        trace!("Transfering to merge vars for {:?}", op.id);
+        trace!("Transfering to merge vars for {:?}", op_id);
         if !if_op.else_block.is_terminal {
-            let Some(merges) = ds.analyzer.get_if_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
@@ -335,30 +335,30 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut ValueStore<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
-        op: &Op<TypeResolvedOp>,
-        while_op: &While<TypeResolvedOp>,
+        op_id: OpId,
+        while_op: &While,
     ) -> InkwellResult {
         let current_block = self.builder.get_insert_block().unwrap();
         let condition_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_condition", op.id));
+            .append_basic_block(function, &format!("while_{}_condition", op_id));
         let body_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_body", op.id));
+            .append_basic_block(function, &format!("while_{}_body", op_id));
         let post_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_post", op.id));
+            .append_basic_block(function, &format!("while_{}_post", op_id));
 
         self.builder.position_at_end(current_block);
         self.builder.build_unconditional_branch(condition_block)?;
 
-        trace!("Compiling condition for {:?}", op.id);
+        trace!("Compiling condition for {:?}", op_id);
         self.builder.position_at_end(condition_block);
         self.compile_block(ds, value_store, id, &while_op.condition.block, function)?;
 
-        trace!("Transfering to merge vars for {:?}", op.id);
+        trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.analyzer.get_while_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_while_merges(op_id) else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.condition {
@@ -385,9 +385,9 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
 
-        trace!("Compiling jump for {:?}", op.id);
+        trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let bool_value = value_store
             .load_value(self, op_io.inputs()[0], ds)?
@@ -397,12 +397,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         // Compile body
         self.builder.position_at_end(body_block);
-        trace!("Compiling body-block for {:?}", op.id);
+        trace!("Compiling body-block for {:?}", op_id);
         self.compile_block(ds, value_store, id, &while_op.body_block.block, function)?;
 
-        trace!("Transfering to merge vars for {:?}", op.id);
+        trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.analyzer.get_while_merges(op.id) else {
+            let Some(merges) = ds.analyzer.get_while_merges(op_id) else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.body {

@@ -10,16 +10,15 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    stores::{ops::Op, types::Integer},
+    stores::{ops::OpId, types::Integer},
     Stores,
 };
 
 mod stack_check;
 mod type_check;
 
-type StackCheckFn =
-    fn(&Stores, &mut Analyzer, &mut ErrorSignal, &mut Vec<ValueId>, &Op<TypeResolvedOp>);
-type TypeCheckFn = fn(&mut Stores, &mut Analyzer, &mut ErrorSignal, &Op<TypeResolvedOp>);
+type StackCheckFn = fn(&Stores, &mut Analyzer, &mut ErrorSignal, &mut Vec<ValueId>, OpId);
+type TypeCheckFn = fn(&mut Stores, &mut Analyzer, &mut ErrorSignal, OpId);
 
 fn get_arith_cmp_fns(bo: &Basic) -> (StackCheckFn, TypeCheckFn) {
     let (Basic::Arithmetic(_) | Basic::Compare(_)) = bo else {
@@ -65,20 +64,21 @@ fn analyze_block(
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
-    block: &[Op<TypeResolvedOp>],
+    block: &[OpId],
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
 ) {
     let mut op_iter = block.iter();
-    for op in op_iter.by_ref() {
-        match &op.code {
+    for &op_id in op_iter.by_ref() {
+        let op_code = stores.ops.get_type_resolved(op_id).clone();
+        match op_code {
             OpCode::Basic(bo) => match bo {
                 Basic::Arithmetic(_) | Basic::Compare(_) => {
-                    let (stack_check_fn, type_check_fn) = get_arith_cmp_fns(bo);
+                    let (stack_check_fn, type_check_fn) = get_arith_cmp_fns(&bo);
                     let mut local_had_error = ErrorSignal::new();
-                    stack_check_fn(stores, analyzer, &mut local_had_error, stack, op);
+                    stack_check_fn(stores, analyzer, &mut local_had_error, stack, op_id);
                     if local_had_error.is_ok() {
-                        type_check_fn(stores, analyzer, &mut local_had_error, op);
+                        type_check_fn(stores, analyzer, &mut local_had_error, op_id);
                     }
                     had_error.merge_with(local_had_error);
                 }
@@ -90,18 +90,18 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *count,
+                            op_id,
+                            count,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(analyzer, op);
+                            type_check::stack_ops::dup_over(analyzer, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
                     }
                     Stack::Drop { count } => {
                         stack_check::stack_ops::drop(
-                            stores, analyzer, had_error, stack, op, *count,
+                            stores, analyzer, had_error, stack, op_id, count,
                         );
                     }
                     Stack::Emit { show_labels } => {
@@ -109,8 +109,8 @@ fn analyze_block(
                             stores,
                             analyzer,
                             stack,
-                            op,
-                            *show_labels,
+                            op_id,
+                            show_labels,
                         );
                     }
                     Stack::Over { depth } => {
@@ -120,18 +120,18 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *depth,
+                            op_id,
+                            depth,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(analyzer, op);
+                            type_check::stack_ops::dup_over(analyzer, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
                     }
                     Stack::Reverse { count } => {
                         stack_check::stack_ops::reverse(
-                            stores, analyzer, had_error, stack, op, *count,
+                            stores, analyzer, had_error, stack, op_id, count,
                         );
                     }
                     Stack::Rotate {
@@ -144,15 +144,15 @@ fn analyze_block(
                             analyzer,
                             had_error,
                             stack,
-                            op,
-                            *item_count,
-                            *direction,
-                            *shift_count,
+                            op_id,
+                            item_count,
+                            direction,
+                            shift_count,
                         );
                     }
                     Stack::Swap { count } => {
                         stack_check::stack_ops::swap(
-                            stores, analyzer, had_error, stack, op, *count,
+                            stores, analyzer, had_error, stack, op_id, count,
                         );
                     }
                 },
@@ -165,7 +165,7 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
+                            op_id,
                             item_id,
                         );
                         if local_had_error.is_ok() {
@@ -174,7 +174,7 @@ fn analyze_block(
                                 stores,
                                 analyzer,
                                 &mut local_had_error,
-                                op,
+                                op_id,
                                 item_id,
                             );
                         }
@@ -184,12 +184,12 @@ fn analyze_block(
                         break;
                     }
                     Control::Exit => {
-                        analyzer.set_op_io(op, &[], &[]);
+                        analyzer.set_op_io(op_id, &[], &[]);
                         break;
                     }
                     Control::Prologue => {
-                        stack_check::control::prologue(ctx, analyzer, stack, op, item_id);
-                        type_check::control::prologue(ctx, analyzer, op, item_id);
+                        stack_check::control::prologue(ctx, analyzer, stack, op_id, item_id);
+                        type_check::control::prologue(ctx, analyzer, op_id, item_id);
                     }
                     Control::SysCall { arg_count } => {
                         let mut local_had_error = ErrorSignal::new();
@@ -198,15 +198,15 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *arg_count,
+                            op_id,
+                            arg_count,
                         );
                         if local_had_error.is_ok() {
                             type_check::control::syscall(
                                 stores,
                                 analyzer,
                                 &mut local_had_error,
-                                op,
+                                op_id,
                             );
                         }
 
@@ -221,8 +221,8 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *emit_array,
+                            op_id,
+                            emit_array,
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::extract_array(
@@ -231,8 +231,8 @@ fn analyze_block(
                                 analyzer,
                                 pass_ctx,
                                 &mut local_had_error,
-                                op,
-                                *emit_array,
+                                op_id,
+                                emit_array,
                             );
                         }
 
@@ -248,8 +248,8 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *emit_struct,
+                            op_id,
+                            emit_struct,
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::extract_struct(
@@ -258,9 +258,9 @@ fn analyze_block(
                                 analyzer,
                                 pass_ctx,
                                 &mut local_had_error,
-                                op,
-                                *field_name,
-                                *emit_struct,
+                                op_id,
+                                field_name,
+                                emit_struct,
                             );
                         }
 
@@ -273,8 +273,8 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *emit_array,
+                            op_id,
+                            emit_array,
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::insert_array(
@@ -283,8 +283,8 @@ fn analyze_block(
                                 analyzer,
                                 pass_ctx,
                                 &mut local_had_error,
-                                op,
-                                *emit_array,
+                                op_id,
+                                emit_array,
                             );
                         };
                         had_error.merge_with(local_had_error);
@@ -299,8 +299,8 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *emit_struct,
+                            op_id,
+                            emit_struct,
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::insert_struct(
@@ -309,9 +309,9 @@ fn analyze_block(
                                 analyzer,
                                 pass_ctx,
                                 &mut local_had_error,
-                                op,
-                                *field_name,
-                                *emit_struct,
+                                op_id,
+                                field_name,
+                                emit_struct,
                             );
                         }
 
@@ -319,9 +319,9 @@ fn analyze_block(
                     }
                     Memory::Load => {
                         let mut local_had_error = ErrorSignal::new();
-                        eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
+                        eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op_id);
                         if local_had_error.is_ok() {
-                            type_check::memory::load(stores, analyzer, &mut local_had_error, op);
+                            type_check::memory::load(stores, analyzer, &mut local_had_error, op_id);
                         }
                         had_error.merge_with(local_had_error);
                     }
@@ -332,16 +332,16 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
-                            *count,
+                            op_id,
+                            count,
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::pack_array(
                                 stores,
                                 analyzer,
                                 &mut local_had_error,
-                                op,
-                                *count,
+                                op_id,
+                                count,
                             );
                         }
 
@@ -354,10 +354,15 @@ fn analyze_block(
                             analyzer,
                             &mut local_had_error,
                             stack,
-                            op,
+                            op_id,
                         );
                         if local_had_error.is_ok() {
-                            type_check::memory::store(stores, analyzer, &mut local_had_error, op);
+                            type_check::memory::store(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op_id,
+                            );
                         }
 
                         had_error.merge_with(local_had_error);
@@ -371,44 +376,49 @@ fn analyze_block(
                             pass_ctx,
                             &mut local_had_error,
                             stack,
-                            op,
+                            op_id,
                         );
                         if local_had_error.is_ok() {
-                            type_check::memory::unpack(stores, analyzer, &mut local_had_error, op);
+                            type_check::memory::unpack(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op_id,
+                            );
                         }
 
                         had_error.merge_with(local_had_error);
                     }
                 },
                 Basic::PushBool(_) => {
-                    make_one(analyzer, stack, op);
-                    type_check::stack_ops::push_bool(stores, analyzer, op);
+                    make_one(stores, analyzer, stack, op_id);
+                    type_check::stack_ops::push_bool(stores, analyzer, op_id);
                 }
                 Basic::PushInt { width, value } => {
-                    make_one(analyzer, stack, op);
+                    make_one(stores, analyzer, stack, op_id);
                     type_check::stack_ops::push_int(
                         stores,
                         analyzer,
-                        op,
-                        (*width, value.to_signedness()).into(),
+                        op_id,
+                        (width, value.to_signedness()).into(),
                     );
                 }
                 Basic::PushStr { is_c_str, .. } => {
-                    make_one(analyzer, stack, op);
-                    type_check::stack_ops::push_str(stores, analyzer, op, *is_c_str);
+                    make_one(stores, analyzer, stack, op_id);
+                    type_check::stack_ops::push_str(stores, analyzer, op_id, is_c_str);
                 }
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => {
                     let mut local_had_error = ErrorSignal::new();
-                    eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op);
+                    eat_one_make_one(stores, analyzer, &mut local_had_error, stack, op_id);
                     if local_had_error.is_ok() {
                         type_check::stack_ops::cast(
                             stores,
                             analyzer,
                             &mut local_had_error,
-                            op,
-                            *id,
+                            op_id,
+                            id,
                         );
                     }
 
@@ -422,8 +432,8 @@ fn analyze_block(
                         analyzer,
                         &mut local_had_error,
                         stack,
-                        op,
-                        *id,
+                        op_id,
+                        id,
                     );
                     if local_had_error.is_ok() {
                         type_check::control::call_function_const(
@@ -432,8 +442,8 @@ fn analyze_block(
                             analyzer,
                             pass_ctx,
                             &mut local_had_error,
-                            op,
-                            *id,
+                            op_id,
+                            id,
                         );
                     }
 
@@ -450,16 +460,16 @@ fn analyze_block(
                         item_id,
                         stack,
                         max_stack_depth,
-                        op,
-                        if_op,
+                        op_id,
+                        &if_op,
                     );
                     if local_had_error.is_ok() {
                         type_check::control::analyze_if(
                             stores,
                             analyzer,
                             &mut local_had_error,
-                            op,
-                            if_op,
+                            op_id,
+                            &if_op,
                         );
                     }
 
@@ -478,29 +488,29 @@ fn analyze_block(
                         pass_ctx,
                         &mut local_had_error,
                         stack,
-                        op,
-                        *id,
+                        op_id,
+                        id,
                     );
                     if local_had_error.is_ok() {
                         type_check::memory::pack_struct(
                             stores,
                             analyzer,
                             &mut local_had_error,
-                            op,
-                            *id,
+                            op_id,
+                            id,
                         );
                         had_error.merge_with(local_had_error);
                     }
                 }
                 TypeResolvedOp::Memory { id, .. } => {
-                    make_one(analyzer, stack, op);
+                    make_one(stores, analyzer, stack, op_id);
                     type_check::control::memory(
-                        ctx, stores, analyzer, pass_ctx, had_error, op, *id,
+                        ctx, stores, analyzer, pass_ctx, had_error, op_id, id,
                     );
                 }
                 TypeResolvedOp::SizeOf { .. } => {
-                    make_one(analyzer, stack, op);
-                    type_check::stack_ops::push_int(stores, analyzer, op, Integer::U64);
+                    make_one(stores, analyzer, stack, op_id);
+                    type_check::stack_ops::push_int(stores, analyzer, op_id, Integer::U64);
                 }
                 TypeResolvedOp::While(while_op) => {
                     let mut local_had_error = ErrorSignal::new();
@@ -513,8 +523,8 @@ fn analyze_block(
                         item_id,
                         stack,
                         max_stack_depth,
-                        op,
-                        while_op,
+                        op_id,
+                        &while_op,
                     );
 
                     if local_had_error.is_ok() {
@@ -522,8 +532,8 @@ fn analyze_block(
                             stores,
                             analyzer,
                             &mut local_had_error,
-                            op,
-                            while_op,
+                            op_id,
+                            &while_op,
                         );
                     }
 
@@ -535,17 +545,19 @@ fn analyze_block(
         *max_stack_depth = stack.len().max(*max_stack_depth);
     }
 
-    for op in op_iter {
-        if matches!(&op.code, OpCode::Basic(Basic::Control(Control::Epilogue))) {
+    for &op_id in op_iter {
+        let op_code = stores.ops.get_type_resolved(op_id);
+        if matches!(op_code, OpCode::Basic(Basic::Control(Control::Epilogue))) {
             // Implicitely added to procs, so we don't want to diagnose these.
             continue;
         }
 
+        let op_loc = stores.ops.get_token(op_id).location;
         diagnostics::emit_warning(
             stores,
-            op.token.location,
+            op_loc,
             "unreachable op",
-            [Label::new(op.token.location).with_color(Color::Yellow)],
+            [Label::new(op_loc).with_color(Color::Yellow)],
             None,
         )
     }
@@ -576,7 +588,7 @@ pub fn analyze_item(
         item_id,
         // TODO: Fix this shit
         #[allow(clippy::unnecessary_to_owned)]
-        &ctx.trir().get_item_body(item_id).to_owned(),
+        &ctx.get_item_body(item_id).to_owned(),
         &mut stack,
         &mut max_stack_depth,
     );

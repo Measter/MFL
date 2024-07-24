@@ -5,7 +5,7 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::static_analysis::promote_int_type_bidirectional,
     stores::{
-        ops::Op,
+        ops::OpId,
         types::{Signedness, TypeKind},
     },
 };
@@ -17,9 +17,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
+        op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let input_value_ids @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(input_value_ids).unwrap();
@@ -43,12 +44,12 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = self.cast_int(a_val, target_type, a_from.signed)?;
                 let b_val = self.cast_int(b_val, target_type, b_from.signed)?;
 
-                let func = op.code.get_arith_fn();
+                let func = op_code.get_arith_fn();
                 func(&self.builder, a_val, b_val, &output_name)?.into()
             }
             [TypeKind::Integer(int_type), TypeKind::Pointer(ptee_type)] => {
                 assert!(matches!(
-                    op.code,
+                    op_code,
                     OpCode::Basic(Basic::Arithmetic(Arithmetic::Add))
                 ));
                 assert_eq!(int_type.signed, Signedness::Unsigned);
@@ -73,7 +74,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 // If we're subtracting, then we need to negate the offset.
                 let offset =
-                    if let OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)) = &op.code {
+                    if let OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)) = &op_code {
                         self.builder.build_int_neg(offset, &output_name)?
                     } else {
                         offset
@@ -88,7 +89,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             [TypeKind::Pointer(ptee_type), TypeKind::Pointer(_)] => {
                 assert!(matches!(
-                    op.code,
+                    op_code,
                     OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract))
                 ));
 
@@ -114,9 +115,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
+        op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types([a, b]).unwrap();
@@ -144,7 +146,7 @@ impl<'ctx> CodeGen<'ctx> {
             (a_val, b_val)
         };
 
-        let func = op.code.get_arith_fn();
+        let func = op_code.get_arith_fn();
         let sum = func(&self.builder, a_val, b_val, &output_name)?;
         value_store.store_value(self, op_io.outputs()[0], sum.into())?;
 
@@ -155,9 +157,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
+        op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(inputs).unwrap();
@@ -182,7 +185,7 @@ impl<'ctx> CodeGen<'ctx> {
         let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
         let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-        let func = op.code.get_div_rem_fn(output_int.signed);
+        let func = op_code.get_div_rem_fn(output_int.signed);
         let res = func(&self.builder, a_val, b_val, &output_name)?;
 
         let [res_val] = *op_io.outputs().as_arr();
@@ -195,9 +198,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
+        op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_ids = ds.analyzer.value_types(inputs).unwrap();
@@ -222,7 +226,7 @@ impl<'ctx> CodeGen<'ctx> {
         let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
         let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-        let res = match &op.code {
+        let res = match op_code {
             OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftLeft)) => {
                 self.builder.build_left_shift(a_val, b_val, &output_name)?
             }
@@ -245,9 +249,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
         let a = op_io.inputs()[0];
@@ -263,9 +267,10 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
+        op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
 
         let [a, b] = *op_io.inputs().as_arr();
         let input_types = ds.analyzer.value_types([a, b]).unwrap();
@@ -297,7 +302,7 @@ impl<'ctx> CodeGen<'ctx> {
             _ => unreachable!(),
         };
 
-        let pred = op.code.get_predicate(signed);
+        let pred = op_code.get_predicate(signed);
         let res = self
             .builder
             .build_int_compare(pred, a_val, b_val, &output_name)?;
@@ -310,9 +315,9 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
-        op: &Op<TypeResolvedOp>,
+        op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op.id);
+        let op_io = ds.analyzer.get_op_io(op_id);
         let input_value_id = op_io.inputs()[0];
         let [input_type_id] = ds.analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = ds.type_store.get_type_info(input_type_id);

@@ -5,7 +5,7 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, TypeResolvedOp, While},
+    ir::{If, While},
     pass_manager::{
         static_analysis::{
             can_promote_int_bidirectional, can_promote_int_unidirectional,
@@ -14,7 +14,7 @@ use crate::{
         PassContext,
     },
     stores::{
-        ops::Op,
+        ops::OpId,
         source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},
     },
@@ -26,12 +26,12 @@ pub(crate) fn epilogue_return(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     item_id: ItemId,
 ) {
     let item_urir_sig = ctx.urir().get_item_signature(item_id);
     let item_trir_sig = ctx.trir().get_item_signature(item_id);
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
         let Some([actual_type_id]) = analyzer.value_types([actual_value_id]) else {
@@ -52,7 +52,7 @@ pub(crate) fn epilogue_return(
                     &op_data.inputs,
                     &item_trir_sig.exit,
                     item_urir_sig.exit.location,
-                    op.token.location,
+                    stores.ops.get_token(op_id).location,
                     "item return stack mismatch",
                 );
                 had_error.set();
@@ -62,13 +62,8 @@ pub(crate) fn epilogue_return(
     }
 }
 
-pub(crate) fn prologue(
-    ctx: &mut Context,
-    analyzer: &mut Analyzer,
-    op: &Op<TypeResolvedOp>,
-    item_id: ItemId,
-) {
-    let op_data = analyzer.get_op_io(op.id);
+pub(crate) fn prologue(ctx: &mut Context, analyzer: &mut Analyzer, op_id: OpId, item_id: ItemId) {
+    let op_data = analyzer.get_op_io(op_id);
     let sigs = ctx.trir().get_item_signature(item_id);
     let outputs = op_data.outputs.clone();
 
@@ -81,9 +76,9 @@ pub(crate) fn syscall(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
 
     for (idx, &input_value_id) in op_data.inputs.iter().enumerate() {
         let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
@@ -105,16 +100,10 @@ pub(crate) fn syscall(
             Color::Yellow,
             Color::Cyan,
         );
+        let op_loc = stores.ops.get_token(op_id).location;
+        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        labels.push(Label::new(op.token.location).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
-            op.token.location,
-            "invalid syscall parameter",
-            labels,
-            None,
-        );
+        diagnostics::emit_error(stores, op_loc, "invalid syscall parameter", labels, None);
         had_error.set();
     }
 
@@ -131,7 +120,7 @@ pub(crate) fn call_function_const(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     callee_id: ItemId,
 ) {
     if pass_ctx
@@ -142,7 +131,7 @@ pub(crate) fn call_function_const(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let callee_sig_urir = ctx.urir().get_item_signature(callee_id);
     let callee_sig_trir = ctx.trir().get_item_signature(callee_id);
 
@@ -167,7 +156,7 @@ pub(crate) fn call_function_const(
                     &op_data.inputs,
                     &callee_sig_trir.entry,
                     callee_sig_urir.entry.location,
-                    op.token.location,
+                    stores.ops.get_token(op_id).location,
                     "procedure call signature mismatch",
                 );
                 had_error.set();
@@ -189,7 +178,7 @@ pub(crate) fn memory(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     memory_item_id: ItemId,
 ) {
     if pass_ctx
@@ -200,7 +189,7 @@ pub(crate) fn memory(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let output_value_id = op_data.outputs[0];
 
     let memory_type_id = ctx.trir().get_memory_type(memory_item_id);
@@ -215,13 +204,13 @@ pub(crate) fn analyze_if(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
-    if_op: &If<TypeResolvedOp>,
+    op_id: OpId,
+    if_op: &If,
 ) {
     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
     // All conditions are stored in the op inputs.
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
         condition_type_check(
@@ -234,7 +223,7 @@ pub(crate) fn analyze_if(
         );
     }
 
-    let Some(merges) = analyzer.get_if_merges(op.id).cloned() else {
+    let Some(merges) = analyzer.get_if_merges(op_id).cloned() else {
         panic!("ICE: Missing merges in If block")
     };
 
@@ -292,12 +281,12 @@ pub(crate) fn analyze_while(
     stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
-    op: &Op<TypeResolvedOp>,
-    while_op: &While<TypeResolvedOp>,
+    op_id: OpId,
+    while_op: &While,
 ) {
     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
-    let op_data = analyzer.get_op_io(op.id);
+    let op_data = analyzer.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
         condition_type_check(
@@ -310,7 +299,7 @@ pub(crate) fn analyze_while(
         );
     }
 
-    let Some(merge_info) = analyzer.get_while_merges(op.id).cloned() else {
+    let Some(merge_info) = analyzer.get_while_merges(op_id).cloned() else {
         panic!("ICE: While block should have merge info");
     };
 

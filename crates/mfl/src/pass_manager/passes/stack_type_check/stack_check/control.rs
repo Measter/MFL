@@ -9,7 +9,7 @@ use crate::{
     context::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
-    ir::{If, TypeResolvedOp, While},
+    ir::{If, While},
     n_ops::SliceNOps,
     pass_manager::{
         static_analysis::{
@@ -18,7 +18,7 @@ use crate::{
         },
         PassContext,
     },
-    stores::{ops::Op, source::Spanned},
+    stores::{ops::OpId, source::Spanned},
     Stores,
 };
 
@@ -30,7 +30,7 @@ pub(crate) fn epilogue_return(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     item_id: ItemId,
 ) {
     let item_header = ctx.get_item_header(item_id);
@@ -38,8 +38,10 @@ pub(crate) fn epilogue_return(
 
     let exit_sig = &item_sig.exit.inner;
     if stack.len() != exit_sig.len() {
+        let op_loc = stores.ops.get_token(op_id).location;
+
         let mut labels = vec![
-            Label::new(op.token.location)
+            Label::new(op_loc)
                 .with_color(Color::Red)
                 .with_message("returning here"),
             Label::new(item_sig.exit.location)
@@ -51,7 +53,7 @@ pub(crate) fn epilogue_return(
             Ordering::Less => {
                 let num_missing = usize::saturating_sub(exit_sig.len(), stack.len());
                 for _ in 0..num_missing {
-                    let pad_value = analyzer.new_value(op.token.location, None);
+                    let pad_value = analyzer.new_value(op_loc, None);
                     stack.push(pad_value);
                 }
             }
@@ -69,7 +71,7 @@ pub(crate) fn epilogue_return(
 
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!(
                 "function '{}' return {}, found {}",
                 stores.strings.resolve(item_header.name.inner),
@@ -86,9 +88,9 @@ pub(crate) fn epilogue_return(
     let inputs = stack.lastn(exit_sig.len()).unwrap();
 
     for &value_id in inputs {
-        analyzer.consume_value(value_id, op.id);
+        analyzer.consume_value(value_id, op_id);
     }
-    analyzer.set_op_io(op, inputs, &[]);
+    analyzer.set_op_io(op_id, inputs, &[]);
     let len = inputs.len();
     stack.truncate(stack.len() - len);
 }
@@ -97,7 +99,7 @@ pub(crate) fn prologue(
     ctx: &mut Context,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     item_id: ItemId,
 ) {
     let mut outputs = SmallVec::<[_; 8]>::new();
@@ -109,7 +111,7 @@ pub(crate) fn prologue(
         stack.push(new_id);
     }
 
-    analyzer.set_op_io(op, &[], &outputs);
+    analyzer.set_op_io(op_id, &[], &outputs);
 }
 
 pub(crate) fn syscall(
@@ -117,13 +119,14 @@ pub(crate) fn syscall(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     num_args: Spanned<u8>,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
     if !matches!(num_args.inner, 1..=7) {
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             "invalid syscall size",
             [Label::new(num_args.location)
                 .with_color(Color::Red)
@@ -135,15 +138,15 @@ pub(crate) fn syscall(
     }
 
     let num_args = num_args.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op, num_args);
+    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
     for &value_id in &inputs {
-        analyzer.consume_value(value_id, op.id);
+        analyzer.consume_value(value_id, op_id);
     }
 
-    let new_id = analyzer.new_value(op.token.location, None);
-    analyzer.set_op_io(op, &inputs, &[new_id]);
+    let new_id = analyzer.new_value(op_loc, None);
+    analyzer.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -153,22 +156,23 @@ pub(crate) fn call_function_const(
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
-    op: &Op<TypeResolvedOp>,
+    op_id: OpId,
     callee_id: ItemId,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
     let callee_sig = ctx.urir().get_item_signature(callee_id);
     let entry_arg_count = callee_sig.entry.inner.len();
 
     if stack.len() < entry_arg_count {
         diagnostics::emit_error(
             stores,
-            op.token.location,
+            op_loc,
             format!(
                 "procedure takes {entry_arg_count} arguments, found {}",
                 stack.len()
             ),
             [
-                Label::new(op.token.location).with_color(Color::Red),
+                Label::new(op_loc).with_color(Color::Red),
                 Label::new(callee_sig.entry.location)
                     .with_color(Color::Cyan)
                     .with_message("signature defined here"),
@@ -179,24 +183,24 @@ pub(crate) fn call_function_const(
 
         let num_missing = usize::saturating_sub(entry_arg_count, stack.len());
         for _ in 0..num_missing {
-            let pad_value = analyzer.new_value(op.token.location, None);
+            let pad_value = analyzer.new_value(op_loc, None);
             stack.push(pad_value);
         }
     }
 
     let inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - entry_arg_count..).collect();
     for &value_id in &inputs {
-        analyzer.consume_value(value_id, op.id);
+        analyzer.consume_value(value_id, op_id);
     }
 
     let mut outputs = SmallVec::<[_; 8]>::new();
     for _ in &callee_sig.exit.inner {
-        let new_id = analyzer.new_value(op.token.location, None);
+        let new_id = analyzer.new_value(op_loc, None);
         outputs.push(new_id);
         stack.push(new_id);
     }
 
-    analyzer.set_op_io(op, &inputs, &outputs);
+    analyzer.set_op_io(op_id, &inputs, &outputs);
 }
 
 pub(crate) fn analyze_if(
@@ -208,9 +212,10 @@ pub(crate) fn analyze_if(
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    op: &Op<TypeResolvedOp>,
-    if_op: &If<TypeResolvedOp>,
+    op_id: OpId,
+    if_op: &If,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
     let mut condition_values = SmallVec::<[_; 1]>::new();
 
     // Evaluate condition.
@@ -240,7 +245,7 @@ pub(crate) fn analyze_if(
         had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(analyzer.new_value(op.token.location, None));
+        stack.push(analyzer.new_value(op_loc, None));
     }
     condition_values.push(stack.pop().unwrap());
     let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
@@ -313,7 +318,7 @@ pub(crate) fn analyze_if(
             .zip(stack)
             .filter(|(a, b)| &a != b)
         {
-            let output_value_id = analyzer.new_value(op.token.location, None);
+            let output_value_id = analyzer.new_value(op_loc, None);
             trace!(
                 ?then_value_id,
                 ?else_value_id,
@@ -330,8 +335,8 @@ pub(crate) fn analyze_if(
         }
     }
 
-    analyzer.set_op_io(op, &condition_values, &[]);
-    analyzer.set_if_merges(op, body_merges);
+    analyzer.set_op_io(op_id, &condition_values, &[]);
+    analyzer.set_if_merges(op_id, body_merges);
 }
 
 pub(crate) fn analyze_while(
@@ -343,9 +348,10 @@ pub(crate) fn analyze_while(
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
-    op: &Op<TypeResolvedOp>,
-    while_op: &While<TypeResolvedOp>,
+    op_id: OpId,
+    while_op: &While,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
     let pre_condition_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
 
     // Evaluate the condition.
@@ -375,7 +381,7 @@ pub(crate) fn analyze_while(
         had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(analyzer.new_value(op.token.location, None));
+        stack.push(analyzer.new_value(op_loc, None));
     }
     let condition_value = stack.pop().unwrap();
 
@@ -385,7 +391,7 @@ pub(crate) fn analyze_while(
     if stack.len() != pre_condition_stack.len() {
         generate_stack_length_mismatch_diag(
             stores,
-            op.token.location,
+            op_loc,
             while_op.tokens.do_token,
             stack.len(),
             pre_condition_stack.len(),
@@ -396,7 +402,7 @@ pub(crate) fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op.token.location, None));
+            stack.push(analyzer.new_value(op_loc, None));
         }
     }
 
@@ -443,7 +449,7 @@ pub(crate) fn analyze_while(
     if stack.len() != pre_condition_stack.len() {
         generate_stack_length_mismatch_diag(
             stores,
-            op.token.location,
+            op_loc,
             while_op.tokens.end_token,
             stack.len(),
             pre_condition_stack.len(),
@@ -454,7 +460,7 @@ pub(crate) fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op.token.location, None));
+            stack.push(analyzer.new_value(op_loc, None));
         }
     }
 
@@ -481,12 +487,12 @@ pub(crate) fn analyze_while(
     stack.extend_from_slice(&pre_condition_stack);
 
     analyzer.set_while_merges(
-        op,
+        op_id,
         WhileMerges {
             condition: condition_merges,
             body: body_merges,
         },
     );
-    analyzer.set_op_io(op, &[condition_value], &[]);
-    analyzer.consume_value(condition_value, op.id);
+    analyzer.set_op_io(op_id, &[condition_value], &[]);
+    analyzer.consume_value(condition_value, op_id);
 }
