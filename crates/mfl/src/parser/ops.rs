@@ -10,7 +10,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, OpCode,
-        Stack, TerminalBlock, UnresolvedOp, While, WhileTokens,
+        Stack, UnresolvedOp, While, WhileTokens,
     },
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
     stores::{
@@ -725,6 +725,7 @@ pub fn parse_if<'a>(
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
+    let condition = stores.blocks.new_block(condition);
 
     let then_block_tokens = get_terminated_tokens(
         stores,
@@ -739,6 +740,7 @@ pub fn parse_if<'a>(
     let mut close_token = then_block_tokens.close;
 
     let then_block = parse_item_body_contents(ctx, stores, &then_block_tokens.list, parent_id)?;
+    let then_block = stores.blocks.new_block(then_block);
 
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
@@ -755,6 +757,7 @@ pub fn parse_if<'a>(
 
         let elif_condition =
             parse_item_body_contents(ctx, stores, &elif_condition_tokens.list, parent_id)?;
+        let elif_condition = stores.blocks.new_block(elif_condition);
 
         let elif_block_tokens = get_terminated_tokens(
             stores,
@@ -768,6 +771,7 @@ pub fn parse_if<'a>(
         )?;
 
         let elif_block = parse_item_body_contents(ctx, stores, &elif_block_tokens.list, parent_id)?;
+        let elif_block = stores.blocks.new_block(elif_block);
 
         elif_blocks.push((
             close_token,
@@ -779,7 +783,7 @@ pub fn parse_if<'a>(
         close_token = elif_block_tokens.close;
     }
 
-    let mut else_block = if close_token.inner.kind == TokenKind::Else {
+    let else_block = if close_token.inner.kind == TokenKind::Else {
         let else_block_tokens = get_terminated_tokens(
             stores,
             token_iter,
@@ -797,6 +801,7 @@ pub fn parse_if<'a>(
     } else {
         Vec::new()
     };
+    let mut else_block = stores.blocks.new_block(else_block);
 
     // Normalize into an `if <cond> do <body> else <body> end` structure.
     while let Some((open_token, condition, do_token, then_block, else_token)) = elif_blocks.pop() {
@@ -807,25 +812,16 @@ pub fn parse_if<'a>(
         };
         let if_code = If {
             tokens: if_tokens,
-            condition: TerminalBlock {
-                block: condition,
-                is_terminal: false,
-            },
-            then_block: TerminalBlock {
-                block: then_block,
-                is_terminal: false,
-            },
-            else_block: TerminalBlock {
-                block: else_block,
-                is_terminal: false,
-            },
+            condition,
+            then_block,
+            else_block,
         };
         let if_op = stores.ops.new_op(
             OpCode::Complex(UnresolvedOp::If(if_code)),
             open_token.map(|t| t.lexeme),
         );
 
-        else_block = vec![if_op];
+        else_block = stores.blocks.new_block(vec![if_op]);
     }
 
     let if_tokens = IfTokens {
@@ -835,18 +831,9 @@ pub fn parse_if<'a>(
     };
     let if_code = If {
         tokens: if_tokens,
-        condition: TerminalBlock {
-            block: condition,
-            is_terminal: false,
-        },
-        then_block: TerminalBlock {
-            block: then_block,
-            is_terminal: false,
-        },
-        else_block: TerminalBlock {
-            block: else_block,
-            is_terminal: false,
-        },
+        condition,
+        then_block,
+        else_block,
     };
     Ok((
         OpCode::Complex(UnresolvedOp::If(if_code)),
@@ -871,6 +858,7 @@ pub fn parse_while<'a>(
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
+    let condition = stores.blocks.new_block(condition);
 
     let body_tokens = get_terminated_tokens(
         stores,
@@ -882,6 +870,7 @@ pub fn parse_while<'a>(
     )?;
 
     let body_block = parse_item_body_contents(ctx, stores, &body_tokens.list, parent_id)?;
+    let body_block = stores.blocks.new_block(body_block);
 
     let while_tokens = WhileTokens {
         do_token: condition_tokens.close.location,
@@ -889,14 +878,8 @@ pub fn parse_while<'a>(
     };
     let while_code = While {
         tokens: while_tokens,
-        condition: TerminalBlock {
-            block: condition,
-            is_terminal: false,
-        },
-        body_block: TerminalBlock {
-            block: body_block,
-            is_terminal: false,
-        },
+        condition,
+        body_block,
     };
 
     Ok((

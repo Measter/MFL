@@ -1,9 +1,11 @@
+use block::BlockStore;
 use interner::Interner;
 use lasso::Spur;
 use ops::OpStore;
 use source::SourceStore;
 use types::{TypeId, TypeStore};
 
+pub mod block;
 pub mod interner;
 pub mod ops;
 pub mod source;
@@ -14,6 +16,7 @@ pub struct Stores {
     pub strings: Interner,
     pub types: TypeStore,
     pub ops: OpStore,
+    pub blocks: BlockStore,
 }
 
 impl Stores {
@@ -22,12 +25,14 @@ impl Stores {
         let mut interner = Interner::new();
         let type_store = TypeStore::new(&mut interner);
         let op_store = OpStore::new();
+        let block_store = BlockStore::new();
 
         Stores {
             source: source_storage,
             strings: interner,
             types: type_store,
             ops: op_store,
+            blocks: block_store,
         }
     }
 

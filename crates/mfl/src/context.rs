@@ -10,14 +10,14 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        If, NameResolvedType, OpCode, StructDef, TerminalBlock, UnresolvedIdent, UnresolvedType,
+        If, NameResolvedType, OpCode, StructDef, UnresolvedIdent, UnresolvedOp, UnresolvedType,
         While,
     },
     option::OptionExt,
     pass_manager::{static_analysis::Analyzer, PassContext},
     simulate::SimulatorValue,
     stores::{
-        ops::OpId,
+        block::BlockId,
         source::{SourceLocation, Spanned, WithSpan},
         types::TypeId,
     },
@@ -248,7 +248,7 @@ pub struct Context {
     headers: Vec<ItemHeader>,
     analyzers: HashMap<ItemId, Analyzer>,
     const_vals: HashMap<ItemId, Vec<SimulatorValue>>,
-    item_body: HashMap<ItemId, Vec<OpId>>,
+    item_body: HashMap<ItemId, BlockId>,
 
     // TODO: Separate out the IRs from the rest of the context so that we don't
     // need to clone the bodies.
@@ -314,15 +314,15 @@ impl Context {
 
     #[inline]
     #[track_caller]
-    pub fn get_item_body(&self, id: ItemId) -> &[OpId] {
-        &self.item_body[&id]
+    pub fn get_item_body(&self, id: ItemId) -> BlockId {
+        self.item_body[&id]
     }
 
     #[inline]
     #[track_caller]
-    pub fn set_item_body(&mut self, id: ItemId, body: Vec<OpId>) {
+    pub fn set_item_body(&mut self, id: ItemId, block_id: BlockId) {
         self.item_body
-            .insert(id, body)
+            .insert(id, block_id)
             .expect_none("ICE: Set same item body multiple times");
     }
 
@@ -653,13 +653,14 @@ impl Context {
         &mut self,
         stores: &mut Stores,
         pass_ctx: &mut PassContext,
-        body: &[OpId],
+        block_id: BlockId,
         param_map: &HashMap<Spur, NameResolvedType>,
         old_alloc_map: &HashMap<ItemId, ItemId>,
-    ) -> Vec<OpId> {
+    ) -> BlockId {
         let mut new_body = Vec::new();
 
-        for &op_id in body {
+        let old_block = stores.blocks.get_block(block_id).clone();
+        for op_id in old_block.ops {
             let op_code = stores.ops.get_name_resolved(op_id).clone();
             let new_code = match op_code {
                 OpCode::Basic(bo) => OpCode::Basic(bo),
@@ -668,67 +669,52 @@ impl Context {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
-                            &if_op.condition.block,
+                            if_op.condition,
                             param_map,
                             old_alloc_map,
                         );
                         let resolved_then = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
-                            &if_op.then_block.block,
+                            if_op.then_block,
                             param_map,
                             old_alloc_map,
                         );
                         let resolved_else = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
-                            &if_op.else_block.block,
+                            if_op.else_block,
                             param_map,
                             old_alloc_map,
                         );
 
                         OpCode::Complex(NameResolvedOp::If(If {
                             tokens: if_op.tokens,
-                            condition: TerminalBlock {
-                                block: resolved_condition,
-                                is_terminal: false,
-                            },
-                            then_block: TerminalBlock {
-                                block: resolved_then,
-                                is_terminal: false,
-                            },
-                            else_block: TerminalBlock {
-                                block: resolved_else,
-                                is_terminal: false,
-                            },
+                            condition: resolved_condition,
+                            then_block: resolved_then,
+                            else_block: resolved_else,
                         }))
                     }
                     NameResolvedOp::While(while_op) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
-                            &while_op.condition.block,
+                            while_op.condition,
                             param_map,
                             old_alloc_map,
                         );
                         let resolved_body = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
-                            &while_op.body_block.block,
+                            while_op.body_block,
                             param_map,
                             old_alloc_map,
                         );
 
                         OpCode::Complex(NameResolvedOp::While(While {
                             tokens: while_op.tokens,
-                            condition: TerminalBlock {
-                                block: resolved_condition,
-                                is_terminal: false,
-                            },
-                            body_block: TerminalBlock {
-                                block: resolved_body,
-                                is_terminal: false,
-                            },
+                            condition: resolved_condition,
+                            body_block: resolved_body,
                         }))
                     }
 
@@ -786,14 +772,34 @@ impl Context {
             };
 
             let old_token = stores.ops.get_token(op_id);
-            let old_unresolved = stores.ops.get_unresolved(op_id).clone();
+            let mut old_unresolved = stores.ops.get_unresolved(op_id).clone();
+            // Need to patch up the old unresolved opcode so that the If and While codes point to the new blocks.
+            match (&mut old_unresolved, &new_code) {
+                (
+                    OpCode::Complex(UnresolvedOp::If(old_if)),
+                    OpCode::Complex(NameResolvedOp::If(new_if)),
+                ) => {
+                    old_if.condition = new_if.condition;
+                    old_if.then_block = new_if.then_block;
+                    old_if.else_block = new_if.else_block;
+                }
+                (
+                    OpCode::Complex(UnresolvedOp::While(old_while)),
+                    OpCode::Complex(NameResolvedOp::While(new_while)),
+                ) => {
+                    old_while.condition = new_while.condition;
+                    old_while.body_block = new_while.body_block
+                }
+                _ => {}
+            }
+
             let new_op_id = stores.ops.new_op(old_unresolved, old_token);
             stores.ops.set_name_resolved(new_op_id, new_code);
 
             new_body.push(new_op_id);
         }
 
-        new_body
+        stores.blocks.new_block(new_body)
     }
 
     pub fn get_generic_function_instance(
@@ -900,15 +906,9 @@ impl Context {
             old_alloc_map.insert(child_item_header.id, new_alloc_id);
         }
 
-        // I don't like having to clone this.
-        let body = self.get_item_body(base_fn_id).to_owned();
-        let new_body = self.expand_generic_params_in_block(
-            stores,
-            pass_ctx,
-            &body,
-            &param_map,
-            &old_alloc_map,
-        );
+        let body = self.get_item_body(base_fn_id);
+        let new_body =
+            self.expand_generic_params_in_block(stores, pass_ctx, body, &param_map, &old_alloc_map);
         self.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
             .insert((base_fn_id, resolved_generic_params), new_proc_id);

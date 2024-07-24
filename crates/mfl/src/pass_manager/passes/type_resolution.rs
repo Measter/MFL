@@ -6,7 +6,7 @@ use crate::{
     ir::{NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
     pass_manager::PassContext,
     stores::{
-        ops::OpId,
+        block::BlockId,
         types::{emit_type_error_diag, TypeId},
     },
     Stores,
@@ -146,9 +146,10 @@ fn resolve_block(
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    unresolved_block: &[OpId],
+    unresolved_block_id: BlockId,
 ) {
-    for &op_id in unresolved_block {
+    let block = stores.blocks.get_block(unresolved_block_id).clone();
+    for op_id in block.ops {
         let old_code = stores.ops.get_name_resolved(op_id).clone();
         let new_code = match old_code {
             OpCode::Basic(bo) => OpCode::Basic(bo),
@@ -214,14 +215,14 @@ fn resolve_block(
             }
 
             OpCode::Complex(NameResolvedOp::If(if_op)) => {
-                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.condition.block);
-                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.then_block.block);
-                resolve_block(ctx, stores, pass_ctx, had_error, &if_op.else_block.block);
+                resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
+                resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
+                resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
                 OpCode::Complex(TypeResolvedOp::If(if_op.clone()))
             }
             OpCode::Complex(NameResolvedOp::While(while_op)) => {
-                resolve_block(ctx, stores, pass_ctx, had_error, &while_op.condition.block);
-                resolve_block(ctx, stores, pass_ctx, had_error, &while_op.body_block.block);
+                resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
+                resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
                 OpCode::Complex(TypeResolvedOp::While(while_op.clone()))
             }
 
@@ -282,7 +283,7 @@ pub fn resolve_body(
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
             let unresolved_body = ctx.get_item_body(cur_id).to_owned();
-            resolve_block(ctx, stores, pass_ctx, had_error, &unresolved_body);
+            resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
         }
     };
 }

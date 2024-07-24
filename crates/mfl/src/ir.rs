@@ -1,7 +1,7 @@
 use lasso::Spur;
 
 use crate::stores::{
-    ops::OpId,
+    block::BlockId,
     source::{SourceLocation, Spanned},
     types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
 };
@@ -110,12 +110,6 @@ impl NameResolvedType {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TerminalBlock {
-    pub block: Vec<OpId>,
-    pub is_terminal: bool,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct WhileTokens {
     pub do_token: SourceLocation,
@@ -125,8 +119,8 @@ pub struct WhileTokens {
 #[derive(Debug, Clone)]
 pub struct While {
     pub tokens: WhileTokens,
-    pub condition: TerminalBlock,
-    pub body_block: TerminalBlock,
+    pub condition: BlockId,
+    pub body_block: BlockId,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -139,9 +133,9 @@ pub struct IfTokens {
 #[derive(Debug, Clone)]
 pub struct If {
     pub tokens: IfTokens,
-    pub condition: TerminalBlock,
-    pub then_block: TerminalBlock,
-    pub else_block: TerminalBlock,
+    pub condition: BlockId,
+    pub then_block: BlockId,
+    pub else_block: BlockId,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

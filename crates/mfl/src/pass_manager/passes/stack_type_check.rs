@@ -10,7 +10,7 @@ use crate::{
         static_analysis::{Analyzer, ValueId},
         PassContext,
     },
-    stores::{ops::OpId, types::Integer},
+    stores::{block::BlockId, ops::OpId, types::Integer},
     Stores,
 };
 
@@ -64,11 +64,12 @@ fn analyze_block(
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
-    block: &[OpId],
+    block_id: BlockId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
 ) {
-    let mut op_iter = block.iter();
+    let block = stores.blocks.get_block(block_id).clone();
+    let mut op_iter = block.ops.iter();
     for &op_id in op_iter.by_ref() {
         let op_code = stores.ops.get_type_resolved(op_id).clone();
         match op_code {
@@ -475,7 +476,9 @@ fn analyze_block(
 
                     had_error.merge_with(local_had_error);
 
-                    if if_op.else_block.is_terminal && if_op.then_block.is_terminal {
+                    if stores.blocks.is_terminal(if_op.else_block)
+                        && stores.blocks.is_terminal(if_op.then_block)
+                    {
                         break;
                     }
                 }
@@ -586,9 +589,7 @@ pub fn analyze_item(
         pass_ctx,
         had_error,
         item_id,
-        // TODO: Fix this shit
-        #[allow(clippy::unnecessary_to_owned)]
-        &ctx.get_item_body(item_id).to_owned(),
+        ctx.get_item_body(item_id),
         &mut stack,
         &mut max_stack_depth,
     );

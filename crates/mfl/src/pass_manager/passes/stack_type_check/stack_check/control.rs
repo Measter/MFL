@@ -226,7 +226,7 @@ pub(crate) fn analyze_if(
         pass_ctx,
         had_error,
         item_id,
-        &if_op.condition.block,
+        if_op.condition,
         stack,
         max_stack_depth,
     );
@@ -258,7 +258,7 @@ pub(crate) fn analyze_if(
         pass_ctx,
         had_error,
         item_id,
-        &if_op.then_block.block,
+        if_op.then_block,
         stack,
         max_stack_depth,
     );
@@ -279,21 +279,23 @@ pub(crate) fn analyze_if(
         pass_ctx,
         had_error,
         item_id,
-        &if_op.else_block.block,
+        if_op.else_block,
         stack,
         max_stack_depth,
     );
 
     let mut body_merges = Vec::new();
 
-    if if_op.then_block.is_terminal && if_op.else_block.is_terminal {
+    let else_terminal = stores.blocks.is_terminal(if_op.else_block);
+    let then_terminal = stores.blocks.is_terminal(if_op.then_block);
+    if else_terminal && then_terminal {
         // Both are terminal, so we don't need to do any checking.
         trace!("both branches terminate");
-    } else if if_op.then_block.is_terminal {
+    } else if then_terminal {
         // We only need to "merge" for the else block, so we can just take the result of the else block as
         // the stack state.
         trace!("then-branch terminates, leaving stack as else-branch resulted");
-    } else if if_op.else_block.is_terminal {
+    } else if else_terminal {
         // Same logic as the previous branch, except for the then-block.
         stack.clear();
         stack.extend_from_slice(&then_block_stack);
@@ -362,7 +364,7 @@ pub(crate) fn analyze_while(
         pass_ctx,
         had_error,
         item_id,
-        &while_op.condition.block,
+        while_op.condition,
         stack,
         max_stack_depth,
     );
@@ -440,7 +442,7 @@ pub(crate) fn analyze_while(
         pass_ctx,
         had_error,
         item_id,
-        &while_op.body_block.block,
+        while_op.body_block,
         stack,
         max_stack_depth,
     );

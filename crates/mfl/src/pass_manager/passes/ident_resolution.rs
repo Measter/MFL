@@ -11,7 +11,7 @@ use crate::{
     },
     pass_manager::PassContext,
     stores::{
-        ops::OpId,
+        block::BlockId,
         source::{FileId, Spanned, WithSpan},
         types::BuiltinTypes,
     },
@@ -385,10 +385,11 @@ fn resolve_idents_in_block(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
-    block: &[OpId],
+    block_id: BlockId,
     generic_params: Option<&[Spanned<Spur>]>,
 ) {
-    for &op_id in block {
+    let block = stores.blocks.get_block(block_id).clone();
+    for op_id in block.ops {
         // TODO: Try to avoid this clone.
         let old_code = stores.ops.get_unresolved(op_id).clone();
         let new_code = match old_code {
@@ -402,7 +403,7 @@ fn resolve_idents_in_block(
                         stores,
                         had_error,
                         cur_id,
-                        &if_op.condition.block,
+                        if_op.condition,
                         generic_params,
                     );
                     resolve_idents_in_block(
@@ -410,7 +411,7 @@ fn resolve_idents_in_block(
                         stores,
                         had_error,
                         cur_id,
-                        &if_op.then_block.block,
+                        if_op.then_block,
                         generic_params,
                     );
                     resolve_idents_in_block(
@@ -418,7 +419,7 @@ fn resolve_idents_in_block(
                         stores,
                         had_error,
                         cur_id,
-                        &if_op.else_block.block,
+                        if_op.else_block,
                         generic_params,
                     );
 
@@ -430,7 +431,7 @@ fn resolve_idents_in_block(
                         stores,
                         had_error,
                         cur_id,
-                        &while_op.condition.block,
+                        while_op.condition,
                         generic_params,
                     );
                     resolve_idents_in_block(
@@ -438,7 +439,7 @@ fn resolve_idents_in_block(
                         stores,
                         had_error,
                         cur_id,
-                        &while_op.body_block.block,
+                        while_op.body_block,
                         generic_params,
                     );
 

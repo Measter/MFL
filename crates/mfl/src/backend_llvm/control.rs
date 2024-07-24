@@ -218,7 +218,9 @@ impl<'ctx> CodeGen<'ctx> {
             .ctx
             .append_basic_block(function, &format!("if_{}_else", op_id));
 
-        let post_basic_block = if if_op.then_block.is_terminal && if_op.else_block.is_terminal {
+        let post_basic_block = if ds.block_store.is_terminal(if_op.then_block)
+            && ds.block_store.is_terminal(if_op.else_block)
+        {
             None
         } else {
             Some(
@@ -230,9 +232,9 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(current_block);
         // Compile condition
         trace!("Compiling condition for {:?}", op_id);
-        self.compile_block(ds, value_store, id, &if_op.condition.block, function)?;
+        self.compile_block(ds, value_store, id, if_op.condition, function)?;
 
-        if if_op.condition.is_terminal {
+        if ds.block_store.is_terminal(if_op.condition) {
             return Ok(());
         }
 
@@ -248,10 +250,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Then
         self.builder.position_at_end(then_basic_block);
         trace!("Compiling then-block for {:?}", op_id);
-        self.compile_block(ds, value_store, id, &if_op.then_block.block, function)?;
+        self.compile_block(ds, value_store, id, if_op.then_block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
-        if !if_op.then_block.is_terminal {
+        if !ds.block_store.is_terminal(if_op.then_block) {
             let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -286,10 +288,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile Else
         self.builder.position_at_end(else_basic_block);
         trace!("Compiling else-block for {:?}", op_id);
-        self.compile_block(ds, value_store, id, &if_op.else_block.block, function)?;
+        self.compile_block(ds, value_store, id, if_op.else_block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
-        if !if_op.else_block.is_terminal {
+        if !ds.block_store.is_terminal(if_op.else_block) {
             let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
                 panic!("ICE: If block doesn't have merges");
             };
@@ -354,7 +356,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling condition for {:?}", op_id);
         self.builder.position_at_end(condition_block);
-        self.compile_block(ds, value_store, id, &while_op.condition.block, function)?;
+        self.compile_block(ds, value_store, id, while_op.condition, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {
@@ -398,7 +400,7 @@ impl<'ctx> CodeGen<'ctx> {
         // Compile body
         self.builder.position_at_end(body_block);
         trace!("Compiling body-block for {:?}", op_id);
-        self.compile_block(ds, value_store, id, &while_op.body_block.block, function)?;
+        self.compile_block(ds, value_store, id, while_op.body_block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {

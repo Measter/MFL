@@ -3,7 +3,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::{static_analysis::Analyzer, PassContext},
-    stores::ops::OpId,
+    stores::block::BlockId,
     Stores,
 };
 
@@ -19,9 +19,10 @@ fn analyze_block(
     analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
-    block: &[OpId],
+    block_id: BlockId,
 ) {
-    for &op_id in block {
+    let block = stores.blocks.get_block(block_id).clone();
+    for op_id in block.ops {
         let op_code = stores.ops.get_type_resolved(op_id).clone();
         match op_code {
             OpCode::Basic(bo) => match bo {
@@ -97,7 +98,9 @@ fn analyze_block(
                     control::cp_const(ctx, stores, analyzer, pass_ctx, op_id, id)
                 }
                 TypeResolvedOp::If(if_op) => {
-                    if if_op.else_block.is_terminal && if_op.then_block.is_terminal {
+                    if stores.blocks.is_terminal(if_op.else_block)
+                        && stores.blocks.is_terminal(if_op.then_block)
+                    {
                         break;
                     }
                 }
@@ -129,9 +132,7 @@ pub fn analyze_item(
         &mut analyzer,
         pass_ctx,
         had_error,
-        // TODO: Fix this shit
-        #[allow(clippy::unnecessary_to_owned)]
-        &ctx.get_item_body(item_id).to_owned(),
+        ctx.get_item_body(item_id),
     );
 
     ctx.set_analyzer(item_id, analyzer);

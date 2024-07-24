@@ -182,8 +182,8 @@ pub fn parse_function<'a>(
     }
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
-
-    ctx.set_item_body(item_id, body);
+    let body_block_id = stores.blocks.new_block(body);
+    ctx.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())
@@ -218,8 +218,8 @@ pub fn parse_assert<'a>(
     );
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
-
-    ctx.set_item_body(item_id, body);
+    let body_block_id = stores.blocks.new_block(body);
+    ctx.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())
@@ -259,8 +259,8 @@ pub fn parse_const<'a>(
     );
 
     let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
-
-    ctx.set_item_body(item_id, body);
+    let body_block_id = stores.blocks.new_block(body);
+    ctx.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())

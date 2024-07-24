@@ -8,7 +8,7 @@ use crate::{
     ir::{Arithmetic, Basic, Compare, Control, Direction, IntKind, OpCode, Stack, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
-    stores::{ops::OpId, types::IntWidth},
+    stores::{block::BlockId, ops::OpId, types::IntWidth},
     Stores,
 };
 
@@ -107,11 +107,12 @@ fn simulate_execute_program_block(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
-    block: &[OpId],
+    block_id: BlockId,
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
     let mut ip = 0;
-    while let Some(&op_id) = block.get(ip) {
+    let block = stores.blocks.get_block(block_id).clone();
+    while let Some(&op_id) = block.ops.get(ip) {
         match stores.ops.get_type_resolved(op_id).clone() {
             OpCode::Basic(Basic::Arithmetic(ar_op)) => match ar_op {
                 Arithmetic::Add
@@ -244,7 +245,7 @@ fn simulate_execute_program_block(
                     ctx,
                     stores,
                     pass_ctx,
-                    &if_op.condition.block,
+                    if_op.condition,
                     value_stack,
                 )?;
 
@@ -254,7 +255,7 @@ fn simulate_execute_program_block(
                         ctx,
                         stores,
                         pass_ctx,
-                        &if_op.then_block.block,
+                        if_op.then_block,
                         value_stack,
                     )?;
                 } else {
@@ -262,7 +263,7 @@ fn simulate_execute_program_block(
                         ctx,
                         stores,
                         pass_ctx,
-                        &if_op.else_block.block,
+                        if_op.else_block,
                         value_stack,
                     )?;
                 }
@@ -279,7 +280,7 @@ fn simulate_execute_program_block(
                     ctx,
                     stores,
                     pass_ctx,
-                    &while_op.condition.block,
+                    while_op.condition,
                     value_stack,
                 )?;
                 let a = value_stack.pop().unwrap();
@@ -290,7 +291,7 @@ fn simulate_execute_program_block(
                     ctx,
                     stores,
                     pass_ctx,
-                    &while_op.body_block.block,
+                    while_op.body_block,
                     value_stack,
                 )?;
             },
@@ -336,7 +337,7 @@ pub(crate) fn simulate_execute_program(
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     let block = ctx.get_item_body(item_id).to_owned();
-    simulate_execute_program_block(ctx, stores, pass_ctx, &block, &mut value_stack)?;
+    simulate_execute_program_block(ctx, stores, pass_ctx, block, &mut value_stack)?;
 
     Ok(value_stack)
 }

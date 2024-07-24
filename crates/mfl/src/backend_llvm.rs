@@ -26,8 +26,9 @@ use crate::{
     ir::{Arithmetic, Basic, Compare, Control, IntKind, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::static_analysis::{Analyzer, ValueId},
     stores::{
+        block::{BlockId, BlockStore},
         interner::Interner,
-        ops::{OpId, OpStore},
+        ops::OpStore,
         source::SourceStore,
         types::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
@@ -123,6 +124,7 @@ struct DataStore<'a> {
     type_store: &'a mut TypeStore,
     source_store: &'a SourceStore,
     op_store: &'a OpStore,
+    block_store: &'a BlockStore,
 }
 
 #[derive(Debug)]
@@ -450,10 +452,11 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut DataStore,
         value_store: &mut ValueStore<'ctx>,
         id: ItemId,
-        block: &[OpId],
+        block_id: BlockId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        for &op_id in block {
+        let block = ds.block_store.get_block(block_id);
+        for &op_id in &block.ops {
             let op_code = ds.op_store.get_type_resolved(op_id);
             match op_code {
                 OpCode::Basic(Basic::Stack(Stack::Swap { count })) => {
@@ -593,7 +596,9 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                     TypeResolvedOp::If(if_op) => {
                         self.build_if(ds, value_store, function, id, op_id, if_op)?;
-                        if if_op.else_block.is_terminal && if_op.then_block.is_terminal {
+                        if ds.block_store.is_terminal(if_op.else_block)
+                            && ds.block_store.is_terminal(if_op.then_block)
+                        {
                             // Nothing else to codegen here.
                             break;
                         }
@@ -633,7 +638,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_merge_variables(
         &mut self,
         ds: &mut DataStore,
-        block: &[OpId],
+        block_id: BlockId,
         analyzer: &Analyzer,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
     ) -> InkwellResult {
@@ -659,7 +664,8 @@ impl<'ctx> CodeGen<'ctx> {
             Ok(())
         }
 
-        for &op_id in block {
+        let block = ds.block_store.get_block(block_id);
+        for &op_id in &block.ops {
             match ds.op_store.get_type_resolved(op_id) {
                 OpCode::Complex(TypeResolvedOp::If(if_op)) => {
                     let Some(op_merges) = analyzer.get_if_merges(op_id) else {
@@ -675,18 +681,8 @@ impl<'ctx> CodeGen<'ctx> {
                         )?;
                     }
 
-                    self.build_merge_variables(
-                        ds,
-                        &if_op.then_block.block,
-                        analyzer,
-                        merge_pair_map,
-                    )?;
-                    self.build_merge_variables(
-                        ds,
-                        &if_op.else_block.block,
-                        analyzer,
-                        merge_pair_map,
-                    )?;
+                    self.build_merge_variables(ds, if_op.then_block, analyzer, merge_pair_map)?;
+                    self.build_merge_variables(ds, if_op.else_block, analyzer, merge_pair_map)?;
                 }
                 OpCode::Complex(TypeResolvedOp::While(while_op)) => {
                     let Some(op_merges) = analyzer.get_while_merges(op_id) else {
@@ -712,18 +708,8 @@ impl<'ctx> CodeGen<'ctx> {
                         )?;
                     }
 
-                    self.build_merge_variables(
-                        ds,
-                        &while_op.condition.block,
-                        analyzer,
-                        merge_pair_map,
-                    )?;
-                    self.build_merge_variables(
-                        ds,
-                        &while_op.body_block.block,
-                        analyzer,
-                        merge_pair_map,
-                    )?;
+                    self.build_merge_variables(ds, while_op.condition, analyzer, merge_pair_map)?;
+                    self.build_merge_variables(ds, while_op.body_block, analyzer, merge_pair_map)?;
                 }
 
                 _ => continue,
@@ -799,6 +785,7 @@ impl<'ctx> CodeGen<'ctx> {
             type_store: &mut stores.types,
             source_store: &stores.source,
             op_store: &mut stores.ops,
+            block_store: &stores.blocks,
         };
 
         trace!("Defining merge variables");

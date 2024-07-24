@@ -1,7 +1,7 @@
 use crate::{
     context::{Context, ItemId, ItemKind},
     ir::{Basic, Control, OpCode, UnresolvedOp},
-    stores::{ops::OpId, Stores},
+    stores::{block::BlockId, Stores},
 };
 
 pub fn determine_terminal_blocks(ctx: &mut Context, stores: &mut Stores, cur_id: ItemId) {
@@ -12,38 +12,43 @@ pub fn determine_terminal_blocks(ctx: &mut Context, stores: &mut Stores, cur_id:
     }
 
     let body = ctx.get_item_body(cur_id).to_owned();
-    determine_terminal_blocks_in_block(stores, &body);
+    determine_terminal_blocks_in_block(stores, body);
 }
 
-fn determine_terminal_blocks_in_block(stores: &mut Stores, block: &[OpId]) -> bool {
-    for &op_id in block {
+fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) -> bool {
+    let block = stores.blocks.get_block(block_id).clone();
+    for op_id in block.ops {
         let op_code = stores.ops.get_unresolved(op_id);
         match op_code {
-            OpCode::Basic(Basic::Control(Control::Exit | Control::Return)) => return true,
+            OpCode::Basic(Basic::Control(Control::Exit | Control::Return)) => {
+                stores.blocks.set_terminal(block_id);
+                return true;
+            }
             OpCode::Complex(UnresolvedOp::If(if_op)) => {
-                todo!()
-                // if_op.condition.is_terminal =
-                //     determine_terminal_blocks_in_block(&mut if_op.condition.block);
-                // if_op.then_block.is_terminal =
-                //     determine_terminal_blocks_in_block(&mut if_op.then_block.block);
-                // if_op.else_block.is_terminal =
-                //     determine_terminal_blocks_in_block(&mut if_op.else_block.block);
+                let condition_id = if_op.condition;
+                let then_id = if_op.then_block;
+                let else_id = if_op.else_block;
 
-                // if if_op.condition.is_terminal
-                //     | (if_op.then_block.is_terminal && if_op.else_block.is_terminal)
-                // {
-                //     return true;
-                // }
+                let condition_terminal = determine_terminal_blocks_in_block(stores, condition_id);
+                let else_terminal = determine_terminal_blocks_in_block(stores, else_id);
+                let then_terminal = determine_terminal_blocks_in_block(stores, then_id);
+
+                if condition_terminal || (then_terminal && else_terminal) {
+                    stores.blocks.set_terminal(block_id);
+                    return true;
+                }
             }
             OpCode::Complex(UnresolvedOp::While(while_op)) => {
-                todo!()
-                // while_op.condition.is_terminal =
-                //     determine_terminal_blocks_in_block(&mut while_op.condition.block);
-                // while_op.body_block.is_terminal =
-                //     determine_terminal_blocks_in_block(&mut while_op.body_block.block);
-                // if while_op.condition.is_terminal || while_op.body_block.is_terminal {
-                //     return true;
-                // }
+                let condition_id = while_op.condition;
+                let body_id = while_op.body_block;
+
+                let condition_terminal = determine_terminal_blocks_in_block(stores, condition_id);
+                determine_terminal_blocks_in_block(stores, body_id);
+
+                if condition_terminal {
+                    stores.blocks.set_terminal(block_id);
+                    return true;
+                }
             }
             _ => {}
         }

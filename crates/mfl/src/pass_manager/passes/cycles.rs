@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{NameResolvedOp, NameResolvedType, OpCode},
     pass_manager::PassContext,
-    stores::{ops::OpId, source::SourceLocation},
+    stores::{block::BlockId, source::SourceLocation},
     Stores,
 };
 
@@ -171,7 +171,7 @@ fn check_invalid_cyclic_refs_in_block(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     root_header: ItemHeader,
-    block: &[OpId],
+    block_id: BlockId,
     cur_header: ItemHeader,
     checked_items: &mut HashSet<ItemId>,
     check_queue: &mut Vec<ItemId>,
@@ -182,7 +182,8 @@ fn check_invalid_cyclic_refs_in_block(
         _ => unreachable!(),
     };
 
-    for &op_id in block {
+    let block = stores.blocks.get_block(block_id).clone();
+    for op_id in block.ops {
         let op_code = stores.ops.get_name_resolved(op_id).clone();
         match op_code {
             OpCode::Complex(NameResolvedOp::If(if_op)) => {
@@ -190,7 +191,7 @@ fn check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
                     root_header,
-                    &if_op.condition.block,
+                    if_op.condition,
                     cur_header,
                     checked_items,
                     check_queue,
@@ -199,7 +200,7 @@ fn check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
                     root_header,
-                    &if_op.then_block.block,
+                    if_op.then_block,
                     cur_header,
                     checked_items,
                     check_queue,
@@ -208,7 +209,7 @@ fn check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
                     root_header,
-                    &if_op.else_block.block,
+                    if_op.else_block,
                     cur_header,
                     checked_items,
                     check_queue,
@@ -219,7 +220,7 @@ fn check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
                     root_header,
-                    &while_op.condition.block,
+                    while_op.condition,
                     cur_header,
                     checked_items,
                     check_queue,
@@ -228,7 +229,7 @@ fn check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
                     root_header,
-                    &while_op.body_block.block,
+                    while_op.body_block,
                     cur_header,
                     checked_items,
                     check_queue,
