@@ -10,7 +10,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        If, NameResolvedType, OpCode, StructDef, UnresolvedIdent, UnresolvedOp, UnresolvedType,
+        Basic, Control, If, NameResolvedType, OpCode, StructDef, UnresolvedIdent, UnresolvedType,
         While,
     },
     option::OptionExt,
@@ -663,9 +663,8 @@ impl Context {
         for op_id in old_block.ops {
             let op_code = stores.ops.get_name_resolved(op_id).clone();
             let new_code = match op_code {
-                OpCode::Basic(bo) => OpCode::Basic(bo),
-                OpCode::Complex(co) => match co {
-                    NameResolvedOp::If(if_op) => {
+                OpCode::Basic(bo) => match bo {
+                    Basic::Control(Control::If(if_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
@@ -687,15 +686,14 @@ impl Context {
                             param_map,
                             old_alloc_map,
                         );
-
-                        OpCode::Complex(NameResolvedOp::If(If {
+                        OpCode::Basic(Basic::Control(Control::If(If {
                             tokens: if_op.tokens,
                             condition: resolved_condition,
                             then_block: resolved_then,
                             else_block: resolved_else,
-                        }))
+                        })))
                     }
-                    NameResolvedOp::While(while_op) => {
+                    Basic::Control(Control::While(while_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
@@ -711,13 +709,15 @@ impl Context {
                             old_alloc_map,
                         );
 
-                        OpCode::Complex(NameResolvedOp::While(While {
+                        OpCode::Basic(Basic::Control(Control::While(While {
                             tokens: while_op.tokens,
                             condition: resolved_condition,
                             body_block: resolved_body,
-                        }))
+                        })))
                     }
-
+                    _ => OpCode::Basic(bo),
+                },
+                OpCode::Complex(co) => match co {
                     ref op_code @ (NameResolvedOp::Cast { ref id }
                     | NameResolvedOp::PackStruct { ref id }
                     | NameResolvedOp::SizeOf { ref id }) => {
@@ -776,16 +776,16 @@ impl Context {
             // Need to patch up the old unresolved opcode so that the If and While codes point to the new blocks.
             match (&mut old_unresolved, &new_code) {
                 (
-                    OpCode::Complex(UnresolvedOp::If(old_if)),
-                    OpCode::Complex(NameResolvedOp::If(new_if)),
+                    OpCode::Basic(Basic::Control(Control::If(old_if))),
+                    OpCode::Basic(Basic::Control(Control::If(new_if))),
                 ) => {
                     old_if.condition = new_if.condition;
                     old_if.then_block = new_if.then_block;
                     old_if.else_block = new_if.else_block;
                 }
                 (
-                    OpCode::Complex(UnresolvedOp::While(old_while)),
-                    OpCode::Complex(NameResolvedOp::While(new_while)),
+                    OpCode::Basic(Basic::Control(Control::While(old_while))),
+                    OpCode::Basic(Basic::Control(Control::While(new_while))),
                 ) => {
                     old_while.condition = new_while.condition;
                     old_while.body_block = new_while.body_block

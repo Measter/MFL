@@ -171,6 +171,54 @@ fn simulate_execute_program_block(
                     emit_unsupported_diag(stores, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
+                Control::If(if_op) => {
+                    simulate_execute_program_block(
+                        ctx,
+                        stores,
+                        pass_ctx,
+                        if_op.condition,
+                        value_stack,
+                    )?;
+
+                    let a = value_stack.pop().unwrap();
+                    if a == SimulatorValue::Bool(true) {
+                        simulate_execute_program_block(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            if_op.then_block,
+                            value_stack,
+                        )?;
+                    } else {
+                        simulate_execute_program_block(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            if_op.else_block,
+                            value_stack,
+                        )?;
+                    }
+                }
+                Control::While(while_op) => loop {
+                    simulate_execute_program_block(
+                        ctx,
+                        stores,
+                        pass_ctx,
+                        while_op.condition,
+                        value_stack,
+                    )?;
+                    let a = value_stack.pop().unwrap();
+                    if a == SimulatorValue::Bool(false) {
+                        break;
+                    }
+                    simulate_execute_program_block(
+                        ctx,
+                        stores,
+                        pass_ctx,
+                        while_op.body_block,
+                        value_stack,
+                    )?;
+                },
             },
             OpCode::Basic(Basic::Memory(_)) => {
                 emit_unsupported_diag(stores, op_id);
@@ -240,34 +288,6 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
 
-            OpCode::Complex(TypeResolvedOp::If(if_op)) => {
-                simulate_execute_program_block(
-                    ctx,
-                    stores,
-                    pass_ctx,
-                    if_op.condition,
-                    value_stack,
-                )?;
-
-                let a = value_stack.pop().unwrap();
-                if a == SimulatorValue::Bool(true) {
-                    simulate_execute_program_block(
-                        ctx,
-                        stores,
-                        pass_ctx,
-                        if_op.then_block,
-                        value_stack,
-                    )?;
-                } else {
-                    simulate_execute_program_block(
-                        ctx,
-                        stores,
-                        pass_ctx,
-                        if_op.else_block,
-                        value_stack,
-                    )?;
-                }
-            }
             OpCode::Complex(TypeResolvedOp::SizeOf { id }) => {
                 let size = stores.types.get_size_info(id);
                 value_stack.push(SimulatorValue::Int {
@@ -275,26 +295,6 @@ fn simulate_execute_program_block(
                     kind: IntKind::Unsigned(size.byte_width),
                 });
             }
-            OpCode::Complex(TypeResolvedOp::While(while_op)) => loop {
-                simulate_execute_program_block(
-                    ctx,
-                    stores,
-                    pass_ctx,
-                    while_op.condition,
-                    value_stack,
-                )?;
-                let a = value_stack.pop().unwrap();
-                if a == SimulatorValue::Bool(false) {
-                    break;
-                }
-                simulate_execute_program_block(
-                    ctx,
-                    stores,
-                    pass_ctx,
-                    while_op.body_block,
-                    value_stack,
-                )?;
-            },
             OpCode::Complex(TypeResolvedOp::Const { id }) => {
                 if pass_ctx
                     .ensure_evaluated_consts_asserts(ctx, stores, id)

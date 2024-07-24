@@ -817,7 +817,7 @@ pub fn parse_if<'a>(
             else_block,
         };
         let if_op = stores.ops.new_op(
-            OpCode::Complex(UnresolvedOp::If(if_code)),
+            OpCode::Basic(Basic::Control(Control::If(if_code))),
             open_token.map(|t| t.lexeme),
         );
 
@@ -836,7 +836,7 @@ pub fn parse_if<'a>(
         else_block,
     };
     Ok((
-        OpCode::Complex(UnresolvedOp::If(if_code)),
+        OpCode::Basic(Basic::Control(Control::If(if_code))),
         close_token.location,
     ))
 }
@@ -883,7 +883,7 @@ pub fn parse_while<'a>(
     };
 
     Ok((
-        OpCode::Complex(UnresolvedOp::While(while_code)),
+        OpCode::Basic(Basic::Control(Control::While(while_code))),
         body_tokens.close.location,
     ))
 }

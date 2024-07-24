@@ -479,11 +479,11 @@ impl<'ctx> CodeGen<'ctx> {
                     direction,
                     shift_count,
                 })) => trace!(item_count.inner, ?direction, shift_count.inner, "Rot"),
+                OpCode::Basic(Basic::Control(Control::If(_))) => trace!(?id, "If"),
+                OpCode::Basic(Basic::Control(Control::While(_))) => trace!(?id, "While"),
                 OpCode::Complex(TypeResolvedOp::Memory { id, is_global }) => {
                     trace!(?id, ?id, is_global, "Memory")
                 }
-                OpCode::Complex(TypeResolvedOp::If(_)) => trace!(?id, "If"),
-                OpCode::Complex(TypeResolvedOp::While(_)) => trace!(?id, "While"),
                 _ => trace!(?id, "{op_code:?}"),
             }
 
@@ -532,6 +532,18 @@ impl<'ctx> CodeGen<'ctx> {
                     Control::Prologue => self.build_prologue(ds, value_store, op_id, function)?,
                     Control::SysCall { arg_count } => {
                         self.build_syscall(ds, value_store, op_id, *arg_count)?
+                    }
+                    Control::If(if_op) => {
+                        self.build_if(ds, value_store, function, id, op_id, if_op)?;
+                        if ds.block_store.is_terminal(if_op.else_block)
+                            && ds.block_store.is_terminal(if_op.then_block)
+                        {
+                            // Nothing else to codegen here.
+                            break;
+                        }
+                    }
+                    Control::While(while_op) => {
+                        self.build_while(ds, value_store, function, id, op_id, while_op)?
                     }
                 },
 
@@ -594,15 +606,6 @@ impl<'ctx> CodeGen<'ctx> {
                     TypeResolvedOp::CallFunction { id: callee_id } => {
                         self.build_function_call(ds, value_store, op_id, *callee_id)?
                     }
-                    TypeResolvedOp::If(if_op) => {
-                        self.build_if(ds, value_store, function, id, op_id, if_op)?;
-                        if ds.block_store.is_terminal(if_op.else_block)
-                            && ds.block_store.is_terminal(if_op.then_block)
-                        {
-                            // Nothing else to codegen here.
-                            break;
-                        }
-                    }
                     TypeResolvedOp::Const { id } => {
                         self.build_const(ds, value_store, op_id, *id)?
                     }
@@ -624,9 +627,6 @@ impl<'ctx> CodeGen<'ctx> {
                             IntWidth::I64,
                             IntKind::Unsigned(size_info.byte_width),
                         )?;
-                    }
-                    TypeResolvedOp::While(while_op) => {
-                        self.build_while(ds, value_store, function, id, op_id, while_op)?
                     }
                 },
             }
@@ -667,7 +667,7 @@ impl<'ctx> CodeGen<'ctx> {
         let block = ds.block_store.get_block(block_id);
         for &op_id in &block.ops {
             match ds.op_store.get_type_resolved(op_id) {
-                OpCode::Complex(TypeResolvedOp::If(if_op)) => {
+                OpCode::Basic(Basic::Control(Control::If(if_op))) => {
                     let Some(op_merges) = analyzer.get_if_merges(op_id) else {
                         panic!("ICE: If block doesn't have merge info");
                     };
@@ -684,7 +684,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_merge_variables(ds, if_op.then_block, analyzer, merge_pair_map)?;
                     self.build_merge_variables(ds, if_op.else_block, analyzer, merge_pair_map)?;
                 }
-                OpCode::Complex(TypeResolvedOp::While(while_op)) => {
+                OpCode::Basic(Basic::Control(Control::While(while_op))) => {
                     let Some(op_merges) = analyzer.get_while_merges(op_id) else {
                         panic!("ICE: While block doesn't have merge info");
                     };

@@ -3,7 +3,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
     error_signal::ErrorSignal,
-    ir::{NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
+    ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
     pass_manager::PassContext,
     stores::{
         block::BlockId,
@@ -152,7 +152,21 @@ fn resolve_block(
     for op_id in block.ops {
         let old_code = stores.ops.get_name_resolved(op_id).clone();
         let new_code = match old_code {
-            OpCode::Basic(bo) => OpCode::Basic(bo),
+            OpCode::Basic(bo) => {
+                match bo {
+                    Basic::Control(Control::If(if_op)) => {
+                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
+                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
+                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
+                    }
+                    Basic::Control(Control::While(while_op)) => {
+                        resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
+                        resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
+                    }
+                    _ => {}
+                }
+                OpCode::Basic(bo)
+            }
 
             OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
                 let called_item_header = ctx.get_item_header(id);
@@ -212,18 +226,6 @@ fn resolve_block(
             }
             OpCode::Complex(NameResolvedOp::Memory { id, is_global }) => {
                 OpCode::Complex(TypeResolvedOp::Memory { id, is_global })
-            }
-
-            OpCode::Complex(NameResolvedOp::If(if_op)) => {
-                resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
-                resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
-                resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
-                OpCode::Complex(TypeResolvedOp::If(if_op.clone()))
-            }
-            OpCode::Complex(NameResolvedOp::While(while_op)) => {
-                resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
-                resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
-                OpCode::Complex(TypeResolvedOp::While(while_op.clone()))
             }
 
             OpCode::Complex(NameResolvedOp::Cast { ref id })

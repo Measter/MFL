@@ -6,8 +6,8 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField, UnresolvedIdent,
-        UnresolvedOp, UnresolvedType,
+        Basic, Control, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField,
+        UnresolvedIdent, UnresolvedOp, UnresolvedType,
     },
     pass_manager::PassContext,
     stores::{
@@ -394,58 +394,59 @@ fn resolve_idents_in_block(
         let old_code = stores.ops.get_unresolved(op_id).clone();
         let new_code = match old_code {
             // These don't get resolved, so just copy it onward.
-            OpCode::Basic(bo) => OpCode::Basic(bo),
+            OpCode::Basic(bo) => {
+                match bo {
+                    Basic::Control(Control::If(if_op)) => {
+                        resolve_idents_in_block(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            if_op.condition,
+                            generic_params,
+                        );
+                        resolve_idents_in_block(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            if_op.then_block,
+                            generic_params,
+                        );
+                        resolve_idents_in_block(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            if_op.else_block,
+                            generic_params,
+                        );
+                    }
+                    Basic::Control(Control::While(while_op)) => {
+                        resolve_idents_in_block(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            while_op.condition,
+                            generic_params,
+                        );
+                        resolve_idents_in_block(
+                            ctx,
+                            stores,
+                            had_error,
+                            cur_id,
+                            while_op.body_block,
+                            generic_params,
+                        );
+                    }
+                    _ => {}
+                }
+
+                OpCode::Basic(bo)
+            }
 
             OpCode::Complex(comp) => match comp {
-                UnresolvedOp::If(if_op) => {
-                    resolve_idents_in_block(
-                        ctx,
-                        stores,
-                        had_error,
-                        cur_id,
-                        if_op.condition,
-                        generic_params,
-                    );
-                    resolve_idents_in_block(
-                        ctx,
-                        stores,
-                        had_error,
-                        cur_id,
-                        if_op.then_block,
-                        generic_params,
-                    );
-                    resolve_idents_in_block(
-                        ctx,
-                        stores,
-                        had_error,
-                        cur_id,
-                        if_op.else_block,
-                        generic_params,
-                    );
-
-                    OpCode::Complex(NameResolvedOp::If(if_op.clone()))
-                }
-                UnresolvedOp::While(while_op) => {
-                    resolve_idents_in_block(
-                        ctx,
-                        stores,
-                        had_error,
-                        cur_id,
-                        while_op.condition,
-                        generic_params,
-                    );
-                    resolve_idents_in_block(
-                        ctx,
-                        stores,
-                        had_error,
-                        cur_id,
-                        while_op.body_block,
-                        generic_params,
-                    );
-
-                    OpCode::Complex(NameResolvedOp::While(while_op.clone()))
-                }
-
                 UnresolvedOp::Cast { id } => {
                     let Ok(new_ty) =
                         resolve_idents_in_type(ctx, stores, had_error, cur_id, &id, generic_params)

@@ -5,7 +5,7 @@ use crate::{
     context::{Context, ItemHeader, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{NameResolvedOp, NameResolvedType, OpCode},
+    ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},
     pass_manager::PassContext,
     stores::{block::BlockId, source::SourceLocation},
     Stores,
@@ -186,7 +186,7 @@ fn check_invalid_cyclic_refs_in_block(
     for op_id in block.ops {
         let op_code = stores.ops.get_name_resolved(op_id).clone();
         match op_code {
-            OpCode::Complex(NameResolvedOp::If(if_op)) => {
+            OpCode::Basic(Basic::Control(Control::If(if_op))) => {
                 check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,
@@ -215,7 +215,7 @@ fn check_invalid_cyclic_refs_in_block(
                     check_queue,
                 );
             }
-            OpCode::Complex(NameResolvedOp::While(while_op)) => {
+            OpCode::Basic(Basic::Control(Control::While(while_op))) => {
                 check_invalid_cyclic_refs_in_block(
                     stores,
                     had_error,

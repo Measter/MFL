@@ -75,6 +75,14 @@ fn analyze_block(
 
                     // Nothing to do here.
                     Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
+                    Control::If(if_op) => {
+                        if stores.blocks.is_terminal(if_op.else_block)
+                            && stores.blocks.is_terminal(if_op.then_block)
+                        {
+                            break;
+                        }
+                    }
+                    Control::While(_) => control::analyze_while(analyzer, op_id),
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
@@ -97,18 +105,10 @@ fn analyze_block(
                 TypeResolvedOp::Const { id } => {
                     control::cp_const(ctx, stores, analyzer, pass_ctx, op_id, id)
                 }
-                TypeResolvedOp::If(if_op) => {
-                    if stores.blocks.is_terminal(if_op.else_block)
-                        && stores.blocks.is_terminal(if_op.then_block)
-                    {
-                        break;
-                    }
-                }
                 TypeResolvedOp::Memory { id, .. } => control::memory(stores, analyzer, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(ctx, stores, analyzer, pass_ctx, op_id, id)
                 }
-                TypeResolvedOp::While(_) => control::analyze_while(analyzer, op_id),
 
                 // Nothing to do here.
                 TypeResolvedOp::CallFunction { .. } | TypeResolvedOp::PackStruct { .. } => {}

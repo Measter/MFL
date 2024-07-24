@@ -116,7 +116,7 @@ pub struct WhileTokens {
     pub end_token: SourceLocation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct While {
     pub tokens: WhileTokens,
     pub condition: BlockId,
@@ -130,7 +130,7 @@ pub struct IfTokens {
     pub end_token: SourceLocation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct If {
     pub tokens: IfTokens,
     pub condition: BlockId,
@@ -291,6 +291,8 @@ pub enum Control {
     Prologue,
     Return,
     SysCall { arg_count: Spanned<u8> },
+    If(If),
+    While(While),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -358,10 +360,8 @@ impl PartialEq for UnresolvedIdent {
 pub enum UnresolvedOp {
     Cast { id: UnresolvedType },
     Ident(UnresolvedIdent),
-    If(If),
     PackStruct { id: UnresolvedType },
     SizeOf { id: UnresolvedType },
-    While(While),
 }
 
 #[derive(Debug, Clone)]
@@ -376,7 +376,6 @@ pub enum NameResolvedOp {
     Const {
         id: ItemId,
     },
-    If(If),
     PackStruct {
         id: NameResolvedType,
     },
@@ -387,7 +386,6 @@ pub enum NameResolvedOp {
     SizeOf {
         id: NameResolvedType,
     },
-    While(While),
 }
 
 #[derive(Debug, Clone)]
@@ -395,11 +393,9 @@ pub enum TypeResolvedOp {
     Cast { id: TypeId },
     CallFunction { id: ItemId },
     Const { id: ItemId },
-    If(If),
     PackStruct { id: TypeId },
     Memory { id: ItemId, is_global: bool },
     SizeOf { id: TypeId },
-    While(While),
 }
 
 #[derive(Debug, Clone)]

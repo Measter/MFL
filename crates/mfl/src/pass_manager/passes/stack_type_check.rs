@@ -213,6 +213,65 @@ fn analyze_block(
 
                         had_error.merge_with(local_had_error);
                     }
+                    Control::If(if_op) => {
+                        let mut local_had_error = ErrorSignal::new();
+                        stack_check::control::analyze_if(
+                            ctx,
+                            stores,
+                            analyzer,
+                            pass_ctx,
+                            &mut local_had_error,
+                            item_id,
+                            stack,
+                            max_stack_depth,
+                            op_id,
+                            &if_op,
+                        );
+                        if local_had_error.is_ok() {
+                            type_check::control::analyze_if(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op_id,
+                                &if_op,
+                            );
+                        }
+
+                        had_error.merge_with(local_had_error);
+
+                        if stores.blocks.is_terminal(if_op.else_block)
+                            && stores.blocks.is_terminal(if_op.then_block)
+                        {
+                            break;
+                        }
+                    }
+                    Control::While(while_op) => {
+                        let mut local_had_error = ErrorSignal::new();
+                        stack_check::control::analyze_while(
+                            ctx,
+                            stores,
+                            analyzer,
+                            pass_ctx,
+                            &mut local_had_error,
+                            item_id,
+                            stack,
+                            max_stack_depth,
+                            op_id,
+                            &while_op,
+                        );
+
+                        if local_had_error.is_ok() {
+                            type_check::control::analyze_while(
+                                stores,
+                                analyzer,
+                                &mut local_had_error,
+                                op_id,
+                                &while_op,
+                            );
+                        }
+
+                        had_error.merge_with(local_had_error);
+                    }
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { emit_array } => {
@@ -450,38 +509,6 @@ fn analyze_block(
 
                     had_error.merge_with(local_had_error);
                 }
-                TypeResolvedOp::If(if_op) => {
-                    let mut local_had_error = ErrorSignal::new();
-                    stack_check::control::analyze_if(
-                        ctx,
-                        stores,
-                        analyzer,
-                        pass_ctx,
-                        &mut local_had_error,
-                        item_id,
-                        stack,
-                        max_stack_depth,
-                        op_id,
-                        &if_op,
-                    );
-                    if local_had_error.is_ok() {
-                        type_check::control::analyze_if(
-                            stores,
-                            analyzer,
-                            &mut local_had_error,
-                            op_id,
-                            &if_op,
-                        );
-                    }
-
-                    had_error.merge_with(local_had_error);
-
-                    if stores.blocks.is_terminal(if_op.else_block)
-                        && stores.blocks.is_terminal(if_op.then_block)
-                    {
-                        break;
-                    }
-                }
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::memory::pack_struct(
@@ -514,33 +541,6 @@ fn analyze_block(
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, analyzer, stack, op_id);
                     type_check::stack_ops::push_int(stores, analyzer, op_id, Integer::U64);
-                }
-                TypeResolvedOp::While(while_op) => {
-                    let mut local_had_error = ErrorSignal::new();
-                    stack_check::control::analyze_while(
-                        ctx,
-                        stores,
-                        analyzer,
-                        pass_ctx,
-                        &mut local_had_error,
-                        item_id,
-                        stack,
-                        max_stack_depth,
-                        op_id,
-                        &while_op,
-                    );
-
-                    if local_had_error.is_ok() {
-                        type_check::control::analyze_while(
-                            stores,
-                            analyzer,
-                            &mut local_had_error,
-                            op_id,
-                            &while_op,
-                        );
-                    }
-
-                    had_error.merge_with(local_had_error);
                 }
             },
         }

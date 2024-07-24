@@ -1,6 +1,6 @@
 use crate::{
     context::{Context, ItemId, ItemKind},
-    ir::{Basic, Control, OpCode, UnresolvedOp},
+    ir::{Basic, Control, OpCode},
     stores::{block::BlockId, Stores},
 };
 
@@ -19,12 +19,16 @@ fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) ->
     let block = stores.blocks.get_block(block_id).clone();
     for op_id in block.ops {
         let op_code = stores.ops.get_unresolved(op_id);
-        match op_code {
-            OpCode::Basic(Basic::Control(Control::Exit | Control::Return)) => {
+        let OpCode::Basic(Basic::Control(cont_op)) = op_code else {
+            continue;
+        };
+
+        match cont_op {
+            Control::Exit | Control::Return => {
                 stores.blocks.set_terminal(block_id);
                 return true;
             }
-            OpCode::Complex(UnresolvedOp::If(if_op)) => {
+            Control::If(if_op) => {
                 let condition_id = if_op.condition;
                 let then_id = if_op.then_block;
                 let else_id = if_op.else_block;
@@ -38,7 +42,7 @@ fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) ->
                     return true;
                 }
             }
-            OpCode::Complex(UnresolvedOp::While(while_op)) => {
+            Control::While(while_op) => {
                 let condition_id = while_op.condition;
                 let body_id = while_op.body_block;
 
