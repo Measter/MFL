@@ -1,4 +1,4 @@
-use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace, IntPredicate};
+use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
 
 use crate::{
     ir::{Arithmetic, Basic, OpCode, TypeResolvedOp},
@@ -330,7 +330,7 @@ impl<'ctx> CodeGen<'ctx> {
             .load_value(self, input_value_id, ds)?
             .into_pointer_value();
 
-        let null_ptr = ptee_type.ptr_type(AddressSpace::default()).const_null();
+        let null_ptr = self.ctx.ptr_type(AddressSpace::default()).const_null();
         let zero = self.ctx.i64_type().const_zero();
 
         let name = format!("{}", op_io.outputs()[0]);

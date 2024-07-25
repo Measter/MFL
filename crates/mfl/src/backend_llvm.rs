@@ -191,7 +191,7 @@ impl<'ctx> SsaMap<'ctx> {
 
                 let ptr = global
                     .as_pointer_value()
-                    .const_cast(cg.ctx.i8_type().ptr_type(AddressSpace::default()));
+                    .const_cast(cg.ctx.ptr_type(AddressSpace::default()));
                 self.string_map.insert(id, ptr);
 
                 Ok(ptr)
@@ -407,10 +407,7 @@ impl<'ctx> CodeGen<'ctx> {
                 IntWidth::I64 => self.ctx.i64_type().into(),
             },
             TypeKind::Bool => self.ctx.bool_type().into(),
-            TypeKind::Pointer(sub_to_kind) => self
-                .get_type(type_store, sub_to_kind)
-                .ptr_type(AddressSpace::default())
-                .into(),
+            TypeKind::Pointer(_) => self.ctx.ptr_type(AddressSpace::default()).into(),
             TypeKind::Array { type_id, length } => self
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
@@ -748,7 +745,7 @@ impl<'ctx> CodeGen<'ctx> {
             let variable = if !is_array {
                 self.builder.build_pointer_cast(
                     variable,
-                    mem_type.ptr_type(AddressSpace::default()),
+                    self.ctx.ptr_type(AddressSpace::default()),
                     &name,
                 )?
             } else {

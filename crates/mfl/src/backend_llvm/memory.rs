@@ -1,6 +1,5 @@
 use ariadne::Cache;
 use inkwell::{
-    types::BasicType,
     values::{
         AggregateValue, AggregateValueEnum, BasicValue, FunctionValue, IntValue, PointerValue,
         StructValue,
@@ -110,9 +109,7 @@ impl<'ctx> CodeGen<'ctx> {
             .get_type(ds.type_store, output_type_id)
             .into_array_type();
         // We need to alloca the union, then cast its pointer.
-        let data_ptr_type = self
-            .get_type(ds.type_store, input_type_id)
-            .ptr_type(AddressSpace::default());
+        let data_ptr_type = self.ctx.ptr_type(AddressSpace::default());
 
         let union_alloc = value_store.get_temp_alloca(self, ds.type_store, output_type_id)?;
         let value_ptr = self
@@ -232,7 +229,7 @@ impl<'ctx> CodeGen<'ctx> {
             .build_global_string_ptr(&location_string, "oob_loc")?;
         let string_pointer = string
             .as_pointer_value()
-            .const_cast(self.ctx.i8_type().ptr_type(AddressSpace::default()));
+            .const_cast(self.ctx.ptr_type(AddressSpace::default()));
 
         let str_type = self
             .get_type(
@@ -590,7 +587,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let array_type = self.get_type(ds.type_store, array_type_id);
                 let cast_ptr = self.builder.build_pointer_cast(
                     arr_ptr,
-                    array_type.ptr_type(AddressSpace::default()),
+                    self.ctx.ptr_type(AddressSpace::default()),
                     "",
                 )?;
                 let array_value = self.builder.build_load(array_type, cast_ptr, "")?;
@@ -694,10 +691,9 @@ impl<'ctx> CodeGen<'ctx> {
             let union_value = struct_value.into_array_value();
             self.builder.build_store(union_alloc, union_value)?;
 
-            let data_type = self.get_type(ds.type_store, field_type_info.id);
             let cast_union_ptr = self.builder.build_pointer_cast(
                 union_alloc,
-                data_type.ptr_type(AddressSpace::default()),
+                self.ctx.ptr_type(AddressSpace::default()),
                 "",
             )?;
 
@@ -801,7 +797,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             let [data_value_type] = ds.analyzer.value_types([data_value_id]).unwrap();
             let data_type = self.get_type(ds.type_store, data_value_type);
-            let data_ptr_type = data_type.ptr_type(AddressSpace::default());
+            let data_ptr_type = self.ctx.ptr_type(AddressSpace::default());
 
             let value_ptr = self
                 .builder

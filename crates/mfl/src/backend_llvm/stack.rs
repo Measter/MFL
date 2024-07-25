@@ -1,4 +1,4 @@
-use inkwell::{types::BasicType, values::BasicValue, AddressSpace};
+use inkwell::{values::BasicValue, AddressSpace};
 use intcast::IntCast;
 use lasso::Spur;
 
@@ -59,7 +59,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
-            TypeKind::Pointer(to_ptr_type) => {
+            TypeKind::Pointer(_) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.type_store.get_type_info(input_type_id);
@@ -67,9 +67,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(Integer::U64) => {
-                        let ptr_type = self
-                            .get_type(ds.type_store, to_ptr_type)
-                            .ptr_type(AddressSpace::default());
+                        let ptr_type = self.ctx.ptr_type(AddressSpace::default());
                         self.builder.build_int_to_ptr(
                             input_data.into_int_value(),
                             ptr_type,
@@ -77,9 +75,7 @@ impl<'ctx> CodeGen<'ctx> {
                         )?
                     }
                     TypeKind::Pointer(_) => {
-                        let to_ptr_type = self
-                            .get_type(ds.type_store, to_ptr_type)
-                            .ptr_type(AddressSpace::default());
+                        let to_ptr_type = self.ctx.ptr_type(AddressSpace::default());
                         self.builder.build_pointer_cast(
                             input_data.into_pointer_value(),
                             to_ptr_type,
