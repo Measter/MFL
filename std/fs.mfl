@@ -1,3 +1,4 @@
+import core::String
 import std::io::FD
 import std::Result
 import std::SimpleResult

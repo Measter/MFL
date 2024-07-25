@@ -29,6 +29,16 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
     let _span = debug_span!(stringify!(Program::load_program)).entered();
     let mut had_error = ErrorSignal::new();
 
+    let core_module_name = stores.strings.intern("core");
+    let core_module = ctx.new_module(
+        stores,
+        &mut had_error,
+        core_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
+        None,
+        true,
+    );
+    ctx.set_core_module(core_module);
+
     let builtin_structs_module_name = stores.strings.intern("builtins");
     let builtin_module = ctx.new_module(
         stores,
@@ -79,6 +89,7 @@ pub fn load_program(ctx: &mut Context, stores: &mut Stores, args: &Args) -> Resu
         return Err(eyre!("Error loading program"));
     }
 
+    ctx.update_core_symbols();
     stores.types.update_builtins(ctx.get_lang_items());
 
     entry_module

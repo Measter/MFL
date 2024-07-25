@@ -4,6 +4,8 @@
 // args = ["--lib"]
 // END
 
+import core::String
+
 struct Foo(T) is
     field a s32
     field b T

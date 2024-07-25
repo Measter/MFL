@@ -1,3 +1,4 @@
+import core::String
 import std::io
 
 // Standard stream descriptor IDs

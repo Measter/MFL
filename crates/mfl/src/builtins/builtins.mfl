@@ -3,7 +3,7 @@ struct lang(string) String is
     field pointer u8&
 end
 
-proc oob_handler [String u64 u64] to [] is
+proc oob_handler [core::String u64 u64] to [] is
     1 2 "Error: Index out of bounds" unpack swap syscall(4) drop
     1 2 "\nLocation: " unpack swap syscall(4) drop
     1 2 rot(5<1) unpack swap syscall(4) drop

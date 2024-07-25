@@ -165,7 +165,6 @@ impl BuiltinTypes {
             "u64" => BuiltinTypes::U64,
             "s64" => BuiltinTypes::S64,
             "bool" => BuiltinTypes::Bool,
-            "String" => BuiltinTypes::String,
             _ => return None,
         };
         Some(builtin)

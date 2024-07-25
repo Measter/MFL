@@ -4,6 +4,8 @@
 // args = ["--lib"]
 // END
 
+import core::String
+
 proc make_string [] to [String] is
     "Hello" unpack String
 end

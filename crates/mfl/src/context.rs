@@ -242,6 +242,7 @@ impl TypeResolvedIr {
 }
 
 pub struct Context {
+    core_module_id: Option<ItemId>,
     top_level_modules: HashMap<Spur, ItemId>,
     lang_items: HashMap<LangItem, ItemId>,
 
@@ -269,6 +270,22 @@ impl Context {
 
     pub fn get_lang_items(&self) -> &HashMap<LangItem, ItemId> {
         &self.lang_items
+    }
+
+    pub fn set_core_module(&mut self, id: ItemId) {
+        self.core_module_id = Some(id);
+    }
+
+    pub fn update_core_symbols(&mut self) {
+        let core_module_id = self.core_module_id.expect("ICE: Core module not set");
+        // For now this is just String.
+        let core_scope = self.nrir.get_scope_mut(core_module_id);
+
+        let string_item_id = self.lang_items[&LangItem::String];
+        let string_header = self.headers[string_item_id.0.to_usize()];
+        core_scope
+            .add_visible_symbol(string_header.name, string_item_id)
+            .expect("ICE: Core already contains String");
     }
 
     #[inline]
@@ -353,6 +370,7 @@ impl Context {
 impl Context {
     pub fn new() -> Self {
         Context {
+            core_module_id: None,
             top_level_modules: HashMap::new(),
             lang_items: HashMap::new(),
             headers: Vec::new(),
