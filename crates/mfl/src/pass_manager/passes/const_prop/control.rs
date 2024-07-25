@@ -4,19 +4,18 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
-    pass_manager::{
-        static_analysis::{Analyzer, ConstVal, PtrId},
-        PassContext,
-    },
+    pass_manager::PassContext,
     simulate::SimulatorValue,
-    stores::ops::OpId,
+    stores::{
+        analyzer::{ConstVal, PtrId},
+        ops::OpId,
+    },
     Stores,
 };
 
 pub(crate) fn epilogue_return(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
@@ -28,7 +27,7 @@ pub(crate) fn epilogue_return(
                 id: PtrId::Mem(memory_item_id),
                 ..
             }],
-        ) = analyzer.value_consts([input_value_id])
+        ) = stores.values.value_consts([input_value_id])
         else {
             continue;
         };
@@ -40,7 +39,7 @@ pub(crate) fn epilogue_return(
         }
 
         let labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_value_id, 0, "")],
             Color::Yellow,
             Color::Cyan,
@@ -62,7 +61,6 @@ pub(crate) fn epilogue_return(
 pub(crate) fn cp_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     op_id: OpId,
     const_item_id: ItemId,
@@ -86,19 +84,16 @@ pub(crate) fn cp_const(
             SimulatorValue::Bool(b) => ConstVal::Bool(*b),
         };
 
-        analyzer.set_value_const(value_id, output_const_value);
+        stores
+            .values
+            .set_value_const(value_id, output_const_value);
     }
 }
 
-pub(crate) fn memory(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    op_id: OpId,
-    memory_item_id: ItemId,
-) {
+pub(crate) fn memory(stores: &mut Stores, op_id: OpId, memory_item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
     let src_op_loc = stores.ops.get_token(op_id).location;
-    analyzer.set_value_const(
+    stores.values.set_value_const(
         op_data.outputs[0],
         ConstVal::Ptr {
             id: PtrId::Mem(memory_item_id),
@@ -108,12 +103,12 @@ pub(crate) fn memory(
     );
 }
 
-pub(crate) fn analyze_while(analyzer: &mut Analyzer, op_id: OpId) {
+pub(crate) fn analyze_while(stores: &mut Stores, op_id: OpId) {
     // Because the while loop may overwrite pre-values, we need to clear their
     // const values if they have any.
 
-    let merges = analyzer.get_while_merges(op_id).unwrap().clone();
+    let merges = stores.values.get_while_merges(op_id).unwrap().clone();
     for merge in merges.condition.into_iter().chain(merges.body) {
-        analyzer.clear_value_const(merge.pre_value);
+        stores.values.clear_value_const(merge.pre_value);
     }
 }

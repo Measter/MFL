@@ -11,14 +11,12 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{If, While},
     n_ops::SliceNOps,
-    pass_manager::{
-        static_analysis::{
-            generate_stack_length_mismatch_diag, Analyzer, IfMerge, ValueId, WhileMerge,
-            WhileMerges,
-        },
-        PassContext,
+    pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassContext},
+    stores::{
+        analyzer::{IfMerge, ValueId, WhileMerge, WhileMerges},
+        ops::OpId,
+        source::Spanned,
     },
-    stores::{ops::OpId, source::Spanned},
     Stores,
 };
 
@@ -27,7 +25,6 @@ use super::ensure_stack_depth;
 pub(crate) fn epilogue_return(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -53,7 +50,7 @@ pub(crate) fn epilogue_return(
             Ordering::Less => {
                 let num_missing = usize::saturating_sub(exit_sig.len(), stack.len());
                 for _ in 0..num_missing {
-                    let pad_value = analyzer.new_value(op_loc, None);
+                    let pad_value = stores.values.new_value(op_loc, None);
                     stack.push(pad_value);
                 }
             }
@@ -63,7 +60,7 @@ pub(crate) fn epilogue_return(
                     .zip(0..)
                     .map(|(&id, idx)| (id, idx, "unused value"));
                 let unused_value_labels =
-                    build_creator_label_chain(analyzer, unused_values, Color::Green, Color::Cyan);
+                    build_creator_label_chain(stores, unused_values, Color::Green, Color::Cyan);
                 labels.extend(unused_value_labels);
             }
             Ordering::Equal => unreachable!(),
@@ -88,7 +85,7 @@ pub(crate) fn epilogue_return(
     let inputs = stack.lastn(exit_sig.len()).unwrap();
 
     for &value_id in inputs {
-        analyzer.consume_value(value_id, op_id);
+        stores.values.consume_value(value_id, op_id);
     }
     stores.ops.set_op_io(op_id, inputs, &[]);
     let len = inputs.len();
@@ -98,7 +95,6 @@ pub(crate) fn epilogue_return(
 pub(crate) fn prologue(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
     item_id: ItemId,
@@ -107,7 +103,7 @@ pub(crate) fn prologue(
     let sig = ctx.urir().get_item_signature(item_id);
 
     for arg in &sig.entry.inner {
-        let new_id = analyzer.new_value(arg.location, None);
+        let new_id = stores.values.new_value(arg.location, None);
         outputs.push(new_id);
         stack.push(new_id);
     }
@@ -117,7 +113,6 @@ pub(crate) fn prologue(
 
 pub(crate) fn syscall(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -139,14 +134,14 @@ pub(crate) fn syscall(
     }
 
     let num_args = num_args.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, num_args);
+    ensure_stack_depth(stores, had_error, stack, op_id, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
     for &value_id in &inputs {
-        analyzer.consume_value(value_id, op_id);
+        stores.values.consume_value(value_id, op_id);
     }
 
-    let new_id = analyzer.new_value(op_loc, None);
+    let new_id = stores.values.new_value(op_loc, None);
     stores.ops.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
@@ -154,7 +149,6 @@ pub(crate) fn syscall(
 pub(crate) fn call_function_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -184,19 +178,19 @@ pub(crate) fn call_function_const(
 
         let num_missing = usize::saturating_sub(entry_arg_count, stack.len());
         for _ in 0..num_missing {
-            let pad_value = analyzer.new_value(op_loc, None);
+            let pad_value = stores.values.new_value(op_loc, None);
             stack.push(pad_value);
         }
     }
 
     let inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - entry_arg_count..).collect();
     for &value_id in &inputs {
-        analyzer.consume_value(value_id, op_id);
+        stores.values.consume_value(value_id, op_id);
     }
 
     let mut outputs = SmallVec::<[_; 8]>::new();
     for _ in &callee_sig.exit.inner {
-        let new_id = analyzer.new_value(op_loc, None);
+        let new_id = stores.values.new_value(op_loc, None);
         outputs.push(new_id);
         stack.push(new_id);
     }
@@ -207,7 +201,6 @@ pub(crate) fn call_function_const(
 pub(crate) fn analyze_if(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
@@ -223,7 +216,6 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        analyzer,
         pass_ctx,
         had_error,
         item_id,
@@ -246,7 +238,7 @@ pub(crate) fn analyze_if(
         had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(analyzer.new_value(op_loc, None));
+        stack.push(stores.values.new_value(op_loc, None));
     }
     condition_values.push(stack.pop().unwrap());
     let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
@@ -255,7 +247,6 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        analyzer,
         pass_ctx,
         had_error,
         item_id,
@@ -276,7 +267,6 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        analyzer,
         pass_ctx,
         had_error,
         item_id,
@@ -321,7 +311,7 @@ pub(crate) fn analyze_if(
             .zip(stack)
             .filter(|(a, b)| &a != b)
         {
-            let output_value_id = analyzer.new_value(op_loc, None);
+            let output_value_id = stores.values.new_value(op_loc, None);
             trace!(
                 ?then_value_id,
                 ?else_value_id,
@@ -339,13 +329,12 @@ pub(crate) fn analyze_if(
     }
 
     stores.ops.set_op_io(op_id, &condition_values, &[]);
-    analyzer.set_if_merges(op_id, body_merges);
+    stores.values.set_if_merges(op_id, body_merges);
 }
 
 pub(crate) fn analyze_while(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
@@ -361,7 +350,6 @@ pub(crate) fn analyze_while(
     super::super::analyze_block(
         ctx,
         stores,
-        analyzer,
         pass_ctx,
         had_error,
         item_id,
@@ -384,7 +372,7 @@ pub(crate) fn analyze_while(
         had_error.set();
 
         // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(analyzer.new_value(op_loc, None));
+        stack.push(stores.values.new_value(op_loc, None));
     }
     let condition_value = stack.pop().unwrap();
 
@@ -405,7 +393,7 @@ pub(crate) fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op_loc, None));
+            stack.push(stores.values.new_value(op_loc, None));
         }
     }
 
@@ -439,7 +427,6 @@ pub(crate) fn analyze_while(
     super::super::analyze_block(
         ctx,
         stores,
-        analyzer,
         pass_ctx,
         had_error,
         item_id,
@@ -463,7 +450,7 @@ pub(crate) fn analyze_while(
 
         // Pad the stack out to the expected length so the rest of the logict makes sense.
         for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
-            stack.push(analyzer.new_value(op_loc, None));
+            stack.push(stores.values.new_value(op_loc, None));
         }
     }
 
@@ -489,7 +476,7 @@ pub(crate) fn analyze_while(
     stack.clear();
     stack.extend_from_slice(&pre_condition_stack);
 
-    analyzer.set_while_merges(
+    stores.values.set_while_merges(
         op_id,
         WhileMerges {
             condition: condition_merges,
@@ -497,5 +484,5 @@ pub(crate) fn analyze_while(
         },
     );
     stores.ops.set_op_io(op_id, &[condition_value], &[]);
-    analyzer.consume_value(condition_value, op_id);
+    stores.values.consume_value(condition_value, op_id);
 }

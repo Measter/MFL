@@ -2,7 +2,7 @@ use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
-    pass_manager::{static_analysis::Analyzer, PassContext},
+    pass_manager::PassContext,
     stores::block::BlockId,
     Stores,
 };
@@ -16,7 +16,6 @@ mod stack_ops;
 fn analyze_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     block_id: BlockId,
@@ -27,38 +26,32 @@ fn analyze_block(
         match op_code {
             OpCode::Basic(bo) => match bo {
                 Basic::Arithmetic(ao) => match ao {
-                    Arithmetic::Add => arithmetic::add(stores, analyzer, op_id, ao),
+                    Arithmetic::Add => arithmetic::add(stores, op_id, ao),
                     Arithmetic::BitAnd | Arithmetic::BitOr | Arithmetic::BitXor => {
-                        arithmetic::bitand_bitor_bitxor(stores, analyzer, op_id, ao)
+                        arithmetic::bitand_bitor_bitxor(stores, op_id, ao)
                     }
-                    Arithmetic::BitNot => arithmetic::bitnot(stores, analyzer, op_id),
+                    Arithmetic::BitNot => arithmetic::bitnot(stores, op_id),
                     Arithmetic::Div
                     | Arithmetic::Multiply
                     | Arithmetic::Rem
                     | Arithmetic::ShiftLeft
                     | Arithmetic::ShiftRight => {
-                        arithmetic::multiply_div_rem_shift(stores, analyzer, had_error, op_id, ao)
+                        arithmetic::multiply_div_rem_shift(stores, had_error, op_id, ao)
                     }
-                    Arithmetic::Subtract => {
-                        arithmetic::subtract(stores, analyzer, had_error, op_id, ao)
-                    }
+                    Arithmetic::Subtract => arithmetic::subtract(stores, had_error, op_id, ao),
                 },
                 Basic::Compare(co) => match co {
                     Compare::Equal | Compare::NotEq => {
-                        comparative::equal(stores, analyzer, had_error, op_id, co)
+                        comparative::equal(stores, had_error, op_id, co)
                     }
                     Compare::Less
                     | Compare::LessEqual
                     | Compare::Greater
-                    | Compare::GreaterEqual => {
-                        comparative::compare(stores, analyzer, had_error, op_id, co)
-                    }
-                    Compare::IsNull => comparative::is_null(stores, analyzer, op_id),
+                    | Compare::GreaterEqual => comparative::compare(stores, had_error, op_id, co),
+                    Compare::IsNull => comparative::is_null(stores, op_id),
                 },
                 Basic::Stack(so) => match so {
-                    Stack::Dup { .. } | Stack::Over { .. } => {
-                        stack_ops::dup_over(stores, analyzer, op_id)
-                    }
+                    Stack::Dup { .. } | Stack::Over { .. } => stack_ops::dup_over(stores, op_id),
 
                     // These just change the order of the virtual stack, so there's no work to do here.
                     Stack::Drop { .. }
@@ -69,7 +62,7 @@ fn analyze_block(
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {
-                        control::epilogue_return(ctx, stores, analyzer, had_error, op_id);
+                        control::epilogue_return(ctx, stores, had_error, op_id);
 
                         // We're terminated the current block, so don't process any remaining ops.
                         break;
@@ -84,11 +77,11 @@ fn analyze_block(
                             break;
                         }
                     }
-                    Control::While(_) => control::analyze_while(analyzer, op_id),
+                    Control::While(_) => control::analyze_while(stores, op_id),
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
-                        memory::insert_extract_array(stores, analyzer, had_error, op_id)
+                        memory::insert_extract_array(stores, had_error, op_id)
                     }
                     // Nothing to do here.
                     Memory::ExtractStruct { .. }
@@ -98,18 +91,16 @@ fn analyze_block(
                     | Memory::Store
                     | Memory::Unpack => {}
                 },
-                Basic::PushBool(value) => stack_ops::push_bool(stores, analyzer, op_id, value),
-                Basic::PushInt { value, .. } => stack_ops::push_int(stores, analyzer, op_id, value),
+                Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
+                Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
                 Basic::PushStr { .. } => {}
             },
             OpCode::Complex(co) => match co {
-                TypeResolvedOp::Cast { id } => stack_ops::cast(stores, analyzer, op_id, id),
-                TypeResolvedOp::Const { id } => {
-                    control::cp_const(ctx, stores, analyzer, pass_ctx, op_id, id)
-                }
-                TypeResolvedOp::Memory { id, .. } => control::memory(stores, analyzer, op_id, id),
+                TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
+                TypeResolvedOp::Const { id } => control::cp_const(ctx, stores, pass_ctx, op_id, id),
+                TypeResolvedOp::Memory { id, .. } => control::memory(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
-                    stack_ops::size_of(ctx, stores, analyzer, pass_ctx, op_id, id)
+                    stack_ops::size_of(ctx, stores, pass_ctx, op_id, id)
                 }
 
                 // Nothing to do here.
@@ -126,16 +117,5 @@ pub fn analyze_item(
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) {
-    let mut analyzer = ctx.take_analyzer(item_id);
-
-    analyze_block(
-        ctx,
-        stores,
-        &mut analyzer,
-        pass_ctx,
-        had_error,
-        ctx.get_item_body(item_id),
-    );
-
-    ctx.set_analyzer(item_id, analyzer);
+    analyze_block(ctx, stores, pass_ctx, had_error, ctx.get_item_body(item_id));
 }

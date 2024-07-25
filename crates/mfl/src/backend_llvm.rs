@@ -24,8 +24,8 @@ use tracing::{debug, debug_span, trace, trace_span};
 use crate::{
     context::{Context as MflContext, ItemId, ItemKind},
     ir::{Arithmetic, Basic, Compare, Control, IntKind, Memory, OpCode, Stack, TypeResolvedOp},
-    pass_manager::static_analysis::{Analyzer, ValueId},
     stores::{
+        analyzer::{ValueId, ValueStore},
         block::{BlockId, BlockStore},
         interner::Interner,
         ops::OpStore,
@@ -120,7 +120,7 @@ impl OpCode<TypeResolvedOp> {
 struct DataStore<'a> {
     context: &'a MflContext,
     interner: &'a mut Interner,
-    analyzer: &'a Analyzer,
+    analyzer: &'a ValueStore,
     type_store: &'a mut TypeStore,
     source_store: &'a SourceStore,
     op_store: &'a OpStore,
@@ -639,22 +639,20 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut DataStore,
         block_id: BlockId,
-        analyzer: &Analyzer,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
     ) -> InkwellResult {
         fn make_variable<'ctx>(
+            ds: &mut DataStore,
             value_id: ValueId,
             cg: &mut CodeGen<'ctx>,
-            analyzer: &Analyzer,
-            type_store: &mut TypeStore,
             merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
         ) -> InkwellResult {
             if merge_pair_map.contains_key(&value_id) {
                 trace!("        Variable already exists for `{value_id:?}`");
                 return Ok(());
             }
-            let type_id = analyzer.value_types([value_id]).unwrap()[0];
-            let typ = cg.get_type(type_store, type_id);
+            let type_id = ds.analyzer.value_types([value_id]).unwrap()[0];
+            let typ = cg.get_type(ds.type_store, type_id);
             let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
 
@@ -668,48 +666,30 @@ impl<'ctx> CodeGen<'ctx> {
         for &op_id in &block.ops {
             match ds.op_store.get_type_resolved(op_id) {
                 OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                    let Some(op_merges) = analyzer.get_if_merges(op_id) else {
+                    let Some(op_merges) = ds.analyzer.get_if_merges(op_id) else {
                         panic!("ICE: If block doesn't have merge info");
                     };
                     for merge in op_merges {
-                        make_variable(
-                            merge.output_value,
-                            self,
-                            analyzer,
-                            ds.type_store,
-                            merge_pair_map,
-                        )?;
+                        make_variable(ds, merge.output_value, self, merge_pair_map)?;
                     }
 
-                    self.build_merge_variables(ds, if_op.then_block, analyzer, merge_pair_map)?;
-                    self.build_merge_variables(ds, if_op.else_block, analyzer, merge_pair_map)?;
+                    self.build_merge_variables(ds, if_op.then_block, merge_pair_map)?;
+                    self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
                 }
                 OpCode::Basic(Basic::Control(Control::While(while_op))) => {
-                    let Some(op_merges) = analyzer.get_while_merges(op_id) else {
+                    let Some(op_merges) = ds.analyzer.get_while_merges(op_id) else {
                         panic!("ICE: While block doesn't have merge info");
                     };
                     for merge in &op_merges.condition {
-                        make_variable(
-                            merge.pre_value,
-                            self,
-                            analyzer,
-                            ds.type_store,
-                            merge_pair_map,
-                        )?;
+                        make_variable(ds, merge.pre_value, self, merge_pair_map)?;
                     }
 
                     for merge in &op_merges.body {
-                        make_variable(
-                            merge.pre_value,
-                            self,
-                            analyzer,
-                            ds.type_store,
-                            merge_pair_map,
-                        )?;
+                        make_variable(ds, merge.pre_value, self, merge_pair_map)?;
                     }
 
-                    self.build_merge_variables(ds, while_op.condition, analyzer, merge_pair_map)?;
-                    self.build_merge_variables(ds, while_op.body_block, analyzer, merge_pair_map)?;
+                    self.build_merge_variables(ds, while_op.condition, merge_pair_map)?;
+                    self.build_merge_variables(ds, while_op.body_block, merge_pair_map)?;
                 }
 
                 _ => continue,
@@ -780,7 +760,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let mut data_store = DataStore {
             context: program,
-            analyzer: program.get_analyzer(id),
+            analyzer: &stores.values,
             interner: &mut stores.strings,
             type_store: &mut stores.types,
             source_store: &stores.source,
@@ -792,7 +772,6 @@ impl<'ctx> CodeGen<'ctx> {
         self.build_merge_variables(
             &mut data_store,
             program.get_item_body(id),
-            program.get_analyzer(id),
             &mut value_store.merge_pair_map,
         )?;
 

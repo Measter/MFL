@@ -5,27 +5,22 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::IntKind,
-    pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::{ops::OpId, types::TypeKind},
+    stores::{analyzer::ConstVal, ops::OpId, types::TypeKind},
     Stores,
 };
 
-pub(crate) fn insert_extract_array(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };
-    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = analyzer.value_consts([idx_value_id])
+    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) =
+        stores.values.value_consts([idx_value_id])
     else {
         return;
     };
 
-    let [array_type_id] = analyzer.value_types([array_value_id]).unwrap();
+    let [array_type_id] = stores.values.value_types([array_value_id]).unwrap();
     let array_type_info = stores.types.get_type_info(array_type_id);
 
     let array_length = match array_type_info.kind {
@@ -52,7 +47,7 @@ pub(crate) fn insert_extract_array(
     let array_type_name = stores.strings.resolve(array_type_info.name);
     let idx_value = idx.to_string();
     let mut labels = diagnostics::build_creator_label_chain(
-        analyzer,
+        stores,
         [
             (array_value_id, 0, array_type_name),
             (idx_value_id, 1, &idx_value),

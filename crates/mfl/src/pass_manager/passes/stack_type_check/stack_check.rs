@@ -1,8 +1,8 @@
 use crate::{
     error_signal::ErrorSignal,
     n_ops::VecNOps,
-    pass_manager::static_analysis::{generate_stack_length_mismatch_diag, Analyzer, ValueId},
-    stores::ops::OpId,
+    pass_manager::static_analysis::generate_stack_length_mismatch_diag,
+    stores::{analyzer::ValueId, ops::OpId},
     Stores,
 };
 
@@ -11,8 +11,7 @@ pub mod memory;
 pub mod stack_ops;
 
 fn ensure_stack_depth(
-    stores: &Stores,
-    analyzer: &mut Analyzer,
+    stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -25,7 +24,7 @@ fn ensure_stack_depth(
 
         let num_missing = usize::saturating_sub(depth, stack.len());
         for _ in 0..num_missing {
-            let pad_value = analyzer.new_value(op_loc, None);
+            let pad_value = stores.values.new_value(op_loc, None);
             stack.push(pad_value);
         }
     }
@@ -33,17 +32,16 @@ fn ensure_stack_depth(
 
 pub(super) fn eat_one_make_one(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 1);
+    ensure_stack_depth(stores, had_error, stack, op_id, 1);
 
     let value_id = stack.pop().unwrap();
-    analyzer.consume_value(value_id, op_id);
+    stores.values.consume_value(value_id, op_id);
     let op_loc = stores.ops.get_token(op_id).location;
-    let new_id = analyzer.new_value(op_loc, None);
+    let new_id = stores.values.new_value(op_loc, None);
 
     stores.ops.set_op_io(op_id, &[value_id], &[new_id]);
     stack.push(new_id);
@@ -51,32 +49,26 @@ pub(super) fn eat_one_make_one(
 
 pub(super) fn eat_two_make_one(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
 ) {
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {
-        analyzer.consume_value(value_id, op_id);
+        stores.values.consume_value(value_id, op_id);
     }
     let op_loc = stores.ops.get_token(op_id).location;
-    let new_id = analyzer.new_value(op_loc, None);
+    let new_id = stores.values.new_value(op_loc, None);
 
     stores.ops.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
-pub(super) fn make_one(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    stack: &mut Vec<ValueId>,
-    op_id: OpId,
-) {
+pub(super) fn make_one(stores: &mut Stores, stack: &mut Vec<ValueId>, op_id: OpId) {
     let op_loc = stores.ops.get_token(op_id).location;
-    let new_id = analyzer.new_value(op_loc, None);
+    let new_id = stores.values.new_value(op_loc, None);
     stack.push(new_id);
     stores.ops.set_op_io(op_id, &[], &[new_id]);
 }

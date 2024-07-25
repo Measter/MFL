@@ -1,3 +1,4 @@
+use analyzer::ValueStore;
 use block::BlockStore;
 use interner::Interner;
 use lasso::Spur;
@@ -5,6 +6,7 @@ use ops::OpStore;
 use source::SourceStore;
 use types::{TypeId, TypeStore};
 
+pub mod analyzer;
 pub mod block;
 pub mod interner;
 pub mod ops;
@@ -17,6 +19,7 @@ pub struct Stores {
     pub types: TypeStore,
     pub ops: OpStore,
     pub blocks: BlockStore,
+    pub values: ValueStore,
 }
 
 impl Stores {
@@ -26,6 +29,7 @@ impl Stores {
         let type_store = TypeStore::new(&mut interner);
         let op_store = OpStore::new();
         let block_store = BlockStore::new();
+        let value_store = ValueStore::new();
 
         Stores {
             source: source_storage,
@@ -33,6 +37,7 @@ impl Stores {
             types: type_store,
             ops: op_store,
             blocks: block_store,
+            values: value_store,
         }
     }
 

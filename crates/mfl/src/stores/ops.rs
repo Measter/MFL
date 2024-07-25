@@ -7,10 +7,9 @@ use smallvec::SmallVec;
 use crate::{
     ir::{NameResolvedOp, OpCode, TypeResolvedOp, UnresolvedOp},
     option::OptionExt,
-    pass_manager::static_analysis::ValueId,
 };
 
-use super::source::Spanned;
+use super::{analyzer::ValueId, source::Spanned};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct OpId(u32);

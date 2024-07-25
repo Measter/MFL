@@ -7,8 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::Direction,
     n_ops::SliceNOps,
-    pass_manager::static_analysis::{Analyzer, ValueId},
-    stores::{ops::OpId, source::Spanned},
+    stores::{analyzer::ValueId, ops::OpId, source::Spanned},
     Stores,
 };
 
@@ -16,7 +15,6 @@ use super::ensure_stack_depth;
 
 pub(crate) fn dup(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -39,7 +37,7 @@ pub(crate) fn dup(
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, op_id, count);
 
     let input_range = (stack.len() - count)..stack.len();
     let output_range_start = stack.len();
@@ -47,7 +45,7 @@ pub(crate) fn dup(
         stack[input_range.clone()].iter().copied().collect();
 
     for input_id in input_values {
-        let new_id = analyzer.new_value(op_loc, Some(input_id));
+        let new_id = stores.values.new_value(op_loc, Some(input_id));
         stack.push(new_id);
     }
 
@@ -58,7 +56,6 @@ pub(crate) fn dup(
 
 pub(crate) fn drop(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -80,13 +77,13 @@ pub(crate) fn drop(
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, op_id, count);
 
     let split_point = stack.len() - count;
     let inputs = stack.split_off(split_point);
 
     for &input in &inputs {
-        analyzer.consume_value(input, op_id);
+        stores.values.consume_value(input, op_id);
     }
 
     stores.ops.set_op_io(op_id, &inputs, &[]);
@@ -94,7 +91,6 @@ pub(crate) fn drop(
 
 pub(crate) fn over(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -114,10 +110,10 @@ pub(crate) fn over(
     };
 
     let depth = depth.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, depth + 1);
+    ensure_stack_depth(stores, had_error, stack, op_id, depth + 1);
 
     let src_id = stack[stack.len() - 1 - depth];
-    let new_id = analyzer.new_value(op_loc, Some(src_id));
+    let new_id = stores.values.new_value(op_loc, Some(src_id));
     stack.push(new_id);
 
     stores.ops.set_op_io(op_id, &[src_id], &[new_id]);
@@ -125,7 +121,6 @@ pub(crate) fn over(
 
 pub(crate) fn reverse(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -158,19 +153,18 @@ pub(crate) fn reverse(
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, op_id, count);
 
     stack.lastn_mut(count).unwrap().reverse();
 }
 
 pub(crate) fn rotate(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
     item_count: Spanned<u8>,
-    direction: crate::ir::Direction,
+    direction: Direction,
     mut shift_count: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
@@ -217,7 +211,7 @@ pub(crate) fn rotate(
 
     let item_count = item_count.inner.to_usize();
     let shift_count = shift_count.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, item_count);
+    ensure_stack_depth(stores, had_error, stack, op_id, item_count);
 
     let items = stack.lastn_mut(item_count).unwrap();
     match direction {
@@ -228,7 +222,6 @@ pub(crate) fn rotate(
 
 pub(crate) fn swap(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -249,7 +242,7 @@ pub(crate) fn swap(
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, analyzer, had_error, stack, op_id, count * 2);
+    ensure_stack_depth(stores, had_error, stack, op_id, count * 2);
 
     let slice_start = stack.len() - count;
     let (rest, a_slice) = stack.split_at_mut(slice_start);

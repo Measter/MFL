@@ -13,8 +13,8 @@ use lasso::Spur;
 use crate::{
     context::ItemId,
     n_ops::SliceNOps,
-    pass_manager::static_analysis::ValueId,
     stores::{
+        analyzer::ValueId,
         ops::OpId,
         source::Spanned,
         types::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},

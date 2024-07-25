@@ -10,10 +10,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     n_ops::SliceNOps,
-    pass_manager::{
-        static_analysis::{can_promote_int_unidirectional, Analyzer},
-        PassContext,
-    },
+    pass_manager::{static_analysis::can_promote_int_unidirectional, PassContext},
     stores::{
         ops::OpId,
         source::Spanned,
@@ -55,7 +52,6 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
 pub(crate) fn extract_array(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -64,14 +60,16 @@ pub(crate) fn extract_array(
     let op_data = stores.ops.get_op_io(op_id).clone();
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs.as_arr();
-    let Some(type_ids) = analyzer.value_types(inputs) else {
+    let Some(type_ids) = stores.values.value_types(inputs) else {
         return;
     };
     let [array_type_info, idx_type_info] = type_ids.map(|id| stores.types.get_type_info(id));
 
     let output_value_id = if emit_array {
         let output_array_id = op_data.outputs[0];
-        analyzer.set_value_type(output_array_id, array_type_info.id);
+        stores
+            .values
+            .set_value_type(output_array_id, array_type_info.id);
         op_data.outputs[1]
     } else {
         op_data.outputs[0]
@@ -80,7 +78,7 @@ pub(crate) fn extract_array(
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
         let value_type_name = stores.strings.resolve(array_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(array_value_id, 0, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -160,7 +158,7 @@ pub(crate) fn extract_array(
     if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(idx_value_id, 1, idx_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -178,13 +176,12 @@ pub(crate) fn extract_array(
         return;
     }
 
-    analyzer.set_value_type(output_value_id, store_type);
+    stores.values.set_value_type(output_value_id, store_type);
 }
 
 pub(crate) fn extract_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -193,14 +190,16 @@ pub(crate) fn extract_struct(
 ) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_struct_value_id = op_data.inputs[0];
-    let Some([input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else {
+    let Some([input_struct_type_id]) = stores.values.value_types([input_struct_value_id]) else {
         return;
     };
     let input_struct_type_info = stores.types.get_type_info(input_struct_type_id);
 
     let output_data_id = if emit_struct {
         let [output_struct_id, output_data_id] = *op_data.outputs.as_arr();
-        analyzer.set_value_type(output_struct_id, input_struct_type_id);
+        stores
+            .values
+            .set_value_type(output_struct_id, input_struct_type_id);
         output_data_id
     } else {
         op_data.outputs[0]
@@ -209,7 +208,7 @@ pub(crate) fn extract_struct(
     let not_struct_error = || {
         let value_type_name = stores.strings.resolve(input_struct_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -271,7 +270,7 @@ pub(crate) fn extract_struct(
 
         let value_type_name = stores.strings.resolve(input_struct_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -296,13 +295,14 @@ pub(crate) fn extract_struct(
         return;
     };
 
-    analyzer.set_value_type(output_data_id, field_info.kind);
+    stores
+        .values
+        .set_value_type(output_data_id, field_info.kind);
 }
 
 pub(crate) fn insert_array(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -311,7 +311,8 @@ pub(crate) fn insert_array(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs.as_arr();
-    let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else {
+    let Some(type_ids @ [data_type_id, array_type_id, _]) = stores.values.value_types(inputs)
+    else {
         return;
     };
     let [data_type_info, array_type_info, idx_type_info] =
@@ -319,13 +320,13 @@ pub(crate) fn insert_array(
 
     if emit_array {
         let output_id = op_data.outputs[0];
-        analyzer.set_value_type(output_id, array_type_id);
+        stores.values.set_value_type(output_id, array_type_id);
     }
 
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
         let value_type_name = stores.strings.resolve(array_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(array_value_id, 1, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -408,7 +409,7 @@ pub(crate) fn insert_array(
     if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(idx_value_id, 2, idx_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -442,7 +443,7 @@ pub(crate) fn insert_array(
             _ => unreachable!(),
         };
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [
                 (data_value_id, 0, data_type_name),
                 (array_value_id, 1, array_type_name),
@@ -467,7 +468,6 @@ pub(crate) fn insert_array(
 pub(crate) fn insert_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -477,20 +477,23 @@ pub(crate) fn insert_struct(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs.as_arr();
-    let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else {
+    let Some(type_ids @ [data_type_id, input_struct_type_id]) = stores.values.value_types(inputs)
+    else {
         return;
     };
     let [data_type_info, input_struct_info] = type_ids.map(|id| stores.types.get_type_info(id));
 
     if emit_struct {
         let output_id = op_data.outputs[0];
-        analyzer.set_value_type(output_id, input_struct_type_id);
+        stores
+            .values
+            .set_value_type(output_id, input_struct_type_id);
     }
 
     let not_struct_error = || {
         let value_type_name = stores.strings.resolve(input_struct_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -552,7 +555,7 @@ pub(crate) fn insert_struct(
         let value_type_name = stores.strings.resolve(input_struct_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_struct_value_id, 1, value_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -595,7 +598,7 @@ pub(crate) fn insert_struct(
         let struct_type_name = stores.strings.resolve(struct_type_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [
                 (data_value_id, 0, data_type_name),
                 (input_struct_value_id, 1, struct_type_name),
@@ -622,15 +625,10 @@ pub(crate) fn insert_struct(
     }
 }
 
-pub(crate) fn load(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let ptr_id = op_data.inputs[0];
-    let Some([ptr_type]) = analyzer.value_types([ptr_id]) else {
+    let Some([ptr_type]) = stores.values.value_types([ptr_id]) else {
         return;
     };
     let ptr_info = stores.types.get_type_info(ptr_type);
@@ -639,7 +637,7 @@ pub(crate) fn load(
         let ptr_type_name = stores.strings.resolve(ptr_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(ptr_id, 0, ptr_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -653,16 +651,12 @@ pub(crate) fn load(
         return;
     };
 
-    analyzer.set_value_type(op_data.outputs[0], ptee_type_id);
+    stores
+        .values
+        .set_value_type(op_data.outputs[0], ptee_type_id);
 }
 
-pub(crate) fn pack_array(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-    count: u8,
-) {
+pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, count: u8) {
     let op_loc = stores.ops.get_token(op_id).location;
 
     if count == 0 {
@@ -682,13 +676,13 @@ pub(crate) fn pack_array(
     let [first, rest @ ..] = op_data.inputs.as_slice() else {
         unreachable!()
     };
-    let Some([first_value_id]) = analyzer.value_types([*first]) else {
+    let Some([first_value_id]) = stores.values.value_types([*first]) else {
         return;
     };
     let expected_store_type = stores.types.get_type_info(first_value_id);
 
     for (&other_id, id) in rest.iter().zip(1..) {
-        let Some([value_type_id]) = analyzer.value_types([other_id]) else {
+        let Some([value_type_id]) = stores.values.value_types([other_id]) else {
             continue;
         };
         let value_type_info = stores.types.get_type_info(value_type_id);
@@ -706,7 +700,7 @@ pub(crate) fn pack_array(
             let expected_value_name = stores.strings.resolve(expected_store_type.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (other_id, id, other_value_name),
                     (*first, 0, expected_value_name),
@@ -733,19 +727,15 @@ pub(crate) fn pack_array(
         count.to_usize(),
     );
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, array_type.id);
+    stores.values.set_value_type(output_id, array_type.id);
 }
 
-pub(crate) fn store(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
-    let Some([data_type_id, ptr_type_id]) = analyzer.value_types([data_value_id, ptr_value_id])
+    let Some([data_type_id, ptr_type_id]) =
+        stores.values.value_types([data_value_id, ptr_value_id])
     else {
         return;
     };
@@ -757,7 +747,7 @@ pub(crate) fn store(
         let data_type_name = stores.strings.resolve(data_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(ptr_value_id, 1, ptr_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -788,7 +778,7 @@ pub(crate) fn store(
         let ptee_type_name = stores.strings.resolve(ptr_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(data_value_id, 0, data_type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -807,16 +797,11 @@ pub(crate) fn store(
     }
 }
 
-pub(crate) fn unpack(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let outputs: SmallVec<[_; 20]> = op_data.outputs.as_slice().into();
     let aggr_value_id = op_data.inputs[0];
-    let Some([aggr_type_id]) = analyzer.value_types([aggr_value_id]) else {
+    let Some([aggr_type_id]) = stores.values.value_types([aggr_value_id]) else {
         return;
     };
     let aggr_type_info = stores.types.get_type_info(aggr_type_id);
@@ -824,14 +809,14 @@ pub(crate) fn unpack(
     match aggr_type_info.kind {
         TypeKind::Array { type_id, .. } => {
             for output_id in outputs {
-                analyzer.set_value_type(output_id, type_id);
+                stores.values.set_value_type(output_id, type_id);
             }
         }
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
             // The stack check already ensured definition.
             let struct_info = stores.types.get_struct_def(aggr_type_id);
             for (output_id, field_info) in outputs.iter().zip(&struct_info.fields) {
-                analyzer.set_value_type(*output_id, field_info.kind);
+                stores.values.set_value_type(*output_id, field_info.kind);
             }
         }
         TypeKind::Integer(_)
@@ -841,7 +826,7 @@ pub(crate) fn unpack(
             let aggr_type_name = stores.strings.resolve(aggr_type_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [(aggr_value_id, 0, aggr_type_name)],
                 Color::Yellow,
                 Color::Cyan,
@@ -864,7 +849,6 @@ pub(crate) fn unpack(
 
 pub(crate) fn pack_struct(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     struct_type_id: TypeId,
@@ -873,14 +857,9 @@ pub(crate) fn pack_struct(
     let struct_type_id = if let TypeKind::GenericStructBase(struct_item_id) =
         stores.types.get_type_info(struct_type_id).kind
     {
-        let ControlFlow::Continue(id) = pack_struct_infer_generic(
-            stores,
-            analyzer,
-            had_error,
-            struct_type_id,
-            struct_item_id,
-            op_id,
-        ) else {
+        let ControlFlow::Continue(id) =
+            pack_struct_infer_generic(stores, had_error, struct_type_id, struct_item_id, op_id)
+        else {
             return;
         };
 
@@ -895,7 +874,7 @@ pub(crate) fn pack_struct(
     let struct_type_info = stores.types.get_struct_def(struct_type_id);
 
     if struct_type_info.is_union {
-        let Some([input_type_id]) = analyzer.value_types([inputs[0]]) else {
+        let Some([input_type_id]) = stores.values.value_types([inputs[0]]) else {
             return;
         };
 
@@ -912,7 +891,7 @@ pub(crate) fn pack_struct(
             let input_type_name = stores.strings.resolve(input_type_info.name);
 
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [(inputs[0], 0, input_type_name)],
                 Color::Yellow,
                 Color::Cyan,
@@ -934,7 +913,7 @@ pub(crate) fn pack_struct(
         for ((field_def, &input_value_id), value_idx) in
             struct_type_info.fields.iter().zip(inputs).zip(1..)
         {
-            let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+            let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
                 continue;
             };
             let field_type_info = stores.types.get_type_info(field_def.kind);
@@ -951,7 +930,7 @@ pub(crate) fn pack_struct(
                 let field_type_name = stores.strings.resolve(field_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [(input_value_id, value_idx, input_type_name)],
                     Color::Yellow,
                     Color::Cyan,
@@ -982,12 +961,13 @@ pub(crate) fn pack_struct(
     }
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_type(output_value_id, struct_type_id);
+    stores
+        .values
+        .set_value_type(output_value_id, struct_type_id);
 }
 
 fn pack_struct_infer_generic(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     struct_type_id: TypeId,
     struct_item_id: ItemId,
@@ -1016,7 +996,7 @@ fn pack_struct_infer_generic(
     let mut param_types = Vec::new();
 
     if generic_def.is_union {
-        let Some([input_type_id]) = analyzer.value_types([inputs[0]]) else {
+        let Some([input_type_id]) = stores.values.value_types([inputs[0]]) else {
             return ControlFlow::Break(());
         };
 
@@ -1032,7 +1012,7 @@ fn pack_struct_infer_generic(
                 let input_type_name = stores.strings.resolve(input_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [(inputs[0], 0, input_type_name)],
                     Color::Yellow,
                     Color::Cyan,
@@ -1066,7 +1046,7 @@ fn pack_struct_infer_generic(
         for param in &generic_def.generic_params {
             let mut found_field = false;
             for (field, &input_value_id) in generic_def.fields.iter().zip(inputs) {
-                let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+                let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
                     continue;
                 };
                 let input_type_kind = stores.types.get_type_info(input_type_id).kind;

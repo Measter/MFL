@@ -5,14 +5,13 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Compare, IntKind},
     n_ops::SliceNOps,
-    pass_manager::static_analysis::{promote_int_type_bidirectional, Analyzer, ConstVal},
-    stores::{ops::OpId, types::TypeKind},
+    pass_manager::static_analysis::promote_int_type_bidirectional,
+    stores::{analyzer::ConstVal, ops::OpId, types::TypeKind},
     Stores,
 };
 
 pub(crate) fn equal(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     comp_code: Compare,
@@ -20,8 +19,8 @@ pub(crate) fn equal(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
-    let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
+    let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
+    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
         return;
     };
 
@@ -54,7 +53,7 @@ pub(crate) fn equal(
         // Static pointers with different IDs.
         [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (input_value_ids[0], 0, "..and this"),
                     (input_value_ids[1], 1, "comparing this..."),
@@ -91,7 +90,7 @@ pub(crate) fn equal(
             };
 
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (input_value_ids[0], 0, "..and this"),
                     (input_value_ids[1], 1, "comparing this..."),
@@ -109,20 +108,21 @@ pub(crate) fn equal(
     };
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, ConstVal::Bool(output_const_val));
+    stores
+        .values
+        .set_value_const(output_value_id, ConstVal::Bool(output_const_val));
 }
 
 pub(crate) fn compare(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     comp_code: Compare,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
-    let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
+    let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
+    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
         return;
     };
 
@@ -154,7 +154,7 @@ pub(crate) fn compare(
         // Static pointers with different IDs.
         [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (input_value_ids[0], 0, "..and this"),
                     (input_value_ids[1], 1, "comparing this..."),
@@ -190,17 +190,21 @@ pub(crate) fn compare(
     };
 
     let output_value_value = op_data.outputs[0];
-    analyzer.set_value_const(output_value_value, ConstVal::Bool(output_const_val));
+    stores
+        .values
+        .set_value_const(output_value_value, ConstVal::Bool(output_const_val));
 }
 
-pub(crate) fn is_null(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+pub(crate) fn is_null(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    if analyzer.value_consts([input_value_id]).is_none() {
+    if stores.values.value_consts([input_value_id]).is_none() {
         return;
     }
 
     // We only have a const value from a statically known pointer, so it can't be null.
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, ConstVal::Bool(false));
+    stores
+        .values
+        .set_value_const(output_value_id, ConstVal::Bool(false));
 }

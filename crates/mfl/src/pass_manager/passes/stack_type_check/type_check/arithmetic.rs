@@ -3,7 +3,6 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::static_analysis::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
-        Analyzer,
     },
     stores::{
         ops::OpId,
@@ -12,15 +11,10 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn add(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else {
+    let Some(inputs) = stores.values.value_types(input_ids) else {
         return;
     };
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
@@ -47,24 +41,23 @@ pub(crate) fn add(
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
             let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, analyzer, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
             return;
         }
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, new_type);
+    stores.values.set_value_type(output_id, new_type);
 }
 
 pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else {
+    let Some(inputs) = stores.values.value_types(input_ids) else {
         return;
     };
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
@@ -81,24 +74,19 @@ pub(crate) fn multiply_div_rem_shift(
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
             let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, analyzer, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
             return;
         }
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, new_type);
+    stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn subtract(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else {
+    let Some(inputs) = stores.values.value_types(input_ids) else {
         return;
     };
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
@@ -120,24 +108,19 @@ pub(crate) fn subtract(
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
             let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, analyzer, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
             return;
         }
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, new_type);
+    stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn bitnot(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn bitnot(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_id = op_data.inputs[0];
-    let Some([input]) = analyzer.value_types([input_id]) else {
+    let Some([input]) = stores.values.value_types([input_id]) else {
         return;
     };
     let input_type_info = stores.types.get_type_info(input);
@@ -149,24 +132,19 @@ pub(crate) fn bitnot(
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
             let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, analyzer, lexeme, op_id, &[input_id]);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_id]);
             return;
         }
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, new_type);
+    stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn bitand_bitor_bitxor(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
-    let Some(inputs) = analyzer.value_types(input_ids) else {
+    let Some(inputs) = stores.values.value_types(input_ids) else {
         return;
     };
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
@@ -185,11 +163,11 @@ pub(crate) fn bitand_bitor_bitxor(
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
             let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, analyzer, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
             return;
         }
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_type(output_id, new_type);
+    stores.values.set_value_type(output_id, new_type);
 }

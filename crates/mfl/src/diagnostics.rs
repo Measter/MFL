@@ -4,8 +4,7 @@ use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
-    pass_manager::static_analysis::{Analyzer, ValueId},
-    stores::source::SourceLocation,
+    stores::{analyzer::ValueId, source::SourceLocation},
     Stores,
 };
 
@@ -21,7 +20,7 @@ pub static TABLE_FORMAT: Lazy<TableFormat> = Lazy::new(|| {
 });
 
 pub fn build_creator_label_chain<'a, V>(
-    analyzer: &Analyzer,
+    stores: &Stores,
     values: V,
     root_color: Color,
     echo_color: Color,
@@ -32,7 +31,7 @@ where
     let mut labels = Vec::new();
 
     for (vid, print_id, label) in values {
-        let mut creators = analyzer.get_creator_token(vid);
+        let mut creators = stores.values.get_creator_token(vid);
 
         let root = creators.pop().unwrap();
         labels.push((

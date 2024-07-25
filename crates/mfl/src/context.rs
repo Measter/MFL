@@ -14,7 +14,7 @@ use crate::{
         While,
     },
     option::OptionExt,
-    pass_manager::{static_analysis::Analyzer, PassContext},
+    pass_manager::PassContext,
     simulate::SimulatorValue,
     stores::{
         block::BlockId,
@@ -246,7 +246,6 @@ pub struct Context {
     lang_items: HashMap<LangItem, ItemId>,
 
     headers: Vec<ItemHeader>,
-    analyzers: HashMap<ItemId, Analyzer>,
     const_vals: HashMap<ItemId, Vec<SimulatorValue>>,
     item_body: HashMap<ItemId, BlockId>,
 
@@ -328,28 +327,6 @@ impl Context {
 
     #[inline]
     #[track_caller]
-    pub fn set_analyzer(&mut self, id: ItemId, analyzer: Analyzer) {
-        self.analyzers
-            .insert(id, analyzer)
-            .expect_none("ICE: replaced existing analyzer");
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn get_analyzer(&self, id: ItemId) -> &Analyzer {
-        &self.analyzers[&id]
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn take_analyzer(&mut self, id: ItemId) -> Analyzer {
-        self.analyzers
-            .remove(&id)
-            .expect("ICE: Tried to take non-existant Analyzer")
-    }
-
-    #[inline]
-    #[track_caller]
     pub fn get_consts(&self, id: ItemId) -> Option<&[SimulatorValue]> {
         self.const_vals.get(&id).map(|v| &**v)
     }
@@ -380,7 +357,6 @@ impl Context {
             lang_items: HashMap::new(),
             headers: Vec::new(),
             item_body: HashMap::new(),
-            analyzers: HashMap::new(),
             const_vals: HashMap::new(),
             urir: UnresolvedIr::new(),
             nrir: NameResolvedIr::new(),

@@ -5,24 +5,18 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, IntKind},
     n_ops::SliceNOps,
-    pass_manager::static_analysis::{Analyzer, ConstVal},
-    stores::{ops::OpId, types::TypeKind},
+    stores::{analyzer::ConstVal, ops::OpId, types::TypeKind},
     Stores,
 };
 
-pub(crate) fn add(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    op_id: OpId,
-    arith_code: Arithmetic,
-) {
+pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
+    let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
-    let Some(input_const_values) = analyzer.value_consts(input_value_ids) else {
+    let Some(input_const_values) = stores.values.value_consts(input_value_ids) else {
         return;
     };
 
@@ -72,21 +66,16 @@ pub(crate) fn add(
     };
 
     let output_id = op_data.outputs[0];
-    analyzer.set_value_const(output_id, new_const_val);
+    stores.values.set_value_const(output_id, new_const_val);
 }
 
-pub(crate) fn bitand_bitor_bitxor(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    op_id: OpId,
-    arith_code: Arithmetic,
-) {
+pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
+    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
         return;
     };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
+    let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
@@ -119,16 +108,18 @@ pub(crate) fn bitand_bitor_bitxor(
     };
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, output_const_val);
+    stores
+        .values
+        .set_value_const(output_value_id, output_const_val);
 }
 
-pub(crate) fn bitnot(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+pub(crate) fn bitnot(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
+    let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
         return;
     };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
+    let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
@@ -151,12 +142,13 @@ pub(crate) fn bitnot(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) 
     };
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, output_const_val);
+    stores
+        .values
+        .set_value_const(output_value_id, output_const_val);
 }
 
 pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     arith_code: Arithmetic,
@@ -164,7 +156,7 @@ pub(crate) fn multiply_div_rem_shift(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
+    let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
@@ -173,7 +165,7 @@ pub(crate) fn multiply_div_rem_shift(
     };
 
     let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) =
-        analyzer.value_consts(input_value_ids)
+        stores.values.value_consts(input_value_ids)
     else {
         return;
     };
@@ -196,7 +188,7 @@ pub(crate) fn multiply_div_rem_shift(
                 let output_type_name = stores.strings.resolve(output_type_info.name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [(input_value_ids[1], 0, "shift value from here")],
                     Color::Cyan,
                     Color::Green,
@@ -218,7 +210,7 @@ pub(crate) fn multiply_div_rem_shift(
             let div_is_zero = matches!(b_const_val, IntKind::Signed(0) | IntKind::Unsigned(0));
             if div_is_zero {
                 let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [(input_value_ids[1], 0, "divisor value from here")],
                     Color::Cyan,
                     Color::Green,
@@ -248,12 +240,13 @@ pub(crate) fn multiply_div_rem_shift(
     };
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, ConstVal::Int(new_kind));
+    stores
+        .values
+        .set_value_const(output_value_id, ConstVal::Int(new_kind));
 }
 
 pub(crate) fn subtract(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     arith_code: Arithmetic,
@@ -261,10 +254,10 @@ pub(crate) fn subtract(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
+    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
         return;
     };
-    let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
+    let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
@@ -306,7 +299,7 @@ pub(crate) fn subtract(
         // Clearly an error.
         [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (input_value_ids[0], 0, "...from this"),
                     (input_value_ids[1], 1, "sutracting this..."),
@@ -341,7 +334,7 @@ pub(crate) fn subtract(
                 let offset2_label = format!("subtracting offset {offset2}...");
 
                 let mut labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [
                         (input_value_ids[0], 0, offset1_label.as_str()),
                         (input_value_ids[1], 1, offset2_label.as_str()),
@@ -377,5 +370,7 @@ pub(crate) fn subtract(
     };
 
     let output_value_id = op_data.outputs[0];
-    analyzer.set_value_const(output_value_id, output_const_value);
+    stores
+        .values
+        .set_value_const(output_value_id, output_const_value);
 }

@@ -9,11 +9,12 @@ use crate::{
     pass_manager::{
         static_analysis::{
             can_promote_int_bidirectional, can_promote_int_unidirectional,
-            failed_compare_stack_types, promote_int_type_bidirectional, Analyzer, ValueId,
+            failed_compare_stack_types, promote_int_type_bidirectional,
         },
         PassContext,
     },
     stores::{
+        analyzer::ValueId,
         ops::OpId,
         source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},
@@ -24,7 +25,6 @@ use crate::{
 pub(crate) fn epilogue_return(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     item_id: ItemId,
@@ -34,7 +34,7 @@ pub(crate) fn epilogue_return(
     let op_data = stores.ops.get_op_io(op_id);
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
-        let Some([actual_type_id]) = analyzer.value_types([actual_value_id]) else {
+        let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
             continue;
         };
 
@@ -48,7 +48,6 @@ pub(crate) fn epilogue_return(
             {
                 failed_compare_stack_types(
                     stores,
-                    analyzer,
                     &op_data.inputs,
                     &item_trir_sig.exit,
                     item_urir_sig.exit.location,
@@ -62,32 +61,21 @@ pub(crate) fn epilogue_return(
     }
 }
 
-pub(crate) fn prologue(
-    ctx: &mut Context,
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    op_id: OpId,
-    item_id: ItemId,
-) {
+pub(crate) fn prologue(ctx: &mut Context, stores: &mut Stores, op_id: OpId, item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
     let sigs = ctx.trir().get_item_signature(item_id);
     let outputs = op_data.outputs.clone();
 
     for (output_id, &output_type) in outputs.into_iter().zip(&sigs.entry) {
-        analyzer.set_value_type(output_id, output_type);
+        stores.values.set_value_type(output_id, output_type);
     }
 }
 
-pub(crate) fn syscall(
-    stores: &mut Stores,
-    analyzer: &mut Analyzer,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-) {
+pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
 
     for (idx, &input_value_id) in op_data.inputs.iter().enumerate() {
-        let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
+        let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
             continue;
         };
 
@@ -101,7 +89,7 @@ pub(crate) fn syscall(
 
         let type_name = stores.strings.resolve(input_type_info.name);
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(input_value_id, idx.to_u64(), type_name)],
             Color::Yellow,
             Color::Cyan,
@@ -114,7 +102,7 @@ pub(crate) fn syscall(
     }
 
     // The output is always an int
-    analyzer.set_value_type(
+    stores.values.set_value_type(
         op_data.outputs[0],
         stores.types.get_builtin(BuiltinTypes::U64).id,
     );
@@ -123,7 +111,6 @@ pub(crate) fn syscall(
 pub(crate) fn call_function_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -142,7 +129,7 @@ pub(crate) fn call_function_const(
     let callee_sig_trir = ctx.trir().get_item_signature(callee_id);
 
     for (&actual_value_id, &expected_type_id) in op_data.inputs.iter().zip(&callee_sig_trir.entry) {
-        let Some([actual_type_id]) = analyzer.value_types([actual_value_id]) else {
+        let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
             continue;
         };
 
@@ -158,7 +145,6 @@ pub(crate) fn call_function_const(
             {
                 failed_compare_stack_types(
                     stores,
-                    analyzer,
                     &op_data.inputs,
                     &callee_sig_trir.entry,
                     callee_sig_urir.entry.location,
@@ -174,14 +160,15 @@ pub(crate) fn call_function_const(
 
     let ouput_ids = op_data.outputs.clone();
     for (&output_type_id, output_value_id) in callee_sig_trir.exit.iter().zip(ouput_ids) {
-        analyzer.set_value_type(output_value_id, output_type_id);
+        stores
+            .values
+            .set_value_type(output_value_id, output_type_id);
     }
 }
 
 pub(crate) fn memory(
     ctx: &mut Context,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -203,12 +190,13 @@ pub(crate) fn memory(
     let ptr_type_id = stores
         .types
         .get_pointer(&mut stores.strings, memory_type_id);
-    analyzer.set_value_type(output_value_id, ptr_type_id.id);
+    stores
+        .values
+        .set_value_type(output_value_id, ptr_type_id.id);
 }
 
 pub(crate) fn analyze_if(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     if_op: &If,
@@ -218,25 +206,25 @@ pub(crate) fn analyze_if(
     // All conditions are stored in the op inputs.
     let op_data = stores.ops.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
-    if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
+    if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
         condition_type_check(
             condition_type_id,
             stores,
-            analyzer,
             condition_value_id,
             if_op.tokens.do_token,
             had_error,
         );
     }
 
-    let Some(merges) = analyzer.get_if_merges(op_id).cloned() else {
+    let Some(merges) = stores.values.get_if_merges(op_id).cloned() else {
         panic!("ICE: Missing merges in If block")
     };
 
     for merge_pair in merges {
-        let [then_value_info] = analyzer.values([merge_pair.then_value]);
-        let Some([then_type_id, else_type_id]) =
-            analyzer.value_types([merge_pair.then_value, merge_pair.else_value])
+        let [then_value_info] = stores.values.values([merge_pair.then_value]);
+        let Some([then_type_id, else_type_id]) = stores
+            .values
+            .value_types([merge_pair.then_value, merge_pair.else_value])
         else {
             continue;
         };
@@ -256,7 +244,7 @@ pub(crate) fn analyze_if(
                 let else_type_name = stores.strings.resolve(else_type_info.name);
 
                 let labels = diagnostics::build_creator_label_chain(
-                    analyzer,
+                    stores,
                     [
                         (merge_pair.then_value, 0, then_type_name),
                         (merge_pair.else_value, 1, else_type_name),
@@ -279,13 +267,14 @@ pub(crate) fn analyze_if(
             _ => then_type_id,
         };
 
-        analyzer.set_value_type(merge_pair.output_value, final_type_id);
+        stores
+            .values
+            .set_value_type(merge_pair.output_value, final_type_id);
     }
 }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     while_op: &While,
@@ -294,27 +283,27 @@ pub(crate) fn analyze_while(
 
     let op_data = stores.ops.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
-    if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
+    if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
         condition_type_check(
             condition_type_id,
             stores,
-            analyzer,
             condition_value_id,
             while_op.tokens.do_token,
             had_error,
         );
     }
 
-    let Some(merge_info) = analyzer.get_while_merges(op_id).cloned() else {
+    let Some(merge_info) = stores.values.get_while_merges(op_id).cloned() else {
         panic!("ICE: While block should have merge info");
     };
 
     // Unlike the If-block handling above, this is not setting the type, only checking that
     // they are compatible.
     for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
-        let [condition_value_info] = analyzer.values([merge_pair.condition_value]);
-        let Some([pre_type_id, condition_type_id]) =
-            analyzer.value_types([merge_pair.pre_value, merge_pair.condition_value])
+        let [condition_value_info] = stores.values.values([merge_pair.condition_value]);
+        let Some([pre_type_id, condition_type_id]) = stores
+            .values
+            .value_types([merge_pair.pre_value, merge_pair.condition_value])
         else {
             continue;
         };
@@ -333,7 +322,7 @@ pub(crate) fn analyze_while(
             let condition_type_name = stores.strings.resolve(condition_type_info.name);
 
             let labels = diagnostics::build_creator_label_chain(
-                analyzer,
+                stores,
                 [
                     (merge_pair.pre_value, 0, pre_type_name),
                     (merge_pair.condition_value, 1, condition_type_name),
@@ -358,7 +347,6 @@ pub(crate) fn analyze_while(
 fn condition_type_check(
     condition_type_id: TypeId,
     stores: &mut Stores,
-    analyzer: &mut Analyzer,
     condition_value_id: ValueId,
     error_location: SourceLocation,
     had_error: &mut ErrorSignal,
@@ -368,7 +356,7 @@ fn condition_type_check(
         let condition_type_name = stores.strings.resolve(condition_type_info.name);
 
         let mut labels = diagnostics::build_creator_label_chain(
-            analyzer,
+            stores,
             [(condition_value_id, 0, condition_type_name)],
             Color::Yellow,
             Color::Cyan,
