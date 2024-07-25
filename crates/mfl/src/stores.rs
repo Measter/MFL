@@ -1,21 +1,21 @@
 use analyzer::ValueStore;
 use block::BlockStore;
-use interner::Interner;
 use lasso::Spur;
 use ops::OpStore;
 use source::SourceStore;
+use strings::StringStore;
 use types::{TypeId, TypeStore};
 
 pub mod analyzer;
 pub mod block;
-pub mod interner;
 pub mod ops;
 pub mod source;
+pub mod strings;
 pub mod types;
 
 pub struct Stores {
     pub source: SourceStore,
-    pub strings: Interner,
+    pub strings: StringStore,
     pub types: TypeStore,
     pub ops: OpStore,
     pub blocks: BlockStore,
@@ -25,15 +25,15 @@ pub struct Stores {
 impl Stores {
     pub fn new() -> Stores {
         let source_storage = SourceStore::new();
-        let mut interner = Interner::new();
-        let type_store = TypeStore::new(&mut interner);
+        let mut string_store = StringStore::new();
+        let type_store = TypeStore::new(&mut string_store);
         let op_store = OpStore::new();
         let block_store = BlockStore::new();
         let value_store = ValueStore::new();
 
         Stores {
             source: source_storage,
-            strings: interner,
+            strings: string_store,
             types: type_store,
             ops: op_store,
             blocks: block_store,

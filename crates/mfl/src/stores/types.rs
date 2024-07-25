@@ -10,8 +10,8 @@ use crate::{
     diagnostics,
     ir::{NameResolvedType, StructDef, StructDefField},
     stores::{
-        interner::Interner,
         source::{SourceLocation, Spanned},
+        strings::StringStore,
     },
     Stores,
 };
@@ -277,7 +277,7 @@ pub struct TypeStore {
 }
 
 impl TypeStore {
-    pub fn new(interner: &mut Interner) -> Self {
+    pub fn new(string_store: &mut StringStore) -> Self {
         let mut s = Self {
             kinds: HashMap::new(),
             pointer_map: HashMap::new(),
@@ -290,11 +290,11 @@ impl TypeStore {
             generic_struct_instance_map: HashMap::new(),
             type_sizes: HashMap::new(),
         };
-        s.init_builtins(interner);
+        s.init_builtins(string_store);
         s
     }
 
-    fn init_builtins(&mut self, interner: &mut Interner) {
+    fn init_builtins(&mut self, string_store: &mut StringStore) {
         let builtins = [
             (
                 "u8",
@@ -340,12 +340,12 @@ impl TypeStore {
         ];
 
         for (name_str, builtin, kind) in builtins {
-            let name = interner.intern(name_str);
+            let name = string_store.intern(name_str);
             let id = self.add_type(name, None, kind);
             self.builtins[builtin as usize] = id;
 
             // A couple parts of the compiler need to construct pointers to basic types.
-            self.get_pointer(interner, id);
+            self.get_pointer(string_store, id);
         }
     }
 
@@ -387,7 +387,7 @@ impl TypeStore {
 
     pub fn resolve_type(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         tp: &NameResolvedType,
     ) -> Result<TypeInfo, Spanned<Spur>> {
         match tp {
@@ -398,35 +398,40 @@ impl TypeStore {
                 .ok_or(*token),
             NameResolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
             NameResolvedType::Array(at, length) => {
-                let inner = self.resolve_type(interner, at)?;
-                Ok(self.get_array(interner, inner.id, *length))
+                let inner = self.resolve_type(string_store, at)?;
+                Ok(self.get_array(string_store, inner.id, *length))
             }
             NameResolvedType::Pointer(pt) => {
-                let pointee = self.resolve_type(interner, pt)?;
-                Ok(self.get_pointer(interner, pointee.id))
+                let pointee = self.resolve_type(string_store, pt)?;
+                Ok(self.get_pointer(string_store, pointee.id))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let base_struct_id = self.struct_id_map[id];
                 let param_type_ids: Vec<_> = params
                     .iter()
-                    .map(|p| self.resolve_type(interner, p).map(|ti| ti.id))
+                    .map(|p| self.resolve_type(string_store, p).map(|ti| ti.id))
                     .collect::<Result<_, _>>()?;
 
-                Ok(self.instantiate_generic_struct(interner, *id, base_struct_id, param_type_ids))
+                Ok(self.instantiate_generic_struct(
+                    string_store,
+                    *id,
+                    base_struct_id,
+                    param_type_ids,
+                ))
             }
             NameResolvedType::SimpleGenericParam(f) => Err(*f),
         }
     }
 
-    pub fn get_pointer(&mut self, interner: &mut Interner, pointee_id: TypeId) -> TypeInfo {
+    pub fn get_pointer(&mut self, string_store: &mut StringStore, pointee_id: TypeId) -> TypeInfo {
         let pointee = self.get_type_info(pointee_id);
 
         if let Some(pi) = self.pointer_map.get(&pointee.id) {
             self.kinds[&pi.ptr_id]
         } else {
-            let pointee_name = interner.resolve(pointee.name);
+            let pointee_name = string_store.resolve(pointee.name);
             let name = format!("{pointee_name}&");
-            let name = interner.intern(&name);
+            let name = string_store.intern(&name);
 
             let pointer_info = self.add_type(name, None, TypeKind::Pointer(pointee.id));
             self.pointer_map.insert(
@@ -442,7 +447,7 @@ impl TypeStore {
 
     pub fn get_array(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         content_type_id: TypeId,
         length: usize,
     ) -> TypeInfo {
@@ -451,9 +456,9 @@ impl TypeStore {
         if let Some(&array_id) = self.array_map.get(&(kind_info.id, length)) {
             self.kinds[&array_id]
         } else {
-            let pointee_name = interner.resolve(kind_info.name);
+            let pointee_name = string_store.resolve(kind_info.name);
             let name = format!("{pointee_name}[{length}]");
-            let name = interner.intern(&name);
+            let name = string_store.intern(&name);
 
             let array_info = self.add_type(
                 name,
@@ -471,12 +476,12 @@ impl TypeStore {
 
     fn partially_resolve_generic_field(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         kind: &NameResolvedType,
     ) -> GenericPartiallyResolvedFieldKind {
         match kind {
             NameResolvedType::SimpleCustom { .. } => {
-                let resolved = self.resolve_type(interner, kind).unwrap();
+                let resolved = self.resolve_type(string_store, kind).unwrap();
                 GenericPartiallyResolvedFieldKind::Fixed(resolved.id)
             }
             NameResolvedType::SimpleBuiltin(bi) => {
@@ -486,17 +491,17 @@ impl TypeStore {
                 GenericPartiallyResolvedFieldKind::GenericParamSimple(*n)
             }
             NameResolvedType::Array(sub_type, length) => {
-                let inner_kind = self.partially_resolve_generic_field(interner, sub_type);
+                let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
                 GenericPartiallyResolvedFieldKind::GenericParamArray(Box::new(inner_kind), *length)
             }
             NameResolvedType::Pointer(sub_type) => {
-                let inner_kind = self.partially_resolve_generic_field(interner, sub_type);
+                let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
                 GenericPartiallyResolvedFieldKind::GenericParamPointer(Box::new(inner_kind))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let generic_params = params
                     .iter()
-                    .map(|gp| self.partially_resolve_generic_field(interner, gp))
+                    .map(|gp| self.partially_resolve_generic_field(string_store, gp))
                     .collect();
                 GenericPartiallyResolvedFieldKind::GenericStruct(*id, generic_params)
             }
@@ -505,7 +510,7 @@ impl TypeStore {
 
     pub fn partially_resolve_generic_struct(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         base_item_id: ItemId,
         def: &StructDef<NameResolvedType>,
     ) {
@@ -516,7 +521,7 @@ impl TypeStore {
         let mut resolved_fields = Vec::new();
 
         for field in &def.fields {
-            let field_kind = self.partially_resolve_generic_field(interner, &field.kind);
+            let field_kind = self.partially_resolve_generic_field(string_store, &field.kind);
 
             resolved_fields.push(GenericPartiallyResolvedField {
                 name: field.name,
@@ -538,7 +543,7 @@ impl TypeStore {
 
     fn resolve_generic_field(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         kind: &GenericPartiallyResolvedFieldKind,
         type_params: &HashMap<Spur, TypeId>,
     ) -> TypeId {
@@ -546,23 +551,24 @@ impl TypeStore {
             GenericPartiallyResolvedFieldKind::Fixed(id) => *id,
             GenericPartiallyResolvedFieldKind::GenericParamSimple(n) => type_params[&n.inner],
             GenericPartiallyResolvedFieldKind::GenericParamPointer(sub_type) => {
-                let pointee_id = self.resolve_generic_field(interner, sub_type, type_params);
-                self.get_pointer(interner, pointee_id).id
+                let pointee_id = self.resolve_generic_field(string_store, sub_type, type_params);
+                self.get_pointer(string_store, pointee_id).id
             }
             GenericPartiallyResolvedFieldKind::GenericParamArray(sub_type, length) => {
-                let content_type_id = self.resolve_generic_field(interner, sub_type, type_params);
-                self.get_array(interner, content_type_id, *length).id
+                let content_type_id =
+                    self.resolve_generic_field(string_store, sub_type, type_params);
+                self.get_array(string_store, content_type_id, *length).id
             }
             GenericPartiallyResolvedFieldKind::GenericStruct(base_struct_id, sub_params) => {
                 let base_struct_type_id = self.struct_id_map[base_struct_id];
 
                 let sub_params: Vec<_> = sub_params
                     .iter()
-                    .map(|sp| self.resolve_generic_field(interner, sp, type_params))
+                    .map(|sp| self.resolve_generic_field(string_store, sp, type_params))
                     .collect();
 
                 self.instantiate_generic_struct(
-                    interner,
+                    string_store,
                     *base_struct_id,
                     base_struct_type_id,
                     sub_params,
@@ -574,7 +580,7 @@ impl TypeStore {
 
     pub fn instantiate_generic_struct(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         base_item_id: ItemId,
         base_type_id: TypeId,
         type_params: Vec<TypeId>,
@@ -599,7 +605,7 @@ impl TypeStore {
         let mut resolved_fields = Vec::new();
 
         for field in &base_def.fields {
-            let new_kind = self.resolve_generic_field(interner, &field.kind, &param_lookup);
+            let new_kind = self.resolve_generic_field(string_store, &field.kind, &param_lookup);
             resolved_fields.push(StructDefField {
                 name: field.name,
                 kind: new_kind,
@@ -614,25 +620,25 @@ impl TypeStore {
             is_union: base_def.is_union,
         };
 
-        let mut name = interner.resolve(base_def.name.inner).to_owned();
+        let mut name = string_store.resolve(base_def.name.inner).to_owned();
         name += "(";
 
         match type_params.as_slice() {
             [] => unreachable!(),
             [n] => {
                 let ti = self.get_type_info(*n);
-                let t_name = interner.resolve(ti.name);
+                let t_name = string_store.resolve(ti.name);
                 name += t_name;
             }
             [n, xs @ ..] => {
                 use std::fmt::Write;
                 let ti = self.get_type_info(*n);
-                let t_name = interner.resolve(ti.name);
+                let t_name = string_store.resolve(ti.name);
                 let _ = write!(&mut name, "{t_name}");
 
                 for t in xs {
                     let ti = self.get_type_info(*t);
-                    let t_name = interner.resolve(ti.name);
+                    let t_name = string_store.resolve(ti.name);
                     let _ = write!(&mut name, " {t_name}");
                 }
             }
@@ -640,7 +646,7 @@ impl TypeStore {
 
         name += ")";
 
-        let name = interner.intern(&name);
+        let name = string_store.intern(&name);
 
         let type_id = self.add_type(
             name,
@@ -733,7 +739,7 @@ impl TypeStore {
 
     pub fn define_fixed_struct(
         &mut self,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         struct_id: ItemId,
         def: &StructDef<NameResolvedType>,
     ) -> Result<TypeId, Spanned<Spur>> {
@@ -745,7 +751,7 @@ impl TypeStore {
 
         for field in &def.fields {
             let kind = self
-                .resolve_type(interner, &field.kind)
+                .resolve_type(string_store, &field.kind)
                 .map_err(|_| field.name)?
                 .id;
             resolved_fields.push(StructDefField {

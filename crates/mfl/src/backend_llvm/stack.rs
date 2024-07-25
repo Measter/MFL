@@ -175,12 +175,12 @@ impl<'ctx> CodeGen<'ctx> {
         is_c_str: bool,
     ) -> InkwellResult {
         let op_io = ds.op_store.get_op_io(op_id);
-        let str_ptr = value_store.get_string_literal(self, ds.interner, str_id)?;
+        let str_ptr = value_store.get_string_literal(self, ds, str_id)?;
 
         let store_value = if is_c_str {
             str_ptr.as_basic_value_enum()
         } else {
-            let string = ds.interner.resolve(str_id);
+            let string = ds.strings_store.resolve(str_id);
             let len = string.len() - 1; // It's null-terminated.
             let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 

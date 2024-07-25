@@ -27,9 +27,9 @@ use crate::{
     stores::{
         analyzer::{ValueId, ValueStore},
         block::{BlockId, BlockStore},
-        interner::Interner,
         ops::OpStore,
         source::SourceStore,
+        strings::StringStore,
         types::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,
@@ -119,7 +119,7 @@ impl OpCode<TypeResolvedOp> {
 
 struct DataStore<'a> {
     context: &'a MflContext,
-    interner: &'a mut Interner,
+    strings_store: &'a mut StringStore,
     analyzer: &'a ValueStore,
     type_store: &'a mut TypeStore,
     source_store: &'a SourceStore,
@@ -179,13 +179,13 @@ impl<'ctx> SsaMap<'ctx> {
     fn get_string_literal(
         &mut self,
         cg: &CodeGen<'ctx>,
-        interner: &Interner,
+        ds: &mut DataStore,
         id: Spur,
     ) -> InkwellResult<PointerValue<'ctx>> {
         match self.string_map.get(&id) {
             Some(&ptr) => Ok(ptr),
             None => {
-                let string = interner.resolve(id);
+                let string = ds.strings_store.resolve(id);
                 let name = format!("SId{}", id.into_inner());
                 let global = cg.builder.build_global_string_ptr(string, &name)?;
 
@@ -298,7 +298,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_function_prototypes(
         &mut self,
         program: &MflContext,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
@@ -310,7 +310,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             let item_sig = program.trir().get_item_signature(item.id);
 
-            let name = interner.get_symbol_name(program, item.id);
+            let name = string_store.get_symbol_name(program, item.id);
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
@@ -761,7 +761,7 @@ impl<'ctx> CodeGen<'ctx> {
         let mut data_store = DataStore {
             context: program,
             analyzer: &stores.values,
-            interner: &mut stores.strings,
+            strings_store: &mut stores.strings,
             type_store: &mut stores.types,
             source_store: &stores.source,
             op_store: &mut stores.ops,
@@ -816,7 +816,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_entry(
         &mut self,
         program: &MflContext,
-        interner: &mut Interner,
+        string_store: &mut StringStore,
         type_store: &mut TypeStore,
         entry_id: ItemId,
     ) -> InkwellResult {
@@ -824,7 +824,7 @@ impl<'ctx> CodeGen<'ctx> {
         let argc_type = self.get_type(type_store, u64_type_id);
 
         let u8_ptr_type_id = type_store.get_builtin_ptr(BuiltinTypes::U8).id;
-        let argv_type_id = type_store.get_pointer(interner, u8_ptr_type_id).id;
+        let argv_type_id = type_store.get_pointer(string_store, u8_ptr_type_id).id;
         let argv_type = self.get_type(type_store, argv_type_id);
 
         let function_type = self

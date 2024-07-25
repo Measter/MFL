@@ -46,7 +46,7 @@ impl<'ctx> CodeGen<'ctx> {
             .map(|p| p.map(Into::into))
             .collect::<InkwellResult<_>>()?;
 
-        let callee_name = ds.interner.get_symbol_name(ds.context, callee_id);
+        let callee_name = ds.strings_store.get_symbol_name(ds.context, callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
         let result =

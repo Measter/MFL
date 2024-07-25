@@ -4,15 +4,15 @@ use lasso::{Rodeo, Spur};
 
 use crate::context::{Context, ItemId};
 
-pub struct Interner {
+pub struct StringStore {
     lexemes: Rodeo,
 
     symbols: HashMap<ItemId, Spur>,
 }
 
-impl Interner {
+impl StringStore {
     pub fn new() -> Self {
-        Interner {
+        StringStore {
             lexemes: Rodeo::default(),
             symbols: HashMap::new(),
         }

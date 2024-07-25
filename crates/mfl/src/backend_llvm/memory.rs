@@ -267,7 +267,7 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> InkwellResult<(PointerValue<'ctx>, TypeInfo, IntValue<'ctx>)> {
         let struct_def = ds.type_store.get_struct_def(struct_type_id);
 
-        let pointer_field_name = ds.interner.intern("pointer");
+        let pointer_field_name = ds.strings_store.intern("pointer");
         let (ptr_field_idx, ptr_field_info) = struct_def
             .fields
             .iter()
@@ -286,7 +286,7 @@ impl<'ctx> CodeGen<'ctx> {
             .build_extract_value(struct_value, ptr_field_idx.to_u32().unwrap(), &ptr_name)?
             .into_pointer_value();
 
-        let length_field_name = ds.interner.intern("length");
+        let length_field_name = ds.strings_store.intern("length");
         let length_field_idx = struct_def
             .fields
             .iter()
