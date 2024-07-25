@@ -1,12 +1,25 @@
-proc fibonacci [s32] to [s32] is
+import core::String
+
+proc fibonacci_rec [u64] to [u64] is
     if dup 1> do
-        dup 1- fibonacci
-        swap 2- fibonacci
+        dup 1- fibonacci_rec
+        swap 2- fibonacci_rec
         +
     end
 end
 
-proc ord [s32] to [String] is
+proc fibonacci_iter [u64] to [u64] is
+    0(u64) 1(u64)
+    0(u64) while dup over(4) < do
+        rot(3>1)
+        swap over +
+        rot(3<1)
+        1+
+    end
+    rot(4<1) drop(3)
+end
+
+proc ord [u8] to [String] is
     100%
     if dup 11= do "th"
     elif dup 12= do "th"
@@ -23,11 +36,15 @@ proc ord [s32] to [String] is
 end
 
 proc entry [] to [] is
-    0 while dup 10<= do
-        dup 1+ dup std::term::write_si ord std::term::write
+    0 while dup 30<= do
+        dup 1+ dup std::term::write_ui ord std::term::write
         ": " std::term::write
-        dup fibonacci std::term::write_si_ln
+        dup fibonacci_rec std::term::write_ui
+        ", " std::term::write
+        dup fibonacci_iter std::term::write_ui_ln
 
         1+
     end drop
+
+    //20(u64) fibonacci_rec std::term::write_ui_ln
 end

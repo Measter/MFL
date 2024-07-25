@@ -1,22 +1,22 @@
 import std::Result
 import std::SimpleResult
 
-const PROT_READ [u64] is 0x01 end
-const PROT_WRITE [u64] is 0x02 end
-const MAP_ANONYMOUS [u64] is 0x20 end
-const MAP_PRIVATE [u64] is 0x02 end
+const PROT_READ [u64] { 0x01 }
+const PROT_WRITE [u64] { 0x02 }
+const MAP_ANONYMOUS [u64] { 0x20 }
+const MAP_PRIVATE [u64] { 0x02 }
 
-const SYS_MMAP [u64] is 0x09 end
-const SYS_MUNMAP [u64] is 0x0B end
+const SYS_MMAP [u64] { 0x09 }
+const SYS_MUNMAP [u64] { 0x0B }
 
-struct MMap(T) is
+struct MMap(T) {
     field pointer T&
     field length u64
-end
+}
 
 proc lang(alloc) alloc(T) [
     u64 // Number of Ts to allocate for
-] to [Result(MMap(T))] is
+] to [Result(MMap(T))] {
     dup
 
     sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
@@ -29,7 +29,7 @@ proc lang(alloc) alloc(T) [
     dup cast(s64)
     // [len ptr errcode]
 
-    if dup 0< do
+    if dup 0< {
         // Some kind of failure
         0 swap - cast(u64)
         // Drop the len and pointer
@@ -38,75 +38,75 @@ proc lang(alloc) alloc(T) [
         0(u64) cast(T&) 0
         pack(MMap)
         pack(Result) return
-    end
+    }
     drop 0
     // [len ptr errcode]
     rev(3)
     swap cast(T&) swap
     pack(MMap)
     pack(Result)
-end
+}
 
-proc lang(free) free(T) [MMap(T)] to [SimpleResult] is
+proc lang(free) free(T) [MMap(T)] to [SimpleResult] {
     unpack
     // [ptr len]
     sizeof(T) *
     SYS_MUNMAP rot(3>1) syscall(3)
     cast(s64) 0 swap - cast(u64)
     pack(SimpleResult)
-end
+}
 
 proc fill(T) [
     MMap(T)
     T
-] to [] is
-    memory val is T end
-    memory store is MMap(T) end
+] to [] {
+    memory val { T }
+    memory store { MMap(T) }
     val!
     store!
 
-    0 while dup store xtrd(length) < do
+    0 while dup store xtrd(length) < {
         val@ store over(2) insd
         1+
-    end drop
-end
+    } drop
+}
 
 proc copy(T) [
     MMap(T) // Source
     MMap(T) // Destination
-] to [] is
-    if xtr(length) over(2) xtrd(length) != do
+] to [] {
+    if xtr(length) over(2) xtrd(length) != {
         "Mismatched length in copy - src: " std::term::ewrite
         swap xtrd(length) std::term::ewrite_ui
         " dst: " std::term::ewrite
         xtrd(length) std::term::ewrite_ui_ln
         exit
-    end
+    }
 
-    memory src is MMap(T) end
-    memory dst is MMap(T) end
+    memory src { MMap(T) }
+    memory dst { MMap(T) }
     dst! src!
 
-    0 while dup dst xtrd(length) < do
+    0 while dup dst xtrd(length) < {
         dup src swap xtrd
         over dst swap insd
         1+
-    end drop
-end
+    } drop
+}
 
 proc mmap_file [
     std::io::FD
     u64 // Protection flags. Must match the FD.
-] to [Result(MMap(u8))] is
+] to [Result(MMap(u8))] {
     over std::fs::fstat
-    if xtr(errno) 0!= do
+    if xtr(errno) 0!= {
         rot(3>1) drop(2)
         xtrd(errno)
         0(u64) cast(u8&) // Null pointer
         0                    // length
         pack(MMap)
         pack(Result) return
-    end
+    }
     xtrd(data)
 
     xtrd(st_size) 0
@@ -124,7 +124,7 @@ proc mmap_file [
     dup cast(s64)
     // [length ptr errcode]
 
-    if dup 0< do
+    if dup 0< {
         // Some kind of failure
         0 swap - cast(u64)
         // Drop the len and pointer
@@ -134,10 +134,10 @@ proc mmap_file [
         // And a 0 length
         0
         pack(MMap)
-    else
+    } else {
         drop cast(u8&) swap pack(MMap) 0 swap
-    end
+    }
 
     pack(Result) return
-end
+}
 

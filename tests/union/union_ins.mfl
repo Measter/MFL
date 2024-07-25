@@ -7,18 +7,18 @@
 // expected = "Ok"
 // END
 
-struct Foo is
+struct Foo {
     field a u16
     field b u16
-end
+}
 
-union Bar is
+union Bar {
     field foo Foo
     field int u32
-end
+}
 
-proc entry [] to [] is
-    memory BAR is Bar end
+proc entry [] to [] {
+    memory BAR { Bar }
 
     0xDEADBEEF(u32) BAR insd(int)
     
@@ -28,4 +28,4 @@ proc entry [] to [] is
 
     sizeof(Bar)
     std::term::write_ui_ln
-end
+}

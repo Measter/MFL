@@ -73,9 +73,9 @@ fn parse_item_body<'a>(
         token_iter,
         name_token,
         None,
-        ("is", |t| t == TokenKind::Is),
+        ("{", |t| t == TokenKind::BraceOpen),
         ("item", |_| true),
-        ("end", |t| t == TokenKind::End),
+        ("}", |t| t == TokenKind::BraceClosed),
     )
     .recover(had_error, Delimited::fallback(name_token));
 
@@ -292,9 +292,9 @@ pub fn parse_memory<'a>(
         token_iter,
         name_token,
         None,
-        ("is", |t| t == TokenKind::Is),
+        ("{", |t| t == TokenKind::BraceOpen),
         ("type name", valid_type_token),
-        ("end", |t| t == TokenKind::End),
+        ("}", |t| t == TokenKind::BraceClosed),
     )
     .recover(&mut had_error, Delimited::fallback(name_token));
 
@@ -386,9 +386,15 @@ pub fn parse_struct_or_union<'a>(
         None
     };
 
-    let is_token = expect_token(stores, token_iter, "is", |k| k == TokenKind::Is, keyword)
-        .map(|(_, a)| a)
-        .recover(&mut had_error, name_token);
+    let is_token = expect_token(
+        stores,
+        token_iter,
+        "{",
+        |k| k == TokenKind::BraceOpen,
+        keyword,
+    )
+    .map(|(_, a)| a)
+    .recover(&mut had_error, name_token);
 
     let mut fields = Vec::new();
     let mut prev_token = expect_token(
@@ -409,8 +415,8 @@ pub fn parse_struct_or_union<'a>(
             None,
             ("ident", |t| t == TokenKind::Ident),
             ("type name", valid_type_token),
-            ("end or field", |t| {
-                t == TokenKind::End || t == TokenKind::Field
+            ("} or field", |t| {
+                t == TokenKind::BraceClosed || t == TokenKind::Field
             }),
         )
         .recover(&mut had_error, Delimited::fallback(name_token));
@@ -442,7 +448,7 @@ pub fn parse_struct_or_union<'a>(
         });
         prev_token = type_tokens.close;
 
-        if type_tokens.close.inner.kind == TokenKind::End {
+        if type_tokens.close.inner.kind == TokenKind::BraceClosed {
             break;
         }
     }

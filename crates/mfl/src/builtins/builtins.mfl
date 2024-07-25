@@ -1,48 +1,48 @@
-struct lang(string) String is
+struct lang(string) String {
     field length u64
     field pointer u8&
-end
+}
 
-proc oob_handler [core::String u64 u64] to [] is
+proc oob_handler [core::String u64 u64] to [] {
     1 2 "Error: Index out of bounds" unpack swap syscall(4) drop
     1 2 "\nLocation: " unpack swap syscall(4) drop
     1 2 rot(5<1) unpack swap syscall(4) drop
 
-    memory BUF is u8[20] end
+    memory BUF { u8[20] }
     swap
 
     1 2 "\nIndex: " unpack swap syscall(4) drop
-    if dup 0= do
+    if dup 0= {
         drop "0" unpack
-    else
-        0 while over 0> do
+    } else {
+        0 while over 0> {
             swap
 
             dup 10 % '0'+ cast(u8) BUF
             over(3) 19 swap- insd
 
             10 / swap 1+
-        end swap drop
+        } swap drop
         BUF cast(u8&) over 20 swap -+
-    end
+    }
     swap 1 2 rot(4>2) syscall(4) drop
 
     1 2 "\nArray Length: " unpack swap syscall(4) drop
-    if dup 0= do
+    if dup 0= {
         drop "0" unpack
-    else
-        0 while over 0> do
+    } else {
+        0 while over 0> {
             swap
 
             dup 10 % '0'+ cast(u8) BUF
             over(3) 19 swap- insd
 
             10 / swap 1+
-        end swap drop
+        } swap drop
         BUF cast(u8&) over 20 swap -+
-    end
+    }
     swap 1 2 rot(4>2) syscall(4) drop
     1 2 "\n" unpack swap syscall(4) drop
 
     60 1 syscall(2) drop
-end
+}

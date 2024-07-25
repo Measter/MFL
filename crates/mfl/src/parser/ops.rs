@@ -721,7 +721,7 @@ pub fn parse_if<'a>(
         keyword,
         None,
         ("any", |_| true),
-        ("do", |t| t == TokenKind::Do),
+        ("{", |t| t == TokenKind::BraceOpen),
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
@@ -733,9 +733,7 @@ pub fn parse_if<'a>(
         condition_tokens.close,
         None,
         ("any", |_| true),
-        ("end`, `else` or `elif", |t| {
-            matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif)
-        }),
+        ("}", |t| t == TokenKind::BraceClosed),
     )?;
     let mut close_token = then_block_tokens.close;
 
@@ -745,14 +743,22 @@ pub fn parse_if<'a>(
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
 
-    while close_token.inner.kind == TokenKind::Elif {
+    while let Some(TokenKind::Elif) = token_iter.peek().map(|(_, tk)| tk.inner.kind) {
+        let (_, elif_token) = expect_token(
+            stores,
+            token_iter,
+            "",
+            |t| t == TokenKind::Elif,
+            close_token,
+        )
+        .unwrap();
         let elif_condition_tokens = get_terminated_tokens(
             stores,
             token_iter,
-            close_token,
+            elif_token,
             None,
             ("any", |_| true),
-            ("do", |t| t == TokenKind::Do),
+            ("{", |t| t == TokenKind::BraceOpen),
         )?;
 
         let elif_condition =
@@ -765,9 +771,7 @@ pub fn parse_if<'a>(
             elif_condition_tokens.close,
             None,
             ("any", |_| true),
-            ("end`, `else`, or `elif", |t| {
-                matches!(t, TokenKind::End | TokenKind::Else | TokenKind::Elif)
-            }),
+            ("}", |t| t == TokenKind::BraceClosed),
         )?;
 
         let elif_block = parse_item_body_contents(ctx, stores, &elif_block_tokens.list, parent_id)?;
@@ -783,14 +787,23 @@ pub fn parse_if<'a>(
         close_token = elif_block_tokens.close;
     }
 
-    let else_block = if close_token.inner.kind == TokenKind::Else {
-        let else_block_tokens = get_terminated_tokens(
+    let else_block = if let Some(TokenKind::Else) = token_iter.peek().map(|(_, tk)| tk.inner.kind) {
+        let (_, else_token) = expect_token(
             stores,
             token_iter,
+            "",
+            |t| t == TokenKind::Else,
             close_token,
+        )
+        .unwrap();
+        let else_block_tokens = get_delimited_tokens(
+            stores,
+            token_iter,
+            else_token,
             None,
+            ("{", |t| t == TokenKind::BraceOpen),
             ("any", |_| true),
-            ("end", |t| t == TokenKind::End),
+            ("}", |t| t == TokenKind::BraceClosed),
         )?;
 
         let else_block = parse_item_body_contents(ctx, stores, &else_block_tokens.list, parent_id)?;
@@ -854,7 +867,7 @@ pub fn parse_while<'a>(
         keyword,
         None,
         ("any", |_| true),
-        ("do", |t| t == TokenKind::Do),
+        ("{", |t| t == TokenKind::BraceOpen),
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
@@ -866,7 +879,7 @@ pub fn parse_while<'a>(
         condition_tokens.close,
         None,
         ("any", |_| true),
-        ("end", |t| t == TokenKind::End),
+        ("}", |t| t == TokenKind::BraceClosed),
     )?;
 
     let body_block = parse_item_body_contents(ctx, stores, &body_tokens.list, parent_id)?;

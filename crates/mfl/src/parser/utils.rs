@@ -153,6 +153,11 @@ pub fn get_terminated_tokens<'a>(
     let mut depth = 0;
     let mut prev = open_token;
 
+    // When parsing If, Elif, and While conditions, the terminating token is BraceOpen, however the
+    // condition block itself can contain an If or While expression. We need to keep track of whether
+    // we're expecting to stop on an OpenBrace.
+    let mut expected_open_brace_count = 0;
+    let close_is_open_brace = close_delim_fn(TokenKind::BraceOpen);
     loop {
         let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
             diagnostics::emit_error(
@@ -165,8 +170,19 @@ pub fn get_terminated_tokens<'a>(
             return Err(());
         };
 
-        if depth == 0 && close_delim_fn(next_token.inner.kind) {
+        if close_is_open_brace && next_token.inner.kind.expects_brace() {
+            expected_open_brace_count += 1;
+        }
+
+        if depth == 0 && expected_open_brace_count == 0 && close_delim_fn(next_token.inner.kind) {
             break; // The end of the list, so break the loop.
+        }
+
+        if close_is_open_brace
+            && next_token.inner.kind == TokenKind::BraceOpen
+            && expected_open_brace_count > 0
+        {
+            expected_open_brace_count -= 1;
         }
 
         if next_token.inner.kind.is_matched_open() {

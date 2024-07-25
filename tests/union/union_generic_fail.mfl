@@ -3,11 +3,11 @@
 // expected = "Error"
 // END
 
-union Bar(T) is
+union Bar(T) {
     field foo T
     field int u32
-end
+}
 
-proc entry [] to [] is
+proc entry [] to [] {
     0xDEADBEEF(u32) Bar drop
-end
+}

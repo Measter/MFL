@@ -3,34 +3,34 @@ import std::io::FD
 import std::Result
 import std::SimpleResult
 
-const SYS_OPEN [u64] is 0x02 end
-const SYS_CLOSE [u64] is 0x03 end
-const SYS_FSTAT [u64] is 0x05 end
+const SYS_OPEN [u64] { 0x02 }
+const SYS_CLOSE [u64] { 0x03 }
+const SYS_FSTAT [u64] { 0x05 }
 
-const FLAG_APPEND [u64] is 0x400 end        // O_APPEND
-const FLAG_CREATE [u64] is 0x040 end        // O_CREAT
-const FLAG_CREATE_NEW [u64] is 0x080 end    // O_EXCL
-const FLAG_TEMP [u64] is 0x40_0000 0x1_0000 or end       // O_TMPFILE | O_DIRECTORY
-const FLAG_TRUNC [u64] is 0x200 end         // O_TRUNC
+const FLAG_APPEND [u64] { 0x400 }        // O_APPEND
+const FLAG_CREATE [u64] { 0x040 }        // O_CREAT
+const FLAG_CREATE_NEW [u64] { 0x080 }    // O_EXCL
+const FLAG_TEMP [u64] { 0x40_0000 0x1_0000 or }       // O_TMPFILE | O_DIRECTORY
+const FLAG_TRUNC [u64] { 0x200 }         // O_TRUNC
 
-const FLAG_READONLY [u64] is 0x0 end         // Q_RDONLY
-const FLAG_WRITEONLY [u64] is 0x1 end        // O_WRONLY
-const FLAG_READWRITE [u64] is 0x2 end        // O_RDWR
+const FLAG_READONLY [u64] { 0x0 }         // Q_RDONLY
+const FLAG_WRITEONLY [u64] { 0x1 }        // O_WRONLY
+const FLAG_READWRITE [u64] { 0x2 }        // O_RDWR
 
 proc open [
     String  // Null-terminated path to the file
     u64     // Flags for opening
-] to [Result(FD)] is
+] to [Result(FD)] {
     // The syscall requires a null-terminated string.
     // Check for null termination
-    if over xtr(length) 1- xtrd 0 != do
+    if over xtr(length) 1- xtrd 0 != {
         drop(2)
 
         0 pack(FD)
         0 1-
         swap pack(Result(FD))
         return
-    end
+    }
 
     SYS_OPEN rot(3>1) 0x1b6 // 0o666
     // [sysid, path, flags, mode]
@@ -39,58 +39,58 @@ proc open [
     syscall(4)
 
     // An error ocurred
-    if dup cast(s64) 0< do
+    if dup cast(s64) 0< {
         cast(s64) 0 swap - cast(u64)
         0 pack(FD)
-    else
+    } else {
         pack(FD) 0 swap
-    end
+    }
 
     pack(Result(FD))
-end
+}
 
 // Opens a file in read-only mode.
 proc open_read [
     String // Null-terminated path
-] to [Result(FD)] is
+] to [Result(FD)] {
     FLAG_READONLY open
-end
+}
 
 // Opens a file in read-write mode, creating the file if it doesn't exist.
 proc open_write [
     String  // Null-terminated path
     bool    // Append if it already exists
-] to [Result(FD)] is
+] to [Result(FD)] {
     FLAG_READWRITE FLAG_CREATE or swap
-    if do FLAG_APPEND or end
+    if { FLAG_APPEND or }
     open
-end
+}
 
 // Opens a file in read-write mode, creating the file if it doesn't exist,
 // and truncating the file.
 proc create [
     String // Null-terminated path
     bool // Force new file.
-] to [Result(FD)] is
+] to [Result(FD)] {
     FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
-    if do
+    if {
         FLAG_CREATE_NEW or
-    end
+    }
 
     open
-end
+}
 
-proc close [FD] to [SimpleResult] is
+proc close [FD] to [SimpleResult] {
     xtrd(fd) SYS_CLOSE swap syscall(2)
     cast(s64) 0 swap - cast(u64) pack(SimpleResult)
-end
+}
 
-struct Timespec is
+struct Timespec {
     field tv_sec u64
     field tv_nsec u64
-end
+}
 
-struct Stat is
+struct Stat {
     field st_dev u64
     field st_ino u64
     field st_nlink u64
@@ -106,16 +106,16 @@ struct Stat is
     field st_mtim Timespec
     field st_ctim Timespec
     field __reserved s64[3]
-end
+}
 
-proc fstat [FD] to [Result(Stat)] is
-    memory buf is Stat end
+proc fstat [FD] to [Result(Stat)] {
+    memory buf { Stat }
     xtrd(fd)
     SYS_FSTAT swap buf syscall(3) cast(s64)
-    if dup 0< do
+    if dup 0< {
         0 swap - cast(u64) buf@
-    else
+    } else {
         drop buf@ 0 swap
-    end
+    }
     pack(Result(Stat))
-end
+}

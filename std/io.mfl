@@ -1,17 +1,17 @@
 import core::String
 
-const WRITE [u64] is 0x01 end
+const WRITE [u64] { 0x01 }
 
-struct FD is
+struct FD { 
     field fd u64
-end
+}
 
-struct WriteResult is
+struct WriteResult {
     field written u64
     field errno u64
-end
+}
 
-proc write [FD String] to [WriteResult] is
+proc write [FD String] to [WriteResult] {
     // [fd string]
     WRITE
     // [fd string sysid]
@@ -21,32 +21,32 @@ proc write [FD String] to [WriteResult] is
     // [sysid fd string]
     unpack swap
     syscall(4)
-    if dup 0>= do
+    if dup 0>= {
         0
-    else
+    } else {
         0- 0 swap
-    end
+    }
     pack(WriteResult)
-end
+}
 
-proc writeln [FD String] to [WriteResult] is
+proc writeln [FD String] to [WriteResult] {
     over swap write
-    if xtr(errno) 0= do drop "\n" write 
-    else swap drop end
-end
+    if xtr(errno) 0= { drop "\n" write }
+    else { swap drop }
+}
 
-proc write_ui [FD u64] to [WriteResult] is
-    memory buf is u8[30] end
+proc write_ui [FD u64] to [WriteResult] {
+    memory buf { u8[30] }
 
     // [num]
-    if dup 0= do
+    if dup 0= {
         drop
         '0' buf 29 ins drop
         29
-    else
+    } else {
         30
         // [num idx]
-        while over 0!= do
+        while over 0!= {
             1- swap // Decrement the idx
             // [idx, num]
             dup 10/
@@ -54,10 +54,10 @@ proc write_ui [FD u64] to [WriteResult] is
             // [idx, num/10, char]
             buf over(3) ins drop
             swap
-        end
+        }
 
         swap drop
-    end
+    }
     // [idx.start]
     30 over -
     // [idx.start, length]
@@ -65,31 +65,31 @@ proc write_ui [FD u64] to [WriteResult] is
     swap buf cast(u8&) +
     
     pack(String) write
-end
+}
 
-proc write_ui_ln [FD u64] to [WriteResult] is
+proc write_ui_ln [FD u64] to [WriteResult] {
     over swap write_ui
-    if xtr(errno) 0= do drop "\n" write 
-    else swap drop end
-end
+    if xtr(errno) 0= { drop "\n" write }
+    else { swap drop }
+}
 
-proc write_si [FD s64] to [WriteResult] is
+proc write_si [FD s64] to [WriteResult] {
     // TODO: Properly handle min value.
 
     // [num]
-    if dup 0(s64)>= do
+    if dup 0(s64)>= {
         cast(u64)
-    else
+    } else {
         over "-" write
-        if xtr(errno) 0!= do rot(3>1) drop(2) return else drop end
+        if xtr(errno) 0!= { rot(3>1) drop(2) return } else { drop }
         0 swap- cast(u64)
-    end
+    }
 
     write_ui
-end
+}
 
-proc write_si_ln [FD s64] to [WriteResult] is
+proc write_si_ln [FD s64] to [WriteResult] {
     over swap write_si
-    if xtr(errno) 0= do drop "\n" write 
-    else swap drop end
-end
+    if xtr(errno) 0= { drop "\n" write }
+    else { swap drop }
+}

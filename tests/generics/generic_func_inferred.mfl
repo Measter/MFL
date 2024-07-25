@@ -3,8 +3,8 @@
 // expected = "Ok"
 // END
 
-proc foo(T) [T] to [T] is end
+proc foo(T) [T] to [T] {}
 
-proc entry [] to [] is
+proc entry [] to [] {
     23 foo drop
-end
+}

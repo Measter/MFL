@@ -6,6 +6,6 @@
 
 import core::String
 
-proc make_string [] to [String] is
+proc make_string [] to [String] {
     "Hello" unpack String
-end
+}

@@ -1,15 +1,15 @@
 import std::term
 
-struct lang(string) String is
+struct lang(string) String {
     field length u64
     field pointer u8&
-end
+}
 
-struct SplitResult is
+struct SplitResult {
     field split bool
     field remainder String
     field prefix String
-end
+}
 
 // Splits the given string at the first instance of the given
 // character. Remaining string does not include the split char.
@@ -18,34 +18,34 @@ proc split_front [
     u8  // Char to split on
 ] to [
     SplitResult
-] is
-    memory str is String end
-    memory char is u8 end
+] {
+    memory str { String }
+    memory char { u8 }
 
     // [string, char]
-    if over xtrd(length) 0= do
+    if over xtrd(length) 0= {
         drop
 
         false swap dup pack(SplitResult)
-    else
+    } else {
         char!
         str!
 
         0(u64) while 
             dup str xtrd(length) <
-            if dup do over str xtrd(pointer)+ @ char@ != and end
-        do
+            if dup { over str xtrd(pointer)+ @ char@ != and }
+        {
             // [counter]
             1+
-        end
+        }
         // We're either at the end of the string, or found our character.
 
         // [idx]
-        if dup str xtrd(length) = do
+        if dup str xtrd(length) = {
             // Reached the end of the string
             drop
             false str@ "" pack(SplitResult)
-        else
+        } else {
             // We found the split character!
 
             // Construct the prefix
@@ -66,72 +66,72 @@ proc split_front [
             swap true rot(3>1)
             // [flag, remainder, prefix]
             pack(SplitResult)
-        end
-    end
-end
+        }
+    }
+}
 
-proc is_whitespace [u8] to [bool] is
+proc is_whitespace [u8] to [bool] {
     dup 32=         // Space
     over 9= or      // Tab
     over 10= or     // Line Feed
     over 12= or     // Form Feed
     over 13= or     // Carriage return
     swap drop
-end
+}
 
-proc trim_start [String] to [String] is
-    memory str is String end
+proc trim_start [String] to [String] {
+    memory str { String }
     str!
     
-    0 while dup str xtrd(length) < do
-        if str xtrd(pointer)@ is_whitespace do
+    0 while dup str xtrd(length) < {
+        if str xtrd(pointer)@ is_whitespace {
             str@ unpack
             1+ str insd(pointer)
             1- str insd(length)
-        else
+        } else {
             // Can't break loops at the moment, so this will do.
             drop
             str@ return
-        end
+        }
         1+
-    end drop
+    } drop
 
     str@
-end
+}
 
 
-proc trim_end [String] to [String] is
-    memory str is String end
+proc trim_end [String] to [String] {
+    memory str { String }
     str!
 
-    if str xtrd(length) 0= do str@ return end
+    if str xtrd(length) 0= { str@ return }
 
-    str xtrd(length) 1- while dup 0> do
-        if dup str xtrd(pointer) +@ is_whitespace do
+    str xtrd(length) 1- while dup 0> {
+        if dup str xtrd(pointer) +@ is_whitespace {
             str xtr(length) 1- swap insd(length)
-        else
+        } else {
             // Cant break loops at the moment.
             drop str@ return
-        end
+        }
         1-
-    end drop
+    } drop
 
     str@
-end
+}
 
-proc trim [String] to [String] is 
+proc trim [String] to [String] { 
     trim_start trim_end
-end
+}
 
-proc remove_start[String u64] to [String] is
-    if over xtrd(length) over< do
+proc remove_start[String u64] to [String] {
+    if over xtrd(length) over< {
         "Cannot trim " std::term::ewrite
         std::term::ewrite_ui
         " from string of length "
         xtr(length) std::term::ewrite_ui_ln
         exit
-    end
+    }
 
     swap xtr(length) over(2)- swap ins(length)
     xtr(pointer) rot(3<1)+ swap ins(pointer)
-end
+}

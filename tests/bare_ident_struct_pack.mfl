@@ -6,11 +6,11 @@
 
 import core::String
 
-struct Foo is
+struct Foo {
     field a s32
     field b String
-end
+}
 
-proc make_foo [] to [Foo] is
+proc make_foo [] to [Foo] {
     3 "Hello" Foo
-end
+}

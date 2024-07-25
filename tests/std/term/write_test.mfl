@@ -7,6 +7,6 @@
 // expected = "Ok"
 // END
 
-proc entry[] to [] is
+proc entry[] to [] {
     "testing 1 2 3" std::term::writeln
-end
+}

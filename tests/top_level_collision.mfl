@@ -8,8 +8,8 @@
 // END
 
 // Note: This needs to be the same name as the stdlib
-proc std [] to [u32] is 23 end
+proc std [] to [u32] { 23 }
 
-proc entry [] to [] is
+proc entry [] to [] {
     std ::std::term::write_ui_ln
-end
+}

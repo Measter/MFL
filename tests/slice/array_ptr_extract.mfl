@@ -11,8 +11,8 @@
 // args = ["3"]
 // END
 
-proc entry [u64 u8&&] to [] is
-    memory arr is u8[3] end
+proc entry [u64 u8&&] to [] {
+    memory arr { u8[3] }
 
     // We'll just assume we're being called correctly.
     swap drop 
@@ -23,4 +23,4 @@ proc entry [u64 u8&&] to [] is
     
     arr swap
     xtrd drop
-end
+}

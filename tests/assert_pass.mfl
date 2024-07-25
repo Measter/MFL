@@ -4,4 +4,4 @@
 // args = ["--lib"]
 // END
 
-assert FOO is 0 1 != end
+assert FOO { 0 1 != }

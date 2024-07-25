@@ -2,56 +2,56 @@ import core::String
 import std::io
 
 // Standard stream descriptor IDs
-proc STDIN  [] to [io::FD] is 0x00 pack(io::FD) end
-proc STDOUT [] to [io::FD] is 0x01 pack(io::FD) end
-proc STDERR [] to [io::FD] is 0x02 pack(io::FD) end
+proc STDIN  [] to [io::FD] { 0x00 pack(io::FD) }
+proc STDOUT [] to [io::FD] { 0x01 pack(io::FD) }
+proc STDERR [] to [io::FD] { 0x02 pack(io::FD) }
 
-proc write [String] to [] is
+proc write [String] to [] {
     STDOUT swap io::write drop
-end
+}
 
-proc writeln [String] to [] is
+proc writeln [String] to [] {
     STDOUT swap io::write drop
     STDOUT "\n" io::write drop
-end
+}
 
-proc write_si [s64] to [] is
+proc write_si [s64] to [] {
     STDOUT swap io::write_si drop
-end
+}
 
-proc write_si_ln [s64] to [] is
+proc write_si_ln [s64] to [] {
     STDOUT swap io::write_si_ln drop
-end
+}
 
-proc write_ui [u64] to [] is
+proc write_ui [u64] to [] {
     STDOUT swap io::write_ui drop
-end
+}
 
-proc write_ui_ln [u64] to [] is
+proc write_ui_ln [u64] to [] {
     STDOUT swap io::write_ui_ln drop
-end
+}
 
-proc ewrite [String] to [] is
+proc ewrite [String] to [] {
     STDERR swap io::write drop
-end
+}
 
-proc ewriteln [String] to [] is
+proc ewriteln [String] to [] {
     STDERR swap io::write drop
     STDERR "\n" io::write drop
-end
+}
 
-proc ewrite_si [s64] to [] is
+proc ewrite_si [s64] to [] {
     STDERR swap io::write_si drop
-end
+}
 
-proc ewrite_si_ln [s64] to [] is
+proc ewrite_si_ln [s64] to [] {
     STDERR swap io::write_si_ln drop
-end
+}
 
-proc ewrite_ui [u64] to [] is
+proc ewrite_ui [u64] to [] {
     STDERR swap io::write_ui drop
-end
+}
 
-proc ewrite_ui_ln [u64] to [] is
+proc ewrite_ui_ln [u64] to [] {
     STDERR swap io::write_ui_ln drop
-end
+}

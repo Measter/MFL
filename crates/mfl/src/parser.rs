@@ -106,13 +106,12 @@ pub fn parse_item_body_contents(
             // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
             // it's an error.
             TokenKind::GoesTo
-            | TokenKind::Is
             | TokenKind::Import
-            | TokenKind::Do
             | TokenKind::Dot
             | TokenKind::Elif
             | TokenKind::Else
-            | TokenKind::End
+            | TokenKind::BraceClosed
+            | TokenKind::BraceOpen
             | TokenKind::ParenthesisClosed
             | TokenKind::ParenthesisOpen
             | TokenKind::SquareBracketClosed
@@ -223,12 +222,11 @@ pub(super) fn parse_file(
             // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
             // it's an error.
             TokenKind::GoesTo
-            | TokenKind::Is
-            | TokenKind::Do
             | TokenKind::Dot
             | TokenKind::Elif
             | TokenKind::Else
-            | TokenKind::End
+            | TokenKind::BraceClosed
+            | TokenKind::BraceOpen
             | TokenKind::ParenthesisClosed
             | TokenKind::ParenthesisOpen
             | TokenKind::SquareBracketClosed

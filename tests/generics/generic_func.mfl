@@ -4,7 +4,7 @@
 // args = ["--lib"]
 // END
 
-proc foo(T) [T] to [] is
-    memory f is T end
+proc foo(T) [T] to [] {
+    memory f { T }
     drop
-end
+}

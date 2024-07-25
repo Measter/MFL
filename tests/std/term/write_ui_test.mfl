@@ -7,6 +7,6 @@
 // expected = "Ok"
 // END
 
-proc entry[] to [] is
+proc entry[] to [] {
     123 std::term::write_ui_ln
-end
+}

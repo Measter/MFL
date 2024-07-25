@@ -5,19 +5,19 @@
 
 // END
 
-struct Foo is
+struct Foo {
     field foo Foo
     field bar s32
-end
+}
 
-struct Bar is
+struct Bar {
     field baz Baz
-end
+}
 
-struct Baz is
+struct Baz {
     field bar Bar
-end
+}
 
-struct Quux is
+struct Quux {
     field k Quux[5]
-end
+}

@@ -5,6 +5,6 @@
 // END
 
 
-proc make_foo [] to [s32] is
+proc make_foo [] to [s32] {
     s32
-end
+}

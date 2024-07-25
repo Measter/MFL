@@ -4,6 +4,6 @@
 // args = ["--lib"]
 // END
 
-proc foo(T) [T] to [] is
+proc foo(T) [T] to [] {
     drop
-end
+}

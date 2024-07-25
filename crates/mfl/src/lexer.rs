@@ -71,6 +71,12 @@ pub enum TokenKind {
     #[token("false", |_| false)]
     Boolean(bool),
 
+    #[token("}")]
+    BraceClosed,
+
+    #[token("{")]
+    BraceOpen,
+
     #[token("cast")]
     Cast,
 
@@ -87,9 +93,6 @@ pub enum TokenKind {
     #[token("/")]
     Div,
 
-    #[token("do")]
-    Do,
-
     #[token(".")]
     Dot,
 
@@ -104,9 +107,6 @@ pub enum TokenKind {
 
     #[token("else")]
     Else,
-
-    #[token("end")]
-    End,
 
     #[token("=")]
     Equal,
@@ -152,9 +152,6 @@ pub enum TokenKind {
 
     #[token("import")]
     Import,
-
-    #[token("is")]
-    Is,
 
     #[token("isnull")]
     IsNull,
@@ -258,21 +255,24 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    pub fn expects_brace(self) -> bool {
+        matches!(
+            self,
+            TokenKind::If | TokenKind::Elif | TokenKind::Else | TokenKind::While
+        )
+    }
+
     pub fn is_matched_open(self) -> bool {
         matches!(
             self,
-            TokenKind::ParenthesisOpen
-                | TokenKind::SquareBracketOpen
-                | TokenKind::If
-                | TokenKind::Is
-                | TokenKind::While
+            TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen | TokenKind::BraceOpen
         )
     }
 
     pub fn is_matched_close(self) -> bool {
         matches!(
             self,
-            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::End
+            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::BraceClosed
         )
     }
 }

@@ -4,11 +4,11 @@ module mem
 module string
 module term
 
-struct Result(T) is
+struct Result(T) {
     field errno u64
     field data T
-end
+}
 
-struct SimpleResult is
+struct SimpleResult {
     field errno u64
-end
+}
