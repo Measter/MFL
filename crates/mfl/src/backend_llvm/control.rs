@@ -8,13 +8,13 @@ use crate::{
     stores::{ops::OpId, source::Spanned, types::TypeKind},
 };
 
-use super::{CodeGen, DataStore, InkwellResult, ValueStore};
+use super::{CodeGen, DataStore, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_function_call(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         callee_id: ItemId,
     ) -> InkwellResult {
@@ -76,7 +76,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_epilogue_return(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         self_id: ItemId,
         op_id: OpId,
     ) -> InkwellResult {
@@ -136,7 +136,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_prologue(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
@@ -153,7 +153,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_syscall(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         arg_count: Spanned<u8>,
     ) -> InkwellResult {
@@ -202,7 +202,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_if(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
         op_id: OpId,
@@ -334,7 +334,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_while(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
         op_id: OpId,

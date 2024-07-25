@@ -128,7 +128,7 @@ struct DataStore<'a> {
 }
 
 #[derive(Debug)]
-struct ValueStore<'ctx> {
+struct SsaMap<'ctx> {
     value_map: HashMap<ValueId, BasicValueEnum<'ctx>>,
     variable_map: HashMap<ItemId, PointerValue<'ctx>>,
     string_map: HashMap<Spur, PointerValue<'ctx>>,
@@ -137,7 +137,7 @@ struct ValueStore<'ctx> {
     alloca_prelude_block: BasicBlock<'ctx>,
 }
 
-impl<'ctx> ValueStore<'ctx> {
+impl<'ctx> SsaMap<'ctx> {
     fn new(prelude_block: BasicBlock<'ctx>) -> Self {
         Self {
             value_map: Default::default(),
@@ -450,7 +450,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn compile_block(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         id: ItemId,
         block_id: BlockId,
         function: FunctionValue<'ctx>,
@@ -729,7 +729,7 @@ impl<'ctx> CodeGen<'ctx> {
         let name = stores.strings.get_symbol_name(program, id);
         let _span = debug_span!(stringify!(CodeGen::compile_procedure), name).entered();
 
-        let mut value_store = ValueStore::new(self.ctx.append_basic_block(function, "allocs"));
+        let mut value_store = SsaMap::new(self.ctx.append_basic_block(function, "allocs"));
 
         let entry_block = self.ctx.append_basic_block(function, "entry");
         self.builder.position_at_end(entry_block);

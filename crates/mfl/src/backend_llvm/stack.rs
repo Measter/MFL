@@ -11,13 +11,13 @@ use crate::{
     },
 };
 
-use super::{CodeGen, DataStore, InkwellResult, ValueStore};
+use super::{CodeGen, DataStore, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         to_type_id: TypeId,
     ) -> InkwellResult {
@@ -112,7 +112,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_dup_over(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -128,7 +128,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_push_int(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         width: IntWidth,
         value: IntKind,
@@ -154,7 +154,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_push_bool(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         value: bool,
     ) -> InkwellResult {
@@ -169,7 +169,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_push_str(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         str_id: Spur,
         is_c_str: bool,
@@ -206,7 +206,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_const(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         const_id: ItemId,
     ) -> InkwellResult {

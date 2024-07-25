@@ -10,13 +10,13 @@ use crate::{
     },
 };
 
-use super::{CodeGen, DataStore, InkwellResult, ValueStore};
+use super::{CodeGen, DataStore, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_add_sub(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
@@ -114,7 +114,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_multiply_and_or_xor(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
@@ -156,7 +156,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_div_rem(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
@@ -197,7 +197,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_shift_left_right(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
@@ -248,7 +248,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_bit_not(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -266,7 +266,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_compare(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
@@ -314,7 +314,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_is_null(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);

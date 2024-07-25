@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-use super::{CodeGen, DataStore, InkwellResult, ValueStore};
+use super::{CodeGen, DataStore, InkwellResult, SsaMap};
 
 enum ArrayPtrKind {
     Indirect, // T[N]&
@@ -32,7 +32,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_memory_local(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         item_id: ItemId,
     ) -> InkwellResult {
@@ -47,7 +47,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_pack_aggregate(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         mut aggr_value: AggregateValueEnum<'ctx>,
     ) -> InkwellResult {
@@ -97,7 +97,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_pack_union(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -131,7 +131,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_pack(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -164,7 +164,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_unpack(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -313,7 +313,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_extract_array(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         op_id: OpId,
         emit_array: bool,
@@ -452,7 +452,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_insert_array(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         op_id: OpId,
         emit_array: bool,
@@ -609,7 +609,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_insert_struct(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         field_name: Spanned<Spur>,
         emit_struct: bool,
@@ -740,7 +740,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_extract_struct(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         field_name: Spanned<Spur>,
         emit_struct: bool,
@@ -835,7 +835,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_load(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
@@ -861,7 +861,7 @@ impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_store(
         &mut self,
         ds: &mut DataStore,
-        value_store: &mut ValueStore<'ctx>,
+        value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
         let op_io = ds.analyzer.get_op_io(op_id);
