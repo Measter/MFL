@@ -12,8 +12,8 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn dup_over(analyzer: &mut Analyzer, op_id: OpId) {
-    let op_data = analyzer.get_op_io(op_id).clone();
+pub(crate) fn dup_over(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+    let op_data = stores.ops.get_op_io(op_id).clone();
 
     for (input_value_id, output_value_id) in op_data.inputs.into_iter().zip(op_data.outputs) {
         let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
@@ -24,13 +24,13 @@ pub(crate) fn dup_over(analyzer: &mut Analyzer, op_id: OpId) {
     }
 }
 
-pub(crate) fn push_bool(analyzer: &mut Analyzer, op_id: OpId, value: bool) {
-    let op_data = analyzer.get_op_io(op_id);
+pub(crate) fn push_bool(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, value: bool) {
+    let op_data = stores.ops.get_op_io(op_id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
-pub(crate) fn push_int(analyzer: &mut Analyzer, op_id: OpId, value: IntKind) {
-    let op_data = analyzer.get_op_io(op_id);
+pub(crate) fn push_int(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, value: IntKind) {
+    let op_data = stores.ops.get_op_io(op_id);
     analyzer.set_value_const(op_data.outputs[0], ConstVal::Int(value));
 }
 
@@ -43,8 +43,8 @@ pub(crate) fn cast(
     let target_type_info = stores.types.get_type_info(target_type_id);
 
     match target_type_info.kind {
-        TypeKind::Integer(int_kind) => cast_to_int(analyzer, op_id, int_kind),
-        TypeKind::Pointer(_) => cast_to_ptr(analyzer, op_id, target_type_id),
+        TypeKind::Integer(int_kind) => cast_to_int(stores, analyzer, op_id, int_kind),
+        TypeKind::Pointer(_) => cast_to_ptr(stores, analyzer, op_id, target_type_id),
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -53,8 +53,8 @@ pub(crate) fn cast(
     }
 }
 
-fn cast_to_ptr(analyzer: &mut Analyzer, op_id: OpId, ptr_type_id: TypeId) {
-    let op_data = analyzer.get_op_io(op_id);
+fn cast_to_ptr(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, ptr_type_id: TypeId) {
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
         return;
@@ -70,8 +70,8 @@ fn cast_to_ptr(analyzer: &mut Analyzer, op_id: OpId, ptr_type_id: TypeId) {
     }
 }
 
-fn cast_to_int(analyzer: &mut Analyzer, op_id: OpId, int_kind: Integer) {
-    let op_data = analyzer.get_op_io(op_id);
+fn cast_to_int(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, int_kind: Integer) {
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
         return;
@@ -115,5 +115,10 @@ pub(crate) fn size_of(
     }
 
     let size_info = stores.types.get_size_info(type_id);
-    push_int(analyzer, op_id, IntKind::Unsigned(size_info.byte_width));
+    push_int(
+        stores,
+        analyzer,
+        op_id,
+        IntKind::Unsigned(size_info.byte_width),
+    );
 }

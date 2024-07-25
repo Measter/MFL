@@ -16,7 +16,7 @@ pub(crate) fn add(
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
         return;
@@ -81,7 +81,7 @@ pub(crate) fn bitand_bitor_bitxor(
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
         return;
@@ -123,7 +123,7 @@ pub(crate) fn bitand_bitor_bitxor(
 }
 
 pub(crate) fn bitnot(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_const_val]) = analyzer.value_consts([input_value_id]) else {
         return;
@@ -161,7 +161,7 @@ pub(crate) fn multiply_div_rem_shift(
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = analyzer.value_types([op_data.outputs[0]]) else {
@@ -258,7 +258,7 @@ pub(crate) fn subtract(
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {

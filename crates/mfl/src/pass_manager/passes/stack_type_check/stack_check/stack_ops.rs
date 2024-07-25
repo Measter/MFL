@@ -51,7 +51,9 @@ pub(crate) fn dup(
         stack.push(new_id);
     }
 
-    analyzer.set_op_io(op_id, &stack[input_range], &stack[output_range_start..]);
+    stores
+        .ops
+        .set_op_io(op_id, &stack[input_range], &stack[output_range_start..]);
 }
 
 pub(crate) fn drop(
@@ -87,7 +89,7 @@ pub(crate) fn drop(
         analyzer.consume_value(input, op_id);
     }
 
-    analyzer.set_op_io(op_id, &inputs, &[]);
+    stores.ops.set_op_io(op_id, &inputs, &[]);
 }
 
 pub(crate) fn over(
@@ -118,7 +120,7 @@ pub(crate) fn over(
     let new_id = analyzer.new_value(op_loc, Some(src_id));
     stack.push(new_id);
 
-    analyzer.set_op_io(op_id, &[src_id], &[new_id]);
+    stores.ops.set_op_io(op_id, &[src_id], &[new_id]);
 }
 
 pub(crate) fn reverse(

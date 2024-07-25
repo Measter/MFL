@@ -61,7 +61,7 @@ pub(crate) fn extract_array(
     op_id: OpId,
     emit_array: bool,
 ) {
-    let op_data = analyzer.get_op_io(op_id).clone();
+    let op_data = stores.ops.get_op_io(op_id).clone();
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids) = analyzer.value_types(inputs) else {
@@ -191,7 +191,7 @@ pub(crate) fn extract_struct(
     field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_struct_value_id = op_data.inputs[0];
     let Some([input_struct_type_id]) = analyzer.value_types([input_struct_value_id]) else {
         return;
@@ -308,7 +308,7 @@ pub(crate) fn insert_array(
     op_id: OpId,
     emit_array: bool,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, array_type_id, _]) = analyzer.value_types(inputs) else {
@@ -474,7 +474,7 @@ pub(crate) fn insert_struct(
     field_name: Spanned<Spur>,
     emit_struct: bool,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, input_struct_type_id]) = analyzer.value_types(inputs) else {
@@ -628,7 +628,7 @@ pub(crate) fn load(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let ptr_id = op_data.inputs[0];
     let Some([ptr_type]) = analyzer.value_types([ptr_id]) else {
         return;
@@ -678,7 +678,7 @@ pub(crate) fn pack_array(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let [first, rest @ ..] = op_data.inputs.as_slice() else {
         unreachable!()
     };
@@ -742,7 +742,7 @@ pub(crate) fn store(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
     let Some([data_type_id, ptr_type_id]) = analyzer.value_types([data_value_id, ptr_value_id])
@@ -813,7 +813,7 @@ pub(crate) fn unpack(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let outputs: SmallVec<[_; 20]> = op_data.outputs.as_slice().into();
     let aggr_value_id = op_data.inputs[0];
     let Some([aggr_type_id]) = analyzer.value_types([aggr_value_id]) else {
@@ -889,7 +889,7 @@ pub(crate) fn pack_struct(
         struct_type_id
     };
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs = &op_data.inputs;
     let struct_type_info = stores.types.get_struct_def(struct_type_id);
@@ -994,7 +994,7 @@ fn pack_struct_infer_generic(
     op_id: OpId,
 ) -> ControlFlow<(), TypeId> {
     let generic_def = stores.types.get_generic_base_def(struct_type_id);
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let inputs = &op_data.inputs;
 

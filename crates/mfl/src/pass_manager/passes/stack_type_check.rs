@@ -17,7 +17,7 @@ use crate::{
 mod stack_check;
 mod type_check;
 
-type StackCheckFn = fn(&Stores, &mut Analyzer, &mut ErrorSignal, &mut Vec<ValueId>, OpId);
+type StackCheckFn = fn(&mut Stores, &mut Analyzer, &mut ErrorSignal, &mut Vec<ValueId>, OpId);
 type TypeCheckFn = fn(&mut Stores, &mut Analyzer, &mut ErrorSignal, OpId);
 
 fn get_arith_cmp_fns(bo: &Basic) -> (StackCheckFn, TypeCheckFn) {
@@ -95,7 +95,7 @@ fn analyze_block(
                             count,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(analyzer, op_id);
+                            type_check::stack_ops::dup_over(stores, analyzer, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
@@ -125,7 +125,7 @@ fn analyze_block(
                             depth,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(analyzer, op_id);
+                            type_check::stack_ops::dup_over(stores, analyzer, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
@@ -185,12 +185,14 @@ fn analyze_block(
                         break;
                     }
                     Control::Exit => {
-                        analyzer.set_op_io(op_id, &[], &[]);
+                        stores.ops.set_op_io(op_id, &[], &[]);
                         break;
                     }
                     Control::Prologue => {
-                        stack_check::control::prologue(ctx, analyzer, stack, op_id, item_id);
-                        type_check::control::prologue(ctx, analyzer, op_id, item_id);
+                        stack_check::control::prologue(
+                            ctx, stores, analyzer, stack, op_id, item_id,
+                        );
+                        type_check::control::prologue(ctx, stores, analyzer, op_id, item_id);
                     }
                     Control::SysCall { arg_count } => {
                         let mut local_had_error = ErrorSignal::new();

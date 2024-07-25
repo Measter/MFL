@@ -20,12 +20,11 @@ pub(crate) fn equal(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let output_id = op_data.outputs[0];
     analyzer.set_value_type(output_id, stores.types.get_builtin(BuiltinTypes::Bool).id);
 
-    // let op_data = analyzer.get_op_io(op.id);
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
@@ -50,12 +49,11 @@ pub(crate) fn compare(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let output_id = op_data.outputs[0];
     analyzer.set_value_type(output_id, stores.types.get_builtin(BuiltinTypes::Bool).id);
 
-    // let op_data = analyzer.get_op_io(op.id);
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
     };
@@ -79,12 +77,11 @@ pub(crate) fn is_null(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_id = op_data.inputs[0];
     let output_id = op_data.outputs[0];
     analyzer.set_value_type(output_id, stores.types.get_builtin(BuiltinTypes::Bool).id);
 
-    // let op_data = analyzer.get_op_io(op.id);
     let Some([input]) = analyzer.value_types([input_id]) else {
         return;
     };

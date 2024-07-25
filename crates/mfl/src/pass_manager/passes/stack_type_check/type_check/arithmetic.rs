@@ -18,7 +18,7 @@ pub(crate) fn add(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
@@ -62,7 +62,7 @@ pub(crate) fn multiply_div_rem_shift(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
@@ -96,7 +96,7 @@ pub(crate) fn subtract(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;
@@ -135,7 +135,7 @@ pub(crate) fn bitnot(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_id = op_data.inputs[0];
     let Some([input]) = analyzer.value_types([input_id]) else {
         return;
@@ -164,7 +164,7 @@ pub(crate) fn bitand_bitor_bitxor(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = analyzer.value_types(input_ids) else {
         return;

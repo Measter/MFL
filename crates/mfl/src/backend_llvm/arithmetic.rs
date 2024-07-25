@@ -20,7 +20,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let input_value_ids @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(input_value_ids).unwrap();
@@ -118,7 +118,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types([a, b]).unwrap();
@@ -160,7 +160,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(inputs).unwrap();
@@ -201,7 +201,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_ids = ds.analyzer.value_types(inputs).unwrap();
@@ -251,7 +251,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
         let a = op_io.inputs()[0];
@@ -270,7 +270,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         op_code: &OpCode<TypeResolvedOp>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let [a, b] = *op_io.inputs().as_arr();
         let input_types = ds.analyzer.value_types([a, b]).unwrap();
@@ -317,7 +317,7 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
         let input_value_id = op_io.inputs()[0];
         let [input_type_id] = ds.analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = ds.type_store.get_type_info(input_type_id);

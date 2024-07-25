@@ -31,7 +31,7 @@ pub(crate) fn epilogue_return(
 ) {
     let item_urir_sig = ctx.urir().get_item_signature(item_id);
     let item_trir_sig = ctx.trir().get_item_signature(item_id);
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
         let Some([actual_type_id]) = analyzer.value_types([actual_value_id]) else {
@@ -62,8 +62,14 @@ pub(crate) fn epilogue_return(
     }
 }
 
-pub(crate) fn prologue(ctx: &mut Context, analyzer: &mut Analyzer, op_id: OpId, item_id: ItemId) {
-    let op_data = analyzer.get_op_io(op_id);
+pub(crate) fn prologue(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    analyzer: &mut Analyzer,
+    op_id: OpId,
+    item_id: ItemId,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
     let sigs = ctx.trir().get_item_signature(item_id);
     let outputs = op_data.outputs.clone();
 
@@ -78,7 +84,7 @@ pub(crate) fn syscall(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
 
     for (idx, &input_value_id) in op_data.inputs.iter().enumerate() {
         let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
@@ -131,7 +137,7 @@ pub(crate) fn call_function_const(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let callee_sig_urir = ctx.urir().get_item_signature(callee_id);
     let callee_sig_trir = ctx.trir().get_item_signature(callee_id);
 
@@ -189,7 +195,7 @@ pub(crate) fn memory(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let output_value_id = op_data.outputs[0];
 
     let memory_type_id = ctx.trir().get_memory_type(memory_item_id);
@@ -210,7 +216,7 @@ pub(crate) fn analyze_if(
     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
     // All conditions are stored in the op inputs.
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
         condition_type_check(
@@ -286,7 +292,7 @@ pub(crate) fn analyze_while(
 ) {
     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let condition_value_id = op_data.inputs[0];
     if let Some([condition_type_id]) = analyzer.value_types([condition_value_id]) {
         condition_type_check(

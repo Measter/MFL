@@ -109,24 +109,6 @@ pub(super) struct Value {
     pub(super) consumer: SmallVec<[OpId; 4]>,
 }
 
-#[derive(Debug, Clone)]
-pub struct OpData {
-    pub inputs: SmallVec<[ValueId; 8]>,
-    pub outputs: SmallVec<[ValueId; 8]>,
-}
-
-impl OpData {
-    #[inline]
-    pub fn inputs(&self) -> &[ValueId] {
-        self.inputs.as_ref()
-    }
-
-    #[inline]
-    pub fn outputs(&self) -> &[ValueId] {
-        self.outputs.as_ref()
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct IfMerge {
     pub then_value: ValueId,
@@ -154,8 +136,6 @@ pub struct Analyzer {
 
     op_if_merges: HashMap<OpId, Vec<IfMerge>>,
     op_while_merges: HashMap<OpId, WhileMerges>,
-
-    op_io_data: HashMap<OpId, OpData>,
 }
 
 impl Analyzer {
@@ -241,23 +221,6 @@ impl Analyzer {
 
     pub fn get_while_merges(&self, op_id: OpId) -> Option<&WhileMerges> {
         self.op_while_merges.get(&op_id)
-    }
-
-    #[track_caller]
-    pub(super) fn set_op_io(&mut self, op_id: OpId, inputs: &[ValueId], outputs: &[ValueId]) {
-        let new_data = OpData {
-            inputs: inputs.into(),
-            outputs: outputs.into(),
-        };
-        if let Some(prev) = self.op_io_data.get(&op_id) {
-            panic!("Set operands twice - cur_token: {op_id}, new_data: {new_data:#?}, prev_data: {prev:#?}");
-        }
-        self.op_io_data.insert(op_id, new_data);
-    }
-
-    #[track_caller]
-    pub fn get_op_io(&self, op_idx: OpId) -> &OpData {
-        &self.op_io_data[&op_idx]
     }
 
     /// Returns the creator token of a value, treating Dup and Over tokens as transparent.

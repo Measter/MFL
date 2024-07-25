@@ -90,13 +90,14 @@ pub(crate) fn epilogue_return(
     for &value_id in inputs {
         analyzer.consume_value(value_id, op_id);
     }
-    analyzer.set_op_io(op_id, inputs, &[]);
+    stores.ops.set_op_io(op_id, inputs, &[]);
     let len = inputs.len();
     stack.truncate(stack.len() - len);
 }
 
 pub(crate) fn prologue(
     ctx: &mut Context,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -111,7 +112,7 @@ pub(crate) fn prologue(
         stack.push(new_id);
     }
 
-    analyzer.set_op_io(op_id, &[], &outputs);
+    stores.ops.set_op_io(op_id, &[], &outputs);
 }
 
 pub(crate) fn syscall(
@@ -146,7 +147,7 @@ pub(crate) fn syscall(
     }
 
     let new_id = analyzer.new_value(op_loc, None);
-    analyzer.set_op_io(op_id, &inputs, &[new_id]);
+    stores.ops.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
@@ -200,7 +201,7 @@ pub(crate) fn call_function_const(
         stack.push(new_id);
     }
 
-    analyzer.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, &inputs, &outputs);
 }
 
 pub(crate) fn analyze_if(
@@ -337,7 +338,7 @@ pub(crate) fn analyze_if(
         }
     }
 
-    analyzer.set_op_io(op_id, &condition_values, &[]);
+    stores.ops.set_op_io(op_id, &condition_values, &[]);
     analyzer.set_if_merges(op_id, body_merges);
 }
 
@@ -495,6 +496,6 @@ pub(crate) fn analyze_while(
             body: body_merges,
         },
     );
-    analyzer.set_op_io(op_id, &[condition_value], &[]);
+    stores.ops.set_op_io(op_id, &[condition_value], &[]);
     analyzer.consume_value(condition_value, op_id);
 }

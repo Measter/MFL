@@ -16,7 +16,7 @@ pub(crate) fn insert_extract_array(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };

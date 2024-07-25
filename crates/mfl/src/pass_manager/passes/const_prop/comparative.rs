@@ -17,7 +17,7 @@ pub(crate) fn equal(
     op_id: OpId,
     comp_code: Compare,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
@@ -119,7 +119,7 @@ pub(crate) fn compare(
     op_id: OpId,
     comp_code: Compare,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = analyzer.value_types(input_value_ids).unwrap();
     let Some(input_const_vals) = analyzer.value_consts(input_value_ids) else {
@@ -193,8 +193,8 @@ pub(crate) fn compare(
     analyzer.set_value_const(output_value_value, ConstVal::Bool(output_const_val));
 }
 
-pub(crate) fn is_null(analyzer: &mut Analyzer, op_id: OpId) {
-    let op_data = analyzer.get_op_io(op_id);
+pub(crate) fn is_null(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+    let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     if analyzer.value_consts([input_value_id]).is_none() {
         return;

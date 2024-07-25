@@ -47,7 +47,7 @@ pub(crate) fn extract_array(
     outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op_id, &[array_id, idx], &outputs);
+    stores.ops.set_op_io(op_id, &[array_id, idx], &outputs);
 }
 
 pub(crate) fn extract_struct(
@@ -75,7 +75,7 @@ pub(crate) fn extract_struct(
     outputs.push(output_value);
     stack.push(output_value);
 
-    analyzer.set_op_io(op_id, &[struct_id], &outputs);
+    stores.ops.set_op_io(op_id, &[struct_id], &outputs);
 }
 
 pub(crate) fn insert_array(
@@ -102,7 +102,7 @@ pub(crate) fn insert_array(
         stack.push(output_id);
     }
 
-    analyzer.set_op_io(op_id, &inputs, output.as_slice());
+    stores.ops.set_op_io(op_id, &inputs, output.as_slice());
 }
 
 pub(crate) fn insert_struct(
@@ -128,7 +128,7 @@ pub(crate) fn insert_struct(
         stack.push(output_id);
     }
 
-    analyzer.set_op_io(op_id, &inputs, output.as_slice());
+    stores.ops.set_op_io(op_id, &inputs, output.as_slice());
 }
 
 pub(crate) fn pack_array(
@@ -153,7 +153,7 @@ pub(crate) fn pack_array(
 
     let output = analyzer.new_value(op_loc, None);
     stack.push(output);
-    analyzer.set_op_io(op_id, &inputs, &[output]);
+    stores.ops.set_op_io(op_id, &inputs, &[output]);
 }
 
 pub(crate) fn store(
@@ -170,7 +170,7 @@ pub(crate) fn store(
         analyzer.consume_value(value_id, op_id);
     }
 
-    analyzer.set_op_io(op_id, &inputs, &[]);
+    stores.ops.set_op_io(op_id, &inputs, &[]);
 }
 
 pub(crate) fn unpack(
@@ -188,7 +188,7 @@ pub(crate) fn unpack(
 
     // To find out how any values we create, we need to look up the type of our input.
     let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
-        analyzer.set_op_io(op_id, &[input_value_id], &[]);
+        stores.ops.set_op_io(op_id, &[input_value_id], &[]);
         return;
     };
 
@@ -200,7 +200,7 @@ pub(crate) fn unpack(
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {
-                analyzer.set_op_io(op_id, &[input_value_id], &[]);
+                stores.ops.set_op_io(op_id, &[input_value_id], &[]);
                 had_error.set();
 
                 0
@@ -241,7 +241,7 @@ pub(crate) fn unpack(
         outputs.push(id);
     }
 
-    analyzer.set_op_io(op_id, &[input_value_id], &outputs);
+    stores.ops.set_op_io(op_id, &[input_value_id], &outputs);
 }
 
 pub(crate) fn pack_struct(
@@ -275,7 +275,7 @@ pub(crate) fn pack_struct(
         .ensure_define_structs(ctx, stores, struct_item_id)
         .is_err()
     {
-        analyzer.set_op_io(op_id, &[], &[]);
+        stores.ops.set_op_io(op_id, &[], &[]);
         had_error.set();
     }
 
@@ -314,5 +314,5 @@ pub(crate) fn pack_struct(
 
     let output = analyzer.new_value(op_loc, None);
     stack.push(output);
-    analyzer.set_op_io(op_id, &inputs, &[output]);
+    stores.ops.set_op_io(op_id, &inputs, &[output]);
 }

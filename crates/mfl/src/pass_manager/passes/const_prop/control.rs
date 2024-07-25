@@ -20,7 +20,7 @@ pub(crate) fn epilogue_return(
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
 
     for &input_value_id in &op_data.inputs {
         let Some(
@@ -74,7 +74,7 @@ pub(crate) fn cp_const(
         return;
     }
 
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let Some(output_const_vals) = ctx.get_consts(const_item_id) else {
         return;
     };
@@ -96,7 +96,7 @@ pub(crate) fn memory(
     op_id: OpId,
     memory_item_id: ItemId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let src_op_loc = stores.ops.get_token(op_id).location;
     analyzer.set_value_const(
         op_data.outputs[0],

@@ -53,10 +53,12 @@ fn analyze_block(
                     | Compare::GreaterEqual => {
                         comparative::compare(stores, analyzer, had_error, op_id, co)
                     }
-                    Compare::IsNull => comparative::is_null(analyzer, op_id),
+                    Compare::IsNull => comparative::is_null(stores, analyzer, op_id),
                 },
                 Basic::Stack(so) => match so {
-                    Stack::Dup { .. } | Stack::Over { .. } => stack_ops::dup_over(analyzer, op_id),
+                    Stack::Dup { .. } | Stack::Over { .. } => {
+                        stack_ops::dup_over(stores, analyzer, op_id)
+                    }
 
                     // These just change the order of the virtual stack, so there's no work to do here.
                     Stack::Drop { .. }
@@ -96,8 +98,8 @@ fn analyze_block(
                     | Memory::Store
                     | Memory::Unpack => {}
                 },
-                Basic::PushBool(value) => stack_ops::push_bool(analyzer, op_id, value),
-                Basic::PushInt { value, .. } => stack_ops::push_int(analyzer, op_id, value),
+                Basic::PushBool(value) => stack_ops::push_bool(stores, analyzer, op_id, value),
+                Basic::PushInt { value, .. } => stack_ops::push_int(stores, analyzer, op_id, value),
                 Basic::PushStr { .. } => {}
             },
             OpCode::Complex(co) => match co {

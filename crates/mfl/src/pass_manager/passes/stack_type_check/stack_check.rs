@@ -32,7 +32,7 @@ fn ensure_stack_depth(
 }
 
 pub(super) fn eat_one_make_one(
-    stores: &Stores,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
@@ -45,12 +45,12 @@ pub(super) fn eat_one_make_one(
     let op_loc = stores.ops.get_token(op_id).location;
     let new_id = analyzer.new_value(op_loc, None);
 
-    analyzer.set_op_io(op_id, &[value_id], &[new_id]);
+    stores.ops.set_op_io(op_id, &[value_id], &[new_id]);
     stack.push(new_id);
 }
 
 pub(super) fn eat_two_make_one(
-    stores: &Stores,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
@@ -65,12 +65,12 @@ pub(super) fn eat_two_make_one(
     let op_loc = stores.ops.get_token(op_id).location;
     let new_id = analyzer.new_value(op_loc, None);
 
-    analyzer.set_op_io(op_id, &inputs, &[new_id]);
+    stores.ops.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
 
 pub(super) fn make_one(
-    stores: &Stores,
+    stores: &mut Stores,
     analyzer: &mut Analyzer,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -78,5 +78,5 @@ pub(super) fn make_one(
     let op_loc = stores.ops.get_token(op_id).location;
     let new_id = analyzer.new_value(op_loc, None);
     stack.push(new_id);
-    analyzer.set_op_io(op_id, &[], &[new_id]);
+    stores.ops.set_op_io(op_id, &[], &[new_id]);
 }

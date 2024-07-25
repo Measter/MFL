@@ -14,8 +14,8 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn dup_over(analyzer: &mut Analyzer, op_id: OpId) {
-    let op_data = analyzer.get_op_io(op_id);
+pub(crate) fn dup_over(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
+    let op_data = stores.ops.get_op_io(op_id);
     let inputs: SmallVec<[ValueId; 20]> = op_data.inputs.as_slice().into();
     let outputs: SmallVec<[ValueId; 20]> = op_data.outputs.as_slice().into();
 
@@ -71,7 +71,7 @@ pub(crate) fn emit_stack(
 }
 
 pub(crate) fn push_bool(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     analyzer.set_value_type(
         op_data.outputs[0],
         stores.types.get_builtin(BuiltinTypes::Bool).id,
@@ -79,12 +79,12 @@ pub(crate) fn push_bool(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpI
 }
 
 pub(crate) fn push_int(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, int: Integer) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     analyzer.set_value_type(op_data.outputs[0], stores.types.get_builtin(int.into()).id);
 }
 
 pub(crate) fn push_str(stores: &mut Stores, analyzer: &mut Analyzer, op_id: OpId, is_c_str: bool) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
 
     let kind = if is_c_str {
         stores.types.get_builtin_ptr(BuiltinTypes::U8).id
@@ -132,7 +132,7 @@ fn cast_to_ptr(
     op_id: OpId,
     to_id: TypeId,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_token = stores.ops.get_token(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {
@@ -202,7 +202,7 @@ fn cast_to_int(
     to_id: TypeId,
     to_int: Integer,
 ) {
-    let op_data = analyzer.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id);
     let op_token = stores.ops.get_token(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_type_id]) = analyzer.value_types([input_value_id]) else {

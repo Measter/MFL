@@ -18,7 +18,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         callee_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
@@ -80,7 +80,7 @@ impl<'ctx> CodeGen<'ctx> {
         self_id: ItemId,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         if op_io.inputs().is_empty() {
             self.builder.build_return(None)?;
@@ -140,7 +140,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let params = function.get_param_iter();
         for (id, param) in op_io.outputs().iter().zip(params) {
@@ -157,7 +157,7 @@ impl<'ctx> CodeGen<'ctx> {
         op_id: OpId,
         arg_count: Spanned<u8>,
     ) -> InkwellResult {
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
         let callee_value = self.syscall_wrappers[arg_count.inner.to_usize() - 1];
 
         let args: Vec<BasicMetadataValueEnum> = op_io
@@ -240,7 +240,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
         let bool_value = value_store
             .load_value(self, op_io.inputs()[0], ds)?
             .into_int_value();
@@ -389,7 +389,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.analyzer.get_op_io(op_id);
+        let op_io = ds.op_store.get_op_io(op_id);
 
         let bool_value = value_store
             .load_value(self, op_io.inputs()[0], ds)?

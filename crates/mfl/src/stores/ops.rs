@@ -2,10 +2,12 @@ use std::{collections::HashMap, fmt::Display};
 
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 
 use crate::{
     ir::{NameResolvedOp, OpCode, TypeResolvedOp, UnresolvedOp},
     option::OptionExt,
+    pass_manager::static_analysis::ValueId,
 };
 
 use super::source::Spanned;
@@ -20,11 +22,30 @@ impl Display for OpId {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OpIoValues {
+    pub inputs: SmallVec<[ValueId; 8]>,
+    pub outputs: SmallVec<[ValueId; 8]>,
+}
+
+impl OpIoValues {
+    #[inline]
+    pub fn inputs(&self) -> &[ValueId] {
+        self.inputs.as_ref()
+    }
+
+    #[inline]
+    pub fn outputs(&self) -> &[ValueId] {
+        self.outputs.as_ref()
+    }
+}
+
 pub struct OpStore {
     tokens: Vec<Spanned<Spur>>,
     unresolved: Vec<OpCode<UnresolvedOp>>,
     name_resolved: HashMap<OpId, OpCode<NameResolvedOp>>,
     type_resolved: HashMap<OpId, OpCode<TypeResolvedOp>>,
+    op_io: HashMap<OpId, OpIoValues>,
 }
 
 impl OpStore {
@@ -34,6 +55,7 @@ impl OpStore {
             unresolved: Vec::new(),
             name_resolved: HashMap::new(),
             type_resolved: HashMap::new(),
+            op_io: HashMap::new(),
         }
     }
 
@@ -84,5 +106,23 @@ impl OpStore {
         self.type_resolved
             .insert(id, op)
             .expect_none("ICE: Inserted multiple ops at id");
+    }
+
+    #[track_caller]
+    pub fn set_op_io(&mut self, op_id: OpId, inputs: &[ValueId], outputs: &[ValueId]) {
+        let new_data = OpIoValues {
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        };
+        if let Some(prev) = self.op_io.get(&op_id) {
+            panic!("Set operands twice - cur_token: {op_id}, new_data: {new_data:#?}, prev_data: {prev:#?}");
+        }
+        self.op_io.insert(op_id, new_data);
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_op_io(&self, op_idx: OpId) -> &OpIoValues {
+        &self.op_io[&op_idx]
     }
 }
