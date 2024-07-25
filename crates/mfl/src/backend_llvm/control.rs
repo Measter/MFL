@@ -213,10 +213,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Generate new blocks for Then, Else, and Post.
         let then_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("if_{}_then", op_id));
+            .append_basic_block(function, &format!("if_{op_id}_then"));
         let else_basic_block = self
             .ctx
-            .append_basic_block(function, &format!("if_{}_else", op_id));
+            .append_basic_block(function, &format!("if_{op_id}_else"));
 
         let post_basic_block = if ds.block_store.is_terminal(if_op.then_block)
             && ds.block_store.is_terminal(if_op.else_block)
@@ -225,7 +225,7 @@ impl<'ctx> CodeGen<'ctx> {
         } else {
             Some(
                 self.ctx
-                    .append_basic_block(function, &format!("if_{}_post", op_id)),
+                    .append_basic_block(function, &format!("if_{op_id}_post")),
             )
         };
 
@@ -343,13 +343,13 @@ impl<'ctx> CodeGen<'ctx> {
         let current_block = self.builder.get_insert_block().unwrap();
         let condition_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_condition", op_id));
+            .append_basic_block(function, &format!("while_{op_id}_condition"));
         let body_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_body", op_id));
+            .append_basic_block(function, &format!("while_{op_id}_body"));
         let post_block = self
             .ctx
-            .append_basic_block(function, &format!("while_{}_post", op_id));
+            .append_basic_block(function, &format!("while_{op_id}_post"));
 
         self.builder.position_at_end(current_block);
         self.builder.build_unconditional_branch(condition_block)?;

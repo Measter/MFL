@@ -62,14 +62,14 @@ impl PassState {
     fn get_deps(self) -> (FlagSet<PassState>, &'static [PassState]) {
         use PassState::*;
         match self {
-            IdentResolvedSignature => (FlagSet::default(), &[]),
-            IdentResolvedBody => (FlagSet::default(), &[]),
-            SelfContainingStruct => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
-            DeclareStructs => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
+            IdentResolvedSignature | IdentResolvedBody => (FlagSet::default(), &[]),
+            SelfContainingStruct | DeclareStructs | TypeResolvedSignature => {
+                (IdentResolvedSignature.into(), &[IdentResolvedSignature])
+            }
             DefineStructs => (DeclareStructs.into(), &[DeclareStructs]),
-            TypeResolvedSignature => (IdentResolvedSignature.into(), &[IdentResolvedSignature]),
-            TypeResolvedBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
-            CyclicRefCheckBody => (IdentResolvedBody.into(), &[IdentResolvedBody]),
+            TypeResolvedBody | CyclicRefCheckBody => {
+                (IdentResolvedBody.into(), &[IdentResolvedBody])
+            }
             // Technically, this is only needed because the block terminal flags are in the AST.
             TerminalBlockCheckBody => (TypeResolvedBody.into(), &[TypeResolvedBody]),
             StackAndTypeCheckedBody => (

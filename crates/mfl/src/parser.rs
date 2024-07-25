@@ -45,9 +45,8 @@ pub fn parse_item_body_contents(
                     let new_ops = parse_extract_insert_struct(stores, &mut token_iter, token)?;
                     ops.extend(new_ops);
                     continue;
-                } else {
-                    parse_extract_insert_array(token)?
                 }
+                parse_extract_insert_array(token)
             }
             TokenKind::While => {
                 let Ok(code) = ops::parse_while(ctx, stores, &mut token_iter, token, parent_id)
@@ -272,7 +271,7 @@ fn emit_top_level_op_error(stores: &Stores, location: SourceLocation, kind: Toke
     diagnostics::emit_error(
         stores,
         location,
-        format!("top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `{:?}`", kind),
+        format!("top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `{kind:?}`"),
         Some(Label::new(location).with_color(Color::Red)),
         None,
     );

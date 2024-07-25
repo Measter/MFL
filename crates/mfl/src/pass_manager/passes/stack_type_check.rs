@@ -486,7 +486,7 @@ fn analyze_block(
             "unreachable op",
             [Label::new(op_loc).with_color(Color::Yellow)],
             None,
-        )
+        );
     }
 }
 

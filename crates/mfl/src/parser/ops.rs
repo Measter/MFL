@@ -15,7 +15,7 @@ use crate::{
     lexer::{Extract, Insert, StringToken, Token, TokenKind},
     stores::{
         ops::OpId,
-        source::{Spanned, WithSpan},
+        source::{SourceLocation, Spanned, WithSpan},
         types::{IntWidth, Signedness},
     },
     Stores,
@@ -30,7 +30,7 @@ use super::{
     },
 };
 
-pub fn parse_extract_insert_array(token: Spanned<Token>) -> ParseOpResult {
+pub fn parse_extract_insert_array(token: Spanned<Token>) -> (OpCode<UnresolvedOp>, SourceLocation) {
     let (kind, loc) = match token.inner.kind {
         TokenKind::Extract(Extract { emit_struct }) => (
             Memory::ExtractArray {
@@ -47,7 +47,7 @@ pub fn parse_extract_insert_array(token: Spanned<Token>) -> ParseOpResult {
         _ => unreachable!(),
     };
 
-    Ok((OpCode::Basic(Basic::Memory(kind)), loc))
+    (OpCode::Basic(Basic::Memory(kind)), loc)
 }
 
 pub fn parse_extract_insert_struct<'a>(

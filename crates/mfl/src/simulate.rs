@@ -220,17 +220,19 @@ fn simulate_execute_program_block(
                     )?;
                 },
             },
-            OpCode::Basic(Basic::Memory(_)) => {
+            OpCode::Basic(Basic::Memory(_) | Basic::PushStr { .. })
+            | OpCode::Complex(
+                TypeResolvedOp::CallFunction { .. }
+                | TypeResolvedOp::Cast { .. }
+                | TypeResolvedOp::Memory { .. }
+                | TypeResolvedOp::PackStruct { .. },
+            ) => {
                 emit_unsupported_diag(stores, op_id);
                 return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(val)),
             OpCode::Basic(Basic::PushInt { width, value }) => {
                 value_stack.push(SimulatorValue::Int { width, kind: value })
-            }
-            OpCode::Basic(Basic::PushStr { .. }) => {
-                emit_unsupported_diag(stores, op_id);
-                return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
                 Stack::Dup { count } => {
@@ -277,16 +279,6 @@ fn simulate_execute_program_block(
                     a_slice.swap_with_slice(b_slice);
                 }
             },
-
-            OpCode::Complex(
-                TypeResolvedOp::CallFunction { .. }
-                | TypeResolvedOp::Cast { .. }
-                | TypeResolvedOp::Memory { .. }
-                | TypeResolvedOp::PackStruct { .. },
-            ) => {
-                emit_unsupported_diag(stores, op_id);
-                return Err(SimulationError::UnsupportedOp);
-            }
 
             OpCode::Complex(TypeResolvedOp::SizeOf { id }) => {
                 let size = stores.types.get_size_info(id);
@@ -336,7 +328,7 @@ pub(crate) fn simulate_execute_program(
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
-    let block = ctx.get_item_body(item_id).to_owned();
+    let block = ctx.get_item_body(item_id);
     simulate_execute_program_block(ctx, stores, pass_ctx, block, &mut value_stack)?;
 
     Ok(value_stack)

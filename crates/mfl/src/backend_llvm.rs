@@ -892,10 +892,10 @@ pub(crate) fn compile(
     debug!("Compiling with LLVM codegen to {}", output_obj.display());
 
     trace!("Creating LLVM machinary");
-    let opt_level = if !args.optimize {
-        OptimizationLevel::None
-    } else {
+    let opt_level = if args.optimize {
         OptimizationLevel::Aggressive
+    } else {
+        OptimizationLevel::None
     };
 
     Target::initialize_x86(&InitializationConfig::default());

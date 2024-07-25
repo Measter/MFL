@@ -83,10 +83,10 @@ pub(crate) fn equal(
             offset: Some(offset2),
             ..
         }] => {
-            let msg = if offset1 != offset2 {
-                "pointers never equal"
-            } else {
+            let msg = if offset1 == offset2 {
                 "pointers always equal"
+            } else {
+                "pointers never equal"
             };
 
             let mut labels = diagnostics::build_creator_label_chain(

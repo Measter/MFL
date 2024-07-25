@@ -11,7 +11,7 @@ pub fn determine_terminal_blocks(ctx: &mut Context, stores: &mut Stores, cur_id:
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => (),
     }
 
-    let body = ctx.get_item_body(cur_id).to_owned();
+    let body = ctx.get_item_body(cur_id);
     determine_terminal_blocks_in_block(stores, body);
 }
 

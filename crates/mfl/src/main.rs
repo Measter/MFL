@@ -1,5 +1,12 @@
 #![allow(clippy::too_many_arguments)]
-#![warn(clippy::needless_pass_by_value, clippy::manual_let_else)]
+#![warn(
+    clippy::needless_pass_by_value,
+    clippy::manual_let_else,
+    clippy::redundant_else,
+    clippy::unnested_or_patterns,
+    clippy::uninlined_format_args,
+    clippy::match_same_arms
+)]
 
 use std::{
     path::{Path, PathBuf},

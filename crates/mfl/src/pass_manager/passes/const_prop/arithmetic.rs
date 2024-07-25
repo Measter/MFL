@@ -47,13 +47,8 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             id,
             src_op_loc,
             offset: Some(offset),
-        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::Ptr {
-            id,
-            src_op_loc,
-            offset: Some(offset + v),
-        },
-
-        [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::Ptr {
+        }, ConstVal::Int(IntKind::Unsigned(v))]
+        | [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::Ptr {
             id,
             src_op_loc,
             offset: Some(offset),

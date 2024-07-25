@@ -228,9 +228,11 @@ fn resolve_block(
                 OpCode::Complex(TypeResolvedOp::Memory { id, is_global })
             }
 
-            OpCode::Complex(NameResolvedOp::Cast { ref id })
-            | OpCode::Complex(NameResolvedOp::PackStruct { ref id })
-            | OpCode::Complex(NameResolvedOp::SizeOf { ref id }) => {
+            OpCode::Complex(
+                NameResolvedOp::Cast { ref id }
+                | NameResolvedOp::PackStruct { ref id }
+                | NameResolvedOp::SizeOf { ref id },
+            ) => {
                 let mut local_had_error = ErrorSignal::new();
                 ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
                 if local_had_error.into_bool() {
@@ -284,7 +286,7 @@ pub fn resolve_body(
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
-            let unresolved_body = ctx.get_item_body(cur_id).to_owned();
+            let unresolved_body = ctx.get_item_body(cur_id);
             resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
         }
     };

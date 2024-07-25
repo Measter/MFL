@@ -106,7 +106,7 @@ pub(crate) fn over(
                 .with_color(Color::Yellow)
                 .with_message("using `dup` would be intent clearer")],
             None,
-        )
+        );
     };
 
     let depth = depth.inner.to_usize();
