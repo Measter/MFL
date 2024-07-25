@@ -33,19 +33,19 @@ impl StringStore {
         self.lexemes.resolve(&id)
     }
 
-    pub fn get_symbol_name(&mut self, program: &Context, id: ItemId) -> &str {
+    pub fn get_symbol_name(&mut self, ctx: &Context, id: ItemId) -> &str {
         if let Some(name) = self.symbols.get(&id) {
             return self.lexemes.resolve(name);
         }
 
         let mut parts = Vec::new();
 
-        let item = program.get_item_header(id);
+        let item = ctx.get_item_header(id);
         parts.push(self.lexemes.resolve(&item.name.inner));
 
         let mut parent = item.parent;
         while let Some(parent_id) = parent {
-            let item = program.get_item_header(parent_id);
+            let item = ctx.get_item_header(parent_id);
             parts.push(self.lexemes.resolve(&item.name.inner));
             parent = item.parent;
         }

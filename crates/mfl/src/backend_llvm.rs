@@ -297,20 +297,20 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_function_prototypes(
         &mut self,
-        program: &MflContext,
+        mfl_ctx: &MflContext,
         string_store: &mut StringStore,
         type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
-        for item in program.get_all_items() {
+        for item in mfl_ctx.get_all_items() {
             if item.kind != ItemKind::Function {
                 continue;
             }
-            let item_sig = program.trir().get_item_signature(item.id);
+            let item_sig = mfl_ctx.trir().get_item_signature(item.id);
 
-            let name = string_store.get_symbol_name(program, item.id);
+            let name = string_store.get_symbol_name(mfl_ctx, item.id);
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
@@ -701,12 +701,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_procedure(
         &mut self,
-        program: &MflContext,
+        mfl_ctx: &MflContext,
         id: ItemId,
         function: FunctionValue<'ctx>,
         stores: &mut Stores,
     ) -> InkwellResult {
-        let name = stores.strings.get_symbol_name(program, id);
+        let name = stores.strings.get_symbol_name(mfl_ctx, id);
         let _span = debug_span!(stringify!(CodeGen::compile_procedure), name).entered();
 
         let mut value_store = SsaMap::new(self.ctx.append_basic_block(function, "allocs"));
@@ -715,15 +715,15 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let scope = program.nrir().get_scope(id);
+        let scope = mfl_ctx.nrir().get_scope(id);
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
-            let item_header = program.get_item_header(item_id);
+            let item_header = mfl_ctx.get_item_header(item_id);
             if item_header.kind != ItemKind::Memory {
                 continue;
             }
 
-            let alloc_type_id = program.trir().get_memory_type(item_id);
+            let alloc_type_id = mfl_ctx.trir().get_memory_type(item_id);
             let (store_type_id, alloc_size, is_array) =
                 match stores.types.get_type_info(alloc_type_id).kind {
                     TypeKind::Array { type_id, length } => {
@@ -739,7 +739,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             let mem_type = self.get_type(&mut stores.types, store_type_id);
             let array_type = mem_type.array_type(alloc_size);
-            let name = stores.strings.get_symbol_name(program, item_id).to_owned() + "_";
+            let name = stores.strings.get_symbol_name(mfl_ctx, item_id).to_owned() + "_";
             let variable = self.builder.build_alloca(array_type, &name)?;
 
             self.builder
@@ -759,7 +759,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         let mut data_store = DataStore {
-            context: program,
+            context: mfl_ctx,
             analyzer: &stores.values,
             strings_store: &mut stores.strings,
             type_store: &mut stores.types,
@@ -771,7 +771,7 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining merge variables");
         self.build_merge_variables(
             &mut data_store,
-            program.get_item_body(id),
+            mfl_ctx.get_item_body(id),
             &mut value_store.merge_pair_map,
         )?;
 
@@ -781,7 +781,7 @@ impl<'ctx> CodeGen<'ctx> {
                 &mut data_store,
                 &mut value_store,
                 id,
-                program.get_item_body(id),
+                mfl_ctx.get_item_body(id),
                 function,
             )?;
 
@@ -801,11 +801,11 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn build(&mut self, program: &MflContext, stores: &mut Stores) -> InkwellResult {
+    fn build(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) -> InkwellResult {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(item_id) = self.function_queue.pop() {
             let function = self.item_function_map[&item_id];
-            self.compile_procedure(program, item_id, function, stores)?;
+            self.compile_procedure(mfl_ctx, item_id, function, stores)?;
         }
 
         self.pass_manager.run_on(&self.module);
@@ -815,7 +815,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_entry(
         &mut self,
-        program: &MflContext,
+        mfl_ctx: &MflContext,
         string_store: &mut StringStore,
         type_store: &mut TypeStore,
         entry_id: ItemId,
@@ -840,7 +840,7 @@ impl<'ctx> CodeGen<'ctx> {
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
 
-        let entry_sig = program.trir().get_item_signature(entry_id);
+        let entry_sig = mfl_ctx.trir().get_item_signature(entry_id);
         let args = if entry_sig.entry.is_empty() {
             Vec::new()
         } else {
@@ -862,7 +862,7 @@ impl<'ctx> CodeGen<'ctx> {
 }
 
 pub(crate) fn compile(
-    program: &MflContext,
+    mfl_ctx: &MflContext,
     stores: &mut Stores,
     top_level_items: &[ItemId],
     args: &Args,
@@ -923,10 +923,10 @@ pub(crate) fn compile(
     top_level_items
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
-    codegen.build_function_prototypes(program, &mut stores.strings, &mut stores.types);
+    codegen.build_function_prototypes(mfl_ctx, &mut stores.strings, &mut stores.types);
     if !args.is_library {
         codegen.build_entry(
-            program,
+            mfl_ctx,
             &mut stores.strings,
             &mut stores.types,
             top_level_items[0],
@@ -938,7 +938,7 @@ pub(crate) fn compile(
             .iter()
             .for_each(|id| codegen.item_function_map[id].set_linkage(Linkage::External));
     }
-    codegen.build(program, stores)?;
+    codegen.build(mfl_ctx, stores)?;
 
     {
         let _span = trace_span!("Writing object file").entered();

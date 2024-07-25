@@ -162,7 +162,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
 fn run_compile(args: &Args) -> Result<()> {
     print!("   Compiling...");
-    let (program, mut stores, top_level_items) = match load_program(args) {
+    let (ctx, mut stores, top_level_items) = match load_program(args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!();
@@ -172,7 +172,7 @@ fn run_compile(args: &Args) -> Result<()> {
         }
     };
 
-    let objects = backend_llvm::compile(&program, &mut stores, &top_level_items, args)?;
+    let objects = backend_llvm::compile(&ctx, &mut stores, &top_level_items, args)?;
 
     if args.is_library {
         println!(" {}", "Finished".green());
