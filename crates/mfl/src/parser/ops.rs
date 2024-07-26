@@ -1,5 +1,3 @@
-use std::iter::Peekable;
-
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
@@ -26,7 +24,7 @@ use super::{
     utils::{
         expect_token, get_delimited_tokens, get_terminated_tokens, parse_ident,
         parse_integer_lexeme, parse_integer_param, parse_unresolved_types, valid_type_token,
-        ParseOpResult,
+        ParseOpResult, TokenIter,
     },
 };
 
@@ -50,9 +48,9 @@ pub fn parse_extract_insert_array(token: Spanned<Token>) -> (OpCode<UnresolvedOp
     (OpCode::Basic(Basic::Memory(kind)), loc)
 }
 
-pub fn parse_extract_insert_struct<'a>(
+pub fn parse_extract_insert_struct(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     mut token: Spanned<Token>,
 ) -> Result<SmallVec<[OpId; 1]>, ()> {
     let mut ops = SmallVec::new();
@@ -68,7 +66,7 @@ pub fn parse_extract_insert_struct<'a>(
     )?;
 
     token.location = token.location.merge(delim.close.location);
-    let mut delim_iter = delim.list.iter().enumerate().peekable();
+    let mut delim_iter = delim.list.iter().copied();
     let mut idents = Vec::new();
 
     // We want to make sure the Dots exist, but we don't actually want them.
@@ -85,13 +83,13 @@ pub fn parse_extract_insert_struct<'a>(
             local_had_error.set();
             break;
         };
-        idents.push(next.1);
+        idents.push(next);
 
         if delim_iter
             .peek()
-            .is_some_and(|(_, t)| t.inner.kind == TokenKind::Dot)
+            .is_some_and(|t| t.inner.kind == TokenKind::Dot)
         {
-            prev_token = *delim_iter.next().unwrap().1;
+            prev_token = delim_iter.next().unwrap();
             continue;
         }
         break;
@@ -175,9 +173,9 @@ pub fn parse_extract_insert_struct<'a>(
     Ok(ops)
 }
 
-pub fn parse_simple_op<'a>(
+pub fn parse_simple_op(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let code = match token.inner.kind {
@@ -253,9 +251,9 @@ pub fn parse_simple_op<'a>(
     Ok((code, token.location))
 }
 
-fn parse_ident_op<'a>(
+fn parse_ident_op(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let mut local_had_error = ErrorSignal::new();
@@ -272,18 +270,18 @@ fn parse_ident_op<'a>(
     ))
 }
 
-fn parse_minus<'a>(
+fn parse_minus(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    Ok(match token_iter.peek().copied() {
-        Some((_, int_token))
+    Ok(match token_iter.peek() {
+        Some(int_token)
             if int_token.location.neighbour_of(token.location)
                 && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
         {
             token_iter.next();
-            let mut int_token = *int_token;
+            let mut int_token = int_token;
             int_token.location = int_token.location.merge(token.location);
             parse_integer_op(stores, token_iter, int_token, true)?
         }
@@ -294,14 +292,14 @@ fn parse_minus<'a>(
     })
 }
 
-fn parse_emit_stack<'a>(
+fn parse_emit_stack(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let (emit_labels, loc) = if token_iter
         .peek()
-        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
     {
         let delim = get_delimited_tokens(
             stores,
@@ -331,9 +329,9 @@ fn parse_emit_stack<'a>(
     ))
 }
 
-fn parse_cast_sizeof<'a>(
+fn parse_cast_sizeof(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let delim = get_delimited_tokens(
@@ -375,9 +373,9 @@ fn parse_cast_sizeof<'a>(
     Ok((OpCode::Complex(code), delim.close.location))
 }
 
-fn parse_rot<'a>(
+fn parse_rot(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let delim = get_delimited_tokens(
@@ -463,9 +461,9 @@ fn parse_rot<'a>(
     ))
 }
 
-fn parse_integer_op<'a>(
+fn parse_integer_op(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
     is_known_negative: bool,
 ) -> ParseOpResult {
@@ -492,7 +490,7 @@ fn parse_integer_op<'a>(
 
     let (width, value) = if token_iter
         .peek()
-        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
     {
         let delim = get_delimited_tokens(
             stores,
@@ -626,14 +624,14 @@ fn parse_integer_op<'a>(
     ))
 }
 
-pub fn parse_drop_dup_over_reverse_swap_syscall<'a>(
+pub fn parse_drop_dup_over_reverse_swap_syscall(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let (count, op_end) = if token_iter
         .peek()
-        .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
     {
         parse_integer_param(stores, token_iter, token)?
     } else {
@@ -659,9 +657,9 @@ pub fn parse_drop_dup_over_reverse_swap_syscall<'a>(
     Ok((OpCode::Basic(opcode), op_end))
 }
 
-pub fn parse_pack<'a>(
+pub fn parse_pack(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let delim = get_delimited_tokens(
@@ -708,10 +706,10 @@ pub fn parse_pack<'a>(
     }
 }
 
-pub fn parse_if<'a>(
+pub fn parse_if(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
@@ -743,15 +741,8 @@ pub fn parse_if<'a>(
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
 
-    while let Some(TokenKind::Elif) = token_iter.peek().map(|(_, tk)| tk.inner.kind) {
-        let (_, elif_token) = expect_token(
-            stores,
-            token_iter,
-            "",
-            |t| t == TokenKind::Elif,
-            close_token,
-        )
-        .unwrap();
+    while let Some(TokenKind::Elif) = token_iter.peek().map(|tk| tk.inner.kind) {
+        let elif_token = token_iter.next().unwrap();
         let elif_condition_tokens = get_terminated_tokens(
             stores,
             token_iter,
@@ -787,15 +778,8 @@ pub fn parse_if<'a>(
         close_token = elif_block_tokens.close;
     }
 
-    let else_block = if let Some(TokenKind::Else) = token_iter.peek().map(|(_, tk)| tk.inner.kind) {
-        let (_, else_token) = expect_token(
-            stores,
-            token_iter,
-            "",
-            |t| t == TokenKind::Else,
-            close_token,
-        )
-        .unwrap();
+    let else_block = if let Some(TokenKind::Else) = token_iter.peek().map(|tk| tk.inner.kind) {
+        let else_token = token_iter.next().unwrap();
         let else_block_tokens = get_delimited_tokens(
             stores,
             token_iter,
@@ -854,10 +838,10 @@ pub fn parse_if<'a>(
     ))
 }
 
-pub fn parse_while<'a>(
+pub fn parse_while(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {

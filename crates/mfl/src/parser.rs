@@ -2,6 +2,7 @@ use std::{collections::VecDeque, ops::Not};
 
 use ariadne::{Color, Label};
 use tracing::debug_span;
+use utils::TokenIter;
 
 use crate::{
     context::Context,
@@ -34,13 +35,13 @@ pub fn parse_item_body_contents(
     let mut ops = Vec::new();
     let mut had_error = ErrorSignal::new();
 
-    let mut token_iter = tokens.iter().enumerate().peekable();
-    while let Some((_, &token)) = token_iter.next() {
+    let mut token_iter = tokens.iter().copied();
+    while let Some(token) = token_iter.next() {
         let (kind, op_end) = match token.inner.kind {
             TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                 if token_iter
                     .peek()
-                    .is_some_and(|(_, tk)| tk.inner.kind == TokenKind::ParenthesisOpen)
+                    .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
                 {
                     let new_ops = parse_extract_insert_struct(stores, &mut token_iter, token)?;
                     ops.extend(new_ops);
@@ -150,30 +151,30 @@ pub(super) fn parse_file(
     let _span = debug_span!(stringify!(parser::parse_module)).entered();
 
     let mut had_error = ErrorSignal::new();
-    let mut token_iter = tokens.iter().enumerate().peekable();
+    let mut token_iter = tokens.iter().copied();
 
-    while let Some((_, token)) = token_iter.next() {
+    while let Some(token) = token_iter.next() {
         match token.inner.kind {
             TokenKind::Assert => {
-                if items::parse_assert(ctx, stores, &mut token_iter, *token, module_id).is_err() {
+                if items::parse_assert(ctx, stores, &mut token_iter, token, module_id).is_err() {
                     had_error.set();
                 }
             }
 
             TokenKind::Const => {
-                if items::parse_const(ctx, stores, &mut token_iter, *token, module_id).is_err() {
+                if items::parse_const(ctx, stores, &mut token_iter, token, module_id).is_err() {
                     had_error.set();
                 }
             }
 
             TokenKind::Proc => {
-                if items::parse_function(ctx, stores, &mut token_iter, *token, module_id).is_err() {
+                if items::parse_function(ctx, stores, &mut token_iter, token, module_id).is_err() {
                     had_error.set();
                 }
             }
 
             TokenKind::Memory => {
-                if items::parse_memory(ctx, stores, &mut token_iter, *token, module_id).is_err() {
+                if items::parse_memory(ctx, stores, &mut token_iter, token, module_id).is_err() {
                     had_error.set();
                 }
             }
@@ -184,7 +185,7 @@ pub(super) fn parse_file(
                     stores,
                     &mut had_error,
                     &mut token_iter,
-                    *token,
+                    token,
                     module_id,
                 )
                 .is_err();
@@ -195,7 +196,7 @@ pub(super) fn parse_file(
             }
 
             TokenKind::Module => {
-                if items::parse_module(stores, &mut token_iter, include_queue, *token, module_id)
+                if items::parse_module(stores, &mut token_iter, include_queue, token, module_id)
                     .is_err()
                 {
                     had_error.set();
@@ -203,7 +204,7 @@ pub(super) fn parse_file(
             }
 
             TokenKind::Struct | TokenKind::Union => {
-                if items::parse_struct_or_union(ctx, stores, &mut token_iter, module_id, *token)
+                if items::parse_struct_or_union(ctx, stores, &mut token_iter, module_id, token)
                     .is_err()
                 {
                     had_error.set();
@@ -248,12 +249,12 @@ pub(super) fn parse_file(
 
             // These are invalid in top level position, but we should properly parse them anyway.
             _ => {
-                let location =
-                    if let Ok((_, loc)) = parse_simple_op(stores, &mut token_iter, *token) {
-                        token.location.merge(loc)
-                    } else {
-                        token.location
-                    };
+                let location = if let Ok((_, loc)) = parse_simple_op(stores, &mut token_iter, token)
+                {
+                    token.location.merge(loc)
+                } else {
+                    token.location
+                };
                 emit_top_level_op_error(stores, location, token.inner.kind);
 
                 had_error.set();

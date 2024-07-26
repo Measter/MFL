@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, ops::Not, str::FromStr};
+use std::{fmt::Display, iter::Copied, ops::Not, slice::Iter, str::FromStr};
 
 use ariadne::{Color, Label};
 use num_traits::{PrimInt, Unsigned};
@@ -13,6 +13,13 @@ use crate::{
 };
 
 pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
+
+pub(super) trait TokenIter: Iterator<Item = Spanned<Token>> + Clone {
+    fn peek(&self) -> Option<Spanned<Token>> {
+        self.clone().next()
+    }
+}
+impl TokenIter for Copied<Iter<'_, Spanned<Token>>> {}
 
 pub trait Recover<T, E> {
     fn recover(self, had_error: &mut ErrorSignal, fallback: T) -> T;
@@ -44,18 +51,16 @@ pub fn valid_type_token(t: TokenKind) -> bool {
     )
 }
 
-pub fn expect_token<'a>(
+pub fn expect_token(
     stores: &Stores,
-    tokens: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    tokens: &mut impl TokenIter,
     kind_str: &str,
     expected: fn(TokenKind) -> bool,
     prev: Spanned<Token>,
-) -> Result<(usize, Spanned<Token>), ()> {
+) -> Result<Spanned<Token>, ()> {
     match tokens.peek() {
-        Some((_, ident)) if expected(ident.inner.kind) => {
-            tokens.next().map(|(a, b)| (a, *b)).ok_or(())
-        }
-        Some((_, ident)) => {
+        Some(ident) if expected(ident.inner.kind) => tokens.next().ok_or(()),
+        Some(ident) => {
             diagnostics::emit_error(
                 stores,
                 ident.location,
@@ -107,9 +112,9 @@ pub struct Terminated {
     pub list: Vec<Spanned<Token>>,
 }
 
-pub fn get_delimited_tokens<'a>(
+pub fn get_delimited_tokens(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     prev: Spanned<Token>,
     expected_len: Option<usize>,
     (open_delim_str, open_delim_fn): (&'static str, fn(TokenKind) -> bool),
@@ -117,8 +122,8 @@ pub fn get_delimited_tokens<'a>(
     close_token: (&'static str, fn(TokenKind) -> bool),
 ) -> Result<Delimited, ()> {
     let mut had_error = ErrorSignal::new();
-    let (_, open_token) = expect_token(stores, token_iter, open_delim_str, open_delim_fn, prev)
-        .recover(&mut had_error, (0, prev));
+    let open_token = expect_token(stores, token_iter, open_delim_str, open_delim_fn, prev)
+        .recover(&mut had_error, prev);
 
     let terminated = get_terminated_tokens(
         stores,
@@ -140,9 +145,9 @@ pub fn get_delimited_tokens<'a>(
     }
 }
 
-pub fn get_terminated_tokens<'a>(
+pub fn get_terminated_tokens(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     open_token: Spanned<Token>,
     expected_len: Option<usize>,
     (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
@@ -159,7 +164,7 @@ pub fn get_terminated_tokens<'a>(
     let mut expected_open_brace_count = 0;
     let close_is_open_brace = close_delim_fn(TokenKind::BraceOpen);
     loop {
-        let Some(next_token) = token_iter.peek().map(|(_, t)| **t) else {
+        let Some(next_token) = token_iter.peek() else {
             diagnostics::emit_error(
                 stores,
                 prev.location,
@@ -191,8 +196,7 @@ pub fn get_terminated_tokens<'a>(
             depth -= 1;
         }
 
-        let Ok((_, item_token)) = expect_token(stores, token_iter, token_str, token_fn, prev)
-        else {
+        let Ok(item_token) = expect_token(stores, token_iter, token_str, token_fn, prev) else {
             had_error.set();
 
             // If it's not the close token, we should consume it so we can continue.
@@ -206,8 +210,8 @@ pub fn get_terminated_tokens<'a>(
         prev = item_token;
     }
 
-    let (_, close_token) = expect_token(stores, token_iter, close_delim_str, close_delim_fn, prev)
-        .recover(&mut had_error, (0, prev));
+    let close_token = expect_token(stores, token_iter, close_delim_str, close_delim_fn, prev)
+        .recover(&mut had_error, prev);
 
     if let Some(len) = expected_len {
         if len != tokens.len() {
@@ -240,10 +244,10 @@ pub fn parse_unresolved_types(
 ) -> Result<Vec<Spanned<UnresolvedType>>, ()> {
     let mut had_error = ErrorSignal::new();
     let mut types: Vec<Spanned<UnresolvedType>> = Vec::new();
-    let mut token_iter = tokens.iter().enumerate().peekable();
+    let mut token_iter = tokens.iter().copied();
 
     while token_iter.peek().is_some() {
-        let Ok((_, ident)) = expect_token(
+        let Ok(ident) = expect_token(
             stores,
             &mut token_iter,
             "ident",
@@ -265,13 +269,13 @@ pub fn parse_unresolved_types(
         let mut parsed_type = UnresolvedType::Simple(ident);
 
         // This looks ugly
-        while token_iter.peek().is_some_and(|(_, t)| {
+        while token_iter.peek().is_some_and(|t| {
             matches!(
                 t.inner.kind,
                 TokenKind::Ampersand | TokenKind::SquareBracketOpen
             )
         }) {
-            let Some((_, next_token)) = token_iter.peek() else {
+            let Some(next_token) = token_iter.peek() else {
                 unreachable!()
             };
 
@@ -299,7 +303,7 @@ pub fn parse_unresolved_types(
                 }
                 TokenKind::Ampersand => {
                     // Parsing a pointer!
-                    let Some((_, next)) = token_iter.next() else {
+                    let Some(next) = token_iter.next() else {
                         unreachable!()
                     };
 
@@ -316,21 +320,20 @@ pub fn parse_unresolved_types(
     had_error.into_bool().not().then_some(types).ok_or(())
 }
 
-pub fn parse_ident<'a>(
+pub fn parse_ident(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     mut token: Spanned<Token>,
 ) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
     let mut import_span = token.location;
     let mut last_token = token;
 
     let (is_from_root, mut path) = if token.inner.kind == TokenKind::ColonColon {
-        let ident = if token_iter.peek().is_some_and(|(_, tk)| {
+        let ident = if token_iter.peek().is_some_and(|tk| {
             tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(token.location)
         }) {
-            let (_, t) = token_iter.next().unwrap();
-            *t
+            token_iter.next().unwrap()
         } else {
             diagnostics::emit_error(
                 stores,
@@ -351,15 +354,14 @@ pub fn parse_ident<'a>(
         (false, vec![token.map(|t| t.lexeme)])
     };
 
-    while token_iter.peek().is_some_and(|(_, t)| {
+    while token_iter.peek().is_some_and(|t| {
         t.inner.kind == TokenKind::ColonColon && t.location.neighbour_of(last_token.location)
     }) {
-        let (_, colons) = token_iter.next().unwrap(); // Consume the ColonColon.
-        let item_id = if token_iter.peek().is_some_and(|(_, tk)| {
+        let colons = token_iter.next().unwrap(); // Consume the ColonColon.
+        let item_id = if token_iter.peek().is_some_and(|tk| {
             tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(colons.location)
         }) {
-            let (_, t) = token_iter.next().unwrap();
-            *t
+            token_iter.next().unwrap()
         } else {
             diagnostics::emit_error(
                 stores,
@@ -380,7 +382,7 @@ pub fn parse_ident<'a>(
 
     let generic_params = if token_iter
         .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|t| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let Ok(delim) = get_delimited_tokens(
             stores,
@@ -471,9 +473,9 @@ where
     Ok(int)
 }
 
-pub fn parse_integer_param<'a>(
+pub fn parse_integer_param(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
 ) -> Result<(Spanned<u8>, SourceLocation), ()> {
     let delim = get_delimited_tokens(
@@ -491,10 +493,10 @@ pub fn parse_integer_param<'a>(
     Ok((count.with_span(count_token.location), delim.close.location))
 }
 
-pub fn parse_stack_def<'a>(
+pub fn parse_stack_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     prev_token: Spanned<Token>,
 ) -> Spanned<Vec<Spanned<UnresolvedType>>> {
     let stack = get_delimited_tokens(

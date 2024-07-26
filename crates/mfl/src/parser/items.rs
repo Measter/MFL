@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, iter::Peekable};
+use std::collections::VecDeque;
 
 use ariadne::{Color, Label};
 use lasso::Spur;
@@ -16,24 +16,24 @@ use crate::{
 
 use super::{
     expect_token, get_delimited_tokens, parse_item_body_contents,
-    utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token},
+    utils::{parse_ident, parse_stack_def, parse_unresolved_types, valid_type_token, TokenIter},
     Delimited, Recover,
 };
 
-fn try_get_lang_item<'a>(
+fn try_get_lang_item(
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
 ) -> Result<Option<Spanned<Spur>>, ()> {
     if !token_iter
         .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::LangItem)
+        .is_some_and(|t| t.inner.kind == TokenKind::LangItem)
     {
         return Ok(None);
     }
     // Consume the lang item.
-    let (_, &lang_token) = token_iter.next().unwrap();
+    let lang_token = token_iter.next().unwrap();
 
-    let (_, open_paren) = expect_token(
+    let open_paren = expect_token(
         stores,
         token_iter,
         "(",
@@ -41,7 +41,7 @@ fn try_get_lang_item<'a>(
         lang_token,
     )?;
 
-    let (_, ident_name) = expect_token(
+    let ident_name = expect_token(
         stores,
         token_iter,
         "string",
@@ -60,11 +60,11 @@ fn try_get_lang_item<'a>(
     Ok(Some(ident_name.map(|t| t.lexeme)))
 }
 
-fn parse_item_body<'a>(
+fn parse_item_body(
     ctx: &mut Context,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     name_token: Spanned<Token>,
     parent_id: ItemId,
 ) -> Vec<OpId> {
@@ -98,10 +98,10 @@ fn parse_item_body<'a>(
     body
 }
 
-pub fn parse_function<'a>(
+pub fn parse_function(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
@@ -116,12 +116,11 @@ pub fn parse_function<'a>(
         |k| k == TokenKind::Ident,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
     let generic_params = if token_iter
         .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|t| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         get_delimited_tokens(
             stores,
@@ -147,7 +146,7 @@ pub fn parse_function<'a>(
         |k| k == TokenKind::GoesTo,
         name_token,
     )
-    .recover(&mut had_error, (0, name_token));
+    .recover(&mut had_error, name_token);
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
@@ -192,10 +191,10 @@ pub fn parse_function<'a>(
     }
 }
 
-pub fn parse_assert<'a>(
+pub fn parse_assert(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
@@ -207,7 +206,6 @@ pub fn parse_assert<'a>(
         |k| k == TokenKind::Ident,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
     let item_id = ctx.new_assert(
@@ -228,10 +226,10 @@ pub fn parse_assert<'a>(
     }
 }
 
-pub fn parse_const<'a>(
+pub fn parse_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
@@ -243,11 +241,9 @@ pub fn parse_const<'a>(
         |k| k == TokenKind::Ident,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
-
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
     let item_id = ctx.new_const(
@@ -269,10 +265,10 @@ pub fn parse_const<'a>(
     }
 }
 
-pub fn parse_memory<'a>(
+pub fn parse_memory(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> Result<(), ()> {
@@ -284,7 +280,6 @@ pub fn parse_memory<'a>(
         |k| k == TokenKind::Ident,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
     let store_type = get_delimited_tokens(
@@ -339,10 +334,10 @@ pub fn parse_memory<'a>(
     }
 }
 
-pub fn parse_struct_or_union<'a>(
+pub fn parse_struct_or_union(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     module_id: ItemId,
     keyword: Spanned<Token>,
 ) -> Result<(), ()> {
@@ -357,12 +352,11 @@ pub fn parse_struct_or_union<'a>(
         |k| k == TokenKind::Ident,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, keyword);
 
     let generic_params = if token_iter
         .peek()
-        .is_some_and(|(_, t)| t.inner.kind == TokenKind::ParenthesisOpen)
+        .is_some_and(|t| t.inner.kind == TokenKind::ParenthesisOpen)
     {
         let generic_idents = get_delimited_tokens(
             stores,
@@ -393,7 +387,6 @@ pub fn parse_struct_or_union<'a>(
         |k| k == TokenKind::BraceOpen,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, name_token);
 
     let mut fields = Vec::new();
@@ -404,7 +397,6 @@ pub fn parse_struct_or_union<'a>(
         |k| k == TokenKind::Field,
         keyword,
     )
-    .map(|(_, a)| a)
     .recover(&mut had_error, is_token);
 
     loop {
@@ -472,14 +464,14 @@ pub fn parse_struct_or_union<'a>(
     }
 }
 
-pub fn parse_module<'a>(
+pub fn parse_module(
     stores: &Stores,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
     token: Spanned<Token>,
     module_id: ItemId,
 ) -> Result<(), ()> {
-    let (_, module_ident) = expect_token(
+    let module_ident = expect_token(
         stores,
         token_iter,
         "ident",
@@ -495,15 +487,15 @@ pub fn parse_module<'a>(
     Ok(())
 }
 
-pub fn parse_import<'a>(
+pub fn parse_import(
     ctx: &mut Context,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut Peekable<impl Iterator<Item = (usize, &'a Spanned<Token>)>>,
+    token_iter: &mut impl TokenIter,
     token: Spanned<Token>,
     module_id: ItemId,
 ) -> Result<(), ()> {
-    let (_, root_name) = expect_token(
+    let root_name = expect_token(
         stores,
         token_iter,
         "ident",
