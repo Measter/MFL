@@ -3,12 +3,12 @@ import core::String
 const WRITE [u64] { 0x01 }
 
 struct FD { 
-    field fd u64,
+    fd u64,
 }
 
 struct WriteResult {
-    field written u64,
-    field errno u64,
+    written u64,
+    errno u64,
 }
 
 proc write [FD String] to [WriteResult] {

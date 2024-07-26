@@ -6,18 +6,18 @@
 // END
 
 struct Foo {
-    field foo Foo,
-    field bar s32,
+    foo Foo,
+    bar s32,
 }
 
 struct Bar {
-    field baz Baz,
+    baz Baz,
 }
 
 struct Baz {
-    field bar Bar,
+    bar Bar,
 }
 
 struct Quux {
-    field k Quux[5],
+    k Quux[5],
 }

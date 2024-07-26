@@ -147,9 +147,6 @@ pub enum TokenKind {
     #[token("xtrd", |_| Extract{emit_struct: false})]
     Extract(Extract),
 
-    #[token("field")]
-    Field,
-
     #[token("to")]
     GoesTo,
 
@@ -301,7 +298,6 @@ impl TokenKind {
             TokenKind::Exit => "exit",
             TokenKind::Extract(Extract { emit_struct: true }) => "xtr",
             TokenKind::Extract(Extract { emit_struct: false }) => "xtrd",
-            TokenKind::Field => "field",
             TokenKind::GoesTo => "to",
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",

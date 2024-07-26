@@ -4,8 +4,8 @@
 // END
 
 union Bar {
-    field foo s32,
-    field int u32,
+    foo s32,
+    int u32,
 }
 
 proc entry [] to [] {

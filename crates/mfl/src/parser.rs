@@ -96,11 +96,7 @@ pub fn parse_item_body_contents(
                         }
                         continue;
                     }
-                    TokenKind::Module
-                    | TokenKind::Proc
-                    | TokenKind::Field
-                    | TokenKind::Struct
-                    | TokenKind::Union => {
+                    TokenKind::Module | TokenKind::Proc | TokenKind::Struct | TokenKind::Union => {
                         diagnostics::emit_error(
                             stores,
                             token.location,

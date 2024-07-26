@@ -86,26 +86,26 @@ proc close [FD] to [SimpleResult] {
 }
 
 struct Timespec {
-    field tv_sec u64,
-    field tv_nsec u64,
+    tv_sec u64,
+    tv_nsec u64,
 }
 
 struct Stat {
-    field st_dev u64,
-    field st_ino u64,
-    field st_nlink u64,
-    field st_mode u32,
-    field st_uid u32,
-    field st_gid u32,
-    field __pad0 u32,
-    field st_rdev u64,
-    field st_size u64,
-    field st_blksize u64,
-    field st_blocks u64,
-    field st_atim Timespec,
-    field st_mtim Timespec,
-    field st_ctim Timespec,
-    field __reserved s64[3],
+    st_dev u64,
+    st_ino u64,
+    st_nlink u64,
+    st_mode u32,
+    st_uid u32,
+    st_gid u32,
+    __pad0 u32,
+    st_rdev u64,
+    st_size u64,
+    st_blksize u64,
+    st_blocks u64,
+    st_atim Timespec,
+    st_mtim Timespec,
+    st_ctim Timespec,
+    __reserved s64[3],
 }
 
 proc fstat [FD] to [Result(Stat)] {

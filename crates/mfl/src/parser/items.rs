@@ -313,14 +313,10 @@ pub fn parse_struct_or_union(
     let mut fields = Vec::new();
     let mut prev_token = struct_body.first_token();
 
-    while field_iter.next_is(TokenKind::Field) {
-        let field_token = field_iter
-            .expect_single(stores, TokenKind::Field, prev_token.location)
-            .recover(&mut had_error, prev_token);
-
+    while field_iter.next_is(TokenKind::Ident) {
         let name_token = field_iter
-            .expect_single(stores, TokenKind::Ident, field_token.location)
-            .recover(&mut had_error, field_token);
+            .expect_single(stores, TokenKind::Ident, prev_token.location)
+            .recover(&mut had_error, prev_token);
 
         let delim = get_terminated_tokens(
             stores,

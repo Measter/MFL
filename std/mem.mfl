@@ -10,8 +10,8 @@ const SYS_MMAP [u64] { 0x09 }
 const SYS_MUNMAP [u64] { 0x0B }
 
 struct MMap(T) {
-    field pointer T&,
-    field length u64,
+    pointer T&,
+    length u64,
 }
 
 proc lang(alloc) alloc(T) [

@@ -1,14 +1,14 @@
 import std::term
 
 struct lang(string) String {
-    field length u64,
-    field pointer u8&,
+    length u64,
+    pointer u8&,
 }
 
 struct SplitResult {
-    field split bool,
-    field remainder String,
-    field prefix String,
+    split bool,
+    remainder String,
+    prefix String,
 }
 
 // Splits the given string at the first instance of the given

@@ -5,10 +5,10 @@ module string
 module term
 
 struct Result(T) {
-    field errno u64,
-    field data T,
+    errno u64,
+    data T,
 }
 
 struct SimpleResult {
-    field errno u64,
+    errno u64,
 }
