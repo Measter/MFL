@@ -289,6 +289,19 @@ impl Token {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TreeGroup {
+    open: Spanned<TokenKind>,
+    tokens: Vec<TokenTree>,
+    close: Option<Spanned<TokenKind>>,
+}
+
+#[derive(Debug, Clone)]
+enum TokenTree {
+    Single(Spanned<Token>),
+    Group(TreeGroup),
+}
+
 pub struct Context {
     line: usize,
     line_start_idx: usize,
@@ -349,6 +362,8 @@ pub(crate) fn lex_file(
 
     let mut had_error = ErrorSignal::new();
     let mut ops = Vec::new();
+    let mut token_tree_group_stack = Vec::<TreeGroup>::new();
+    let mut token_tree_stream = Vec::<TokenTree>::new();
 
     let mut lexer = TokenKind::lexer_with_extras(contents, context).spanned();
 
@@ -411,12 +426,79 @@ pub(crate) fn lex_file(
         }
 
         let lexeme = stores.strings.intern(lexer.slice());
-        ops.push(Token::new(kind, lexeme).with_span(location));
+        let token = Token::new(kind, lexeme).with_span(location);
+        ops.push(token);
+
+        match kind {
+            TokenKind::BraceOpen | TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen => {
+                token_tree_group_stack.push(TreeGroup {
+                    open: token.map(|t| t.kind),
+                    tokens: Vec::new(),
+                    close: None,
+                })
+            }
+            TokenKind::BraceClosed
+            | TokenKind::ParenthesisClosed
+            | TokenKind::SquareBracketClosed
+                if !token_tree_group_stack.is_empty() =>
+            {
+                let mut cur_group = token_tree_group_stack.pop().unwrap();
+                cur_group.close = Some(token.map(|t| t.kind));
+
+                let stream = token_tree_group_stack
+                    .last_mut()
+                    .map(|tg| &mut tg.tokens)
+                    .unwrap_or(&mut token_tree_stream);
+                stream.push(TokenTree::Group(cur_group));
+            }
+            _ => {
+                let stream = token_tree_group_stack
+                    .last_mut()
+                    .map(|tg| &mut tg.tokens)
+                    .unwrap_or(&mut token_tree_stream);
+                stream.push(TokenTree::Single(token));
+            }
+        }
+    }
+
+    while let Some(cur_group) = token_tree_group_stack.pop() {
+        diagnostics::emit_error(
+            stores,
+            cur_group.open.location,
+            "unclosed bracket",
+            [Label::new(cur_group.open.location).with_color(Color::Red)],
+            None,
+        );
+        had_error.set();
+
+        let stream = token_tree_group_stack
+            .last_mut()
+            .map(|tg| &mut tg.tokens)
+            .unwrap_or(&mut token_tree_stream);
+        stream.push(TokenTree::Group(cur_group));
     }
 
     if had_error.into_bool() {
         Err(())
     } else {
         Ok(ops)
+    }
+}
+
+#[allow(unused)]
+fn pretty_print_tree(tree: &Vec<TokenTree>, depth: usize) {
+    for tt in tree {
+        match tt {
+            TokenTree::Single(tk) => {
+                eprintln!("{:width$}{:?}", " ", tk.inner.kind, width = depth * 4);
+            }
+            TokenTree::Group(tg) => {
+                eprintln!("{:width$}{:?}", " ", tg.open.inner, width = depth * 4);
+                pretty_print_tree(&tg.tokens, depth + 1);
+                if let Some(ctk) = tg.close {
+                    eprintln!("{:width$}{:?}", " ", ctk.inner, width = depth * 4);
+                }
+            }
+        }
     }
 }
