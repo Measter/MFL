@@ -8,13 +8,13 @@
 // END
 
 struct Foo {
-    field a u16
-    field b u16
+    field a u16,
+    field b u16,
 }
 
 union Bar(T) {
-    field foo T
-    field int u32
+    field foo T,
+    field int u32,
 }
 
 proc entry [] to [] {

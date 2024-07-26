@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Copied, ops::Not, slice::Iter, str::FromStr};
+use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use ariadne::{Color, Label};
 use num_traits::{PrimInt, Unsigned};
@@ -7,19 +7,229 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
-    lexer::{Integer, Token, TokenKind},
+    lexer::{BracketKind, Integer, Token, TokenKind, TokenTree, TreeGroup},
     stores::source::{SourceLocation, Spanned, WithSpan},
     Stores,
 };
 
 pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
 
-pub(super) trait TokenIter: Iterator<Item = Spanned<Token>> + Clone {
-    fn peek(&self) -> Option<Spanned<Token>> {
-        self.clone().next()
+pub(super) trait ExpectedTokenMatcher<T> {
+    fn kind_str(&self) -> &'static str;
+    fn is_match(&self, tk: T) -> bool;
+    fn is_brace_group(&self) -> bool {
+        false
     }
 }
-impl TokenIter for Copied<Iter<'_, Spanned<Token>>> {}
+
+impl ExpectedTokenMatcher<TokenKind> for TokenKind {
+    fn kind_str(&self) -> &'static str {
+        TokenKind::kind_str(*self)
+    }
+
+    fn is_match(&self, tk: TokenKind) -> bool {
+        tk == *self
+    }
+}
+
+impl ExpectedTokenMatcher<&TokenTree> for TokenKind {
+    fn kind_str(&self) -> &'static str {
+        TokenKind::kind_str(*self)
+    }
+
+    fn is_match(&self, tk: &TokenTree) -> bool {
+        match tk {
+            TokenTree::Single(tk) => tk.inner.kind == *self,
+            TokenTree::Group(_) => false,
+        }
+    }
+}
+
+// Wrapper because Rust's inference is dumb.
+pub(super) struct Matcher<T>(pub &'static str, pub fn(T) -> bool);
+
+impl ExpectedTokenMatcher<TokenKind> for Matcher<TokenKind> {
+    fn kind_str(&self) -> &'static str {
+        self.0
+    }
+
+    fn is_match(&self, tk: TokenKind) -> bool {
+        self.1(tk)
+    }
+}
+
+impl ExpectedTokenMatcher<&TokenTree> for Matcher<TokenKind> {
+    fn kind_str(&self) -> &'static str {
+        self.0
+    }
+
+    fn is_match(&self, tk: &TokenTree) -> bool {
+        match tk {
+            TokenTree::Single(tk) => self.1(tk.inner.kind),
+            TokenTree::Group(_) => false,
+        }
+    }
+}
+
+impl<'a> ExpectedTokenMatcher<&'a TokenTree> for Matcher<&'a TokenTree> {
+    fn kind_str(&self) -> &'static str {
+        self.0
+    }
+
+    fn is_match(&self, tk: &'a TokenTree) -> bool {
+        self.1(tk)
+    }
+}
+
+pub(super) struct ConditionMatch;
+impl ExpectedTokenMatcher<&TokenTree> for ConditionMatch {
+    fn kind_str(&self) -> &'static str {
+        "{"
+    }
+
+    fn is_match(&self, tk: &TokenTree) -> bool {
+        matches!(tk, TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Brace)
+    }
+
+    fn is_brace_group(&self) -> bool {
+        true
+    }
+}
+
+pub(super) struct TokenIter<'a> {
+    it: Iter<'a, TokenTree>,
+}
+
+impl<'a> TokenIter<'a> {
+    pub(super) fn new(it: Iter<'a, TokenTree>) -> Self {
+        Self { it }
+    }
+
+    pub(super) fn next(&mut self) -> Option<&'a TokenTree> {
+        self.it.next()
+    }
+
+    pub(super) fn expect_single(
+        &mut self,
+        stores: &Stores,
+        filter: impl ExpectedTokenMatcher<TokenKind>,
+        prev: SourceLocation,
+    ) -> Result<Spanned<Token>, ()> {
+        match self.peek() {
+            Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) => {
+                Ok(self.next().unwrap_single())
+            }
+            Some(TokenTree::Single(tk)) => {
+                diagnostics::emit_error(
+                    stores,
+                    tk.location,
+                    format!(
+                        "expected `{}`, found `{}`",
+                        filter.kind_str(),
+                        stores.strings.resolve(tk.inner.lexeme)
+                    ),
+                    Some(Label::new(tk.location).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+            Some(TokenTree::Group(tg)) => {
+                diagnostics::emit_error(
+                    stores,
+                    tg.span(),
+                    format!("expected `{}`, found bracket group", filter.kind_str()),
+                    Some(Label::new(tg.span()).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+            None => {
+                diagnostics::emit_error(
+                    stores,
+                    prev,
+                    "unexpected end of tokens",
+                    Some(Label::new(prev).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+        }
+    }
+
+    pub(super) fn expect_group(
+        &mut self,
+        stores: &Stores,
+        expected: BracketKind,
+        prev: Spanned<Token>,
+    ) -> Result<&'a TreeGroup, ()> {
+        match self.peek() {
+            Some(TokenTree::Group(tg)) if tg.bracket_kind == expected => {
+                Ok(self.next().unwrap_group())
+            }
+            Some(TokenTree::Group(tk)) => {
+                diagnostics::emit_error(
+                    stores,
+                    tk.open.location,
+                    format!("expected `{}`, found `{}`", expected, tk.bracket_kind,),
+                    Some(Label::new(tk.open.location).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+            Some(TokenTree::Single(tk)) => {
+                diagnostics::emit_error(
+                    stores,
+                    tk.location,
+                    format!(
+                        "expected `{}`, found `{}`",
+                        expected,
+                        stores.strings.resolve(tk.inner.lexeme)
+                    ),
+                    Some(Label::new(tk.location).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+            None => {
+                diagnostics::emit_error(
+                    stores,
+                    prev.location,
+                    "unexpected end of tokens",
+                    Some(Label::new(prev.location).with_color(Color::Red)),
+                    None,
+                );
+                Err(())
+            }
+        }
+    }
+
+    pub(super) fn peek(&self) -> Option<&'a TokenTree> {
+        self.it.as_slice().first()
+    }
+
+    pub(super) fn next_is_group(&self, kind: BracketKind) -> bool {
+        matches!(self.peek(), Some(TokenTree::Group(tg)) if tg.bracket_kind == kind)
+    }
+
+    pub(super) fn next_is_single(&self, filter: impl ExpectedTokenMatcher<TokenKind>) -> bool {
+        matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind))
+    }
+
+    pub(super) fn next_is_single_and(
+        &self,
+        filter: impl ExpectedTokenMatcher<TokenKind>,
+        and: impl Fn(Spanned<Token>) -> bool,
+    ) -> bool {
+        matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) && and(*tk))
+    }
+
+    pub(super) fn next_is<'tt>(&self, filter: impl ExpectedTokenMatcher<&'tt TokenTree>) -> bool
+    where
+        'a: 'tt,
+    {
+        matches!(self.peek(), Some(tt) if filter.is_match(tt))
+    }
+}
 
 pub trait Recover<T, E> {
     fn recover(self, had_error: &mut ErrorSignal, fallback: T) -> T;
@@ -37,132 +247,145 @@ impl<T, E> Recover<T, E> for Result<T, E> {
     }
 }
 
-pub fn valid_type_token(t: TokenKind) -> bool {
-    matches!(
-        t,
-        TokenKind::Ident
-            | TokenKind::Integer { .. }
-            | TokenKind::ColonColon
-            | TokenKind::ParenthesisOpen
-            | TokenKind::ParenthesisClosed
-            | TokenKind::SquareBracketOpen
-            | TokenKind::SquareBracketClosed
-            | TokenKind::Ampersand
-    )
+pub(super) trait TreeGroupResultExt {
+    fn with_kinds<'a>(
+        self,
+        stores: &Stores,
+        filter: impl ExpectedTokenMatcher<&'a TokenTree>,
+    ) -> Self
+    where
+        Self: 'a;
+    fn with_length(self, stores: &Stores, length: usize) -> Self;
 }
+impl TreeGroupResultExt for Result<&TreeGroup, ()> {
+    fn with_kinds<'a>(
+        self,
+        stores: &Stores,
+        filter: impl ExpectedTokenMatcher<&'a TokenTree>,
+    ) -> Self
+    where
+        Self: 'a,
+    {
+        let group = self?;
 
-pub fn expect_token(
-    stores: &Stores,
-    tokens: &mut impl TokenIter,
-    kind_str: &str,
-    expected: fn(TokenKind) -> bool,
-    prev: Spanned<Token>,
-) -> Result<Spanned<Token>, ()> {
-    match tokens.peek() {
-        Some(ident) if expected(ident.inner.kind) => tokens.next().ok_or(()),
-        Some(ident) => {
-            diagnostics::emit_error(
-                stores,
-                ident.location,
-                format!(
-                    "expected `{}`, found `{}`",
-                    kind_str,
-                    stores.strings.resolve(ident.inner.lexeme)
-                ),
-                Some(Label::new(ident.location).with_color(Color::Red)),
-                None,
-            );
-            Err(())
+        let mut had_error = ErrorSignal::new();
+        for tt in &group.tokens {
+            if !filter.is_match(tt) {
+                diagnostics::emit_error(
+                    stores,
+                    tt.span(),
+                    format!(
+                        "expected `{}`, found `{}`",
+                        filter.kind_str(),
+                        tt.kind_str(),
+                    ),
+                    Some(Label::new(tt.span()).with_color(Color::Red)),
+                    None,
+                );
+                had_error.set();
+            }
         }
-        None => {
+
+        if had_error.into_bool() {
+            Err(())
+        } else {
+            Ok(group)
+        }
+    }
+
+    fn with_length(self, stores: &Stores, length: usize) -> Self {
+        let group = self?;
+        if group.tokens.len() != length {
             diagnostics::emit_error(
                 stores,
-                prev.location,
-                "unexpected end of tokens",
-                Some(Label::new(prev.location).with_color(Color::Red)),
+                group.span(),
+                format!("expected {length} tokens, found {}", group.tokens.len()),
+                [Label::new(group.span()).with_color(Color::Red)],
                 None,
             );
             Err(())
+        } else {
+            Ok(group)
         }
     }
 }
 
-pub struct Delimited {
-    pub open: Spanned<Token>,
-    pub close: Spanned<Token>,
-    pub list: Vec<Spanned<Token>>,
+pub(super) trait TokenTreeOptionExt<'a> {
+    fn unwrap_single(self) -> Spanned<Token>;
+    fn unwrap_group(self) -> &'a TreeGroup;
 }
 
-impl Delimited {
-    pub fn fallback(tk: Spanned<Token>) -> Self {
+impl<'a> TokenTreeOptionExt<'a> for Option<&'a TokenTree> {
+    #[inline]
+    #[track_caller]
+    fn unwrap_single(self) -> Spanned<Token> {
+        match self.unwrap() {
+            TokenTree::Single(tk) => *tk,
+            TokenTree::Group(_) => panic!("ICE: Tried to unwrap_single a Group"),
+        }
+    }
+
+    #[inline]
+    #[track_caller]
+    fn unwrap_group(self) -> &'a TreeGroup {
+        match self.unwrap() {
+            TokenTree::Single(_) => panic!("ICE: Tried to unwrap_group a Single"),
+            TokenTree::Group(tg) => tg,
+        }
+    }
+}
+
+impl TreeGroup {
+    pub(super) fn fallback(kind: BracketKind, token: Spanned<Token>) -> Self {
         Self {
-            open: tk,
-            close: tk,
-            list: Vec::new(),
+            bracket_kind: kind,
+            open: token,
+            close: Some(token),
+            tokens: Vec::new(),
         }
     }
+}
 
-    pub fn span(&self) -> SourceLocation {
-        self.open.location.merge(self.close.location)
+pub fn valid_type_token(tt: &TokenTree) -> bool {
+    match tt {
+        TokenTree::Single(tk) => matches!(
+            tk.inner.kind,
+            TokenKind::Ident
+                | TokenKind::Integer { .. }
+                | TokenKind::ColonColon
+                | TokenKind::Ampersand
+        ),
+        TokenTree::Group(tg) => {
+            (tg.bracket_kind == BracketKind::Paren || tg.bracket_kind == BracketKind::Square)
+                && tg.tokens.iter().all(valid_type_token)
+        }
     }
 }
 
 pub struct Terminated {
     pub close: Spanned<Token>,
-    pub list: Vec<Spanned<Token>>,
+    pub list: Vec<TokenTree>,
 }
 
-pub fn get_delimited_tokens(
+pub fn get_terminated_tokens<'a>(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
-    prev: Spanned<Token>,
-    expected_len: Option<usize>,
-    (open_delim_str, open_delim_fn): (&'static str, fn(TokenKind) -> bool),
-    inner_tokens: (&'static str, fn(TokenKind) -> bool),
-    close_token: (&'static str, fn(TokenKind) -> bool),
-) -> Result<Delimited, ()> {
-    let mut had_error = ErrorSignal::new();
-    let open_token = expect_token(stores, token_iter, open_delim_str, open_delim_fn, prev)
-        .recover(&mut had_error, prev);
-
-    let terminated = get_terminated_tokens(
-        stores,
-        token_iter,
-        open_token,
-        expected_len,
-        inner_tokens,
-        close_token,
-    )?;
-
-    if had_error.into_bool() {
-        Err(())
-    } else {
-        Ok(Delimited {
-            open: open_token,
-            close: terminated.close,
-            list: terminated.list,
-        })
-    }
-}
-
-pub fn get_terminated_tokens(
-    stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter<'a>,
     open_token: Spanned<Token>,
     expected_len: Option<usize>,
-    (token_str, token_fn): (&'static str, fn(TokenKind) -> bool),
-    (close_delim_str, close_delim_fn): (&'static str, fn(TokenKind) -> bool),
+    inner_matcher: impl ExpectedTokenMatcher<&'a TokenTree>,
+    close_matcher: impl ExpectedTokenMatcher<&'a TokenTree>,
+    consume_close: bool,
 ) -> Result<Terminated, ()> {
     let mut had_error = ErrorSignal::new();
-    let mut tokens = Vec::new();
-    let mut depth = 0;
+    let mut tokens = Vec::<TokenTree>::new();
     let mut prev = open_token;
 
-    // When parsing If, Elif, and While conditions, the terminating token is BraceOpen, however the
-    // condition block itself can contain an If or While expression. We need to keep track of whether
-    // we're expecting to stop on an OpenBrace.
-    let mut expected_open_brace_count = 0;
-    let close_is_open_brace = close_delim_fn(TokenKind::BraceOpen);
+    // When parsing If, Elif, and While conditions, the terminating token is a brack group with braces, however the
+    // condition block itself can contain an If or While expression with its own bracket group. We need to keep track
+    // of whether we're expecting an additional bracket group.
+    let mut additional_brace_groups = 0;
+    let terminator_is_brace_group = close_matcher.is_brace_group();
+
     loop {
         let Some(next_token) = token_iter.peek() else {
             diagnostics::emit_error(
@@ -175,43 +398,41 @@ pub fn get_terminated_tokens(
             return Err(());
         };
 
-        if close_is_open_brace && next_token.inner.kind.expects_brace() {
-            expected_open_brace_count += 1;
+        if terminator_is_brace_group && next_token.expects_brace_group() {
+            additional_brace_groups += 1;
         }
 
-        if depth == 0 && expected_open_brace_count == 0 && close_delim_fn(next_token.inner.kind) {
+        if additional_brace_groups == 0 && close_matcher.is_match(next_token) {
             break; // The end of the list, so break the loop.
         }
 
-        if close_is_open_brace
-            && next_token.inner.kind == TokenKind::BraceOpen
-            && expected_open_brace_count > 0
-        {
-            expected_open_brace_count -= 1;
+        if terminator_is_brace_group && additional_brace_groups > 0 && next_token.is_brace_group() {
+            additional_brace_groups -= 1;
         }
 
-        if next_token.inner.kind.is_matched_open() {
-            depth += 1;
-        } else if next_token.inner.kind.is_matched_close() {
-            depth -= 1;
-        }
-
-        let Ok(item_token) = expect_token(stores, token_iter, token_str, token_fn, prev) else {
+        let item_token = if inner_matcher.is_match(next_token) {
+            token_iter.next().unwrap()
+        } else {
             had_error.set();
 
             // If it's not the close token, we should consume it so we can continue.
-            if !close_delim_fn(next_token.inner.kind) {
+            if !close_matcher.is_match(next_token) {
                 token_iter.next();
             }
 
             continue;
         };
-        tokens.push(item_token);
-        prev = item_token;
+
+        // TODO: Try to get rid of this
+        tokens.push(item_token.clone());
+        prev = item_token.last_token();
     }
 
-    let close_token = expect_token(stores, token_iter, close_delim_str, close_delim_fn, prev)
-        .recover(&mut had_error, prev);
+    let close_token = if consume_close {
+        token_iter.next().unwrap().first_token()
+    } else {
+        token_iter.peek().unwrap().first_token()
+    };
 
     if let Some(len) = expected_len {
         if len != tokens.len() {
@@ -237,103 +458,115 @@ pub fn get_terminated_tokens(
     }
 }
 
-pub fn parse_unresolved_types(
+pub fn parse_multiple_unresolved_types(
     stores: &mut Stores,
-    prev: Spanned<Token>,
-    tokens: &[Spanned<Token>],
+    prev: SourceLocation,
+    tokens: &[TokenTree],
 ) -> Result<Vec<Spanned<UnresolvedType>>, ()> {
     let mut had_error = ErrorSignal::new();
     let mut types: Vec<Spanned<UnresolvedType>> = Vec::new();
-    let mut token_iter = tokens.iter().copied();
+    let mut token_iter = TokenIter::new(tokens.iter());
 
     while token_iter.peek().is_some() {
-        let Ok(ident) = expect_token(
-            stores,
-            &mut token_iter,
-            "ident",
-            |t| t == TokenKind::Ident || t == TokenKind::ColonColon,
-            prev,
-        ) else {
-            had_error.set();
-            token_iter.next(); // Consume the token so we can progress.
-            continue;
-        };
-
-        let Ok((ident, last_token)) = parse_ident(stores, &mut had_error, &mut token_iter, ident)
+        let Ok(unresolved_type) =
+            parse_unresolved_type(&mut token_iter, stores, prev, &mut had_error)
         else {
-            had_error.set();
             continue;
         };
-
-        let mut type_span = ident.span;
-        let mut parsed_type = UnresolvedType::Simple(ident);
-
-        // This looks ugly
-        while token_iter.peek().is_some_and(|t| {
-            matches!(
-                t.inner.kind,
-                TokenKind::Ampersand | TokenKind::SquareBracketOpen
-            )
-        }) {
-            let Some(next_token) = token_iter.peek() else {
-                unreachable!()
-            };
-
-            match next_token.inner.kind {
-                TokenKind::SquareBracketOpen => {
-                    // Parsing an array!
-                    let Ok(delim) = get_delimited_tokens(
-                        stores,
-                        &mut token_iter,
-                        last_token,
-                        Some(1),
-                        ("[", |t| t == TokenKind::SquareBracketOpen),
-                        ("integer", |t| matches!(t, TokenKind::Integer { .. })),
-                        ("]", |t| t == TokenKind::SquareBracketClosed),
-                    ) else {
-                        had_error.set();
-                        continue;
-                    };
-
-                    let len_token = delim.list[0];
-                    let length = parse_integer_lexeme(stores, len_token)?;
-
-                    type_span = type_span.merge(delim.close.location);
-                    parsed_type = UnresolvedType::Array(Box::new(parsed_type), length);
-                }
-                TokenKind::Ampersand => {
-                    // Parsing a pointer!
-                    let Some(next) = token_iter.next() else {
-                        unreachable!()
-                    };
-
-                    type_span = type_span.merge(next.location);
-                    parsed_type = UnresolvedType::Pointer(Box::new(parsed_type));
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        types.push(parsed_type.with_span(type_span));
+        types.push(unresolved_type);
     }
 
-    had_error.into_bool().not().then_some(types).ok_or(())
+    if had_error.into_bool() {
+        Err(())
+    } else {
+        Ok(types)
+    }
+}
+
+pub fn parse_unresolved_type(
+    token_iter: &mut TokenIter,
+    stores: &mut Stores,
+    prev: SourceLocation,
+    had_error: &mut ErrorSignal,
+) -> Result<Spanned<UnresolvedType>, Option<SourceLocation>> {
+    let Ok(ident) = token_iter.expect_single(
+        stores,
+        Matcher("ident", |t| {
+            t == TokenKind::Ident || t == TokenKind::ColonColon
+        }),
+        prev,
+    ) else {
+        had_error.set();
+        let bad_token = token_iter.next().map(|t| t.span()).unwrap_or(prev); // Consume the token so we can progress.
+        return Err(Some(bad_token));
+    };
+
+    let Ok((ident, last_token)) = parse_ident(stores, had_error, token_iter, ident) else {
+        had_error.set();
+        return Err(None);
+    };
+
+    let mut type_span = ident.span;
+    let mut parsed_type = UnresolvedType::Simple(ident);
+    fn pointer_or_array(tt: &TokenTree) -> bool {
+        match tt {
+            TokenTree::Single(tk) => tk.inner.kind == TokenKind::Ampersand,
+            TokenTree::Group(tg) => tg.bracket_kind == BracketKind::Square,
+        }
+    }
+    while token_iter.next_is(Matcher("[` or `&", pointer_or_array)) {
+        let Some(next_token) = token_iter.peek() else {
+            unreachable!()
+        };
+
+        match next_token {
+            TokenTree::Group(_) => {
+                let Ok(delim) = token_iter
+                    .expect_group(stores, BracketKind::Square, last_token)
+                    .with_kinds(
+                        stores,
+                        Matcher("integer", |t| matches!(t, TokenKind::Integer { .. })),
+                    )
+                    .with_length(stores, 1)
+                else {
+                    had_error.set();
+                    continue;
+                };
+
+                let TokenTree::Single(len_token) = delim.tokens[0] else {
+                    unreachable!()
+                };
+                let length = parse_integer_lexeme(stores, len_token).map_err(|_| None)?;
+
+                type_span = type_span.merge(delim.span());
+                parsed_type = UnresolvedType::Array(Box::new(parsed_type), length);
+            }
+            TokenTree::Single(_) => {
+                // Parsing a pointer!
+                let next = token_iter.next().unwrap_single();
+
+                type_span = type_span.merge(next.location);
+                parsed_type = UnresolvedType::Pointer(Box::new(parsed_type));
+            }
+        }
+    }
+    Ok(parsed_type.with_span(type_span))
 }
 
 pub fn parse_ident(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     mut token: Spanned<Token>,
 ) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
     let mut import_span = token.location;
     let mut last_token = token;
 
     let (is_from_root, mut path) = if token.inner.kind == TokenKind::ColonColon {
-        let ident = if token_iter.peek().is_some_and(|tk| {
-            tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(token.location)
+        let ident = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
+            t.location.neighbour_of(token.location)
         }) {
-            token_iter.next().unwrap()
+            token_iter.next().unwrap_single()
         } else {
             diagnostics::emit_error(
                 stores,
@@ -354,14 +587,14 @@ pub fn parse_ident(
         (false, vec![token.map(|t| t.lexeme)])
     };
 
-    while token_iter.peek().is_some_and(|t| {
-        t.inner.kind == TokenKind::ColonColon && t.location.neighbour_of(last_token.location)
+    while token_iter.next_is_single_and(TokenKind::ColonColon, |t| {
+        t.location.neighbour_of(last_token.location)
     }) {
-        let colons = token_iter.next().unwrap(); // Consume the ColonColon.
-        let item_id = if token_iter.peek().is_some_and(|tk| {
-            tk.inner.kind == TokenKind::Ident && tk.location.neighbour_of(colons.location)
+        let colons = token_iter.next().unwrap_single(); // Consume the ColonColon.
+        let item_id = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
+            t.location.neighbour_of(colons.location)
         }) {
-            token_iter.next().unwrap()
+            token_iter.next().unwrap_single()
         } else {
             diagnostics::emit_error(
                 stores,
@@ -380,26 +613,21 @@ pub fn parse_ident(
         path.push(item_id.map(|t| t.lexeme));
     }
 
-    let generic_params = if token_iter
-        .peek()
-        .is_some_and(|t| t.inner.kind == TokenKind::ParenthesisOpen)
-    {
-        let Ok(delim) = get_delimited_tokens(
-            stores,
-            token_iter,
-            token,
-            None,
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("Ident", valid_type_token),
-            (")", |t| t == TokenKind::ParenthesisClosed),
-        ) else {
+    let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
+        let Ok(delim) = token_iter
+            .expect_group(stores, BracketKind::Paren, token)
+            .with_kinds(stores, Matcher("ident", valid_type_token))
+        else {
             had_error.set();
             return Err(());
         };
-        token.location = token.location.merge(delim.close.location);
+
+        token.location = token.location.merge(delim.span());
 
         let span = delim.span();
-        let Ok(unresolved_types) = parse_unresolved_types(stores, delim.open, &delim.list) else {
+        let Ok(unresolved_types) =
+            parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)
+        else {
             had_error.set();
             return Err(());
         };
@@ -416,8 +644,8 @@ pub fn parse_ident(
             return Err(());
         }
 
-        import_span = import_span.merge(delim.close.location);
-        last_token = delim.close;
+        import_span = import_span.merge(delim.span());
+        last_token = delim.last_token();
 
         Some(unresolved_types.into_iter().map(|ut| ut.inner).collect())
     } else {
@@ -475,43 +703,38 @@ where
 
 pub fn parse_integer_param(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> Result<(Spanned<u8>, SourceLocation), ()> {
-    let delim = get_delimited_tokens(
-        stores,
-        token_iter,
-        token,
-        Some(1),
-        ("(", |t| t == TokenKind::ParenthesisOpen),
-        ("Integer", |t| matches!(t, TokenKind::Integer { .. })),
-        (")", |t| t == TokenKind::ParenthesisClosed),
-    )?;
+    let delim = token_iter
+        .expect_group(stores, BracketKind::Paren, token)
+        .with_kinds(
+            stores,
+            Matcher("integer", |t| matches!(t, TokenKind::Integer(_))),
+        )
+        .with_length(stores, 1)?;
 
-    let count_token = delim.list[0];
+    let count_token = delim.tokens[0].unwrap_single();
     let count: u8 = parse_integer_lexeme(stores, count_token)?;
-    Ok((count.with_span(count_token.location), delim.close.location))
+    Ok((count.with_span(count_token.location), delim.span()))
 }
 
 pub fn parse_stack_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     prev_token: Spanned<Token>,
 ) -> Spanned<Vec<Spanned<UnresolvedType>>> {
-    let stack = get_delimited_tokens(
-        stores,
-        token_iter,
-        prev_token,
-        None,
-        ("[", |t| t == TokenKind::SquareBracketOpen),
-        ("Ident", valid_type_token),
-        ("]", |t| t == TokenKind::SquareBracketClosed),
-    )
-    .recover(had_error, Delimited::fallback(prev_token));
+    let fallback = TreeGroup::fallback(BracketKind::Square, prev_token);
+    let stack = token_iter
+        .expect_group(stores, BracketKind::Square, prev_token)
+        .with_kinds(stores, Matcher("ident", valid_type_token))
+        .recover(had_error, &fallback);
+
     let stack_location = stack.span();
     let unresolved_types =
-        parse_unresolved_types(stores, stack.open, &stack.list).recover(had_error, Vec::new());
+        parse_multiple_unresolved_types(stores, stack.open.location, &stack.tokens)
+            .recover(had_error, Vec::new());
 
     unresolved_types.with_span(stack_location)
 }

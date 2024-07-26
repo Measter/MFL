@@ -7,8 +7,8 @@
 import core::String
 
 struct Foo(T) {
-    field a s32
-    field b T
+    field a s32,
+    field b T,
 }
 
 proc make_foo [] to [Foo(String)] {

@@ -1,6 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 #![warn(
-    clippy::needless_pass_by_value,
     clippy::manual_let_else,
     clippy::redundant_else,
     clippy::unnested_or_patterns,

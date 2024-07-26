@@ -1,3 +1,5 @@
+use std::fmt::{Display, Write};
+
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
@@ -30,6 +32,23 @@ pub struct Integer {
 pub struct StringToken {
     pub id: Spur,
     pub is_c_str: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BracketKind {
+    Brace,
+    Paren,
+    Square,
+}
+
+impl Display for BracketKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BracketKind::Brace => f.write_char('{'),
+            BracketKind::Paren => f.write_char('('),
+            BracketKind::Square => f.write_char('['),
+        }
+    }
 }
 
 fn is_newline(lex: &mut Lexer<'_, TokenKind>) {
@@ -71,11 +90,15 @@ pub enum TokenKind {
     #[token("false", |_| false)]
     Boolean(bool),
 
-    #[token("}")]
-    BraceClosed,
+    #[token("}", |_| BracketKind::Brace)]
+    #[token(")", |_| BracketKind::Paren)]
+    #[token("]", |_| BracketKind::Square)]
+    BracketClose(BracketKind),
 
-    #[token("{")]
-    BraceOpen,
+    #[token("{", |_| BracketKind::Brace)]
+    #[token("(", |_| BracketKind::Paren)]
+    #[token("[", |_| BracketKind::Square)]
+    BracketOpen(BracketKind),
 
     #[token("cast")]
     Cast,
@@ -89,6 +112,9 @@ pub enum TokenKind {
 
     #[token("const")]
     Const,
+
+    #[token(",")]
+    Comma,
 
     #[token("/")]
     Div,
@@ -186,12 +212,6 @@ pub enum TokenKind {
     #[token("pack")]
     Pack,
 
-    #[token(")")]
-    ParenthesisClosed,
-
-    #[token("(")]
-    ParenthesisOpen,
-
     #[token("+")]
     Plus,
 
@@ -218,12 +238,6 @@ pub enum TokenKind {
 
     #[token("sizeof")]
     SizeOf,
-
-    #[token("]")]
-    SquareBracketClosed,
-
-    #[token("[")]
-    SquareBracketOpen,
 
     #[token("*")]
     Star,
@@ -255,26 +269,101 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    pub fn expects_brace(self) -> bool {
+    pub fn kind_str(self) -> &'static str {
+        match self {
+            TokenKind::Whitespace => "Whitespace",
+            TokenKind::Ampersand => "&",
+            TokenKind::Assert => "assert",
+            TokenKind::BitAnd => "and",
+            TokenKind::BitNot => "not",
+            TokenKind::BitOr => "or",
+            TokenKind::BitXor => "xor",
+            TokenKind::Boolean(_) => "boolean literal",
+            TokenKind::BracketClose(BracketKind::Brace) => "}",
+            TokenKind::BracketClose(BracketKind::Paren) => ")",
+            TokenKind::BracketClose(BracketKind::Square) => "]",
+            TokenKind::BracketOpen(BracketKind::Brace) => "{",
+            TokenKind::BracketOpen(BracketKind::Paren) => "(",
+            TokenKind::BracketOpen(BracketKind::Square) => "[",
+            TokenKind::Cast => "cast",
+            TokenKind::Char(_) => "character literal",
+            TokenKind::ColonColon => "::'",
+            TokenKind::Const => "const",
+            TokenKind::Comma => ",",
+            TokenKind::Div => "/",
+            TokenKind::Dot => ".",
+            TokenKind::Drop => "drop",
+            TokenKind::Dup => "dup",
+            TokenKind::Elif => "elif",
+            TokenKind::Else => "else",
+            TokenKind::Equal => "=",
+            TokenKind::EmitStack => "emit",
+            TokenKind::Exit => "exit",
+            TokenKind::Extract(Extract { emit_struct: true }) => "xtr",
+            TokenKind::Extract(Extract { emit_struct: false }) => "xtrd",
+            TokenKind::Field => "field",
+            TokenKind::GoesTo => "to",
+            TokenKind::Greater => ">",
+            TokenKind::GreaterEqual => ">=",
+            TokenKind::Here(_) => "here",
+            TokenKind::Ident => "Ident",
+            TokenKind::If => "if",
+            TokenKind::Insert(Insert { emit_struct: true }) => "ins",
+            TokenKind::Insert(Insert { emit_struct: false }) => "insd",
+            TokenKind::Integer(_) => "integer literal",
+            TokenKind::Import => "import",
+            TokenKind::IsNull => "isnull",
+            TokenKind::LangItem => "lang",
+            TokenKind::Less => "<",
+            TokenKind::LessEqual => "<=",
+            TokenKind::Load => "@",
+            TokenKind::Memory => "memory",
+            TokenKind::Minus => "-",
+            TokenKind::Module => "module",
+            TokenKind::NotEqual => "!=",
+            TokenKind::Over => "over",
+            TokenKind::Pack => "pack",
+            TokenKind::Plus => "+",
+            TokenKind::Proc => "proc",
+            TokenKind::Rem => "%",
+            TokenKind::Return => "return",
+            TokenKind::Reverse => "rev",
+            TokenKind::Rot => "rot",
+            TokenKind::ShiftLeft => "shl",
+            TokenKind::ShiftRight => "shr",
+            TokenKind::SizeOf => "sizeof",
+            TokenKind::Star => "*",
+            TokenKind::String(_) => "string literal",
+            TokenKind::Store => "!",
+            TokenKind::Struct => "struct",
+            TokenKind::Swap => "swap",
+            TokenKind::SysCall => "syscall",
+            TokenKind::Union => "union",
+            TokenKind::Unpack => "unpack",
+            TokenKind::While => "while",
+        }
+    }
+
+    pub fn expects_brace_group(self) -> bool {
         matches!(
             self,
             TokenKind::If | TokenKind::Elif | TokenKind::Else | TokenKind::While
         )
     }
 
-    pub fn is_matched_open(self) -> bool {
-        matches!(
-            self,
-            TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen | TokenKind::BraceOpen
-        )
-    }
+    // pub fn is_matched_open(self) -> bool {
+    //     matches!(
+    //         self,
+    //         TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen | TokenKind::BraceOpen
+    //     )
+    // }
 
-    pub fn is_matched_close(self) -> bool {
-        matches!(
-            self,
-            TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::BraceClosed
-        )
-    }
+    // pub fn is_matched_close(self) -> bool {
+    //     matches!(
+    //         self,
+    //         TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::BraceClosed
+    //     )
+    // }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,16 +379,95 @@ impl Token {
 }
 
 #[derive(Debug, Clone)]
-struct TreeGroup {
-    open: Spanned<TokenKind>,
-    tokens: Vec<TokenTree>,
-    close: Option<Spanned<TokenKind>>,
+pub struct TreeGroup {
+    pub bracket_kind: BracketKind,
+    pub open: Spanned<Token>,
+    pub close: Option<Spanned<Token>>,
+    pub tokens: Vec<TokenTree>,
+}
+
+impl TreeGroup {
+    pub fn span(&self) -> SourceLocation {
+        let last = self
+            .close
+            .map(|t| t.location)
+            .or(self.tokens.last().map(TokenTree::span))
+            .unwrap_or(self.open.location);
+
+        self.open.location.merge(last)
+    }
+
+    pub fn last_token(&self) -> Spanned<Token> {
+        self.close
+            .or(self.tokens.last().map(TokenTree::last_token))
+            .unwrap_or(self.open)
+    }
+
+    pub fn first_token(&self) -> Spanned<Token> {
+        self.open
+    }
 }
 
 #[derive(Debug, Clone)]
-enum TokenTree {
+pub enum TokenTree {
     Single(Spanned<Token>),
     Group(TreeGroup),
+}
+
+impl TokenTree {
+    pub fn span(&self) -> SourceLocation {
+        match self {
+            TokenTree::Single(tk) => tk.location,
+            TokenTree::Group(tg) => tg.span(),
+        }
+    }
+
+    pub fn last_token(&self) -> Spanned<Token> {
+        match self {
+            TokenTree::Single(tk) => *tk,
+            TokenTree::Group(tg) => tg.last_token(),
+        }
+    }
+
+    pub fn first_token(&self) -> Spanned<Token> {
+        match self {
+            TokenTree::Single(tk) => *tk,
+            TokenTree::Group(tg) => tg.first_token(),
+        }
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn unwrap_single(&self) -> Spanned<Token> {
+        match self {
+            TokenTree::Single(tk) => *tk,
+            TokenTree::Group(_) => panic!("ICE: Tried to unwrap_single a Group"),
+        }
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn unwrap_group(&self) -> &TreeGroup {
+        match self {
+            TokenTree::Single(_) => panic!("ICE: Tried to unwrap_group a Single"),
+            TokenTree::Group(tg) => tg,
+        }
+    }
+
+    pub fn expects_brace_group(&self) -> bool {
+        matches!(self, TokenTree::Single(tk) if tk.inner.kind.expects_brace_group())
+    }
+
+    pub fn is_brace_group(&self) -> bool {
+        matches!(self, TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Brace)
+    }
+
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            TokenTree::Single(tk) => tk.inner.kind.kind_str(),
+            TokenTree::Group(_) => "bracket group",
+        }
+    }
 }
 
 pub struct Context {
@@ -352,7 +520,7 @@ pub(crate) fn lex_file(
     stores: &mut Stores,
     contents: &str,
     file_id: FileId,
-) -> Result<Vec<Spanned<Token>>, ()> {
+) -> Result<Vec<TokenTree>, ()> {
     let _span = debug_span!(stringify!(lexer::lex_file)).entered();
 
     let context = Context {
@@ -361,7 +529,6 @@ pub(crate) fn lex_file(
     };
 
     let mut had_error = ErrorSignal::new();
-    let mut ops = Vec::new();
     let mut token_tree_group_stack = Vec::<TreeGroup>::new();
     let mut token_tree_stream = Vec::<TokenTree>::new();
 
@@ -427,29 +594,38 @@ pub(crate) fn lex_file(
 
         let lexeme = stores.strings.intern(lexer.slice());
         let token = Token::new(kind, lexeme).with_span(location);
-        ops.push(token);
 
         match kind {
-            TokenKind::BraceOpen | TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen => {
-                token_tree_group_stack.push(TreeGroup {
-                    open: token.map(|t| t.kind),
-                    tokens: Vec::new(),
-                    close: None,
-                })
-            }
-            TokenKind::BraceClosed
-            | TokenKind::ParenthesisClosed
-            | TokenKind::SquareBracketClosed
-                if !token_tree_group_stack.is_empty() =>
-            {
-                let mut cur_group = token_tree_group_stack.pop().unwrap();
-                cur_group.close = Some(token.map(|t| t.kind));
+            TokenKind::BracketOpen(bk) => token_tree_group_stack.push(TreeGroup {
+                bracket_kind: bk,
+                open: token,
+                close: None,
+                tokens: Vec::new(),
+            }),
+            TokenKind::BracketClose(tk) if !token_tree_group_stack.is_empty() => {
+                let last = token_tree_group_stack.last().unwrap();
+                let tt_val = if last.bracket_kind == tk {
+                    let mut cur_group = token_tree_group_stack.pop().unwrap();
+                    cur_group.close = Some(token);
+                    TokenTree::Group(cur_group)
+                } else {
+                    diagnostics::emit_error(
+                        stores,
+                        token.location,
+                        "unmatched bracket",
+                        [Label::new(token.location).with_color(Color::Red)],
+                        None,
+                    );
+                    had_error.set();
+
+                    TokenTree::Single(token)
+                };
 
                 let stream = token_tree_group_stack
                     .last_mut()
                     .map(|tg| &mut tg.tokens)
                     .unwrap_or(&mut token_tree_stream);
-                stream.push(TokenTree::Group(cur_group));
+                stream.push(tt_val);
             }
             _ => {
                 let stream = token_tree_group_stack
@@ -481,7 +657,7 @@ pub(crate) fn lex_file(
     if had_error.into_bool() {
         Err(())
     } else {
-        Ok(ops)
+        Ok(token_tree_stream)
     }
 }
 
@@ -493,10 +669,20 @@ fn pretty_print_tree(tree: &Vec<TokenTree>, depth: usize) {
                 eprintln!("{:width$}{:?}", " ", tk.inner.kind, width = depth * 4);
             }
             TokenTree::Group(tg) => {
-                eprintln!("{:width$}{:?}", " ", tg.open.inner, width = depth * 4);
+                eprintln!(
+                    "{:width$}{:?}",
+                    " ",
+                    TokenKind::BracketOpen(tg.bracket_kind),
+                    width = depth * 4
+                );
                 pretty_print_tree(&tg.tokens, depth + 1);
                 if let Some(ctk) = tg.close {
-                    eprintln!("{:width$}{:?}", " ", ctk.inner, width = depth * 4);
+                    eprintln!(
+                        "{:width$}{:?}",
+                        " ",
+                        TokenKind::BracketClose(tg.bracket_kind),
+                        width = depth * 4
+                    );
                 }
             }
         }

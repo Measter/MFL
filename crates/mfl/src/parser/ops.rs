@@ -10,7 +10,7 @@ use crate::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, OpCode,
         Stack, UnresolvedOp, While, WhileTokens,
     },
-    lexer::{Extract, Insert, StringToken, Token, TokenKind},
+    lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind, TokenTree},
     stores::{
         ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
@@ -22,9 +22,9 @@ use crate::{
 use super::{
     parse_item_body_contents,
     utils::{
-        expect_token, get_delimited_tokens, get_terminated_tokens, parse_ident,
-        parse_integer_lexeme, parse_integer_param, parse_unresolved_types, valid_type_token,
-        ParseOpResult, TokenIter,
+        get_terminated_tokens, parse_ident, parse_integer_lexeme, parse_integer_param,
+        parse_multiple_unresolved_types, valid_type_token, ConditionMatch, ExpectedTokenMatcher,
+        Matcher, ParseOpResult, TokenIter, TokenTreeOptionExt, TreeGroupResultExt,
     },
 };
 
@@ -50,46 +50,37 @@ pub fn parse_extract_insert_array(token: Spanned<Token>) -> (OpCode<UnresolvedOp
 
 pub fn parse_extract_insert_struct(
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     mut token: Spanned<Token>,
 ) -> Result<SmallVec<[OpId; 1]>, ()> {
     let mut ops = SmallVec::new();
 
-    let delim = get_delimited_tokens(
-        stores,
-        token_iter,
-        token,
-        None,
-        ("(", |t| t == TokenKind::ParenthesisOpen),
-        ("ident", |t| t == TokenKind::Ident || t == TokenKind::Dot),
-        (")", |t| t == TokenKind::ParenthesisClosed),
-    )?;
+    let delim = token_iter
+        .expect_group(stores, BracketKind::Paren, token)
+        .with_kinds(
+            stores,
+            Matcher("ident", |t: TokenKind| {
+                t == TokenKind::Ident || t == TokenKind::Dot
+            }),
+        )?;
 
-    token.location = token.location.merge(delim.close.location);
-    let mut delim_iter = delim.list.iter().copied();
+    token.location = token.location.merge(delim.span());
+    let mut delim_iter = TokenIter::new(delim.tokens.iter());
     let mut idents = Vec::new();
 
     // We want to make sure the Dots exist, but we don't actually want them.
     let mut local_had_error = ErrorSignal::new();
     let mut prev_token = delim.open;
     loop {
-        let Ok(next) = expect_token(
-            stores,
-            &mut delim_iter,
-            "ident",
-            |t| t == TokenKind::Ident,
-            prev_token,
-        ) else {
+        let Ok(next) = delim_iter.expect_single(stores, TokenKind::Ident, prev_token.location)
+        else {
             local_had_error.set();
             break;
         };
         idents.push(next);
 
-        if delim_iter
-            .peek()
-            .is_some_and(|t| t.inner.kind == TokenKind::Dot)
-        {
-            prev_token = delim_iter.next().unwrap();
+        if delim_iter.next_is_single(TokenKind::Dot) {
+            prev_token = delim_iter.next().unwrap().last_token();
             continue;
         }
         break;
@@ -175,7 +166,7 @@ pub fn parse_extract_insert_struct(
 
 pub fn parse_simple_op(
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let code = match token.inner.kind {
@@ -253,7 +244,7 @@ pub fn parse_simple_op(
 
 fn parse_ident_op(
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let mut local_had_error = ErrorSignal::new();
@@ -272,51 +263,44 @@ fn parse_ident_op(
 
 fn parse_minus(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    Ok(match token_iter.peek() {
-        Some(int_token)
-            if int_token.location.neighbour_of(token.location)
-                && matches!(int_token.inner.kind, TokenKind::Integer { .. }) =>
-        {
-            token_iter.next();
-            let mut int_token = int_token;
-            int_token.location = int_token.location.merge(token.location);
-            parse_integer_op(stores, token_iter, int_token, true)?
-        }
-        _ => (
+    if token_iter.next_is_single_and(
+        Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_))),
+        |t| t.location.neighbour_of(token.location),
+    ) {
+        let mut int_token = token_iter.next().unwrap_single();
+        int_token.location = int_token.location.merge(token.location);
+        parse_integer_op(stores, token_iter, int_token, true)
+    } else {
+        Ok((
             OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)),
             token.location,
-        ),
-    })
+        ))
+    }
 }
 
 fn parse_emit_stack(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let (emit_labels, loc) = if token_iter
-        .peek()
-        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
-    {
-        let delim = get_delimited_tokens(
-            stores,
-            token_iter,
-            token,
-            Some(1),
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("bool", |t| matches!(t, TokenKind::Boolean(_))),
-            (")", |t| t == TokenKind::ParenthesisClosed),
-        )?;
+    let (emit_labels, loc) = if token_iter.next_is_group(BracketKind::Paren) {
+        let delim = token_iter
+            .expect_group(stores, BracketKind::Paren, token)
+            .with_kinds(
+                stores,
+                Matcher("bool literal", |t| matches!(t, TokenKind::Boolean(_))),
+            )
+            .with_length(stores, 1)?;
 
-        let emit_token = delim.list[0];
+        let emit_token = delim.tokens[0].unwrap_single();
         let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else {
             unreachable!()
         };
 
-        (emit_labels, delim.close.location)
+        (emit_labels, delim.last_token().location)
     } else {
         (false, token.location)
     };
@@ -331,21 +315,16 @@ fn parse_emit_stack(
 
 fn parse_cast_sizeof(
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let delim = get_delimited_tokens(
-        stores,
-        token_iter,
-        token,
-        None,
-        ("(", |t| t == TokenKind::ParenthesisOpen),
-        ("Ident", valid_type_token),
-        (")", |t| t == TokenKind::ParenthesisClosed),
-    )?;
+    let delim = token_iter
+        .expect_group(stores, BracketKind::Paren, token)
+        .with_kinds(stores, Matcher("ident", valid_type_token))?;
 
     let span = delim.span();
-    let mut unresolved_types = parse_unresolved_types(stores, delim.open, &delim.list)?;
+    let mut unresolved_types =
+        parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)?;
 
     if unresolved_types.len() != 1 {
         diagnostics::emit_error(
@@ -370,100 +349,94 @@ fn parse_cast_sizeof(
         _ => unreachable!(),
     };
 
-    Ok((OpCode::Complex(code), delim.close.location))
+    Ok((OpCode::Complex(code), delim.last_token().location))
 }
 
-fn parse_rot(
-    stores: &Stores,
-    token_iter: &mut impl TokenIter,
-    token: Spanned<Token>,
-) -> ParseOpResult {
-    let delim = get_delimited_tokens(
-        stores,
-        token_iter,
-        token,
-        Some(3),
-        ("(", |t| t == TokenKind::ParenthesisOpen),
-        ("", |_| true),
-        (")", |t| t == TokenKind::ParenthesisClosed),
-    )?;
+fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>) -> ParseOpResult {
+    let delim = token_iter
+        .expect_group(stores, BracketKind::Paren, token)
+        .with_length(stores, 3)?;
 
-    let mut local_error = false;
-    let [item_count_token, direction_token, shift_count_token] = &*delim.list else {
+    let mut had_error = ErrorSignal::new();
+    let [item_count_token, direction_token, shift_count_token] = &*delim.tokens else {
         unreachable!()
     };
-    let item_count_token = *item_count_token;
-    let shift_count_token = *shift_count_token;
-    let item_count = if !matches!(item_count_token.inner.kind, TokenKind::Integer { .. }) {
+
+    let int_matcher = Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_)));
+    let item_count = if !int_matcher.is_match(item_count_token) {
         diagnostics::emit_error(
             stores,
-            item_count_token.location,
+            item_count_token.span(),
             format!(
-                "expected `integer`, found `{}`",
-                stores.strings.resolve(item_count_token.inner.lexeme)
+                "expected `integer literal`, found `{}`",
+                item_count_token.kind_str(),
             ),
-            Some(Label::new(item_count_token.location).with_color(Color::Red)),
+            Some(Label::new(item_count_token.span()).with_color(Color::Red)),
             None,
         );
-        local_error = true;
+        had_error.set();
         1
     } else {
-        parse_integer_lexeme(stores, item_count_token)?
+        parse_integer_lexeme(stores, item_count_token.unwrap_single())?
     };
 
-    let shift_count = if !matches!(shift_count_token.inner.kind, TokenKind::Integer { .. }) {
+    let shift_count = if !int_matcher.is_match(shift_count_token) {
         diagnostics::emit_error(
             stores,
-            shift_count_token.location,
+            shift_count_token.span(),
             format!(
-                "expected `integer`, found `{}`",
-                stores.strings.resolve(shift_count_token.inner.lexeme)
+                "expected `integer literal`, found `{}`",
+                shift_count_token.kind_str()
             ),
-            Some(Label::new(shift_count_token.location).with_color(Color::Red)),
+            Some(Label::new(shift_count_token.span()).with_color(Color::Red)),
             None,
         );
-        local_error = true;
+        had_error.set();
         1
     } else {
-        parse_integer_lexeme(stores, shift_count_token)?
+        parse_integer_lexeme(stores, shift_count_token.unwrap_single())?
     };
 
-    let direction = match direction_token.inner.kind {
-        TokenKind::Less => Direction::Left,
-        TokenKind::Greater => Direction::Right,
-        _ => {
-            diagnostics::emit_error(
-                stores,
-                direction_token.location,
-                format!(
-                    "expected `<` or `>`, found `{}`",
-                    stores.strings.resolve(direction_token.inner.lexeme)
-                ),
-                Some(Label::new(direction_token.location).with_color(Color::Red)),
-                None,
-            );
-            local_error = true;
-            Direction::Left
+    let direction = if TokenKind::Less.is_match(direction_token)
+        | TokenKind::Greater.is_match(direction_token)
+    {
+        match direction_token.unwrap_single().inner.kind {
+            TokenKind::Less => Direction::Left,
+            TokenKind::Greater => Direction::Right,
+            _ => unreachable!(),
         }
+    } else {
+        diagnostics::emit_error(
+            stores,
+            direction_token.span(),
+            format!(
+                "expected `<` or `>`, found `{}`",
+                direction_token.kind_str()
+            ),
+            Some(Label::new(direction_token.span()).with_color(Color::Red)),
+            None,
+        );
+        had_error.set();
+        Direction::Left
     };
 
-    if local_error {
+    if had_error.into_bool() {
         return Err(());
     }
 
     Ok((
         OpCode::Basic(Basic::Stack(Stack::Rotate {
-            item_count: item_count.with_span(item_count_token.location),
+            item_count: item_count.with_span(item_count_token.span()),
             direction,
-            shift_count: shift_count.with_span(shift_count_token.location),
+            shift_count: shift_count.with_span(shift_count_token.span()),
         })),
-        delim.close.location,
+        delim.last_token().location,
     ))
 }
 
 fn parse_integer_op(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
     is_known_negative: bool,
 ) -> ParseOpResult {
@@ -488,21 +461,14 @@ fn parse_integer_op(
         return Err(());
     }
 
-    let (width, value) = if token_iter
-        .peek()
-        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
-    {
-        let delim = get_delimited_tokens(
-            stores,
-            token_iter,
-            token,
-            Some(1),
-            ("(", |t| t == TokenKind::ParenthesisOpen),
-            ("Ident", |t| t == TokenKind::Ident),
-            (")", |t| t == TokenKind::ParenthesisClosed),
-        )?;
-        let ident_token = delim.list[0];
-        overall_location = overall_location.merge(delim.close.location);
+    let (width, value) = if token_iter.next_is_group(BracketKind::Paren) {
+        let delim = token_iter
+            .expect_group(stores, BracketKind::Paren, token)
+            .with_kinds(stores, TokenKind::Ident)
+            .with_length(stores, 1)?;
+
+        let ident_token = delim.tokens[0].unwrap_single();
+        overall_location = overall_location.merge(delim.last_token().location);
 
         let (width, is_signed_kind) = match stores.strings.resolve(ident_token.inner.lexeme) {
             "u8" => (IntWidth::I8, Signedness::Unsigned),
@@ -626,13 +592,10 @@ fn parse_integer_op(
 
 pub fn parse_drop_dup_over_reverse_swap_syscall(
     stores: &Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let (count, op_end) = if token_iter
-        .peek()
-        .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
-    {
+    let (count, op_end) = if token_iter.next_is_group(BracketKind::Paren) {
         parse_integer_param(stores, token_iter, token)?
     } else {
         let default_amount = if token.inner.kind == TokenKind::Reverse {
@@ -659,31 +622,31 @@ pub fn parse_drop_dup_over_reverse_swap_syscall(
 
 pub fn parse_pack(
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let delim = get_delimited_tokens(
-        stores,
-        token_iter,
-        token,
-        None,
-        ("(", |t| t == TokenKind::ParenthesisOpen),
-        ("integer or type", valid_type_token),
-        (")", |t| t == TokenKind::ParenthesisClosed),
-    )?;
+    let delim = token_iter
+        .expect_group(stores, BracketKind::Paren, token)
+        .with_kinds(
+            stores,
+            Matcher("integer literal` or `type", valid_type_token),
+        )?;
 
-    if delim.list.len() == 1 && matches!(delim.list[0].inner.kind, TokenKind::Integer { .. }) {
-        let count_token = delim.list[0];
+    let int_matcher = Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_)));
+
+    if delim.tokens.len() == 1 && int_matcher.is_match(&delim.tokens[0]) {
+        let count_token = delim.tokens[0].unwrap_single();
         let count = parse_integer_lexeme(stores, count_token)?;
 
         Ok((
             OpCode::Basic(Basic::Memory(Memory::PackArray { count })),
-            delim.close.location,
+            delim.last_token().location,
         ))
     } else {
         let span = delim.span();
 
-        let mut unresolved_types = parse_unresolved_types(stores, delim.open, &delim.list)?;
+        let mut unresolved_types =
+            parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)?;
 
         if unresolved_types.len() != 1 {
             diagnostics::emit_error(
@@ -701,7 +664,7 @@ pub fn parse_pack(
             OpCode::Complex(UnresolvedOp::PackStruct {
                 id: unresolved_type.inner,
             }),
-            delim.close.location,
+            delim.last_token().location,
         ))
     }
 }
@@ -709,7 +672,7 @@ pub fn parse_pack(
 pub fn parse_if(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
@@ -718,54 +681,45 @@ pub fn parse_if(
         token_iter,
         keyword,
         None,
-        ("any", |_| true),
-        ("{", |t| t == TokenKind::BraceOpen),
+        Matcher("any", |_: &TokenTree| true),
+        ConditionMatch,
+        false,
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
-    let then_block_tokens = get_terminated_tokens(
-        stores,
-        token_iter,
-        condition_tokens.close,
-        None,
-        ("any", |_| true),
-        ("}", |t| t == TokenKind::BraceClosed),
-    )?;
-    let mut close_token = then_block_tokens.close;
+    let then_block_tokens =
+        token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
+    let mut close_token = then_block_tokens.last_token();
 
-    let then_block = parse_item_body_contents(ctx, stores, &then_block_tokens.list, parent_id)?;
+    let then_block = parse_item_body_contents(ctx, stores, &then_block_tokens.tokens, parent_id)?;
     let then_block = stores.blocks.new_block(then_block);
 
     let else_token = close_token;
     let mut elif_blocks = Vec::new();
 
-    while let Some(TokenKind::Elif) = token_iter.peek().map(|tk| tk.inner.kind) {
-        let elif_token = token_iter.next().unwrap();
+    while token_iter.next_is(TokenKind::Elif) {
+        let elif_token = token_iter.next().unwrap_single();
         let elif_condition_tokens = get_terminated_tokens(
             stores,
             token_iter,
             elif_token,
             None,
-            ("any", |_| true),
-            ("{", |t| t == TokenKind::BraceOpen),
+            Matcher("any", |_: &TokenTree| true),
+            ConditionMatch,
+            false,
         )?;
 
         let elif_condition =
             parse_item_body_contents(ctx, stores, &elif_condition_tokens.list, parent_id)?;
         let elif_condition = stores.blocks.new_block(elif_condition);
 
-        let elif_block_tokens = get_terminated_tokens(
-            stores,
-            token_iter,
-            elif_condition_tokens.close,
-            None,
-            ("any", |_| true),
-            ("}", |t| t == TokenKind::BraceClosed),
-        )?;
+        let elif_block_tokens =
+            token_iter.expect_group(stores, BracketKind::Brace, elif_condition_tokens.close)?;
 
-        let elif_block = parse_item_body_contents(ctx, stores, &elif_block_tokens.list, parent_id)?;
+        let elif_block =
+            parse_item_body_contents(ctx, stores, &elif_block_tokens.tokens, parent_id)?;
         let elif_block = stores.blocks.new_block(elif_block);
 
         elif_blocks.push((
@@ -773,27 +727,17 @@ pub fn parse_if(
             elif_condition,
             elif_condition_tokens.close,
             elif_block,
-            elif_block_tokens.close,
+            elif_block_tokens.last_token(),
         ));
-        close_token = elif_block_tokens.close;
+        close_token = elif_block_tokens.last_token();
     }
 
-    let else_block = if let Some(TokenKind::Else) = token_iter.peek().map(|tk| tk.inner.kind) {
-        let else_token = token_iter.next().unwrap();
-        let else_block_tokens = get_delimited_tokens(
-            stores,
-            token_iter,
-            else_token,
-            None,
-            ("{", |t| t == TokenKind::BraceOpen),
-            ("any", |_| true),
-            ("}", |t| t == TokenKind::BraceClosed),
-        )?;
-
-        let else_block = parse_item_body_contents(ctx, stores, &else_block_tokens.list, parent_id)?;
-
-        close_token = else_block_tokens.close;
-
+    let else_block = if token_iter.next_is(TokenKind::Else) {
+        let else_token = token_iter.next().unwrap_single();
+        let else_block_tokens = token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
+        let else_block =
+            parse_item_body_contents(ctx, stores, &else_block_tokens.tokens, parent_id)?;
+        close_token = else_block_tokens.last_token();
         else_block
     } else {
         Vec::new()
@@ -841,7 +785,7 @@ pub fn parse_if(
 pub fn parse_while(
     ctx: &mut Context,
     stores: &mut Stores,
-    token_iter: &mut impl TokenIter,
+    token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
@@ -850,28 +794,23 @@ pub fn parse_while(
         token_iter,
         keyword,
         None,
-        ("any", |_| true),
-        ("{", |t| t == TokenKind::BraceOpen),
+        Matcher("any", |_: &TokenTree| true),
+        ConditionMatch,
+        false,
     )?;
 
     let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
-    let body_tokens = get_terminated_tokens(
-        stores,
-        token_iter,
-        condition_tokens.close,
-        None,
-        ("any", |_| true),
-        ("}", |t| t == TokenKind::BraceClosed),
-    )?;
+    let body_tokens =
+        token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
 
-    let body_block = parse_item_body_contents(ctx, stores, &body_tokens.list, parent_id)?;
+    let body_block = parse_item_body_contents(ctx, stores, &body_tokens.tokens, parent_id)?;
     let body_block = stores.blocks.new_block(body_block);
 
     let while_tokens = WhileTokens {
         do_token: condition_tokens.close.location,
-        end_token: body_tokens.close.location,
+        end_token: body_tokens.last_token().location,
     };
     let while_code = While {
         tokens: while_tokens,
@@ -881,6 +820,6 @@ pub fn parse_while(
 
     Ok((
         OpCode::Basic(Basic::Control(Control::While(while_code))),
-        body_tokens.close.location,
+        body_tokens.last_token().location,
     ))
 }
