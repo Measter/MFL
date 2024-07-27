@@ -5,6 +5,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
+    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassContext},
     stores::types::TypeKind,
     Stores,
 };
@@ -66,20 +67,26 @@ pub fn declare_struct(
 }
 
 pub fn define_struct(
-    ctx: &Context,
+    ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = ctx.nrir().get_struct(cur_id);
+    let def = ctx.nrir().get_struct(cur_id).clone();
+    for field in &def.fields {
+        // Failure here can be handled by the type resolver.
+        ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, &field.kind);
+    }
+
     if def.generic_params.is_some() {
         stores
             .types
-            .partially_resolve_generic_struct(&mut stores.strings, cur_id, def);
+            .partially_resolve_generic_struct(&mut stores.strings, cur_id, &def);
     } else if let Err(missing_token) =
         stores
             .types
-            .define_fixed_struct(&mut stores.strings, cur_id, def)
+            .define_fixed_struct(&mut stores.strings, cur_id, &def)
     {
         // The type that failed to resolve is us.
         diagnostics::emit_error(

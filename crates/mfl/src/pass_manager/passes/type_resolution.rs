@@ -4,41 +4,13 @@ use crate::{
     context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
-    pass_manager::PassContext,
+    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassContext},
     stores::{
         block::BlockId,
         types::{emit_type_error_diag, TypeId},
     },
     Stores,
 };
-
-fn ensure_structs_declared_in_type(
-    ctx: &mut Context,
-    stores: &mut Stores,
-    pass_ctx: &mut PassContext,
-    had_error: &mut ErrorSignal,
-    unresolved: &NameResolvedType,
-) {
-    match unresolved {
-        NameResolvedType::SimpleCustom { id, .. } => {
-            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
-                had_error.set();
-            }
-        }
-        NameResolvedType::GenericInstance { id, params, .. } => {
-            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
-                had_error.set();
-            }
-            for p in params {
-                ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, p);
-            }
-        }
-        NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
-        NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
-            ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
-        }
-    };
-}
 
 pub fn resolve_signature(
     ctx: &mut Context,

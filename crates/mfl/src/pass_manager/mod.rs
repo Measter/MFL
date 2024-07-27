@@ -266,7 +266,7 @@ impl PassContext {
         }
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::define_struct(ctx, stores, &mut had_error, cur_item);
+        passes::structs::define_struct(ctx, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())

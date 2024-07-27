@@ -1,0 +1,13 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+struct Baz {
+    c Quux,
+}
+
+struct Quux {
+    d u8,
+}

@@ -5,7 +5,10 @@ use intcast::IntCast;
 use prettytable::{row, Table};
 
 use crate::{
+    context::Context,
     diagnostics::{self, TABLE_FORMAT},
+    error_signal::ErrorSignal,
+    ir::NameResolvedType,
     stores::{
         analyzer::ValueId,
         ops::OpId,
@@ -14,6 +17,8 @@ use crate::{
     },
     Stores,
 };
+
+use super::PassContext;
 
 pub fn can_promote_int_unidirectional(from: Integer, to: Integer) -> bool {
     promote_int_type_uni_directional(from, to).is_some()
@@ -68,6 +73,34 @@ fn test_promote_int() {
         promote_int_type_bidirectional((I16, Signed).into(), (I64, Unsigned).into()),
         None
     );
+}
+
+pub(super) fn ensure_structs_declared_in_type(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    unresolved: &NameResolvedType,
+) {
+    match unresolved {
+        NameResolvedType::SimpleCustom { id, .. } => {
+            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+                had_error.set();
+            }
+        }
+        NameResolvedType::GenericInstance { id, params, .. } => {
+            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+                had_error.set();
+            }
+            for p in params {
+                ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, p);
+            }
+        }
+        NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
+        NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
+            ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
+        }
+    };
 }
 
 pub(super) fn failed_compare_stack_types(
