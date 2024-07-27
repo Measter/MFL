@@ -59,11 +59,27 @@ impl IntKind {
     }
 }
 
+pub trait FieldKind {
+    type GenericParamType;
+}
+
+impl FieldKind for TypeId {
+    type GenericParamType = TypeId;
+}
+
+impl FieldKind for NameResolvedType {
+    type GenericParamType = Spanned<Spur>;
+}
+
+impl FieldKind for UnresolvedType {
+    type GenericParamType = Spanned<Spur>;
+}
+
 #[derive(Debug, Clone)]
-pub struct StructDef<Kind> {
+pub struct StructDef<Kind: FieldKind> {
     pub name: Spanned<Spur>,
     pub fields: Vec<StructDefField<Kind>>,
-    pub generic_params: Option<Vec<Spanned<Spur>>>,
+    pub generic_params: Option<Vec<Kind::GenericParamType>>,
     pub is_union: bool,
 }
 

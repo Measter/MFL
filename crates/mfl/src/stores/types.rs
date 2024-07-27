@@ -236,6 +236,24 @@ impl GenericPartiallyResolvedFieldKind {
                 t.match_generic_type(stores, param, inner_info)
             }
 
+            (
+                GenericPartiallyResolvedFieldKind::GenericStruct(struct_id, params),
+                TypeKind::GenericStructInstance(input_struct_id),
+            ) if input_struct_id == *struct_id => {
+                // We know the input struct is the same as the field struct.
+
+                let input_struct_def = stores.types.get_struct_def(input_type_info.id);
+                let input_type_params = input_struct_def.generic_params.as_ref().unwrap();
+                params
+                    .iter()
+                    .zip(input_type_params)
+                    .flat_map(|(p, itp)| {
+                        let itp_info = stores.types.get_type_info(*itp);
+                        p.match_generic_type(stores, param, itp_info)
+                    })
+                    .next()
+                // None
+            }
             _ => None,
         }
     }
@@ -617,7 +635,7 @@ impl TypeStore {
             name: base_def.name,
             fields: resolved_fields,
             // TODO: Consider keeping these around for inference?
-            generic_params: None,
+            generic_params: Some(type_params.clone()),
             is_union: base_def.is_union,
         };
 

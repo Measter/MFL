@@ -1,0 +1,33 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+struct A1(T) {
+    a A2(A3(T)),
+}
+
+struct A2(T) {
+    a T,
+}
+
+struct A3(U) {
+    t U,
+}
+
+proc foo [] to [A1(u8)] {
+    5(u8) A3 A2 A1
+}
+
+struct B1(T) {
+    b B2(T),
+}
+
+struct B2(T) {
+    b T,
+}
+
+proc bar [] to [B1(u8)] {
+    5(u8) B2 B1
+}

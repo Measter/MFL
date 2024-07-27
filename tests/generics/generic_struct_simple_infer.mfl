@@ -1,0 +1,61 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+struct A(T) {
+    a T,
+}
+
+proc a [u8] to [A(u8)] {
+    A
+}
+
+struct B(T) {
+    a T&,
+}
+
+proc b [u8&] to [B(u8)] {
+    B
+}
+
+struct C(T) {
+    a T&&,
+}
+
+proc c [u8&&] to [C(u8)] {
+    C
+}
+
+struct D(T) {
+    a T[5],
+}
+
+proc d [u8[5]] to [D(u8)] {
+    D
+}
+
+struct E(T) {
+    a T[5][3],
+}
+
+proc e [u8[5][3]] to [E(u8)] {
+    E
+}
+
+struct F(T) {
+    b T[5]&,
+}
+
+proc f [u8[5]&] to [F(u8)] {
+    F
+}
+
+struct G(T) {
+    b T&[5],
+}
+
+proc g [u8&[5]] to [G(u8)] {
+    G
+}
