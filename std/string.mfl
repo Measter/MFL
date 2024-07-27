@@ -79,6 +79,10 @@ proc is_whitespace [u8] to [bool] {
     swap drop
 }
 
+proc is_digit [u8] to [bool] {
+    dup '0' >= swap '9' <= and
+}
+
 proc trim_start [String] to [String] {
     memory str { String }
     str!

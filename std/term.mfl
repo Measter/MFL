@@ -15,6 +15,18 @@ proc writeln [String] to [] {
     STDOUT "\n" io::write drop
 }
 
+proc write_char[u8] to [] {
+    memory buf {u8}
+    buf!
+    1 buf String write
+}
+
+proc write_char_ln[u8] to [] {
+    memory buf {u8}
+    buf!
+    1 buf String writeln
+}
+
 proc write_si [s64] to [] {
     STDOUT swap io::write_si drop
 }
