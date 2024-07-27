@@ -1,0 +1,89 @@
+import core::String
+
+// Parse a matched character out of the input
+proc match [String u8] to [String] {
+    swap
+    // [expected, input]
+    0 xtr rot(3<1)
+    // [input, char, expected]
+    if dup(2) = {
+        drop(2)
+        1 std::string::remove_start
+    } else {
+        // [input, char, expected]
+        
+        "" std::term::writeln
+        "Error: expected `" std::term::write
+        std::term::write_char
+        "` found `" std::term::write
+        std::term::write_char
+        "`" std::term::writeln
+        exit
+    }
+}
+
+proc expr [String] to [String] {
+    term rest
+}
+
+proc rest [String] to [String] {
+    if 0 xtr '+'= {
+        '+' match
+        term
+        "+ " std::term::write
+        rest
+    } elif 0 xtr '-'= {
+        '-' match
+        term
+        "- " std::term::write
+        rest
+    } elif 0 xtr '\0' != {
+        "" std::term::writeln
+        "Error unexpected character `" std::term::write
+        0 xtr std::term::write_char
+        "`" std::term::writeln
+        exit
+    }
+}
+
+// Parse a number out of the input
+proc term [String] to [String] {
+    // [input]
+    0 xtr
+
+    // [input char]
+    if dup std::string::is_digit {
+        // [input char]
+        std::term::write_char
+        " " std::term::write
+        1 std::string::remove_start
+        //[input]
+    } else {
+        // [input char]
+        "\nError: expected digit found `" std::term::write
+        std::term::write_char
+        "`" std::term::writeln
+        exit
+    }
+}
+
+proc make_str [u8&] to [String] {
+    0 while dup(2) +@ 0 != {
+        1+
+    }
+
+    swap String
+}
+
+// Takes a simple infix expression containing only + and - and single digits, and converts it to
+// postfix.
+proc entry [u64 u8&&] to [] {
+    if swap 2= {
+        1+@ make_str
+        // [input_ptr]
+        expr drop
+    } else {
+        drop
+        "args error" std::term::writeln
+    }
+}

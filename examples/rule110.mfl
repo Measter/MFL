@@ -1,29 +1,31 @@
-const N [u32] is 50 end
-assert ValidBoardSize is N 3>= end
-assert UpdateArrayLengths is N 50 = end
+import core::String
 
-proc render [u8[50]&] to [] is
+const N [u32] { 50 }
+assert ValidBoardSize { N 3>= }
+assert UpdateArrayLengths { N 50 = }
+
+proc render [u8[50]&] to [] {
     // memory render_buf is u8[N] end
-    memory render_buf is u8[50] end
+    memory render_buf { u8[50] }
 
-    0 while dup N< do
-        if swap over xtr 1= do '*' else ' ' end
+    0 while dup N< {
+        if swap over xtr 1= { '*' } else { ' ' }
         render_buf over(3) insd
 
         swap
         1+
-    end drop(2)
+    } drop(2)
 
-    N render_buf cast(u8&) pack(String)
+    N render_buf cast(u8&) String
     std::term::writeln
-end
+}
 
-proc step [u8[50]&] to [] is
+proc step [u8[50]&] to [] {
     // We keep track of the last two bits so we can modify in place
     0 xtr 1 shl
     swap 1 xtr rot(3<1) or
 
-    1 while dup N 2- < do
+    1 while dup N 2- < {
         swap 1 shl 7 and // Only want the lower two bits from last run.
         over(2) over(2) 1+ xtrd or
 
@@ -33,19 +35,19 @@ proc step [u8[50]&] to [] is
 
         swap
         1+
-    end drop(3)
-end
+    } drop(3)
+}
 
-proc entry [] to [] is
+proc entry [] to [] {
     // memory buf is u8[N] end
-    memory buf is u8[50] end
+    memory buf { u8[50] }
 
     1 buf N 2- insd
 
-    0 while dup N 2- < do
+    0 while dup N 2- < {
         buf render
         buf step
 
         1+
-    end drop
-end
+    } drop
+}

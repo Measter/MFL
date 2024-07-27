@@ -1,14 +1,14 @@
-proc entry [] to [] is
+proc entry [] to [] {
     3 8 ackermann std::term::write_si_ln
-end
+}
 
-proc ackermann [s32 s32] to [s32] is
-    if over 0= do
+proc ackermann [s32 s32] to [s32] {
+    if over 0= {
         swap drop 1+
-    elif dup 0= do
+    } elif dup 0= {
         drop 1- 1 ackermann
-    else
+    } else {
         1- over swap ackermann
         swap 1- swap ackermann
-    end
-end
+    }
+}
