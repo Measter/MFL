@@ -37,7 +37,6 @@ strict digraph {
     DefineStructs -> DeclareStructs;
     SelfContainingStruct -> IdentResolvedSignature;
     CyclicRefCheckBody -> IdentResolvedBody;
-    TerminalBlockCheckBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TypeResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TerminalBlockCheckBody;
