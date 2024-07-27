@@ -212,26 +212,28 @@ pub enum GenericPartiallyResolvedFieldKind {
 impl GenericPartiallyResolvedFieldKind {
     pub fn match_generic_type(
         &self,
+        stores: &Stores,
         param: Spur,
-        input_id: TypeId,
-        input_kind: TypeKind,
+        input_type_info: TypeInfo,
     ) -> Option<TypeId> {
-        match (self, input_kind) {
+        match (self, input_type_info.kind) {
             (GenericPartiallyResolvedFieldKind::GenericParamSimple(s), _) if s.inner == param => {
-                Some(input_id)
+                Some(input_type_info.id)
             }
             (
                 GenericPartiallyResolvedFieldKind::GenericParamPointer(t),
                 TypeKind::Pointer(ptr_type),
-            ) if matches!(&**t, GenericPartiallyResolvedFieldKind::GenericParamSimple(t) if t.inner == param) => {
-                Some(ptr_type)
+            ) => {
+                let inner_info = stores.types.get_type_info(ptr_type);
+                t.match_generic_type(stores, param, inner_info)
             }
 
             (
                 GenericPartiallyResolvedFieldKind::GenericParamArray(t, ..),
                 TypeKind::Array { type_id, .. },
-            ) if matches!(&**t, GenericPartiallyResolvedFieldKind::GenericParamSimple(t) if t.inner == param) => {
-                Some(type_id)
+            ) => {
+                let inner_info = stores.types.get_type_info(type_id);
+                t.match_generic_type(stores, param, inner_info)
             }
 
             _ => None,

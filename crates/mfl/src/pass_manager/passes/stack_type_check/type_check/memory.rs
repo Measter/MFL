@@ -1049,12 +1049,12 @@ fn pack_struct_infer_generic(
                 let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
                     continue;
                 };
-                let input_type_kind = stores.types.get_type_info(input_type_id).kind;
+                let input_type_info = stores.types.get_type_info(input_type_id);
 
                 let Some(inferred_type_id) =
                     field
                         .kind
-                        .match_generic_type(param.inner, input_type_id, input_type_kind)
+                        .match_generic_type(stores, param.inner, input_type_info)
                 else {
                     // Not an inferrable pattern.
                     continue;
