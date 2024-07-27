@@ -1043,6 +1043,7 @@ fn pack_struct_infer_generic(
         // we can pattern match against to infer the generic type parameter.
         // We are looking for field types of the form `T`, `T&`, and `T[N]`.
         // If we find one such field, we break and go to the next generic parameter.
+        let mut local_had_error = ErrorSignal::new();
         for param in &generic_def.generic_params {
             let mut found_field = false;
             for (field, &input_value_id) in generic_def.fields.iter().zip(inputs) {
@@ -1077,8 +1078,13 @@ fn pack_struct_infer_generic(
                     None,
                 );
 
-                had_error.set();
+                local_had_error.set();
             }
+        }
+
+        if local_had_error.into_bool() {
+            had_error.set();
+            return ControlFlow::Break(());
         }
     }
 
