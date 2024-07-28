@@ -102,8 +102,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.op_store.get_op_io(op_id);
         let output_id = op_io.outputs()[0];
         let input_id = op_io.inputs()[0];
-        let [input_type_id, output_type_id] =
-            ds.analyzer.value_types([input_id, output_id]).unwrap();
+        let [output_type_id] = ds.analyzer.value_types([output_id]).unwrap();
 
         let union_type = self
             .get_type(ds.type_store, output_type_id)
@@ -111,7 +110,7 @@ impl<'ctx> CodeGen<'ctx> {
         // We need to alloca the union, then cast its pointer.
         let data_ptr_type = self.ctx.ptr_type(AddressSpace::default());
 
-        let union_alloc = value_store.get_temp_alloca(self, ds.type_store, output_type_id)?;
+        let union_alloc = value_store.new_alloca(self, ds.type_store, output_type_id)?;
         let value_ptr = self
             .builder
             .build_pointer_cast(union_alloc, data_ptr_type, "")?;
@@ -120,7 +119,6 @@ impl<'ctx> CodeGen<'ctx> {
 
         let union_value = self.builder.build_load(union_type, union_alloc, "")?;
         value_store.store_value(self, output_id, union_value)?;
-        value_store.release_temp_alloca(input_type_id, union_alloc);
 
         Ok(())
     }
@@ -329,8 +327,7 @@ impl<'ctx> CodeGen<'ctx> {
                 type_id: stored_ptee_type,
             } => {
                 // Ugh, this sucks!
-                let store_location =
-                    value_store.get_temp_alloca(self, ds.type_store, array_type_id)?;
+                let store_location = value_store.new_alloca(self, ds.type_store, array_type_id)?;
                 self.builder.build_store(store_location, array_val)?;
 
                 let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
@@ -439,10 +436,6 @@ impl<'ctx> CodeGen<'ctx> {
             .build_load(ptee_type, offset_ptr, &output_value_name)?;
         value_store.store_value(self, output_value_id, loaded_value)?;
 
-        if let TypeKind::Array { .. } = array_type_info.kind {
-            value_store.release_temp_alloca(array_type_id, arr_ptr);
-        }
-
         Ok(())
     }
 
@@ -470,8 +463,7 @@ impl<'ctx> CodeGen<'ctx> {
         let (arr_ptr, store_type_info, length, ptr_kind, ptee_kind) = match array_type_info.kind {
             TypeKind::Array { type_id, length } => {
                 // Ugh, this sucks!
-                let store_location =
-                    value_store.get_temp_alloca(self, ds.type_store, array_type_id)?;
+                let store_location = value_store.new_alloca(self, ds.type_store, array_type_id)?;
                 self.builder.build_store(store_location, array_val)?;
                 let store_type_info = ds.type_store.get_type_info(type_id);
 
@@ -591,7 +583,6 @@ impl<'ctx> CodeGen<'ctx> {
                     "",
                 )?;
                 let array_value = self.builder.build_load(array_type, cast_ptr, "")?;
-                value_store.release_temp_alloca(array_type_id, arr_ptr);
                 value_store.store_value(self, op_io.outputs()[0], array_value)?;
             } else {
                 // We know our array input was a pointer. Because it was a pointer, we can just shove
@@ -686,8 +677,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let new_struct_val = if struct_def.is_union {
             let union_type = self.get_type(ds.type_store, struct_def_type_id);
-            let union_alloc =
-                value_store.get_temp_alloca(self, ds.type_store, struct_def_type_id)?;
+            let union_alloc = value_store.new_alloca(self, ds.type_store, struct_def_type_id)?;
             let union_value = struct_value.into_array_value();
             self.builder.build_store(union_alloc, union_value)?;
 
@@ -700,7 +690,6 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder.build_store(cast_union_ptr, data_val)?;
 
             let union_value = self.builder.build_load(union_type, union_alloc, "")?;
-            value_store.release_temp_alloca(struct_def_type_id, union_alloc);
             union_value.into_array_value().as_aggregate_value_enum()
         } else {
             self.builder.build_insert_value(
@@ -790,8 +779,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let data_value = if struct_def.is_union {
-            let union_alloc =
-                value_store.get_temp_alloca(self, ds.type_store, struct_def_type_id)?;
+            let union_alloc = value_store.new_alloca(self, ds.type_store, struct_def_type_id)?;
 
             self.builder.build_store(union_alloc, struct_value)?;
 
@@ -803,10 +791,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .builder
                 .build_pointer_cast(union_alloc, data_ptr_type, "")?;
 
-            let extracted_value = self.builder.build_load(data_type, value_ptr, "")?;
-
-            value_store.release_temp_alloca(struct_def_type_id, union_alloc);
-            extracted_value
+            self.builder.build_load(data_type, value_ptr, "")?
         } else {
             let field_idx = struct_def
                 .fields

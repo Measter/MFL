@@ -133,7 +133,6 @@ struct SsaMap<'ctx> {
     variable_map: HashMap<ItemId, PointerValue<'ctx>>,
     string_map: HashMap<Spur, PointerValue<'ctx>>,
     merge_pair_map: HashMap<ValueId, PointerValue<'ctx>>,
-    alloca_temp_store: HashMap<TypeId, Vec<PointerValue<'ctx>>>,
     alloca_prelude_block: BasicBlock<'ctx>,
 }
 
@@ -144,36 +143,22 @@ impl<'ctx> SsaMap<'ctx> {
             variable_map: Default::default(),
             string_map: Default::default(),
             merge_pair_map: Default::default(),
-            alloca_temp_store: Default::default(),
             alloca_prelude_block: prelude_block,
         }
     }
 
-    fn get_temp_alloca(
+    fn new_alloca(
         &mut self,
         cg: &mut CodeGen<'ctx>,
         type_store: &mut TypeStore,
         type_id: TypeId,
     ) -> InkwellResult<PointerValue<'ctx>> {
-        let slot = self
-            .alloca_temp_store
-            .get_mut(&type_id)
-            .and_then(|v| v.pop());
-
-        if let Some(s) = slot {
-            Ok(s)
-        } else {
-            let cur_block = cg.builder.get_insert_block().unwrap();
-            cg.builder.position_at_end(self.alloca_prelude_block);
-            let llvm_type = cg.get_type(type_store, type_id);
-            let alloc = cg.builder.build_alloca(llvm_type, "");
-            cg.builder.position_at_end(cur_block);
-            alloc
-        }
-    }
-
-    fn release_temp_alloca(&mut self, type_id: TypeId, pv: PointerValue<'ctx>) {
-        self.alloca_temp_store.entry(type_id).or_default().push(pv);
+        let cur_block = cg.builder.get_insert_block().unwrap();
+        cg.builder.position_at_end(self.alloca_prelude_block);
+        let llvm_type = cg.get_type(type_store, type_id);
+        let alloc = cg.builder.build_alloca(llvm_type, "");
+        cg.builder.position_at_end(cur_block);
+        alloc
     }
 
     fn get_string_literal(
