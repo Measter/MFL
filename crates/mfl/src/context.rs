@@ -367,7 +367,11 @@ impl Context {
     #[inline]
     #[track_caller]
     pub fn get_function_template_paramaters(&self, id: ItemId) -> &[Spanned<Spur>] {
-        &self.generic_template_parameters[&id]
+        // &self.generic_template_parameters[&id]
+        self.generic_template_parameters
+            .get(&id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 }
 
@@ -509,7 +513,7 @@ impl Context {
                     span: name.location,
                     is_from_root: false,
                     path: vec![bool_symbol.with_span(name.location)],
-                    generic_params: None,
+                    generic_params: Vec::new(),
                 })
                 .with_span(name.location)]
                 .with_span(name.location),
@@ -578,7 +582,7 @@ impl Context {
         let name = def.name;
         let header = self.new_header(name, Some(module), ItemKind::StructDef);
 
-        if def.generic_params.is_some() {
+        if !def.generic_params.is_empty() {
             self.generic_structs.push(header.id);
         }
 
@@ -771,16 +775,10 @@ impl Context {
                     }
 
                     NameResolvedOp::CallFunction { id, generic_params } => {
-                        let new_params = if let Some(gps) = generic_params.as_ref() {
-                            let mut new_params = Vec::new();
-                            for gp in gps {
-                                new_params.push(self.expand_generic_params_in_type(gp, param_map));
-                            }
-
-                            Some(new_params)
-                        } else {
-                            None
-                        };
+                        let new_params = generic_params
+                            .iter()
+                            .map(|gp| self.expand_generic_params_in_type(gp, param_map))
+                            .collect();
 
                         OpCode::Complex(NameResolvedOp::CallFunction {
                             id,

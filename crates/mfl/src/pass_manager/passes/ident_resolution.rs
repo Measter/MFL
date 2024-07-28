@@ -107,7 +107,7 @@ fn resolve_idents_in_type(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     unresolved_type: &UnresolvedType,
-    generic_params: Option<&[Spanned<Spur>]>,
+    generic_params: &[Spanned<Spur>],
 ) -> Result<NameResolvedType, ()> {
     let res = match unresolved_type {
         UnresolvedType::Simple(unresolved_ident) => {
@@ -121,7 +121,7 @@ fn resolve_idents_in_type(
 
             if (unresolved_ident.path.len() > 1
                 || unresolved_ident.is_from_root
-                || unresolved_ident.generic_params.is_some())
+                || !unresolved_ident.generic_params.is_empty())
                 && builtin_name.is_some()
             {
                 // Emit error
@@ -140,42 +140,33 @@ fn resolve_idents_in_type(
                 NameResolvedType::SimpleBuiltin(builtin)
             } else if unresolved_ident.path.len() == 1
                 && !unresolved_ident.is_from_root
-                && unresolved_ident.generic_params.is_none()
-                && generic_params
-                    .and_then(|t| t.iter().find(|tp| tp.inner == item_name.inner))
-                    .is_some()
+                && unresolved_ident.generic_params.is_empty()
+                && generic_params.iter().any(|tp| tp.inner == item_name.inner)
             {
                 NameResolvedType::SimpleGenericParam(*item_name)
             } else {
                 let ident =
                     resolved_single_ident(ctx, stores, had_error, cur_id, unresolved_ident)?;
 
-                match &unresolved_ident.generic_params {
-                    Some(params) => {
-                        let params: Vec<_> = params
-                            .iter()
-                            .map(|p| {
-                                resolve_idents_in_type(
-                                    ctx,
-                                    stores,
-                                    had_error,
-                                    cur_id,
-                                    p,
-                                    generic_params,
-                                )
-                            })
-                            .collect::<Result<_, _>>()?;
+                let params = unresolved_ident
+                    .generic_params
+                    .iter()
+                    .map(|p| {
+                        resolve_idents_in_type(ctx, stores, had_error, cur_id, p, generic_params)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                        NameResolvedType::GenericInstance {
-                            id: ident,
-                            id_token: item_name.inner.with_span(unresolved_ident.span),
-                            params,
-                        }
-                    }
-                    None => NameResolvedType::SimpleCustom {
+                if params.is_empty() {
+                    NameResolvedType::SimpleCustom {
                         id: ident,
                         token: item_name.inner.with_span(unresolved_ident.span),
-                    },
+                    }
+                } else {
+                    NameResolvedType::GenericInstance {
+                        id: ident,
+                        id_token: item_name.inner.with_span(unresolved_ident.span),
+                        params,
+                    }
                 }
             }
         }
@@ -215,7 +206,7 @@ fn resolve_idents_in_struct_def(
             had_error,
             cur_id,
             &field.kind,
-            def.generic_params.as_deref(),
+            &def.generic_params,
         ) else {
             had_error.set();
             continue;
@@ -302,9 +293,9 @@ pub fn resolve_signature(
                 Some(parent_id)
                     if ctx.get_item_header(parent_id).kind == ItemKind::GenericFunction =>
                 {
-                    Some(ctx.get_function_template_paramaters(parent_id))
+                    ctx.get_function_template_paramaters(parent_id)
                 }
-                _ => None,
+                _ => &[],
             };
 
             let unresolved_variable_type = ctx.urir().get_variable_type(cur_id);
@@ -333,12 +324,7 @@ pub fn resolve_signature(
             let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
             let unresolved_sig = ctx.urir().get_item_signature(cur_id);
-
-            let generic_params = if header.kind == ItemKind::GenericFunction {
-                Some(ctx.get_function_template_paramaters(cur_id))
-            } else {
-                None
-            };
+            let generic_params = ctx.get_function_template_paramaters(cur_id);
 
             let mut resolved_sig = NameResolvedItemSignature {
                 exit: Vec::new(),
@@ -388,7 +374,7 @@ fn resolve_idents_in_block(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     block_id: BlockId,
-    generic_params: Option<&[Spanned<Spur>]>,
+    generic_params: &[Spanned<Spur>],
 ) {
     let block = stores.blocks.get_block(block_id).clone();
     for op_id in block.ops {
@@ -487,24 +473,21 @@ fn resolve_idents_in_block(
                         continue;
                     };
 
-                    let resolved_generic_params = ident.generic_params.as_ref().map(|v| {
-                        let mut resolved_generic_params = Vec::new();
-                        for param in v {
-                            let Ok(f) = resolve_idents_in_type(
+                    let resolved_generic_params = ident
+                        .generic_params
+                        .iter()
+                        .filter_map(|param| {
+                            resolve_idents_in_type(
                                 ctx,
                                 stores,
                                 had_error,
                                 cur_id,
                                 param,
                                 generic_params,
-                            ) else {
-                                continue;
-                            };
-
-                            resolved_generic_params.push(f);
-                        }
-                        resolved_generic_params
-                    });
+                            )
+                            .ok()
+                        })
+                        .collect();
 
                     let found_item_header = ctx.get_item_header(resolved_ident);
                     let new_code = match found_item_header.kind {
@@ -602,12 +585,7 @@ pub fn resolve_body(
             // Just give a best-effort if this fails.
             let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
-            let generic_params = if header.kind == ItemKind::GenericFunction {
-                Some(ctx.get_function_template_paramaters(cur_id))
-            } else {
-                None
-            };
-
+            let generic_params = ctx.get_function_template_paramaters(cur_id);
             let body = ctx.get_item_body(cur_id);
             resolve_idents_in_block(ctx, stores, had_error, cur_id, body, generic_params);
         }

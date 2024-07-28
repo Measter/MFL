@@ -647,9 +647,9 @@ pub fn parse_ident(
         import_span = import_span.merge(delim.span());
         last_token = delim.last_token();
 
-        Some(unresolved_types.into_iter().map(|ut| ut.inner).collect())
+        unresolved_types.into_iter().map(|ut| ut.inner).collect()
     } else {
-        None
+        Vec::new()
     };
 
     Ok((

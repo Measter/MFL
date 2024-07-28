@@ -54,7 +54,7 @@ pub fn declare_struct(
         had_error.set();
     }
 
-    let has_generics = def.generic_params.is_some();
+    let has_generics = !def.generic_params.is_empty();
     let def_name = def.name;
 
     let friendly_name = stores.build_friendly_name(ctx, pass_ctx, cur_id);
@@ -90,7 +90,7 @@ pub fn define_struct(
         ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, &field.kind);
     }
 
-    if def.generic_params.is_some() {
+    if !def.generic_params.is_empty() {
         stores
             .types
             .partially_resolve_generic_struct(&mut stores.strings, cur_id, &def);

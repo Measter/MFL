@@ -486,7 +486,7 @@ impl TypeStore {
         base_item_id: ItemId,
         def: &StructDef<NameResolvedType>,
     ) {
-        let Some(generic_params) = def.generic_params.clone() else {
+        if def.generic_params.is_empty() {
             panic!("ICE: Tried to define generic struct for a non-generic definition");
         };
 
@@ -504,7 +504,7 @@ impl TypeStore {
         let generic_base = StructDef {
             name: def.name,
             fields: resolved_fields,
-            generic_params: Some(generic_params),
+            generic_params: def.generic_params.clone(),
             is_union: def.is_union,
         };
 
@@ -569,8 +569,6 @@ impl TypeStore {
 
         let param_lookup: HashMap<_, _> = base_def
             .generic_params
-            .as_ref()
-            .unwrap()
             .iter()
             .map(|s| s.inner)
             .zip(type_params.iter().copied())
@@ -589,7 +587,7 @@ impl TypeStore {
         let new_def = StructDef {
             name: base_def.name,
             fields: resolved_fields,
-            generic_params: Some(type_params.clone()),
+            generic_params: type_params.clone(),
             is_union: base_def.is_union,
         };
 
@@ -735,7 +733,7 @@ impl TypeStore {
         struct_id: ItemId,
         def: &StructDef<NameResolvedType>,
     ) -> Result<TypeId, Spanned<Spur>> {
-        if def.generic_params.is_some() {
+        if !def.generic_params.is_empty() {
             panic!("ICE: Tried to define fixed struct for a generic definition");
         }
 
@@ -755,7 +753,7 @@ impl TypeStore {
         let def = StructDef {
             name: def.name,
             fields: resolved_fields,
-            generic_params: None,
+            generic_params: Vec::new(),
             is_union: def.is_union,
         };
 

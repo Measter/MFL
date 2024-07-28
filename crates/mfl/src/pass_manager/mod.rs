@@ -252,7 +252,7 @@ impl PassContext {
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
         let struct_def = ctx.nrir().get_struct(cur_item);
-        if struct_def.generic_params.is_none() && !self.defined_generic_structs {
+        if struct_def.generic_params.is_empty() && !self.defined_generic_structs {
             let all_generic_structs = ctx.get_generic_structs().to_owned();
             for gsi in all_generic_structs {
                 if self.ensure_define_structs(ctx, stores, gsi).is_err() {

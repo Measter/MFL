@@ -293,15 +293,13 @@ pub fn parse_struct_or_union(
             .with_kinds(stores, TokenKind::Ident)
             .recover(&mut had_error, &fallback);
 
-        Some(
-            generic_idents
-                .tokens
-                .iter()
-                .map(|st| st.unwrap_single().map(|t| t.lexeme))
-                .collect(),
-        )
+        generic_idents
+            .tokens
+            .iter()
+            .map(|st| st.unwrap_single().map(|t| t.lexeme))
+            .collect()
     } else {
-        None
+        Vec::new()
     };
 
     let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);

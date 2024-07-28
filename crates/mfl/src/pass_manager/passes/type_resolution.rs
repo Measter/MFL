@@ -145,7 +145,8 @@ fn resolve_block(
                 let called_item_header = ctx.get_item_header(id);
                 if called_item_header.kind != ItemKind::GenericFunction {
                     OpCode::Complex(TypeResolvedOp::CallFunction { id })
-                } else if let Some(unresolved_generic_params) = generic_params.as_deref() {
+                } else if !generic_params.is_empty() {
+                    let unresolved_generic_params = &generic_params;
                     let mut resolved_generic_params = SmallVec::<[TypeId; 4]>::new();
                     let mut unresolved_generic_params_sm = SmallVec::<[NameResolvedType; 4]>::new();
 

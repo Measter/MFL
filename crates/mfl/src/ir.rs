@@ -84,7 +84,7 @@ impl FieldKind for PartiallyResolvedType {
 pub struct StructDef<Kind: FieldKind> {
     pub name: Spanned<Spur>,
     pub fields: Vec<StructDefField<Kind>>,
-    pub generic_params: Option<Vec<Kind::GenericParamType>>,
+    pub generic_params: Vec<Kind::GenericParamType>,
     pub is_union: bool,
 }
 
@@ -167,10 +167,9 @@ impl PartiallyResolvedType {
                 // We know the input struct is the same as the field struct.
 
                 let input_struct_def = stores.types.get_struct_def(input_type_info.id);
-                let input_type_params = input_struct_def.generic_params.as_ref().unwrap();
                 params
                     .iter()
-                    .zip(input_type_params)
+                    .zip(&input_struct_def.generic_params)
                     .flat_map(|(p, itp)| {
                         let itp_info = stores.types.get_type_info(*itp);
                         p.match_generic_type(stores, param, itp_info)
@@ -410,7 +409,7 @@ pub struct UnresolvedIdent {
     pub span: SourceLocation,
     pub is_from_root: bool,
     pub path: Vec<Spanned<Spur>>,
-    pub generic_params: Option<Vec<UnresolvedType>>,
+    pub generic_params: Vec<UnresolvedType>,
 }
 
 impl std::hash::Hash for UnresolvedIdent {
@@ -444,7 +443,7 @@ pub enum NameResolvedOp {
     },
     CallFunction {
         id: ItemId,
-        generic_params: Option<Vec<NameResolvedType>>,
+        generic_params: Vec<NameResolvedType>,
     },
     Const {
         id: ItemId,

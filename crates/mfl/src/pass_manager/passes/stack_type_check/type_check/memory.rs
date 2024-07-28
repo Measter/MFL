@@ -983,7 +983,7 @@ fn pack_struct_infer_generic(
 
     // We can't infer generic parameters for a union, as there may be multiple parameters, but we only
     // take a single input.
-    let generic_params = generic_def.generic_params.as_ref().unwrap();
+    let generic_params = &generic_def.generic_params;
     if generic_def.is_union && generic_params.len() != 1 {
         diagnostics::emit_error(
             stores,
