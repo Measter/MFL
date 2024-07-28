@@ -22,20 +22,23 @@ pub mod static_analysis;
 
 flags! {
     enum PassState: u16 {
-        IdentResolvedSignature,
-        IdentResolvedBody,
+        BuildNames,
+        CheckAsserts,
+        ConstPropBody,
+        CyclicRefCheckBody,
+
         DeclareStructs,
         DefineStructs,
-        SelfContainingStruct,
-        TypeResolvedSignature,
-        BuildNames,
-        TypeResolvedBody,
-        CyclicRefCheckBody,
-        TerminalBlockCheckBody,
-        StackAndTypeCheckedBody,
-        ConstPropBody,
         EvaluatedConstsAsserts,
-        CheckAsserts,
+        IdentResolvedBody,
+
+        IdentResolvedSignature,
+        SelfContainingStruct,
+        StackAndTypeCheckedBody,
+        TerminalBlockCheckBody,
+
+        TypeResolvedBody,
+        TypeResolvedSignature,
     }
 }
 
