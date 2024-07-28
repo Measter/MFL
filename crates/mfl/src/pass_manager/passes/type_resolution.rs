@@ -78,7 +78,7 @@ pub fn resolve_signature(
 
             ctx.trir_mut().set_item_signature(cur_id, resolved_sig);
         }
-        ItemKind::Memory => {
+        ItemKind::Variable => {
             if cur_item_header
                 .parent
                 .is_some_and(|ph| ctx.get_item_header(ph).kind == ItemKind::GenericFunction)
@@ -87,8 +87,8 @@ pub fn resolve_signature(
                 return;
             }
 
-            let memory_type_unresolved = ctx.nrir().get_memory_type(cur_id).clone();
-            if let Some(type_item) = memory_type_unresolved.item_id() {
+            let variable_type_unresolved = ctx.nrir().get_variable_type(cur_id).clone();
+            if let Some(type_item) = variable_type_unresolved.item_id() {
                 if pass_ctx
                     .ensure_declare_structs(ctx, stores, type_item)
                     .is_err()
@@ -98,7 +98,7 @@ pub fn resolve_signature(
             }
             let info = match stores
                 .types
-                .resolve_type(&mut stores.strings, &memory_type_unresolved)
+                .resolve_type(&mut stores.strings, &variable_type_unresolved)
             {
                 Ok(info) => info,
                 Err(tk) => {
@@ -108,7 +108,7 @@ pub fn resolve_signature(
                 }
             };
 
-            ctx.trir_mut().set_memory_type(cur_id, info.id);
+            ctx.trir_mut().set_variable_type(cur_id, info.id);
         }
     }
 }
@@ -196,8 +196,8 @@ fn resolve_block(
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 OpCode::Complex(TypeResolvedOp::Const { id })
             }
-            OpCode::Complex(NameResolvedOp::Memory { id, is_global }) => {
-                OpCode::Complex(TypeResolvedOp::Memory { id, is_global })
+            OpCode::Complex(NameResolvedOp::Variable { id, is_global }) => {
+                OpCode::Complex(TypeResolvedOp::Variable { id, is_global })
             }
 
             OpCode::Complex(
@@ -250,7 +250,7 @@ pub fn resolve_body(
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::GenericFunction | ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::GenericFunction | ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
             panic!(
                 "ICE: Tried to body type-resolve a {:?}",
                 cur_item_header.kind

@@ -19,8 +19,8 @@ proc split_front [
 ] to [
     SplitResult
 ] {
-    memory str { String }
-    memory char { u8 }
+    var str { String }
+    var char { u8 }
 
     // [string, char]
     if over xtrd(length) 0= {
@@ -84,7 +84,7 @@ proc is_digit [u8] to [bool] {
 }
 
 proc trim_start [String] to [String] {
-    memory str { String }
+    var str { String }
     str!
     
     0 while dup str xtrd(length) < {
@@ -105,7 +105,7 @@ proc trim_start [String] to [String] {
 
 
 proc trim_end [String] to [String] {
-    memory str { String }
+    var str { String }
     str!
 
     if str xtrd(length) 0= { str@ return }

@@ -18,7 +18,7 @@ union Bar {
 }
 
 proc entry [] to [] {
-    memory BAR { Bar }
+    var BAR { Bar }
 
     0xDEADBEEF(u32) BAR insd(int)
     

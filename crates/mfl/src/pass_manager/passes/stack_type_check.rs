@@ -458,9 +458,9 @@ fn analyze_block(
                         had_error.merge_with(local_had_error);
                     }
                 }
-                TypeResolvedOp::Memory { id, .. } => {
+                TypeResolvedOp::Variable { id, .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::control::memory(ctx, stores, pass_ctx, had_error, op_id, id);
+                    type_check::control::variable(ctx, stores, pass_ctx, had_error, op_id, id);
                 }
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, stack, op_id);

@@ -191,9 +191,6 @@ pub enum TokenKind {
     #[token("@")]
     Load,
 
-    #[token("memory")]
-    Memory,
-
     #[token("-")]
     Minus,
 
@@ -261,6 +258,9 @@ pub enum TokenKind {
     #[token("unpack")]
     Unpack,
 
+    #[token("var")]
+    Variable,
+
     #[token("while")]
     While,
 }
@@ -313,7 +313,6 @@ impl TokenKind {
             TokenKind::Less => "<",
             TokenKind::LessEqual => "<=",
             TokenKind::Load => "@",
-            TokenKind::Memory => "memory",
             TokenKind::Minus => "-",
             TokenKind::Module => "module",
             TokenKind::NotEqual => "!=",
@@ -336,6 +335,7 @@ impl TokenKind {
             TokenKind::SysCall => "syscall",
             TokenKind::Union => "union",
             TokenKind::Unpack => "unpack",
+            TokenKind::Variable => "var",
             TokenKind::While => "while",
         }
     }

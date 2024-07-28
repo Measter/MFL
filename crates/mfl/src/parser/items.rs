@@ -213,7 +213,7 @@ pub fn parse_const(
     }
 }
 
-pub fn parse_memory(
+pub fn parse_variable(
     ctx: &mut Context,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
@@ -254,14 +254,14 @@ pub fn parse_memory(
         had_error.set();
     }
 
-    let memory_type = unresolved_store_type.pop().unwrap();
+    let variable_type = unresolved_store_type.pop().unwrap();
 
-    ctx.new_memory(
+    ctx.new_variable(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
-        memory_type,
+        variable_type,
     );
 
     if had_error.into_bool() {

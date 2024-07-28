@@ -16,13 +16,13 @@ proc writeln [String] to [] {
 }
 
 proc write_char[u8] to [] {
-    memory buf {u8}
+    var buf {u8}
     buf!
     1 buf String write
 }
 
 proc write_char_ln[u8] to [] {
-    memory buf {u8}
+    var buf {u8}
     buf!
     1 buf String writeln
 }

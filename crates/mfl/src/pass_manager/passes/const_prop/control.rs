@@ -24,7 +24,7 @@ pub(crate) fn epilogue_return(
     for &input_value_id in &op_data.inputs {
         let Some(
             [ConstVal::Ptr {
-                id: PtrId::Mem(memory_item_id),
+                id: PtrId::Mem(variable_item_id),
                 ..
             }],
         ) = stores.values.value_consts([input_value_id])
@@ -32,9 +32,9 @@ pub(crate) fn epilogue_return(
             continue;
         };
 
-        let memory_header = ctx.get_item_header(memory_item_id);
+        let variable_header = ctx.get_item_header(variable_item_id);
         // We only care about local memories, not globals.
-        let parent_id = memory_header.parent.unwrap(); // Only top-level-modules don't have a parent.
+        let parent_id = variable_header.parent.unwrap(); // Only top-level-modules don't have a parent.
         if ctx.get_item_header(parent_id).kind == ItemKind::Module {
             continue;
         }
@@ -50,7 +50,7 @@ pub(crate) fn epilogue_return(
         diagnostics::emit_error(
             stores,
             op_loc,
-            "returning pointer to local memory",
+            "returning pointer to local variable",
             labels,
             None,
         );
@@ -89,13 +89,13 @@ pub(crate) fn cp_const(
     }
 }
 
-pub(crate) fn memory(stores: &mut Stores, op_id: OpId, memory_item_id: ItemId) {
+pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
     let src_op_loc = stores.ops.get_token(op_id).location;
     stores.values.set_value_const(
         op_data.outputs[0],
         ConstVal::Ptr {
-            id: PtrId::Mem(memory_item_id),
+            id: PtrId::Mem(variable_item_id),
             src_op_loc,
             offset: Some(0),
         },

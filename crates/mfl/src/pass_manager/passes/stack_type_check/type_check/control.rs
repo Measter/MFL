@@ -166,16 +166,16 @@ pub(crate) fn call_function_const(
     }
 }
 
-pub(crate) fn memory(
+pub(crate) fn variable(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     op_id: OpId,
-    memory_item_id: ItemId,
+    variable_item_id: ItemId,
 ) {
     if pass_ctx
-        .ensure_type_resolved_signature(ctx, stores, memory_item_id)
+        .ensure_type_resolved_signature(ctx, stores, variable_item_id)
         .is_err()
     {
         had_error.set();
@@ -185,11 +185,11 @@ pub(crate) fn memory(
     let op_data = stores.ops.get_op_io(op_id);
     let output_value_id = op_data.outputs[0];
 
-    let memory_type_id = ctx.trir().get_memory_type(memory_item_id);
+    let variable_type_id = ctx.trir().get_variable_type(variable_item_id);
 
     let ptr_type_id = stores
         .types
-        .get_pointer(&mut stores.strings, memory_type_id);
+        .get_pointer(&mut stores.strings, variable_type_id);
     stores
         .values
         .set_value_type(output_value_id, ptr_type_id.id);

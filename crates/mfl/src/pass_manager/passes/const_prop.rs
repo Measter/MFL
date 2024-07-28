@@ -98,7 +98,7 @@ fn analyze_block(
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
                 TypeResolvedOp::Const { id } => control::cp_const(ctx, stores, pass_ctx, op_id, id),
-                TypeResolvedOp::Memory { id, .. } => control::memory(stores, op_id, id),
+                TypeResolvedOp::Variable { id, .. } => control::variable(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(ctx, stores, pass_ctx, op_id, id)
                 }

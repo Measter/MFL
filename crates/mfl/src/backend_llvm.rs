@@ -348,10 +348,10 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_global_memories(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) {
-        let _span = debug_span!(stringify!(CodeGen::build_global_memories)).entered();
+    fn build_global_variables(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) {
+        let _span = debug_span!(stringify!(CodeGen::build_global_variables)).entered();
         for item in mfl_ctx.get_all_items() {
-            if item.kind != ItemKind::Memory {
+            if item.kind != ItemKind::Variable {
                 continue;
             }
             let parent_id = item.parent.unwrap();
@@ -362,8 +362,8 @@ impl<'ctx> CodeGen<'ctx> {
             let name = stores.strings.get_symbol_name(mfl_ctx, item.id);
             trace!(name, "Building global");
 
-            let memory_store_type = mfl_ctx.trir().get_memory_type(item.id);
-            let llvm_type = self.get_type(&mut stores.types, memory_store_type);
+            let variable_store_type = mfl_ctx.trir().get_variable_type(item.id);
+            let llvm_type = self.get_type(&mut stores.types, variable_store_type);
             let global = self
                 .module
                 .add_global(llvm_type, Some(AddressSpace::default()), name);
@@ -456,7 +456,7 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     #[track_caller]
-    fn get_global_memory(&mut self, item: ItemId) -> GlobalValue<'ctx> {
+    fn get_global_variable(&mut self, item: ItemId) -> GlobalValue<'ctx> {
         self.global_map[&item]
     }
     fn compile_block(
@@ -493,8 +493,8 @@ impl<'ctx> CodeGen<'ctx> {
                 })) => trace!(item_count.inner, ?direction, shift_count.inner, "Rot"),
                 OpCode::Basic(Basic::Control(Control::If(_))) => trace!(?id, "If"),
                 OpCode::Basic(Basic::Control(Control::While(_))) => trace!(?id, "While"),
-                OpCode::Complex(TypeResolvedOp::Memory { id, is_global }) => {
-                    trace!(?id, ?id, is_global, "Memory")
+                OpCode::Complex(TypeResolvedOp::Variable { id, is_global }) => {
+                    trace!(?id, ?id, is_global, "Variable")
                 }
                 _ => trace!(?id, "{op_code:?}"),
             }
@@ -622,8 +622,8 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_const(ds, value_store, op_id, *id)?
                     }
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
-                    TypeResolvedOp::Memory { id, is_global } => {
-                        self.build_memory(ds, value_store, op_id, *id, *is_global)?
+                    TypeResolvedOp::Variable { id, is_global } => {
+                        self.build_variable(ds, value_store, op_id, *id, *is_global)?
                     }
                     TypeResolvedOp::SizeOf { id: kind } => {
                         let size_info = ds.type_store.get_size_info(*kind);
@@ -726,11 +726,11 @@ impl<'ctx> CodeGen<'ctx> {
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
             let item_header = mfl_ctx.get_item_header(item_id);
-            if item_header.kind != ItemKind::Memory {
+            if item_header.kind != ItemKind::Variable {
                 continue;
             }
 
-            let alloc_type_id = mfl_ctx.trir().get_memory_type(item_id);
+            let alloc_type_id = mfl_ctx.trir().get_variable_type(item_id);
             let (store_type_id, alloc_size, is_array) =
                 match stores.types.get_type_info(alloc_type_id).kind {
                     TypeKind::Array { type_id, length } => {
@@ -931,7 +931,7 @@ pub(crate) fn compile(
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
     codegen.build_function_prototypes(mfl_ctx, &mut stores.strings, &mut stores.types);
-    codegen.build_global_memories(mfl_ctx, stores);
+    codegen.build_global_variables(mfl_ctx, stores);
     if !args.is_library {
         codegen.build_entry(
             mfl_ctx,

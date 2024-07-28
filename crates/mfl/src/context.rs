@@ -40,7 +40,7 @@ pub struct ItemId(u16);
 pub enum ItemKind {
     Assert,
     Const,
-    Memory,
+    Variable,
     Function,
     GenericFunction,
     StructDef,
@@ -64,7 +64,7 @@ pub struct UnresolvedItemSignature {
 
 pub struct UnresolvedIr {
     item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
-    memory_type: HashMap<ItemId, Spanned<UnresolvedType>>,
+    variable_type: HashMap<ItemId, Spanned<UnresolvedType>>,
     structs: HashMap<ItemId, StructDef<UnresolvedType>>,
     scopes: Vec<UnresolvedScope>,
 }
@@ -78,8 +78,8 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_memory_type(&self, id: ItemId) -> Spanned<&UnresolvedType> {
-        let v = &self.memory_type[&id];
+    pub fn get_variable_type(&self, id: ItemId) -> Spanned<&UnresolvedType> {
+        let v = &self.variable_type[&id];
         (&v.inner).with_span(v.location)
     }
 
@@ -106,7 +106,7 @@ impl UnresolvedIr {
     fn new() -> Self {
         UnresolvedIr {
             item_signatures: HashMap::new(),
-            memory_type: HashMap::new(),
+            variable_type: HashMap::new(),
             structs: HashMap::new(),
             scopes: Vec::new(),
         }
@@ -121,7 +121,7 @@ pub struct NameResolvedItemSignature {
 
 pub struct NameResolvedIr {
     item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
-    memory_type: HashMap<ItemId, NameResolvedType>,
+    variable_type: HashMap<ItemId, NameResolvedType>,
     // Need to split this UnresolvedStruct business.
     structs: HashMap<ItemId, StructDef<NameResolvedType>>,
     scopes: Vec<NameResolvedScope>,
@@ -144,16 +144,16 @@ impl NameResolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_memory_type(&self, id: ItemId) -> &NameResolvedType {
-        &self.memory_type[&id]
+    pub fn get_variable_type(&self, id: ItemId) -> &NameResolvedType {
+        &self.variable_type[&id]
     }
 
     #[inline]
     #[track_caller]
-    pub fn set_memory_type(&mut self, id: ItemId, def: NameResolvedType) {
-        self.memory_type
+    pub fn set_variable_type(&mut self, id: ItemId, def: NameResolvedType) {
+        self.variable_type
             .insert(id, def)
-            .expect_none("Redefined memory type");
+            .expect_none("Redefined variable type");
     }
 
     #[inline]
@@ -185,7 +185,7 @@ impl NameResolvedIr {
     fn new() -> Self {
         NameResolvedIr {
             item_signatures: HashMap::new(),
-            memory_type: HashMap::new(),
+            variable_type: HashMap::new(),
             structs: HashMap::new(),
             scopes: Vec::new(),
         }
@@ -199,7 +199,7 @@ pub struct TypeResolvedItemSignature {
 
 pub struct TypeResolvedIr {
     item_signatures: HashMap<ItemId, TypeResolvedItemSignature>,
-    memory_type: HashMap<ItemId, TypeId>,
+    variable_type: HashMap<ItemId, TypeId>,
 }
 
 impl TypeResolvedIr {
@@ -219,16 +219,16 @@ impl TypeResolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn get_memory_type(&self, id: ItemId) -> TypeId {
-        self.memory_type[&id]
+    pub fn get_variable_type(&self, id: ItemId) -> TypeId {
+        self.variable_type[&id]
     }
 
     #[inline]
     #[track_caller]
-    pub fn set_memory_type(&mut self, id: ItemId, mem_type: TypeId) {
-        self.memory_type
+    pub fn set_variable_type(&mut self, id: ItemId, mem_type: TypeId) {
+        self.variable_type
             .insert(id, mem_type)
-            .expect_none("Redefined memory type");
+            .expect_none("Redefined variable type");
     }
 }
 
@@ -236,7 +236,7 @@ impl TypeResolvedIr {
     fn new() -> Self {
         TypeResolvedIr {
             item_signatures: HashMap::new(),
-            memory_type: HashMap::new(),
+            variable_type: HashMap::new(),
         }
     }
 }
@@ -562,16 +562,16 @@ impl Context {
         header.id
     }
 
-    pub fn new_memory(
+    pub fn new_variable(
         &mut self,
         stores: &Stores,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        memory_type: Spanned<UnresolvedType>,
+        variable_type: Spanned<UnresolvedType>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Memory);
-        self.urir.memory_type.insert(header.id, memory_type);
+        let header = self.new_header(name, Some(parent), ItemKind::Variable);
+        self.urir.variable_type.insert(header.id, variable_type);
         self.add_to_parent(stores, had_error, parent, name, header.id);
         header.id
     }
@@ -736,13 +736,13 @@ impl Context {
                     }
 
                     NameResolvedOp::Const { id } => OpCode::Complex(NameResolvedOp::Const { id }),
-                    NameResolvedOp::Memory { id, is_global } => {
+                    NameResolvedOp::Variable { id, is_global } => {
                         let id = if let Some(new_id) = old_alloc_map.get(&id) {
                             *new_id
                         } else {
                             id
                         };
-                        OpCode::Complex(NameResolvedOp::Memory { id, is_global })
+                        OpCode::Complex(NameResolvedOp::Variable { id, is_global })
                     }
 
                     NameResolvedOp::CallFunction { id, generic_params } => {
@@ -862,12 +862,12 @@ impl Context {
         );
         self.nrir.set_item_signature(new_proc_id, instantiated_sig);
 
-        // Clone the memory items.
+        // Clone the variable items.
         let base_scope = self.nrir.get_scope(base_fn_id).clone();
         let mut old_alloc_map = HashMap::new();
         for (&child_name, &child_item) in base_scope.get_child_items() {
             let child_item_header = self.get_item_header(child_item.inner);
-            if child_item_header.kind != ItemKind::Memory {
+            if child_item_header.kind != ItemKind::Variable {
                 // We just reuse the existing item, so we need to add it manually.
                 let new_scope = self.nrir.get_scope_mut(new_proc_id);
                 new_scope
@@ -884,17 +884,17 @@ impl Context {
                 continue;
             }
 
-            let alloc_type_unresolved = self.urir.get_memory_type(child_item_header.id);
-            let new_alloc_id = self.new_memory(
+            let alloc_type_unresolved = self.urir.get_variable_type(child_item_header.id);
+            let new_alloc_id = self.new_variable(
                 stores,
                 had_error,
                 child_item_header.name,
                 new_proc_id,
                 alloc_type_unresolved.map(|i| i.clone()),
             );
-            let alloc_type = self.nrir.get_memory_type(child_item_header.id);
-            let new_memory_sig = self.expand_generic_params_in_type(alloc_type, &param_map);
-            self.nrir.set_memory_type(new_alloc_id, new_memory_sig);
+            let alloc_type = self.nrir.get_variable_type(child_item_header.id);
+            let new_variable_sig = self.expand_generic_params_in_type(alloc_type, &param_map);
+            self.nrir.set_variable_type(new_alloc_id, new_variable_sig);
             pass_ctx.add_new_item(new_alloc_id, child_item_header.id);
 
             old_alloc_map.insert(child_item_header.id, new_alloc_id);

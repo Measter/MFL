@@ -88,8 +88,8 @@ pub fn parse_item_body_contents(
                         }
                         continue;
                     }
-                    TokenKind::Memory => {
-                        if items::parse_memory(ctx, stores, &mut token_iter, *token, parent_id)
+                    TokenKind::Variable => {
+                        if items::parse_variable(ctx, stores, &mut token_iter, *token, parent_id)
                             .is_err()
                         {
                             had_error.set();
@@ -199,8 +199,8 @@ pub(super) fn parse_file(
                         }
                     }
 
-                    TokenKind::Memory => {
-                        if items::parse_memory(ctx, stores, &mut token_iter, *token, module_id)
+                    TokenKind::Variable => {
+                        if items::parse_variable(ctx, stores, &mut token_iter, *token, module_id)
                             .is_err()
                         {
                             had_error.set();
@@ -321,7 +321,7 @@ fn emit_top_level_op_error(stores: &Stores, location: SourceLocation, kind: Toke
     diagnostics::emit_error(
         stores,
         location,
-        format!("top-level can only declared `assert` `const` `import` `memory` `module` `proc` or `struct`, found `{}`", kind.kind_str()),
+        format!("top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `{}`", kind.kind_str()),
         Some(Label::new(location).with_color(Color::Red)),
         None,
     );

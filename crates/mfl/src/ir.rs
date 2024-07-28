@@ -395,7 +395,7 @@ pub enum NameResolvedOp {
     PackStruct {
         id: NameResolvedType,
     },
-    Memory {
+    Variable {
         id: ItemId,
         is_global: bool,
     },
@@ -410,7 +410,7 @@ pub enum TypeResolvedOp {
     CallFunction { id: ItemId },
     Const { id: ItemId },
     PackStruct { id: TypeId },
-    Memory { id: ItemId, is_global: bool },
+    Variable { id: ItemId, is_global: bool },
     SizeOf { id: TypeId },
 }
 

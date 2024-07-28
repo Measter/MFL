@@ -611,7 +611,7 @@ impl PassContext {
         let needed_states = match ctx.get_item_header(cur_item).kind {
             ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
             ItemKind::StructDef => &[PassState::SelfContainingStruct, PassState::DefineStructs],
-            ItemKind::Memory => &[PassState::TypeResolvedSignature],
+            ItemKind::Variable => &[PassState::TypeResolvedSignature],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
                 PassState::IdentResolvedSignature,

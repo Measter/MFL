@@ -6,7 +6,7 @@
 
 const LEN [u64] { 5 end
 proc foo [u8[LEN]] to [] is
-    memory V { u8[LEN] end
+    var V { u8[LEN] end
     drop
 end
 

@@ -60,8 +60,8 @@ proc fill(T) [
     MMap(T)
     T
 ] to [] {
-    memory val { T }
-    memory store { MMap(T) }
+    var val { T }
+    var store { MMap(T) }
     val!
     store!
 
@@ -83,8 +83,8 @@ proc copy(T) [
         exit
     }
 
-    memory src { MMap(T) }
-    memory dst { MMap(T) }
+    var src { MMap(T) }
+    var dst { MMap(T) }
     dst! src!
 
     0 while dup dst xtrd(length) < {

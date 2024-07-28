@@ -224,7 +224,7 @@ fn simulate_execute_program_block(
             | OpCode::Complex(
                 TypeResolvedOp::CallFunction { .. }
                 | TypeResolvedOp::Cast { .. }
-                | TypeResolvedOp::Memory { .. }
+                | TypeResolvedOp::Variable { .. }
                 | TypeResolvedOp::PackStruct { .. },
             ) => {
                 emit_unsupported_diag(stores, op_id);

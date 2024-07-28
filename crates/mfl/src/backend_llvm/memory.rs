@@ -28,7 +28,7 @@ enum ArrayPtrKind {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    pub(super) fn build_memory(
+    pub(super) fn build_variable(
         &mut self,
         ds: &mut DataStore,
         value_store: &mut SsaMap<'ctx>,
@@ -39,7 +39,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.op_store.get_op_io(op_id);
 
         let ptr = if is_global {
-            self.get_global_memory(item_id).as_pointer_value()
+            self.get_global_variable(item_id).as_pointer_value()
         } else {
             value_store.variable_map[&item_id]
         };

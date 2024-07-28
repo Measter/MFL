@@ -7,7 +7,7 @@ use crate::{
 pub fn determine_terminal_blocks(ctx: &mut Context, stores: &mut Stores, cur_id: ItemId) {
     let item_header = ctx.get_item_header(cur_id);
     match item_header.kind {
-        ItemKind::StructDef | ItemKind::Memory | ItemKind::Module => return,
+        ItemKind::StructDef | ItemKind::Variable | ItemKind::Module => return,
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => (),
     }
 

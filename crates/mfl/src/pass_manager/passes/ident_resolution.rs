@@ -294,7 +294,7 @@ pub fn resolve_signature(
             let resolved = resolve_idents_in_struct_def(ctx, stores, had_error, cur_id, def);
             ctx.nrir_mut().set_struct(cur_id, resolved);
         }
-        ItemKind::Memory => {
+        ItemKind::Variable => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
@@ -308,21 +308,21 @@ pub fn resolve_signature(
                 _ => None,
             };
 
-            let unresolved_memory_type = ctx.urir().get_memory_type(cur_id);
+            let unresolved_variable_type = ctx.urir().get_variable_type(cur_id);
 
             let Ok(new_kind) = resolve_idents_in_type(
                 ctx,
                 stores,
                 had_error,
                 cur_id,
-                unresolved_memory_type.inner,
+                unresolved_variable_type.inner,
                 generic_params,
             ) else {
                 had_error.set();
                 return;
             };
 
-            ctx.nrir_mut().set_memory_type(cur_id, new_kind);
+            ctx.nrir_mut().set_variable_type(cur_id, new_kind);
         }
         ItemKind::Module => {
             resolve_idents_in_module_imports(ctx, stores, had_error, cur_id);
@@ -515,11 +515,11 @@ fn resolve_idents_in_block(
                                 generic_params: resolved_generic_params,
                             }
                         }
-                        ItemKind::Memory => {
+                        ItemKind::Variable => {
                             let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
                             let parent_header = ctx.get_item_header(parent_id);
 
-                            NameResolvedOp::Memory {
+                            NameResolvedOp::Variable {
                                 id: resolved_ident,
                                 is_global: parent_header.kind == ItemKind::Module,
                             }
@@ -592,7 +592,7 @@ pub fn resolve_body(
 ) {
     let header = ctx.get_item_header(cur_id);
     match header.kind {
-        ItemKind::Memory | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
             // Nothing to do.
         }
         ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {

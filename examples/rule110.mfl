@@ -5,8 +5,8 @@ assert ValidBoardSize { N 3>= }
 assert UpdateArrayLengths { N 50 = }
 
 proc render [u8[50]&] to [] {
-    // memory render_buf is u8[N] end
-    memory render_buf { u8[50] }
+    // var render_buf is u8[N] end
+    var render_buf { u8[50] }
 
     0 while dup N< {
         if swap over xtr 1= { '*' } else { ' ' }
@@ -39,8 +39,8 @@ proc step [u8[50]&] to [] {
 }
 
 proc entry [] to [] {
-    // memory buf is u8[N] end
-    memory buf { u8[50] }
+    // var buf is u8[N] end
+    var buf { u8[50] }
 
     1 buf N 2- insd
 

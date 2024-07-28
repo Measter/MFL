@@ -36,7 +36,7 @@ proc writeln [FD String] to [WriteResult] {
 }
 
 proc write_ui [FD u64] to [WriteResult] {
-    memory buf { u8[30] }
+    var buf { u8[30] }
 
     // [num]
     if dup 0= {
