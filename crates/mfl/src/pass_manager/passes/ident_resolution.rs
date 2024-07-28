@@ -515,10 +515,15 @@ fn resolve_idents_in_block(
                                 generic_params: resolved_generic_params,
                             }
                         }
-                        ItemKind::Memory => NameResolvedOp::Memory {
-                            id: resolved_ident,
-                            is_global: found_item_header.parent.is_none(),
-                        },
+                        ItemKind::Memory => {
+                            let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
+                            let parent_header = ctx.get_item_header(parent_id);
+
+                            NameResolvedOp::Memory {
+                                id: resolved_ident,
+                                is_global: parent_header.kind == ItemKind::Module,
+                            }
+                        }
 
                         // This is the same as PackStruct
                         ItemKind::StructDef => {

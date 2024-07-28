@@ -1,7 +1,7 @@
 use ariadne::Color;
 
 use crate::{
-    context::{Context, ItemId},
+    context::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
     pass_manager::PassContext,
@@ -34,7 +34,8 @@ pub(crate) fn epilogue_return(
 
         let memory_header = ctx.get_item_header(memory_item_id);
         // We only care about local memories, not globals.
-        if memory_header.parent.is_none() {
+        let parent_id = memory_header.parent.unwrap(); // Only top-level-modules don't have a parent.
+        if ctx.get_item_header(parent_id).kind == ItemKind::Module {
             continue;
         }
 
@@ -84,9 +85,7 @@ pub(crate) fn cp_const(
             SimulatorValue::Bool(b) => ConstVal::Bool(*b),
         };
 
-        stores
-            .values
-            .set_value_const(value_id, output_const_value);
+        stores.values.set_value_const(value_id, output_const_value);
     }
 }
 
