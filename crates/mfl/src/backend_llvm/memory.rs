@@ -28,16 +28,21 @@ enum ArrayPtrKind {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    pub(super) fn build_memory_local(
+    pub(super) fn build_memory(
         &mut self,
         ds: &mut DataStore,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         item_id: ItemId,
+        is_global: bool,
     ) -> InkwellResult {
         let op_io = ds.op_store.get_op_io(op_id);
 
-        let ptr = value_store.variable_map[&item_id];
+        let ptr = if is_global {
+            self.get_global_memory(item_id).as_pointer_value()
+        } else {
+            value_store.variable_map[&item_id]
+        };
         value_store.store_value(self, op_io.outputs()[0], ptr.into())?;
 
         Ok(())

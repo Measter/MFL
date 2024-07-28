@@ -14,7 +14,7 @@ use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType},
-    values::{BasicValueEnum, FunctionValue, IntMathValue, IntValue, PointerValue},
+    values::{BasicValueEnum, FunctionValue, GlobalValue, IntMathValue, IntValue, PointerValue},
     AddressSpace, IntPredicate, OptimizationLevel,
 };
 use intcast::IntCast;
@@ -235,6 +235,7 @@ struct CodeGen<'ctx> {
     syscall_wrappers: Vec<FunctionValue<'ctx>>,
     oob_handler: FunctionValue<'ctx>,
     type_map: HashMap<TypeId, BasicTypeEnum<'ctx>>,
+    global_map: HashMap<ItemId, GlobalValue<'ctx>>,
 
     attrib_align_stack: Attribute,
 }
@@ -268,6 +269,7 @@ impl<'ctx> CodeGen<'ctx> {
             syscall_wrappers: Vec::new(),
             oob_handler,
             type_map: HashMap::new(),
+            global_map: HashMap::new(),
             attrib_align_stack,
         }
     }
@@ -343,6 +345,30 @@ impl<'ctx> CodeGen<'ctx> {
                 Some(Linkage::External),
             );
             self.syscall_wrappers.push(function);
+        }
+    }
+
+    fn build_global_memories(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) {
+        let _span = debug_span!(stringify!(CodeGen::build_global_memories)).entered();
+        for item in mfl_ctx.get_all_items() {
+            if item.kind != ItemKind::Memory {
+                continue;
+            }
+            let parent_id = item.parent.unwrap();
+            if mfl_ctx.get_item_header(parent_id).kind != ItemKind::Module {
+                continue;
+            }
+
+            let name = stores.strings.get_symbol_name(mfl_ctx, item.id);
+            trace!(name, "Building global");
+
+            let memory_store_type = mfl_ctx.trir().get_memory_type(item.id);
+            let llvm_type = self.get_type(&mut stores.types, memory_store_type);
+            let global = self
+                .module
+                .add_global(llvm_type, Some(AddressSpace::default()), name);
+
+            self.global_map.insert(item.id, global);
         }
     }
 
@@ -429,6 +455,10 @@ impl<'ctx> CodeGen<'ctx> {
         tp
     }
 
+    #[track_caller]
+    fn get_global_memory(&mut self, item: ItemId) -> GlobalValue<'ctx> {
+        self.global_map[&item]
+    }
     fn compile_block(
         &mut self,
         ds: &mut DataStore,
@@ -592,14 +622,9 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_const(ds, value_store, op_id, *id)?
                     }
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
-                    TypeResolvedOp::Memory {
-                        id,
-                        is_global: false,
-                    } => self.build_memory_local(ds, value_store, op_id, *id)?,
-                    TypeResolvedOp::Memory {
-                        id: _,
-                        is_global: true,
-                    } => todo!(),
+                    TypeResolvedOp::Memory { id, is_global } => {
+                        self.build_memory(ds, value_store, op_id, *id, *is_global)?
+                    }
                     TypeResolvedOp::SizeOf { id: kind } => {
                         let size_info = ds.type_store.get_size_info(*kind);
                         self.build_push_int(
@@ -906,6 +931,7 @@ pub(crate) fn compile(
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
     codegen.build_function_prototypes(mfl_ctx, &mut stores.strings, &mut stores.types);
+    codegen.build_global_memories(mfl_ctx, stores);
     if !args.is_library {
         codegen.build_entry(
             mfl_ctx,
