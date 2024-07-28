@@ -46,7 +46,6 @@ fn resolved_single_ident(
     } else {
         let header = ctx.get_item_header(cur_id);
         let Some(start_item) = ctx.get_visible_symbol(header, first_ident.inner) else {
-            // TODO: Handle naming builtins here
             let item_name = stores.strings.resolve(first_ident.inner);
             diagnostics::emit_error(
                 stores,

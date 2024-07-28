@@ -634,7 +634,6 @@ impl TypeStore {
         let new_def = StructDef {
             name: base_def.name,
             fields: resolved_fields,
-            // TODO: Consider keeping these around for inference?
             generic_params: Some(type_params.clone()),
             is_union: base_def.is_union,
         };
