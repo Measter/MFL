@@ -41,7 +41,7 @@ pub(crate) fn emit_stack(stores: &mut Stores, stack: &[ValueId], op_id: OpId, sh
             .value_types([*value_id])
             .map_or("Unknown", |[v]| {
                 let type_info = stores.types.get_type_info(v);
-                stores.strings.resolve(type_info.name)
+                stores.strings.resolve(type_info.friendly_name)
             });
 
         let value_idx = stack.len() - idx - 1;
@@ -110,7 +110,7 @@ pub(crate) fn cast(
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {
-            let output_type_name = stores.strings.resolve(output_type_info.name);
+            let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;
             diagnostics::emit_error(
                 stores,
@@ -135,7 +135,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
 
     match input_type_info.kind {
         TypeKind::Pointer(_) if input_type_id == to_id => {
-            let ptr_type_name = stores.strings.resolve(input_type_info.name);
+            let ptr_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -150,9 +150,9 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
         TypeKind::Integer(Integer::U64) | TypeKind::Pointer(_) => {}
 
         TypeKind::Integer(_) => {
-            let input_type_name = stores.strings.resolve(input_type_info.name);
+            let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
             let ptr_type_info = stores.types.get_type_info(to_id);
-            let ptr_type_name = stores.strings.resolve(ptr_type_info.name);
+            let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -206,9 +206,9 @@ fn cast_to_int(
         TypeKind::Bool => {}
         TypeKind::Pointer(_) => {
             if to_int != Integer::U64 {
-                let input_type_name = stores.strings.resolve(input_type_info.name);
+                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
                 let output_type_info = stores.types.get_type_info(to_id);
-                let output_type_name = stores.strings.resolve(output_type_info.name);
+                let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,
@@ -231,7 +231,7 @@ fn cast_to_int(
         }
         TypeKind::Integer(_) => {
             if input_type_id == to_id {
-                let input_type_name = stores.strings.resolve(input_type_info.name);
+                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,

@@ -180,7 +180,7 @@ pub(crate) fn multiply_div_rem_shift(
             };
 
             if is_out_of_range {
-                let output_type_name = stores.strings.resolve(output_type_info.name);
+                let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,

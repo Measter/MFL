@@ -87,7 +87,7 @@ pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
             continue;
         }
 
-        let type_name = stores.strings.resolve(input_type_info.name);
+        let type_name = stores.strings.resolve(input_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(input_value_id, idx.to_u64(), type_name)],
@@ -240,8 +240,8 @@ pub(crate) fn analyze_if(
                 stores.types.get_builtin(kind.into()).id
             }
             _ if then_type_id != else_type_id => {
-                let then_type_name = stores.strings.resolve(then_type_info.name);
-                let else_type_name = stores.strings.resolve(else_type_info.name);
+                let then_type_name = stores.strings.resolve(then_type_info.friendly_name);
+                let else_type_name = stores.strings.resolve(else_type_info.friendly_name);
 
                 let labels = diagnostics::build_creator_label_chain(
                     stores,
@@ -318,8 +318,8 @@ pub(crate) fn analyze_while(
                 if can_promote_int_unidirectional(condition_int, pre_int)
             )
         {
-            let pre_type_name = stores.strings.resolve(pre_type_info.name);
-            let condition_type_name = stores.strings.resolve(condition_type_info.name);
+            let pre_type_name = stores.strings.resolve(pre_type_info.friendly_name);
+            let condition_type_name = stores.strings.resolve(condition_type_info.friendly_name);
 
             let labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -353,7 +353,7 @@ fn condition_type_check(
 ) {
     if condition_type_id != stores.types.get_builtin(BuiltinTypes::Bool).id {
         let condition_type_info = stores.types.get_type_info(condition_type_id);
-        let condition_type_name = stores.strings.resolve(condition_type_info.name);
+        let condition_type_name = stores.strings.resolve(condition_type_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             stores,

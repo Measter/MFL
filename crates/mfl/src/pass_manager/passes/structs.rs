@@ -13,6 +13,7 @@ use crate::{
 pub fn declare_struct(
     ctx: &mut Context,
     stores: &mut Stores,
+    pass_ctx: &mut PassContext,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -53,16 +54,26 @@ pub fn declare_struct(
         had_error.set();
     }
 
-    if def.generic_params.is_some() {
+    let has_generics = def.generic_params.is_some();
+    let def_name = def.name;
+
+    let friendly_name = stores.build_friendly_name(ctx, pass_ctx, cur_id);
+    let mangled_name = stores.build_mangled_name(ctx, pass_ctx, cur_id);
+
+    if has_generics {
         stores.types.add_type(
-            def.name.inner,
-            def.name.location,
+            friendly_name,
+            mangled_name,
+            def_name.location,
             TypeKind::GenericStructBase(cur_id),
         );
     } else {
-        stores
-            .types
-            .add_type(def.name.inner, def.name.location, TypeKind::Struct(cur_id));
+        stores.types.add_type(
+            friendly_name,
+            mangled_name,
+            def_name.location,
+            TypeKind::Struct(cur_id),
+        );
     }
 }
 

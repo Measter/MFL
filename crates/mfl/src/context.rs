@@ -117,6 +117,9 @@ impl UnresolvedIr {
 pub struct NameResolvedItemSignature {
     pub exit: Vec<NameResolvedType>,
     pub entry: Vec<NameResolvedType>,
+    // While it seems odd, this will only be populated when instantiating a generic function,
+    // which has the resolved TypeIds of the parameters.
+    pub generic_params: Vec<TypeId>,
 }
 
 pub struct NameResolvedIr {
@@ -195,6 +198,7 @@ impl NameResolvedIr {
 pub struct TypeResolvedItemSignature {
     pub exit: Vec<TypeId>,
     pub entry: Vec<TypeId>,
+    pub generic_params: Vec<TypeId>,
 }
 
 pub struct TypeResolvedIr {
@@ -463,6 +467,27 @@ impl Context {
         );
 
         self.add_to_parent(stores, had_error, parent, name, header.id);
+        header.id
+    }
+
+    // This is because we don't want the new function to be added to the scope.
+    // Resolution should go through the generic form.
+    pub fn new_function_generic_instance(
+        &mut self,
+        name: Spanned<Spur>,
+        parent: ItemId,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    ) -> ItemId {
+        let header = self.new_header(name, Some(parent), ItemKind::Function);
+        self.urir.item_signatures.insert(
+            header.id,
+            UnresolvedItemSignature {
+                exit: exit_stack,
+                entry: entry_stack,
+            },
+        );
+
         header.id
     }
 
@@ -838,6 +863,7 @@ impl Context {
         let mut instantiated_sig = NameResolvedItemSignature {
             exit: Vec::new(),
             entry: Vec::new(),
+            generic_params: resolved_generic_params.as_slice().to_owned(),
         };
 
         for stack_item in &orig_name_resolved_sig.exit {
@@ -850,12 +876,8 @@ impl Context {
             instantiated_sig.entry.push(new_id);
         }
 
-        let new_name = stores.build_mangled_name(base_header.name.inner, &resolved_generic_params);
-
-        let new_proc_id = self.new_function(
-            stores,
-            had_error,
-            new_name.with_span(base_header.name.location),
+        let new_proc_id = self.new_function_generic_instance(
+            base_header.name.inner.with_span(base_header.name.location),
             base_header.parent.unwrap(),
             orig_unresolved_sig.entry,
             orig_unresolved_sig.exit,

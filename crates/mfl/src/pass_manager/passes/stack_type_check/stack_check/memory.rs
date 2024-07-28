@@ -200,7 +200,7 @@ pub(crate) fn unpack(
             }
         }
         _ => {
-            let input_type_name = stores.strings.resolve(input_type_info.name);
+            let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,

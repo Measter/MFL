@@ -33,6 +33,7 @@ pub fn resolve_signature(
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
+                generic_params: unresolved_sig.generic_params,
             };
 
             let mut local_had_error = ErrorSignal::new();

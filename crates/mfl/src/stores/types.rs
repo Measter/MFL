@@ -10,6 +10,7 @@ use crate::{
     diagnostics,
     ir::{NameResolvedType, StructDef, StructDefField},
     stores::{
+        self,
         source::{SourceLocation, Spanned},
         strings::StringStore,
     },
@@ -262,7 +263,8 @@ impl GenericPartiallyResolvedFieldKind {
 #[derive(Debug, Clone, Copy)]
 pub struct TypeInfo {
     pub id: TypeId,
-    pub name: Spur,
+    pub friendly_name: Spur,
+    pub mangled_name: Spur,
     pub location: Option<SourceLocation>,
     pub kind: TypeKind,
 }
@@ -360,7 +362,7 @@ impl TypeStore {
 
         for (name_str, builtin, kind) in builtins {
             let name = string_store.intern(name_str);
-            let id = self.add_type(name, None, kind);
+            let id = self.add_type(name, name, None, kind);
             self.builtins[builtin as usize] = id;
 
             // A couple parts of the compiler need to construct pointers to basic types.
@@ -378,7 +380,8 @@ impl TypeStore {
 
     pub fn add_type(
         &mut self,
-        name: Spur,
+        friendly_name: Spur,
+        mangled_name: Spur,
         location: impl Into<Option<SourceLocation>>,
         kind: TypeKind,
     ) -> TypeId {
@@ -388,7 +391,8 @@ impl TypeStore {
             id,
             TypeInfo {
                 id,
-                name,
+                friendly_name,
+                mangled_name,
                 location: location.into(),
                 kind,
             },
@@ -448,11 +452,20 @@ impl TypeStore {
         if let Some(pi) = self.pointer_map.get(&pointee.id) {
             self.kinds[&pi.ptr_id]
         } else {
-            let pointee_name = string_store.resolve(pointee.name);
-            let name = format!("{pointee_name}&");
-            let name = string_store.intern(&name);
+            let pointee_friendly_name = string_store.resolve(pointee.friendly_name);
+            let friendly_name = format!("{pointee_friendly_name}{}", stores::FRENDLY_PTR);
+            let friendly_name = string_store.intern(&friendly_name);
 
-            let pointer_info = self.add_type(name, None, TypeKind::Pointer(pointee.id));
+            let pointee_mangled_name = string_store.resolve(pointee.mangled_name);
+            let mangled_name = format!("{pointee_mangled_name}{}", stores::MANGLED_PTR);
+            let mangled_name = string_store.intern(&mangled_name);
+
+            let pointer_info = self.add_type(
+                friendly_name,
+                mangled_name,
+                None,
+                TypeKind::Pointer(pointee.id),
+            );
             self.pointer_map.insert(
                 pointee.id,
                 PointerInfo {
@@ -475,12 +488,25 @@ impl TypeStore {
         if let Some(&array_id) = self.array_map.get(&(kind_info.id, length)) {
             self.kinds[&array_id]
         } else {
-            let pointee_name = string_store.resolve(kind_info.name);
-            let name = format!("{pointee_name}[{length}]");
-            let name = string_store.intern(&name);
+            let inner_friendly_name = string_store.resolve(kind_info.friendly_name);
+            let friendly_name = format!(
+                "{inner_friendly_name}{}{length}{}",
+                stores::FRENDLY_ARRAY_OPEN,
+                stores::FRENDLY_ARRAY_CLOSE
+            );
+            let friendly_name = string_store.intern(&friendly_name);
+
+            let inner_mangled_name = string_store.resolve(kind_info.mangled_name);
+            let mangled_name = format!(
+                "{inner_mangled_name}{}{length}{}",
+                stores::MANGLED_ARRAY_OPEN,
+                stores::MANGLED_ARRAY_CLOSE
+            );
+            let mangled_name = string_store.intern(&mangled_name);
 
             let array_info = self.add_type(
-                name,
+                friendly_name,
+                mangled_name,
                 None,
                 TypeKind::Array {
                     type_id: content_type_id,
@@ -638,36 +664,55 @@ impl TypeStore {
             is_union: base_def.is_union,
         };
 
-        let mut name = string_store.resolve(base_def.name.inner).to_owned();
-        name += "(";
+        let mut friendly_name = string_store.get_friendly_name(base_item_id).to_owned();
+        let mut mangled_name = string_store.get_mangled_name(base_item_id).to_owned();
+        friendly_name += stores::FRENDLY_GENERIC_OPEN;
+        mangled_name += stores::MANGLED_GENERIC_OPEN;
 
         match type_params.as_slice() {
             [] => unreachable!(),
             [n] => {
                 let ti = self.get_type_info(*n);
-                let t_name = string_store.resolve(ti.name);
-                name += t_name;
+                let friendly_name_part = string_store.resolve(ti.friendly_name);
+                let mangled_name_part = string_store.resolve(ti.mangled_name);
+                friendly_name += friendly_name_part;
+                mangled_name += mangled_name_part;
             }
             [n, xs @ ..] => {
                 use std::fmt::Write;
                 let ti = self.get_type_info(*n);
-                let t_name = string_store.resolve(ti.name);
-                let _ = write!(&mut name, "{t_name}");
+                let friendly_name_part = string_store.resolve(ti.friendly_name);
+                let mangled_name_part = string_store.resolve(ti.mangled_name);
+                let _ = write!(&mut friendly_name, "{friendly_name_part}");
+                let _ = write!(&mut mangled_name, "{mangled_name_part}");
 
                 for t in xs {
                     let ti = self.get_type_info(*t);
-                    let t_name = string_store.resolve(ti.name);
-                    let _ = write!(&mut name, " {t_name}");
+                    let friendly_name_part = string_store.resolve(ti.friendly_name);
+                    let mangled_name_part = string_store.resolve(ti.mangled_name);
+                    let _ = write!(
+                        &mut friendly_name,
+                        "{}{friendly_name_part}",
+                        stores::FRENDLY_GENERIC_SEP
+                    );
+                    let _ = write!(
+                        &mut mangled_name,
+                        "{}{mangled_name_part}",
+                        stores::MANGLED_GENERIC_SEP
+                    );
                 }
             }
         }
 
-        name += ")";
+        friendly_name += stores::FRENDLY_GENERIC_CLOSE;
+        mangled_name += stores::MANGLED_GENERIC_CLOSE;
 
-        let name = string_store.intern(&name);
+        let friendly_name = string_store.intern(&friendly_name);
+        let mangled_name = string_store.intern(&mangled_name);
 
         let type_id = self.add_type(
-            name,
+            friendly_name,
+            mangled_name,
             base_type_info.location,
             TypeKind::GenericStructInstance(base_item_id),
         );

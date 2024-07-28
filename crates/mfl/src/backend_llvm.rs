@@ -297,7 +297,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             let item_sig = mfl_ctx.trir().get_item_signature(item.id);
 
-            let name = string_store.get_symbol_name(mfl_ctx, item.id);
+            let name = string_store.get_mangled_name(item.id);
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
@@ -359,7 +359,7 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let name = stores.strings.get_symbol_name(mfl_ctx, item.id);
+            let name = stores.strings.get_mangled_name(item.id);
             trace!(name, "Building global");
 
             let variable_store_type = mfl_ctx.trir().get_variable_type(item.id);
@@ -713,7 +713,7 @@ impl<'ctx> CodeGen<'ctx> {
         function: FunctionValue<'ctx>,
         stores: &mut Stores,
     ) -> InkwellResult {
-        let name = stores.strings.get_symbol_name(mfl_ctx, id);
+        let name = stores.strings.get_mangled_name(id);
         let _span = debug_span!(stringify!(CodeGen::compile_procedure), name).entered();
 
         let mut value_store = SsaMap::new(self.ctx.append_basic_block(function, "allocs"));
@@ -746,7 +746,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             let mem_type = self.get_type(&mut stores.types, store_type_id);
             let array_type = mem_type.array_type(alloc_size);
-            let name = stores.strings.get_symbol_name(mfl_ctx, item_id).to_owned() + "_";
+            let name = stores.strings.get_mangled_name(item_id).to_owned() + "_";
             let variable = self.builder.build_alloca(array_type, &name)?;
 
             self.builder

@@ -28,6 +28,7 @@ flags! {
         DefineStructs,
         SelfContainingStruct,
         TypeResolvedSignature,
+        BuildNames,
         TypeResolvedBody,
         CyclicRefCheckBody,
         TerminalBlockCheckBody,
@@ -50,6 +51,7 @@ impl PassState {
             PassState::SelfContainingStruct => PassContext::ensure_self_containing_structs,
             PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
             PassState::TypeResolvedBody => PassContext::ensure_type_resolved_body,
+            PassState::BuildNames => PassContext::ensure_build_names,
             PassState::CyclicRefCheckBody => PassContext::ensure_cyclic_ref_check_body,
             PassState::TerminalBlockCheckBody => PassContext::ensure_terminal_block_check_body,
             PassState::StackAndTypeCheckedBody => PassContext::ensure_stack_and_type_checked_body,
@@ -62,7 +64,7 @@ impl PassState {
     fn get_deps(self) -> (FlagSet<PassState>, &'static [PassState]) {
         use PassState::*;
         match self {
-            IdentResolvedSignature | IdentResolvedBody | TerminalBlockCheckBody => {
+            IdentResolvedSignature | IdentResolvedBody | TerminalBlockCheckBody | BuildNames => {
                 (FlagSet::default(), &[])
             }
             SelfContainingStruct | DeclareStructs | TypeResolvedSignature => {
@@ -221,7 +223,7 @@ impl PassContext {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::declare_struct(ctx, stores, &mut had_error, cur_item);
+        passes::structs::declare_struct(ctx, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item);
             Err(())
@@ -328,7 +330,7 @@ impl PassContext {
         }
     }
 
-    fn ensure_type_resolved_signature(
+    pub fn ensure_type_resolved_signature(
         &mut self,
         ctx: &mut Context,
         stores: &mut Stores,
@@ -358,6 +360,27 @@ impl PassContext {
             self.set_state(cur_item, PassState::TypeResolvedSignature);
             Ok(())
         }
+    }
+
+    pub fn ensure_build_names(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::BuildNames);
+
+        let _span = debug_span!(stringify!(ensure_build_names));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "BuildNames",
+        );
+
+        stores.build_friendly_name(ctx, self, cur_item);
+        stores.build_mangled_name(ctx, self, cur_item);
+        self.set_state(cur_item, PassState::BuildNames);
+        Ok(())
     }
 
     fn ensure_type_resolved_body(
@@ -611,7 +634,7 @@ impl PassContext {
         let needed_states = match ctx.get_item_header(cur_item).kind {
             ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
             ItemKind::StructDef => &[PassState::SelfContainingStruct, PassState::DefineStructs],
-            ItemKind::Variable => &[PassState::TypeResolvedSignature],
+            ItemKind::Variable => &[PassState::BuildNames, PassState::TypeResolvedSignature],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
                 PassState::IdentResolvedSignature,
@@ -619,7 +642,7 @@ impl PassContext {
             ],
             ItemKind::Assert => &[PassState::CheckAsserts],
             ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
-            ItemKind::Function => &[PassState::ConstPropBody],
+            ItemKind::Function => &[PassState::BuildNames, PassState::ConstPropBody],
         };
 
         let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);

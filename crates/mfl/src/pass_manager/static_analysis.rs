@@ -123,13 +123,13 @@ pub(super) fn failed_compare_stack_types(
             .value_types([*actual_id])
             .map_or("Unknown", |[v]| {
                 let type_info = stores.types.get_type_info(v);
-                stores.strings.resolve(type_info.name)
+                stores.strings.resolve(type_info.friendly_name)
             });
 
         bad_values.push((*actual_id, idx.to_u64(), value_type));
 
         let expected_type_info = stores.types.get_type_info(*expected);
-        let expected_name = stores.strings.resolve(expected_type_info.name);
+        let expected_name = stores.strings.resolve(expected_type_info.friendly_name);
         note.add_row(row!(
             (actual_stack.len() - idx - 1).to_string(),
             expected_name,
@@ -163,7 +163,7 @@ pub(super) fn generate_type_mismatch_diag(
         [a] => {
             let kind = stores.values.value_types([*a]).map_or("Unknown", |[v]| {
                 let type_info = stores.types.get_type_info(v);
-                stores.strings.resolve(type_info.name)
+                stores.strings.resolve(type_info.friendly_name)
             });
             write!(&mut message, "`{kind}`").unwrap();
         }
@@ -174,7 +174,7 @@ pub(super) fn generate_type_mismatch_diag(
                 .map_or(["Unknown", "Unknown"], |k| {
                     k.map(|id| {
                         let type_info = stores.types.get_type_info(id);
-                        stores.strings.resolve(type_info.name)
+                        stores.strings.resolve(type_info.friendly_name)
                     })
                 });
             write!(&mut message, "`{a}` and `{b}`").unwrap();
@@ -183,14 +183,14 @@ pub(super) fn generate_type_mismatch_diag(
             for x in xs {
                 let kind = stores.values.value_types([*x]).map_or("Unknown", |[v]| {
                     let type_info = stores.types.get_type_info(v);
-                    stores.strings.resolve(type_info.name)
+                    stores.strings.resolve(type_info.friendly_name)
                 });
                 write!(&mut message, "`{kind}`, ").unwrap();
             }
 
             let kind = stores.values.value_types([*last]).map_or("Unknown", |[v]| {
                 let type_info = stores.types.get_type_info(v);
-                stores.strings.resolve(type_info.name)
+                stores.strings.resolve(type_info.friendly_name)
             });
             write!(&mut message, "and `{kind}`").unwrap();
         }
@@ -203,7 +203,7 @@ pub(super) fn generate_type_mismatch_diag(
             .value_types([*value_id])
             .map_or("Unknown", |[v]| {
                 let type_info = stores.types.get_type_info(v);
-                stores.strings.resolve(type_info.name)
+                stores.strings.resolve(type_info.friendly_name)
             });
         bad_values.push((*value_id, order, value_type));
     }

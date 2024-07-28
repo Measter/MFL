@@ -343,6 +343,9 @@ pub fn resolve_signature(
             let mut resolved_sig = NameResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
+
+                // We only use this after instantiation, so leave it empty.
+                generic_params: Vec::new(),
             };
 
             let mut local_had_error = ErrorSignal::new();

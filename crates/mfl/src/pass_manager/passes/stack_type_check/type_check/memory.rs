@@ -76,7 +76,7 @@ pub(crate) fn extract_array(
     };
 
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
-        let value_type_name = stores.strings.resolve(array_type_info.name);
+        let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(array_value_id, 0, value_type_name)],
@@ -156,7 +156,7 @@ pub(crate) fn extract_array(
     };
 
     if !idx_type_info.kind.is_unsigned_int() {
-        let idx_type_name = stores.strings.resolve(idx_type_info.name);
+        let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(idx_value_id, 1, idx_type_name)],
@@ -206,7 +206,7 @@ pub(crate) fn extract_struct(
     };
 
     let not_struct_error = || {
-        let value_type_name = stores.strings.resolve(input_struct_type_info.name);
+        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(input_struct_value_id, 1, value_type_name)],
@@ -268,7 +268,7 @@ pub(crate) fn extract_struct(
         let unknown_field_name = stores.strings.resolve(field_name.inner);
         let struct_name = stores.strings.resolve(struct_def.name.inner);
 
-        let value_type_name = stores.strings.resolve(input_struct_type_info.name);
+        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(input_struct_value_id, 1, value_type_name)],
@@ -324,7 +324,7 @@ pub(crate) fn insert_array(
     }
 
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
-        let value_type_name = stores.strings.resolve(array_type_info.name);
+        let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(array_value_id, 1, value_type_name)],
@@ -407,7 +407,7 @@ pub(crate) fn insert_array(
     let store_type_info = stores.types.get_type_info(store_type_id);
 
     if !idx_type_info.kind.is_unsigned_int() {
-        let idx_type_name = stores.strings.resolve(idx_type_info.name);
+        let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(idx_value_id, 2, idx_type_name)],
@@ -433,12 +433,12 @@ pub(crate) fn insert_array(
             (TypeKind::Integer(to), TypeKind::Integer(from)) if can_promote_int_unidirectional(from, to)
         )
     {
-        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
         let array_type_name = match array_type_info.kind {
-            TypeKind::Array { .. } => stores.strings.resolve(array_type_info.name),
+            TypeKind::Array { .. } => stores.strings.resolve(array_type_info.friendly_name),
             TypeKind::Pointer(sub_type_id) => {
                 let sub_type_info = stores.types.get_type_info(sub_type_id);
-                stores.strings.resolve(sub_type_info.name)
+                stores.strings.resolve(sub_type_info.friendly_name)
             }
             _ => unreachable!(),
         };
@@ -491,7 +491,7 @@ pub(crate) fn insert_struct(
     }
 
     let not_struct_error = || {
-        let value_type_name = stores.strings.resolve(input_struct_info.name);
+        let value_type_name = stores.strings.resolve(input_struct_info.friendly_name);
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
             [(input_struct_value_id, 1, value_type_name)],
@@ -552,7 +552,7 @@ pub(crate) fn insert_struct(
     else {
         let unknown_field_name = stores.strings.resolve(field_name.inner);
         let struct_name = stores.strings.resolve(struct_type_info.name.inner);
-        let value_type_name = stores.strings.resolve(input_struct_info.name);
+        let value_type_name = stores.strings.resolve(input_struct_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
@@ -589,10 +589,12 @@ pub(crate) fn insert_struct(
             ) if can_promote_int_unidirectional(from, to)
         )
     {
-        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
         let struct_type_name = match input_struct_info.kind {
-            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => input_struct_info.name,
-            TypeKind::Pointer(sub_type) => stores.types.get_type_info(sub_type).name,
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                input_struct_info.friendly_name
+            }
+            TypeKind::Pointer(sub_type) => stores.types.get_type_info(sub_type).friendly_name,
             _ => unreachable!(),
         };
         let struct_type_name = stores.strings.resolve(struct_type_name);
@@ -634,7 +636,7 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId
     let ptr_info = stores.types.get_type_info(ptr_type);
 
     let TypeKind::Pointer(ptee_type_id) = ptr_info.kind else {
-        let ptr_type_name = stores.strings.resolve(ptr_info.name);
+        let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
@@ -696,8 +698,8 @@ pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id
             )
         {
             let type_info = stores.types.get_type_info(value_type_id);
-            let other_value_name = stores.strings.resolve(type_info.name);
-            let expected_value_name = stores.strings.resolve(expected_store_type.name);
+            let other_value_name = stores.strings.resolve(type_info.friendly_name);
+            let expected_value_name = stores.strings.resolve(expected_store_type.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -743,8 +745,8 @@ pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
     let data_type_info = stores.types.get_type_info(data_type_id);
 
     let TypeKind::Pointer(ptee_type_id) = ptr_type_info.kind else {
-        let ptr_type_name = stores.strings.resolve(ptr_type_info.name);
-        let data_type_name = stores.strings.resolve(data_type_info.name);
+        let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
+        let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
@@ -774,8 +776,8 @@ pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
     );
 
     if data_type_id != ptee_type_id && !can_promote_int {
-        let data_type_name = stores.strings.resolve(data_type_info.name);
-        let ptee_type_name = stores.strings.resolve(ptr_type_info.name);
+        let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
+        let ptee_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
             stores,
@@ -823,7 +825,7 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
         | TypeKind::Pointer(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            let aggr_type_name = stores.strings.resolve(aggr_type_info.name);
+            let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -888,7 +890,7 @@ pub(crate) fn pack_struct(
 
         if !found_field {
             let input_type_info = stores.types.get_type_info(input_type_id);
-            let input_type_name = stores.strings.resolve(input_type_info.name);
+            let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
@@ -926,8 +928,8 @@ pub(crate) fn pack_struct(
                     if can_promote_int_unidirectional(from, to)
                 )
             {
-                let input_type_name = stores.strings.resolve(input_type_info.name);
-                let field_type_name = stores.strings.resolve(field_type_info.name);
+                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
+                let field_type_name = stores.strings.resolve(field_type_info.friendly_name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,
@@ -1009,7 +1011,7 @@ fn pack_struct_infer_generic(
             // We've found a fixed field, so we can't infer the generic parameter.
             if field_type_id == input_type_id {
                 let input_type_info = stores.types.get_type_info(input_type_id);
-                let input_type_name = stores.strings.resolve(input_type_info.name);
+                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,
