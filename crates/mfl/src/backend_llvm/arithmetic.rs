@@ -1,4 +1,5 @@
 use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
+use intcast::IntCast;
 
 use crate::{
     ir::{Arithmetic, Basic, OpCode, TypeResolvedOp},
@@ -221,6 +222,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         let a_val = value_store.load_value(self, a, ds)?.into_int_value();
         let b_val = value_store.load_value(self, b, ds)?.into_int_value();
+
+        // Mask the shift value to be within the bit-size of the target type.
+        // This matches the semantics used during the ConstProp pass.
+        let b_int_type = b_int.width.get_int_type(self.ctx);
+        let mask = b_int_type.const_int(output_int.width.bit_width().to_u64() - 1, false);
+        let b_val = self.builder.build_and(b_val, mask, "")?;
 
         let target_type = output_int.width.get_int_type(self.ctx);
         let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
