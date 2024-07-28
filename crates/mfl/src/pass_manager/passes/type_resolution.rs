@@ -1,9 +1,14 @@
 use smallvec::SmallVec;
 
 use crate::{
-    context::{Context, ItemId, ItemKind, TypeResolvedItemSignature},
+    context::{
+        Context, ItemId, ItemKind, PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature,
+    },
     error_signal::ErrorSignal,
-    ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode, TypeResolvedOp},
+    ir::{
+        Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
+        PartiallyResolvedType, TypeResolvedOp,
+    },
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassContext},
     stores::{
         block::BlockId,
@@ -21,11 +26,66 @@ pub fn resolve_signature(
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::GenericFunction | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Module | ItemKind::StructDef => {
             panic!(
                 "ICE: Tried to resolve_signature on a {:?}",
                 cur_item_header.kind
             )
+        }
+
+        ItemKind::GenericFunction => {
+            let unresolved_sig = ctx.nrir().get_item_signature(cur_id).clone();
+            let mut resolved_sig = PartiallyTypeResolvedItemSignature {
+                exit: Vec::new(),
+                entry: Vec::new(),
+            };
+
+            let mut local_had_error = ErrorSignal::new();
+
+            let mut process_sig =
+                |unresolved: &[NameResolvedType], resolved: &mut Vec<PartiallyResolvedType>| {
+                    for kind in unresolved {
+                        {
+                            let mut single_check_error = ErrorSignal::new();
+                            ensure_structs_declared_in_type(
+                                ctx,
+                                stores,
+                                pass_ctx,
+                                &mut single_check_error,
+                                kind,
+                            );
+                            if single_check_error.into_bool() {
+                                local_had_error.set();
+                                continue;
+                            }
+                        }
+
+                        let partial_type = match stores
+                            .types
+                            .partially_resolve_generic_type(&mut stores.strings, kind)
+                        {
+                            Ok(info) => info,
+                            Err(tk) => {
+                                local_had_error.set();
+                                emit_type_error_diag(stores, tk);
+                                continue;
+                            }
+                        };
+
+                        resolved.push(partial_type);
+                    }
+                };
+
+            process_sig(&unresolved_sig.entry, &mut resolved_sig.entry);
+            process_sig(&unresolved_sig.exit, &mut resolved_sig.exit);
+
+            if local_had_error.into_bool() {
+                had_error.set();
+                return;
+            }
+
+            ctx.trir_mut()
+                .set_partial_item_signature(cur_id, resolved_sig);
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
@@ -80,14 +140,6 @@ pub fn resolve_signature(
             ctx.trir_mut().set_item_signature(cur_id, resolved_sig);
         }
         ItemKind::Variable => {
-            if cur_item_header
-                .parent
-                .is_some_and(|ph| ctx.get_item_header(ph).kind == ItemKind::GenericFunction)
-            {
-                // These shouldn't be processed at all until instantiation.
-                return;
-            }
-
             let variable_type_unresolved = ctx.nrir().get_variable_type(cur_id).clone();
             if let Some(type_item) = variable_type_unresolved.item_id() {
                 if pass_ctx
@@ -97,24 +149,45 @@ pub fn resolve_signature(
                     had_error.set();
                 }
             }
-            let info = match stores
-                .types
-                .resolve_type(&mut stores.strings, &variable_type_unresolved)
-            {
-                Ok(info) => info,
-                Err(tk) => {
-                    had_error.set();
-                    emit_type_error_diag(stores, tk);
-                    return;
-                }
-            };
 
-            ctx.trir_mut().set_variable_type(cur_id, info.id);
+            let parent_id = cur_item_header.parent.unwrap(); // It's a variable, it must have a parent.
+            let parent_header = ctx.get_item_header(parent_id);
+
+            if parent_header.kind == ItemKind::GenericFunction {
+                let partial_type = match stores
+                    .types
+                    .partially_resolve_generic_type(&mut stores.strings, &variable_type_unresolved)
+                {
+                    Ok(pt) => pt,
+                    Err(tk) => {
+                        had_error.set();
+                        emit_type_error_diag(stores, tk);
+                        return;
+                    }
+                };
+
+                ctx.trir_mut()
+                    .set_partial_variable_type(cur_id, partial_type);
+            } else {
+                let info = match stores
+                    .types
+                    .resolve_type(&mut stores.strings, &variable_type_unresolved)
+                {
+                    Ok(info) => info,
+                    Err(tk) => {
+                        had_error.set();
+                        emit_type_error_diag(stores, tk);
+                        return;
+                    }
+                };
+
+                ctx.trir_mut().set_variable_type(cur_id, info.id);
+            }
         }
     }
 }
 
-fn resolve_block(
+fn fully_resolve_block(
     ctx: &mut Context,
     stores: &mut Stores,
     pass_ctx: &mut PassContext,
@@ -128,13 +201,13 @@ fn resolve_block(
             OpCode::Basic(bo) => {
                 match bo {
                     Basic::Control(Control::If(if_op)) => {
-                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
-                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
-                        resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
+                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
+                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
+                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
                     }
                     Basic::Control(Control::While(while_op)) => {
-                        resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
-                        resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
+                        fully_resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
+                        fully_resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
                     }
                     _ => {}
                 }
@@ -183,7 +256,6 @@ fn resolve_block(
                         had_error,
                         id,
                         resolved_generic_params,
-                        unresolved_generic_params_sm,
                     ) else {
                         had_error.set();
                         continue;
@@ -243,6 +315,148 @@ fn resolve_block(
     }
 }
 
+fn partially_resolve_block(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    unresolved_block_id: BlockId,
+) {
+    let block = stores.blocks.get_block(unresolved_block_id).clone();
+    for op_id in block.ops {
+        let old_code = stores.ops.get_name_resolved(op_id).clone();
+        let new_code = match old_code {
+            OpCode::Basic(bo) => {
+                match bo {
+                    Basic::Control(Control::If(if_op)) => {
+                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
+                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
+                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
+                    }
+                    Basic::Control(Control::While(while_op)) => {
+                        partially_resolve_block(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            had_error,
+                            while_op.condition,
+                        );
+                        partially_resolve_block(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            had_error,
+                            while_op.body_block,
+                        );
+                    }
+                    _ => {}
+                }
+                OpCode::Basic(bo)
+            }
+
+            OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
+                let called_item_header = ctx.get_item_header(id);
+                if called_item_header.kind != ItemKind::GenericFunction {
+                    OpCode::Complex(PartiallyResolvedOp::CallFunction {
+                        id,
+                        generic_params: Vec::new(),
+                    })
+                } else if !generic_params.is_empty() {
+                    let unresolved_generic_params = &generic_params;
+                    let mut resolved_generic_params = Vec::new();
+
+                    for ugp in unresolved_generic_params {
+                        let mut local_had_error = ErrorSignal::new();
+                        ensure_structs_declared_in_type(
+                            ctx,
+                            stores,
+                            pass_ctx,
+                            &mut local_had_error,
+                            ugp,
+                        );
+                        if local_had_error.into_bool() {
+                            had_error.set();
+                            continue;
+                        }
+
+                        let type_info = match stores
+                            .types
+                            .partially_resolve_generic_type(&mut stores.strings, ugp)
+                        {
+                            Ok(info) => info,
+                            Err(err_token) => {
+                                emit_type_error_diag(stores, err_token);
+                                had_error.set();
+                                continue;
+                            }
+                        };
+
+                        resolved_generic_params.push(type_info);
+                    }
+
+                    OpCode::Complex(PartiallyResolvedOp::CallFunction {
+                        id,
+                        generic_params: resolved_generic_params,
+                    })
+                } else {
+                    // No parameters were provided, we'll try to resolve this during type checking.
+                    OpCode::Complex(PartiallyResolvedOp::CallFunction {
+                        id,
+                        generic_params: Vec::new(),
+                    })
+                }
+            }
+            OpCode::Complex(NameResolvedOp::Const { id }) => {
+                OpCode::Complex(PartiallyResolvedOp::Const { id })
+            }
+            OpCode::Complex(NameResolvedOp::Variable { id, is_global }) => {
+                OpCode::Complex(PartiallyResolvedOp::Variable { id, is_global })
+            }
+
+            OpCode::Complex(
+                NameResolvedOp::Cast { ref id }
+                | NameResolvedOp::PackStruct { ref id }
+                | NameResolvedOp::SizeOf { ref id },
+            ) => {
+                let mut local_had_error = ErrorSignal::new();
+                ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
+                if local_had_error.into_bool() {
+                    had_error.set();
+                    continue;
+                }
+
+                let resolved_type = match stores
+                    .types
+                    .partially_resolve_generic_type(&mut stores.strings, id)
+                {
+                    Ok(info) => info,
+                    Err(err_token) => {
+                        emit_type_error_diag(stores, err_token);
+                        had_error.set();
+                        continue;
+                    }
+                };
+                let new_code = match old_code {
+                    OpCode::Complex(NameResolvedOp::Cast { .. }) => {
+                        PartiallyResolvedOp::Cast { id: resolved_type }
+                    }
+                    OpCode::Complex(NameResolvedOp::PackStruct { .. }) => {
+                        PartiallyResolvedOp::PackStruct { id: resolved_type }
+                    }
+                    OpCode::Complex(NameResolvedOp::SizeOf { .. }) => {
+                        PartiallyResolvedOp::SizeOf { id: resolved_type }
+                    }
+                    _ => unreachable!(),
+                };
+
+                OpCode::Complex(new_code)
+            }
+        };
+
+        stores.ops.set_partially_type_resolved(op_id, new_code);
+    }
+}
+
 pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
@@ -252,16 +466,21 @@ pub fn resolve_body(
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::GenericFunction | ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
             panic!(
                 "ICE: Tried to body type-resolve a {:?}",
                 cur_item_header.kind
             );
         }
 
+        ItemKind::GenericFunction => {
+            let unresolved_body = ctx.get_item_body(cur_id);
+            partially_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
+        }
+
         ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
             let unresolved_body = ctx.get_item_body(cur_id);
-            resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
+            fully_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
         }
     };
 }

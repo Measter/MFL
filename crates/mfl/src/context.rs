@@ -10,11 +10,11 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        Basic, Control, If, NameResolvedType, OpCode, StructDef, UnresolvedIdent, UnresolvedType,
-        While,
+        Basic, Control, If, NameResolvedType, OpCode, PartiallyResolvedOp, PartiallyResolvedType,
+        StructDef, TypeResolvedOp, UnresolvedIdent, UnresolvedType, While,
     },
     option::OptionExt,
-    pass_manager::PassContext,
+    pass_manager::{PassContext, PassState},
     simulate::SimulatorValue,
     stores::{
         block::BlockId,
@@ -23,8 +23,6 @@ use crate::{
     },
     Stores,
 };
-
-use super::ir::NameResolvedOp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangItem {
@@ -201,8 +199,15 @@ pub struct TypeResolvedItemSignature {
     pub generic_params: Vec<TypeId>,
 }
 
+pub struct PartiallyTypeResolvedItemSignature {
+    pub exit: Vec<PartiallyResolvedType>,
+    pub entry: Vec<PartiallyResolvedType>,
+}
+
 pub struct TypeResolvedIr {
+    partial_item_signatures: HashMap<ItemId, PartiallyTypeResolvedItemSignature>,
     item_signatures: HashMap<ItemId, TypeResolvedItemSignature>,
+    partial_variable_types: HashMap<ItemId, PartiallyResolvedType>,
     variable_type: HashMap<ItemId, TypeId>,
 }
 
@@ -223,6 +228,24 @@ impl TypeResolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn get_partial_item_signature(&self, id: ItemId) -> &PartiallyTypeResolvedItemSignature {
+        &self.partial_item_signatures[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_partial_item_signature(
+        &mut self,
+        id: ItemId,
+        sig: PartiallyTypeResolvedItemSignature,
+    ) {
+        self.partial_item_signatures
+            .insert(id, sig)
+            .expect_none("Redefined item signature");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_variable_type(&self, id: ItemId) -> TypeId {
         self.variable_type[&id]
     }
@@ -234,12 +257,28 @@ impl TypeResolvedIr {
             .insert(id, mem_type)
             .expect_none("Redefined variable type");
     }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_partial_variable_type(&self, id: ItemId) -> &PartiallyResolvedType {
+        &self.partial_variable_types[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_partial_variable_type(&mut self, id: ItemId, mem_type: PartiallyResolvedType) {
+        self.partial_variable_types
+            .insert(id, mem_type)
+            .expect_none("Redefined variable type");
+    }
 }
 
 impl TypeResolvedIr {
     fn new() -> Self {
         TypeResolvedIr {
+            partial_item_signatures: HashMap::new(),
             item_signatures: HashMap::new(),
+            partial_variable_types: HashMap::new(),
             variable_type: HashMap::new(),
         }
     }
@@ -634,63 +673,27 @@ impl Context {
         self.headers[item_id.0 as usize].lang_item = Some(kind);
     }
 
-    // `self` is only used in recursion, but it makes conceptual sense for this to be a method.
-    #[allow(clippy::only_used_in_recursion)]
-    fn expand_generic_params_in_type(
-        &self,
-        base: &NameResolvedType,
-        param_map: &HashMap<Spur, NameResolvedType>,
-    ) -> NameResolvedType {
-        match base {
-            NameResolvedType::SimpleCustom { .. } | NameResolvedType::SimpleBuiltin(_) => {
-                base.clone()
-            }
-            NameResolvedType::SimpleGenericParam(p) => param_map[&p.inner].clone(),
-            NameResolvedType::Array(inner, len) => {
-                let inner = self.expand_generic_params_in_type(inner, param_map);
-                NameResolvedType::Array(Box::new(inner), *len)
-            }
-            NameResolvedType::Pointer(inner) => {
-                let inner = self.expand_generic_params_in_type(inner, param_map);
-                NameResolvedType::Pointer(Box::new(inner))
-            }
-            NameResolvedType::GenericInstance {
-                id,
-                id_token,
-                params,
-            } => {
-                let params = params
-                    .iter()
-                    .map(|t| self.expand_generic_params_in_type(t, param_map))
-                    .collect();
-                NameResolvedType::GenericInstance {
-                    id: *id,
-                    id_token: *id_token,
-                    params,
-                }
-            }
-        }
-    }
-
     fn expand_generic_params_in_block(
         &mut self,
         stores: &mut Stores,
         pass_ctx: &mut PassContext,
+        had_error: &mut ErrorSignal,
         block_id: BlockId,
-        param_map: &HashMap<Spur, NameResolvedType>,
+        param_map: &HashMap<Spur, TypeId>,
         old_alloc_map: &HashMap<ItemId, ItemId>,
     ) -> BlockId {
         let mut new_body = Vec::new();
 
         let old_block = stores.blocks.get_block(block_id).clone();
         for op_id in old_block.ops {
-            let op_code = stores.ops.get_name_resolved(op_id).clone();
+            let op_code = stores.ops.get_partially_type_resolved(op_id).clone();
             let new_code = match op_code {
                 OpCode::Basic(bo) => match bo {
                     Basic::Control(Control::If(if_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
+                            had_error,
                             if_op.condition,
                             param_map,
                             old_alloc_map,
@@ -698,6 +701,7 @@ impl Context {
                         let resolved_then = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
+                            had_error,
                             if_op.then_block,
                             param_map,
                             old_alloc_map,
@@ -705,6 +709,7 @@ impl Context {
                         let resolved_else = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
+                            had_error,
                             if_op.else_block,
                             param_map,
                             old_alloc_map,
@@ -720,6 +725,7 @@ impl Context {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
+                            had_error,
                             while_op.condition,
                             param_map,
                             old_alloc_map,
@@ -727,6 +733,7 @@ impl Context {
                         let resolved_body = self.expand_generic_params_in_block(
                             stores,
                             pass_ctx,
+                            had_error,
                             while_op.body_block,
                             param_map,
                             old_alloc_map,
@@ -741,49 +748,66 @@ impl Context {
                     _ => OpCode::Basic(bo),
                 },
                 OpCode::Complex(co) => match co {
-                    ref op_code @ (NameResolvedOp::Cast { ref id }
-                    | NameResolvedOp::PackStruct { ref id }
-                    | NameResolvedOp::SizeOf { ref id }) => {
-                        if let Some(type_item) = id.item_id() {
-                            pass_ctx
-                                .ensure_declare_structs(self, stores, type_item)
-                                .unwrap();
-                        }
-                        let new_id = self.expand_generic_params_in_type(id, param_map);
+                    ref op_code @ (PartiallyResolvedOp::Cast { ref id }
+                    | PartiallyResolvedOp::PackStruct { ref id }
+                    | PartiallyResolvedOp::SizeOf { ref id }) => {
+                        let new_id =
+                            stores
+                                .types
+                                .resolve_generic_type(&mut stores.strings, id, param_map);
                         match op_code {
-                            NameResolvedOp::Cast { .. } => {
-                                OpCode::Complex(NameResolvedOp::Cast { id: new_id })
+                            PartiallyResolvedOp::Cast { .. } => {
+                                OpCode::Complex(TypeResolvedOp::Cast { id: new_id })
                             }
-                            NameResolvedOp::PackStruct { .. } => {
-                                OpCode::Complex(NameResolvedOp::PackStruct { id: new_id })
+                            PartiallyResolvedOp::PackStruct { .. } => {
+                                OpCode::Complex(TypeResolvedOp::PackStruct { id: new_id })
                             }
-                            NameResolvedOp::SizeOf { .. } => {
-                                OpCode::Complex(NameResolvedOp::SizeOf { id: new_id })
+                            PartiallyResolvedOp::SizeOf { .. } => {
+                                OpCode::Complex(TypeResolvedOp::SizeOf { id: new_id })
                             }
                             _ => unreachable!(),
                         }
                     }
 
-                    NameResolvedOp::Const { id } => OpCode::Complex(NameResolvedOp::Const { id }),
-                    NameResolvedOp::Variable { id, is_global } => {
+                    PartiallyResolvedOp::Const { id } => {
+                        OpCode::Complex(TypeResolvedOp::Const { id })
+                    }
+                    PartiallyResolvedOp::Variable { id, is_global } => {
                         let id = if let Some(new_id) = old_alloc_map.get(&id) {
                             *new_id
                         } else {
                             id
                         };
-                        OpCode::Complex(NameResolvedOp::Variable { id, is_global })
+                        OpCode::Complex(TypeResolvedOp::Variable { id, is_global })
                     }
 
-                    NameResolvedOp::CallFunction { id, generic_params } => {
-                        let new_params = generic_params
+                    PartiallyResolvedOp::CallFunction { id, generic_params } => {
+                        let new_params: SmallVec<_> = generic_params
                             .iter()
-                            .map(|gp| self.expand_generic_params_in_type(gp, param_map))
+                            .map(|gp| {
+                                stores.types.resolve_generic_type(
+                                    &mut stores.strings,
+                                    gp,
+                                    param_map,
+                                )
+                            })
                             .collect();
 
-                        OpCode::Complex(NameResolvedOp::CallFunction {
-                            id,
-                            generic_params: new_params,
-                        })
+                        let header = self.get_item_header(id);
+                        let callee_id = if header.kind != ItemKind::GenericFunction {
+                            id
+                        } else if !new_params.is_empty() {
+                            self.get_generic_function_instance(
+                                stores, pass_ctx, had_error, id, new_params,
+                            )
+                            .unwrap()
+                            //
+                        } else {
+                            // No parameters were provided, figure it out in type check.
+                            id
+                        };
+
+                        OpCode::Complex(TypeResolvedOp::CallFunction { id: callee_id })
                     }
                 },
             };
@@ -811,7 +835,7 @@ impl Context {
             }
 
             let new_op_id = stores.ops.new_op(old_unresolved, old_token);
-            stores.ops.set_name_resolved(new_op_id, new_code);
+            stores.ops.set_type_resolved(new_op_id, new_code);
 
             new_body.push(new_op_id);
         }
@@ -826,7 +850,6 @@ impl Context {
         had_error: &mut ErrorSignal,
         base_fn_id: ItemId,
         resolved_generic_params: SmallVec<[TypeId; 4]>,
-        unresolved_generic_params: SmallVec<[NameResolvedType; 4]>,
     ) -> Result<ItemId, ()> {
         if let Some(id) = self
             .generic_function_cache
@@ -835,10 +858,8 @@ impl Context {
             return Ok(*id);
         }
 
-        // We need to make sure the generic function has been ident-resolved before this step.
-        let resolve_res = pass_ctx.ensure_ident_resolved_signature(self, stores, base_fn_id);
-        let resolve_res =
-            resolve_res.and_then(|_| pass_ctx.ensure_ident_resolved_body(self, stores, base_fn_id));
+        // We need to make sure the generic function has been partially type-resolved before this step.
+        let resolve_res = pass_ctx.ensure_partially_resolve_types(self, stores, base_fn_id);
         if resolve_res.is_err() {
             had_error.set();
             return Err(());
@@ -847,30 +868,36 @@ impl Context {
         let base_fd_params = &self.generic_template_parameters[&base_fn_id];
         let base_header = self.get_item_header(base_fn_id);
         assert_eq!(resolved_generic_params.len(), base_fd_params.len());
-        assert_eq!(unresolved_generic_params.len(), base_fd_params.len());
 
         let param_map: HashMap<_, _> = base_fd_params
             .iter()
-            .zip(unresolved_generic_params)
-            .map(|(name, ty)| (name.inner, ty))
+            .zip(&resolved_generic_params)
+            .map(|(name, ty)| (name.inner, *ty))
             .collect();
 
         // Essentially we need to do what the parser does what in encounters a non-generic function.
         let orig_unresolved_sig = self.urir.get_item_signature(base_fn_id).clone();
-        let orig_name_resolved_sig = self.nrir.get_item_signature(base_fn_id);
-        let mut instantiated_sig = NameResolvedItemSignature {
+        let partial_type_resolved_sig = self.trir().get_partial_item_signature(base_fn_id);
+        let mut instantiated_sig = TypeResolvedItemSignature {
             exit: Vec::new(),
             entry: Vec::new(),
             generic_params: resolved_generic_params.as_slice().to_owned(),
         };
 
-        for stack_item in &orig_name_resolved_sig.exit {
-            let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+        for stack_item in &partial_type_resolved_sig.exit {
+            // let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+            let new_id =
+                stores
+                    .types
+                    .resolve_generic_type(&mut stores.strings, stack_item, &param_map);
             instantiated_sig.exit.push(new_id);
         }
 
-        for stack_item in &orig_name_resolved_sig.entry {
-            let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+        for stack_item in &partial_type_resolved_sig.entry {
+            let new_id =
+                stores
+                    .types
+                    .resolve_generic_type(&mut stores.strings, stack_item, &param_map);
             instantiated_sig.entry.push(new_id);
         }
 
@@ -880,7 +907,8 @@ impl Context {
             orig_unresolved_sig.entry,
             orig_unresolved_sig.exit,
         );
-        self.nrir.set_item_signature(new_proc_id, instantiated_sig);
+        self.trir_mut()
+            .set_item_signature(new_proc_id, instantiated_sig);
 
         // Clone the variable items.
         let base_scope = self.nrir.get_scope(base_fn_id).clone();
@@ -897,7 +925,7 @@ impl Context {
             }
 
             if pass_ctx
-                .ensure_ident_resolved_signature(self, stores, child_item_header.id)
+                .ensure_type_resolved_signature(self, stores, child_item_header.id)
                 .is_err()
             {
                 had_error.set();
@@ -912,21 +940,41 @@ impl Context {
                 new_proc_id,
                 alloc_type_unresolved.map(|i| i.clone()),
             );
-            let alloc_type = self.nrir.get_variable_type(child_item_header.id);
-            let new_variable_sig = self.expand_generic_params_in_type(alloc_type, &param_map);
-            self.nrir.set_variable_type(new_alloc_id, new_variable_sig);
-            pass_ctx.add_new_item(new_alloc_id, child_item_header.id);
+            let alloc_type = self.trir.get_partial_variable_type(child_item_header.id);
+            let new_variable_sig =
+                stores
+                    .types
+                    .resolve_generic_type(&mut stores.strings, alloc_type, &param_map);
+            self.trir.set_variable_type(new_alloc_id, new_variable_sig);
+            pass_ctx.add_new_item(
+                new_alloc_id,
+                child_item_header.id,
+                PassState::IdentResolvedSignature | PassState::TypeResolvedSignature,
+            );
 
             old_alloc_map.insert(child_item_header.id, new_alloc_id);
         }
 
         let body = self.get_item_body(base_fn_id);
-        let new_body =
-            self.expand_generic_params_in_block(stores, pass_ctx, body, &param_map, &old_alloc_map);
+        let new_body = self.expand_generic_params_in_block(
+            stores,
+            pass_ctx,
+            had_error,
+            body,
+            &param_map,
+            &old_alloc_map,
+        );
         self.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
             .insert((base_fn_id, resolved_generic_params), new_proc_id);
-        pass_ctx.add_new_item(new_proc_id, base_fn_id);
+        pass_ctx.add_new_item(
+            new_proc_id,
+            base_fn_id,
+            PassState::IdentResolvedBody
+                | PassState::IdentResolvedSignature
+                | PassState::TypeResolvedBody
+                | PassState::TypeResolvedSignature,
+        );
 
         Ok(new_proc_id)
     }

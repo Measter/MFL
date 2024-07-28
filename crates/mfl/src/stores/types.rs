@@ -446,14 +446,14 @@ impl TypeStore {
         }
     }
 
-    fn partially_resolve_generic_field(
+    pub fn partially_resolve_generic_type(
         &mut self,
         string_store: &mut StringStore,
         kind: &NameResolvedType,
-    ) -> PartiallyResolvedType {
-        match kind {
+    ) -> Result<PartiallyResolvedType, Spanned<Spur>> {
+        let res = match kind {
             NameResolvedType::SimpleCustom { .. } => {
-                let resolved = self.resolve_type(string_store, kind).unwrap();
+                let resolved = self.resolve_type(string_store, kind)?;
                 PartiallyResolvedType::Fixed(resolved.id)
             }
             NameResolvedType::SimpleBuiltin(bi) => {
@@ -463,21 +463,23 @@ impl TypeStore {
                 PartiallyResolvedType::GenericParamSimple(*n)
             }
             NameResolvedType::Array(sub_type, length) => {
-                let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
+                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
                 PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
             }
             NameResolvedType::Pointer(sub_type) => {
-                let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
+                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
                 PartiallyResolvedType::GenericParamPointer(Box::new(inner_kind))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let generic_params = params
                     .iter()
-                    .map(|gp| self.partially_resolve_generic_field(string_store, gp))
-                    .collect();
+                    .map(|gp| self.partially_resolve_generic_type(string_store, gp))
+                    .collect::<Result<_, _>>()?;
                 PartiallyResolvedType::GenericStruct(*id, generic_params)
             }
-        }
+        };
+
+        Ok(res)
     }
 
     pub fn partially_resolve_generic_struct(
@@ -493,7 +495,9 @@ impl TypeStore {
         let mut resolved_fields = Vec::new();
 
         for field in &def.fields {
-            let field_kind = self.partially_resolve_generic_field(string_store, &field.kind);
+            let field_kind = self
+                .partially_resolve_generic_type(string_store, &field.kind)
+                .unwrap();
 
             resolved_fields.push(StructDefField {
                 name: field.name,
@@ -513,7 +517,7 @@ impl TypeStore {
         self.generic_struct_id_map.insert(type_id, generic_base);
     }
 
-    fn resolve_generic_field(
+    pub fn resolve_generic_type(
         &mut self,
         string_store: &mut StringStore,
         kind: &PartiallyResolvedType,
@@ -523,12 +527,12 @@ impl TypeStore {
             PartiallyResolvedType::Fixed(id) => *id,
             PartiallyResolvedType::GenericParamSimple(n) => type_params[&n.inner],
             PartiallyResolvedType::GenericParamPointer(sub_type) => {
-                let pointee_id = self.resolve_generic_field(string_store, sub_type, type_params);
+                let pointee_id = self.resolve_generic_type(string_store, sub_type, type_params);
                 self.get_pointer(string_store, pointee_id).id
             }
             PartiallyResolvedType::GenericParamArray(sub_type, length) => {
                 let content_type_id =
-                    self.resolve_generic_field(string_store, sub_type, type_params);
+                    self.resolve_generic_type(string_store, sub_type, type_params);
                 self.get_array(string_store, content_type_id, *length).id
             }
             PartiallyResolvedType::GenericStruct(base_struct_id, sub_params) => {
@@ -536,7 +540,7 @@ impl TypeStore {
 
                 let sub_params: Vec<_> = sub_params
                     .iter()
-                    .map(|sp| self.resolve_generic_field(string_store, sp, type_params))
+                    .map(|sp| self.resolve_generic_type(string_store, sp, type_params))
                     .collect();
 
                 self.instantiate_generic_struct(
@@ -577,7 +581,7 @@ impl TypeStore {
         let mut resolved_fields = Vec::new();
 
         for field in &base_def.fields {
-            let new_kind = self.resolve_generic_field(string_store, &field.kind, &param_lookup);
+            let new_kind = self.resolve_generic_type(string_store, &field.kind, &param_lookup);
             resolved_fields.push(StructDefField {
                 name: field.name,
                 kind: new_kind,

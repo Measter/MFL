@@ -21,7 +21,7 @@ mod passes;
 pub mod static_analysis;
 
 flags! {
-    enum PassState: u16 {
+    pub(crate) enum PassState: u16 {
         BuildNames,
         CheckAsserts,
         ConstPropBody,
@@ -33,10 +33,11 @@ flags! {
         IdentResolvedBody,
 
         IdentResolvedSignature,
+        PartiallyTypeResolved,
         SelfContainingStruct,
         StackAndTypeCheckedBody,
-        TerminalBlockCheckBody,
 
+        TerminalBlockCheckBody,
         TypeResolvedBody,
         TypeResolvedSignature,
     }
@@ -61,6 +62,7 @@ impl PassState {
             PassState::ConstPropBody => PassContext::ensure_const_prop_body,
             PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
             PassState::CheckAsserts => PassContext::ensure_check_asserts,
+            PassState::PartiallyTypeResolved => PassContext::ensure_partially_resolve_types,
         }
     }
 
@@ -73,6 +75,10 @@ impl PassState {
             SelfContainingStruct | DeclareStructs | TypeResolvedSignature => {
                 (IdentResolvedSignature.into(), &[IdentResolvedSignature])
             }
+            PartiallyTypeResolved => (
+                IdentResolvedBody | IdentResolvedSignature,
+                &[IdentResolvedBody, IdentResolvedSignature],
+            ),
             DefineStructs => (DeclareStructs.into(), &[DeclareStructs]),
             TypeResolvedBody | CyclicRefCheckBody => {
                 (IdentResolvedBody.into(), &[IdentResolvedBody])
@@ -137,9 +143,10 @@ impl PassContext {
         cur_item_state.state |= new_state;
     }
 
-    pub fn add_new_item(&mut self, id: ItemId, base_id: ItemId) {
+    pub fn add_new_item(&mut self, id: ItemId, base_id: ItemId, new_state: FlagSet<PassState>) {
         self.queue.push_back(id);
-        let new_state_info = self.states[&base_id];
+        let mut new_state_info = self.states[&base_id];
+        new_state_info.state = new_state;
         self.states
             .insert(id, new_state_info)
             .expect_none("ICE: Re-added state for item");
@@ -333,6 +340,38 @@ impl PassContext {
         }
     }
 
+    pub fn ensure_partially_resolve_types(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        ensure_state_deps!(
+            self,
+            ctx,
+            stores,
+            cur_item,
+            PassState::PartiallyTypeResolved
+        );
+
+        let _span = debug_span!(stringify!(ensure_partially_resolve_types));
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+            "PartialType",
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
+        if had_error.into_bool() {
+            self.set_error(cur_item);
+            Err(())
+        } else {
+            self.set_state(cur_item, PassState::PartiallyTypeResolved);
+            Ok(())
+        }
+    }
     pub fn ensure_type_resolved_signature(
         &mut self,
         ctx: &mut Context,
@@ -640,7 +679,7 @@ impl PassContext {
             ItemKind::Variable => &[PassState::BuildNames, PassState::TypeResolvedSignature],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
-                PassState::IdentResolvedSignature,
+                PassState::PartiallyTypeResolved,
                 PassState::IdentResolvedBody,
             ],
             ItemKind::Assert => &[PassState::CheckAsserts],

@@ -1,11 +1,14 @@
+use std::ops::ControlFlow;
+
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use smallvec::SmallVec;
 
 use crate::{
-    context::{Context, ItemId},
+    context::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, While},
+    ir::{If, OpCode, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
             can_promote_int_bidirectional, can_promote_int_unidirectional,
@@ -116,6 +119,32 @@ pub(crate) fn call_function_const(
     op_id: OpId,
     callee_id: ItemId,
 ) {
+    let callee_header = ctx.get_item_header(callee_id);
+
+    let callee_id = if callee_header.kind == ItemKind::GenericFunction {
+        if pass_ctx
+            .ensure_partially_resolve_types(ctx, stores, callee_id)
+            .is_err()
+        {
+            had_error.set();
+            return;
+        }
+
+        let ControlFlow::Continue(id) =
+            call_generic_function_infer_params(ctx, stores, pass_ctx, had_error, callee_id, op_id)
+        else {
+            return;
+        };
+
+        // Need to update the op to point at the correct new function ID.
+        stores
+            .ops
+            .overwrite_type_resolved(op_id, OpCode::Complex(TypeResolvedOp::CallFunction { id }));
+        id
+    } else {
+        callee_id
+    };
+
     if pass_ctx
         .ensure_type_resolved_signature(ctx, stores, callee_id)
         .is_err()
@@ -164,6 +193,79 @@ pub(crate) fn call_function_const(
             .values
             .set_value_type(output_value_id, output_type_id);
     }
+}
+
+fn call_generic_function_infer_params(
+    ctx: &mut Context,
+    stores: &mut Stores,
+    pass_ctx: &mut PassContext,
+    had_error: &mut ErrorSignal,
+    callee_id: ItemId,
+    op_id: OpId,
+) -> ControlFlow<(), ItemId> {
+    let generic_sig = ctx.trir().get_partial_item_signature(callee_id);
+    let op_data = stores.ops.get_op_io(op_id);
+    let inputs = &op_data.inputs;
+    let generic_params = ctx.get_function_template_paramaters(callee_id);
+
+    let mut param_types = SmallVec::new();
+
+    // Essentially, iterate over each parameter, then search the signature looking for
+    // a type we can pattern match against to infer the generic type parameter.
+    // If we find one, break and search for the next parameter.
+    let mut local_had_error = ErrorSignal::new();
+
+    for param in generic_params {
+        let mut found_param = false;
+        let sig_iter = generic_sig.entry.iter().chain(&generic_sig.exit);
+        for (sig_type, &input_value_id) in sig_iter.zip(inputs) {
+            let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
+                continue;
+            };
+            let input_type_info = stores.types.get_type_info(input_type_id);
+
+            let Some(inferred_type_id) =
+                sig_type.match_generic_type(stores, param.inner, input_type_info)
+            else {
+                // Not an inferreable pattern.
+                continue;
+            };
+
+            param_types.push(inferred_type_id);
+            found_param = true;
+            break;
+        }
+
+        if !found_param {
+            let op_loc = stores.ops.get_token(op_id).location;
+            diagnostics::emit_error(
+                stores,
+                op_loc,
+                "unable to infer type parameter",
+                [
+                    Label::new(op_loc).with_color(Color::Red),
+                    Label::new(param.location).with_color(Color::Cyan),
+                ],
+                None,
+            );
+
+            local_had_error.set();
+        }
+    }
+
+    if local_had_error.into_bool() {
+        had_error.set();
+        return ControlFlow::Break(());
+    }
+
+    let Ok(new_id) =
+        ctx.get_generic_function_instance(stores, pass_ctx, had_error, callee_id, param_types)
+    else {
+        had_error.set();
+        return ControlFlow::Break(());
+    };
+
+    ControlFlow::Continue(new_id)
 }
 
 pub(crate) fn variable(

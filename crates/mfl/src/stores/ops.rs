@@ -5,7 +5,7 @@ use lasso::Spur;
 use smallvec::SmallVec;
 
 use crate::{
-    ir::{NameResolvedOp, OpCode, TypeResolvedOp, UnresolvedOp},
+    ir::{NameResolvedOp, OpCode, PartiallyResolvedOp, TypeResolvedOp, UnresolvedOp},
     option::OptionExt,
 };
 
@@ -43,6 +43,7 @@ pub struct OpStore {
     tokens: Vec<Spanned<Spur>>,
     unresolved: Vec<OpCode<UnresolvedOp>>,
     name_resolved: HashMap<OpId, OpCode<NameResolvedOp>>,
+    partial_type_resolved: HashMap<OpId, OpCode<PartiallyResolvedOp>>,
     type_resolved: HashMap<OpId, OpCode<TypeResolvedOp>>,
     op_io: HashMap<OpId, OpIoValues>,
 }
@@ -53,6 +54,7 @@ impl OpStore {
             tokens: Vec::new(),
             unresolved: Vec::new(),
             name_resolved: HashMap::new(),
+            partial_type_resolved: HashMap::new(),
             type_resolved: HashMap::new(),
             op_io: HashMap::new(),
         }
@@ -95,6 +97,20 @@ impl OpStore {
 
     #[inline]
     #[track_caller]
+    pub fn get_partially_type_resolved(&self, id: OpId) -> &OpCode<PartiallyResolvedOp> {
+        &self.partial_type_resolved[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_partially_type_resolved(&mut self, id: OpId, op: OpCode<PartiallyResolvedOp>) {
+        self.partial_type_resolved
+            .insert(id, op)
+            .expect_none("ICE: Inserted multiple ops at id");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_type_resolved(&self, id: OpId) -> &OpCode<TypeResolvedOp> {
         &self.type_resolved[&id]
     }
@@ -105,6 +121,12 @@ impl OpStore {
         self.type_resolved
             .insert(id, op)
             .expect_none("ICE: Inserted multiple ops at id");
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn overwrite_type_resolved(&mut self, id: OpId, op: OpCode<TypeResolvedOp>) {
+        self.type_resolved.insert(id, op);
     }
 
     #[track_caller]

@@ -2,19 +2,24 @@ strict digraph {
     subgraph passes {
         label = "Passes";
 
-        IdentResolvedSignature;
-        IdentResolvedBody;
-        DeclareStructs;
-        TypeResolvedSignature;
-        TypeResolvedBody;
-        CyclicRefCheckBody;
-        DefineStructs;
-        SelfContainingStruct;
-        TerminalBlockCheckBody;
-        StackAndTypeCheckedBody;
-        ConstPropBody;
-        EvaluatedConstsAsserts;
-        CheckAsserts;
+        BuildNames,
+        CheckAsserts,
+        ConstPropBody,
+        CyclicRefCheckBody,
+
+        DeclareStructs,
+        DefineStructs,
+        EvaluatedConstsAsserts,
+        IdentResolvedBody,
+
+        IdentResolvedSignature,
+        PartiallyTypeResolved,
+        SelfContainingStruct,
+        StackAndTypeCheckedBody,
+
+        TerminalBlockCheckBody,
+        TypeResolvedBody,
+        TypeResolvedSignature
     }
 
     subgraph items {
@@ -24,34 +29,41 @@ strict digraph {
 
         Module;
         StructDef;
-        Memory;
+        Variable;
         GenericFunction;
         Assert;
         Const;
         Function;
     }
 
-    DeclareStructs -> IdentResolvedSignature;
-    TypeResolvedSignature -> IdentResolvedSignature;
-    TypeResolvedBody -> IdentResolvedBody;
-    DefineStructs -> DeclareStructs;
-    SelfContainingStruct -> IdentResolvedSignature;
+    CheckAsserts -> EvaluatedConstsAsserts;
+    ConstPropBody -> StackAndTypeCheckedBody;
     CyclicRefCheckBody -> IdentResolvedBody;
+
+    DeclareStructs -> IdentResolvedSignature;
+    DefineStructs -> DeclareStructs;
+    EvaluatedConstsAsserts -> CyclicRefCheckBody;
+    EvaluatedConstsAsserts -> ConstPropBody;
+
+    PartiallyTypeResolved -> IdentResolvedBody;
+    PartiallyTypeResolved -> IdentResolvedSignature;
+    SelfContainingStruct -> IdentResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TerminalBlockCheckBody;
-    ConstPropBody -> StackAndTypeCheckedBody;
-    EvaluatedConstsAsserts -> CyclicRefCheckBody;
-    EvaluatedConstsAsserts -> ConstPropBody;
-    CheckAsserts -> EvaluatedConstsAsserts;
+
+    TypeResolvedBody -> IdentResolvedBody;
+    TypeResolvedSignature -> IdentResolvedSignature;
 
     Module -> IdentResolvedSignature;
-    StructDef -> SelfContainingStruct;
     StructDef -> DefineStructs;
-    Memory -> TypeResolvedSignature;
-    GenericFunction -> IdentResolvedSignature;
+    StructDef -> SelfContainingStruct;
+    Variable -> BuildNames;
+    Variable -> TypeResolvedSignature;
     GenericFunction -> IdentResolvedBody;
+    GenericFunction -> PartiallyTypeResolved;
     Assert -> CheckAsserts;
     Const -> EvaluatedConstsAsserts;
+    Function -> BuildNames;
     Function -> ConstPropBody;
 }

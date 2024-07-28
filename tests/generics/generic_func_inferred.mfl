@@ -4,7 +4,12 @@
 // END
 
 proc foo(T) [T] to [T] {}
+proc bar(T) [T] to [T] {
+    var a {T}
+
+    dup a!
+}
 
 proc entry [] to [] {
-    23 foo drop
+    23 foo bar drop
 }

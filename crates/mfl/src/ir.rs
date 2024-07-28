@@ -461,6 +461,30 @@ pub enum NameResolvedOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum PartiallyResolvedOp {
+    Cast {
+        id: PartiallyResolvedType,
+    },
+    CallFunction {
+        id: ItemId,
+        generic_params: Vec<PartiallyResolvedType>,
+    },
+    Const {
+        id: ItemId,
+    },
+    PackStruct {
+        id: PartiallyResolvedType,
+    },
+    Variable {
+        id: ItemId,
+        is_global: bool,
+    },
+    SizeOf {
+        id: PartiallyResolvedType,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeResolvedOp {
     Cast { id: TypeId },
     CallFunction { id: ItemId },
