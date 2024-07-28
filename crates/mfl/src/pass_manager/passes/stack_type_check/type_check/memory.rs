@@ -9,12 +9,13 @@ use crate::{
     context::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
+    ir::PartiallyResolvedType,
     n_ops::SliceNOps,
     pass_manager::{static_analysis::can_promote_int_unidirectional, PassContext},
     stores::{
         ops::OpId,
         source::Spanned,
-        types::{GenericPartiallyResolvedFieldKind, Integer, TypeId, TypeInfo, TypeKind},
+        types::{Integer, TypeId, TypeInfo, TypeKind},
     },
     Stores,
 };
@@ -982,7 +983,8 @@ fn pack_struct_infer_generic(
 
     // We can't infer generic parameters for a union, as there may be multiple parameters, but we only
     // take a single input.
-    if generic_def.is_union && generic_def.generic_params.len() != 1 {
+    let generic_params = generic_def.generic_params.as_ref().unwrap();
+    if generic_def.is_union && generic_params.len() != 1 {
         diagnostics::emit_error(
             stores,
             op_loc,
@@ -1005,7 +1007,7 @@ fn pack_struct_infer_generic(
         // If we're a generic union, we won't be able to infer the generic paramater if our input is one of the
         // non-generic fields.
         for field in &generic_def.fields {
-            let GenericPartiallyResolvedFieldKind::Fixed(field_type_id) = field.kind else {
+            let PartiallyResolvedType::Fixed(field_type_id) = field.kind else {
                 continue;
             };
             // We've found a fixed field, so we can't infer the generic parameter.
@@ -1046,7 +1048,7 @@ fn pack_struct_infer_generic(
         // We are looking for field types of the form `T`, `T&`, and `T[N]`.
         // If we find one such field, we break and go to the next generic parameter.
         let mut local_had_error = ErrorSignal::new();
-        for param in &generic_def.generic_params {
+        for param in generic_params {
             let mut found_field = false;
             for (field, &input_value_id) in generic_def.fields.iter().zip(inputs) {
                 let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {

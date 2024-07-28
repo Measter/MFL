@@ -3,7 +3,8 @@ use lasso::Spur;
 use crate::stores::{
     block::BlockId,
     source::{SourceLocation, Spanned},
-    types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId},
+    types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeInfo, TypeKind},
+    Stores,
 };
 
 use super::ItemId;
@@ -75,6 +76,10 @@ impl FieldKind for UnresolvedType {
     type GenericParamType = Spanned<Spur>;
 }
 
+impl FieldKind for PartiallyResolvedType {
+    type GenericParamType = Spanned<Spur>;
+}
+
 #[derive(Debug, Clone)]
 pub struct StructDef<Kind: FieldKind> {
     pub name: Spanned<Spur>,
@@ -122,6 +127,58 @@ impl NameResolvedType {
             NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
                 sub_type.item_id()
             }
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub enum PartiallyResolvedType {
+    Fixed(TypeId),
+    GenericParamSimple(Spanned<Spur>),   // T
+    GenericParamPointer(Box<Self>),      // T&
+    GenericParamArray(Box<Self>, usize), // T[N]
+    GenericStruct(ItemId, Vec<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
+}
+
+impl PartiallyResolvedType {
+    pub fn match_generic_type(
+        &self,
+        stores: &Stores,
+        param: Spur,
+        input_type_info: TypeInfo,
+    ) -> Option<TypeId> {
+        match (self, input_type_info.kind) {
+            (PartiallyResolvedType::GenericParamSimple(s), _) if s.inner == param => {
+                Some(input_type_info.id)
+            }
+            (PartiallyResolvedType::GenericParamPointer(t), TypeKind::Pointer(ptr_type)) => {
+                let inner_info = stores.types.get_type_info(ptr_type);
+                t.match_generic_type(stores, param, inner_info)
+            }
+
+            (PartiallyResolvedType::GenericParamArray(t, ..), TypeKind::Array { type_id, .. }) => {
+                let inner_info = stores.types.get_type_info(type_id);
+                t.match_generic_type(stores, param, inner_info)
+            }
+
+            (
+                PartiallyResolvedType::GenericStruct(struct_id, params),
+                TypeKind::GenericStructInstance(input_struct_id),
+            ) if input_struct_id == *struct_id => {
+                // We know the input struct is the same as the field struct.
+
+                let input_struct_def = stores.types.get_struct_def(input_type_info.id);
+                let input_type_params = input_struct_def.generic_params.as_ref().unwrap();
+                params
+                    .iter()
+                    .zip(input_type_params)
+                    .flat_map(|(p, itp)| {
+                        let itp_info = stores.types.get_type_info(*itp);
+                        p.match_generic_type(stores, param, itp_info)
+                    })
+                    .next()
+                // None
+            }
+            _ => None,
         }
     }
 }

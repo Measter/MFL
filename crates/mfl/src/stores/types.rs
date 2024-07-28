@@ -8,7 +8,7 @@ use lasso::Spur;
 use crate::{
     context::{ItemId, LangItem},
     diagnostics,
-    ir::{NameResolvedType, StructDef, StructDefField},
+    ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
     stores::{
         self,
         source::{SourceLocation, Spanned},
@@ -187,79 +187,6 @@ impl From<Integer> for BuiltinTypes {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct GenericPartiallyResolvedStruct {
-    pub name: Spanned<Spur>,
-    pub fields: Vec<GenericPartiallyResolvedField>,
-    pub generic_params: Vec<Spanned<Spur>>,
-    pub is_union: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct GenericPartiallyResolvedField {
-    pub name: Spanned<Spur>,
-    pub kind: GenericPartiallyResolvedFieldKind,
-}
-
-#[derive(Debug, Clone)]
-pub enum GenericPartiallyResolvedFieldKind {
-    Fixed(TypeId),
-    GenericParamSimple(Spanned<Spur>),   // T
-    GenericParamPointer(Box<Self>),      // T&
-    GenericParamArray(Box<Self>, usize), // T[N]
-    GenericStruct(ItemId, Vec<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
-}
-
-impl GenericPartiallyResolvedFieldKind {
-    pub fn match_generic_type(
-        &self,
-        stores: &Stores,
-        param: Spur,
-        input_type_info: TypeInfo,
-    ) -> Option<TypeId> {
-        match (self, input_type_info.kind) {
-            (GenericPartiallyResolvedFieldKind::GenericParamSimple(s), _) if s.inner == param => {
-                Some(input_type_info.id)
-            }
-            (
-                GenericPartiallyResolvedFieldKind::GenericParamPointer(t),
-                TypeKind::Pointer(ptr_type),
-            ) => {
-                let inner_info = stores.types.get_type_info(ptr_type);
-                t.match_generic_type(stores, param, inner_info)
-            }
-
-            (
-                GenericPartiallyResolvedFieldKind::GenericParamArray(t, ..),
-                TypeKind::Array { type_id, .. },
-            ) => {
-                let inner_info = stores.types.get_type_info(type_id);
-                t.match_generic_type(stores, param, inner_info)
-            }
-
-            (
-                GenericPartiallyResolvedFieldKind::GenericStruct(struct_id, params),
-                TypeKind::GenericStructInstance(input_struct_id),
-            ) if input_struct_id == *struct_id => {
-                // We know the input struct is the same as the field struct.
-
-                let input_struct_def = stores.types.get_struct_def(input_type_info.id);
-                let input_type_params = input_struct_def.generic_params.as_ref().unwrap();
-                params
-                    .iter()
-                    .zip(input_type_params)
-                    .flat_map(|(p, itp)| {
-                        let itp_info = stores.types.get_type_info(*itp);
-                        p.match_generic_type(stores, param, itp_info)
-                    })
-                    .next()
-                // None
-            }
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct TypeInfo {
     pub id: TypeId,
@@ -291,7 +218,7 @@ pub struct TypeStore {
     struct_id_map: HashMap<ItemId, TypeId>,
     lang_item_ids: HashMap<ItemId, LangItem>,
     fixed_struct_defs: HashMap<TypeId, StructDef<TypeId>>,
-    generic_struct_id_map: HashMap<TypeId, GenericPartiallyResolvedStruct>,
+    generic_struct_id_map: HashMap<TypeId, StructDef<PartiallyResolvedType>>,
     generic_struct_instance_map: HashMap<(TypeId, Vec<TypeId>), TypeId>,
 
     type_sizes: HashMap<TypeId, TypeSize>,
@@ -523,32 +450,32 @@ impl TypeStore {
         &mut self,
         string_store: &mut StringStore,
         kind: &NameResolvedType,
-    ) -> GenericPartiallyResolvedFieldKind {
+    ) -> PartiallyResolvedType {
         match kind {
             NameResolvedType::SimpleCustom { .. } => {
                 let resolved = self.resolve_type(string_store, kind).unwrap();
-                GenericPartiallyResolvedFieldKind::Fixed(resolved.id)
+                PartiallyResolvedType::Fixed(resolved.id)
             }
             NameResolvedType::SimpleBuiltin(bi) => {
-                GenericPartiallyResolvedFieldKind::Fixed(self.get_builtin(*bi).id)
+                PartiallyResolvedType::Fixed(self.get_builtin(*bi).id)
             }
             NameResolvedType::SimpleGenericParam(n) => {
-                GenericPartiallyResolvedFieldKind::GenericParamSimple(*n)
+                PartiallyResolvedType::GenericParamSimple(*n)
             }
             NameResolvedType::Array(sub_type, length) => {
                 let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
-                GenericPartiallyResolvedFieldKind::GenericParamArray(Box::new(inner_kind), *length)
+                PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
             }
             NameResolvedType::Pointer(sub_type) => {
                 let inner_kind = self.partially_resolve_generic_field(string_store, sub_type);
-                GenericPartiallyResolvedFieldKind::GenericParamPointer(Box::new(inner_kind))
+                PartiallyResolvedType::GenericParamPointer(Box::new(inner_kind))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let generic_params = params
                     .iter()
                     .map(|gp| self.partially_resolve_generic_field(string_store, gp))
                     .collect();
-                GenericPartiallyResolvedFieldKind::GenericStruct(*id, generic_params)
+                PartiallyResolvedType::GenericStruct(*id, generic_params)
             }
         }
     }
@@ -568,16 +495,16 @@ impl TypeStore {
         for field in &def.fields {
             let field_kind = self.partially_resolve_generic_field(string_store, &field.kind);
 
-            resolved_fields.push(GenericPartiallyResolvedField {
+            resolved_fields.push(StructDefField {
                 name: field.name,
                 kind: field_kind,
             });
         }
 
-        let generic_base = GenericPartiallyResolvedStruct {
+        let generic_base = StructDef {
             name: def.name,
             fields: resolved_fields,
-            generic_params,
+            generic_params: Some(generic_params),
             is_union: def.is_union,
         };
 
@@ -589,22 +516,22 @@ impl TypeStore {
     fn resolve_generic_field(
         &mut self,
         string_store: &mut StringStore,
-        kind: &GenericPartiallyResolvedFieldKind,
+        kind: &PartiallyResolvedType,
         type_params: &HashMap<Spur, TypeId>,
     ) -> TypeId {
         match kind {
-            GenericPartiallyResolvedFieldKind::Fixed(id) => *id,
-            GenericPartiallyResolvedFieldKind::GenericParamSimple(n) => type_params[&n.inner],
-            GenericPartiallyResolvedFieldKind::GenericParamPointer(sub_type) => {
+            PartiallyResolvedType::Fixed(id) => *id,
+            PartiallyResolvedType::GenericParamSimple(n) => type_params[&n.inner],
+            PartiallyResolvedType::GenericParamPointer(sub_type) => {
                 let pointee_id = self.resolve_generic_field(string_store, sub_type, type_params);
                 self.get_pointer(string_store, pointee_id).id
             }
-            GenericPartiallyResolvedFieldKind::GenericParamArray(sub_type, length) => {
+            PartiallyResolvedType::GenericParamArray(sub_type, length) => {
                 let content_type_id =
                     self.resolve_generic_field(string_store, sub_type, type_params);
                 self.get_array(string_store, content_type_id, *length).id
             }
-            GenericPartiallyResolvedFieldKind::GenericStruct(base_struct_id, sub_params) => {
+            PartiallyResolvedType::GenericStruct(base_struct_id, sub_params) => {
                 let base_struct_type_id = self.struct_id_map[base_struct_id];
 
                 let sub_params: Vec<_> = sub_params
@@ -642,6 +569,8 @@ impl TypeStore {
 
         let param_lookup: HashMap<_, _> = base_def
             .generic_params
+            .as_ref()
+            .unwrap()
             .iter()
             .map(|s| s.inner)
             .zip(type_params.iter().copied())
@@ -844,7 +773,7 @@ impl TypeStore {
 
     #[track_caller]
     #[inline]
-    pub fn get_generic_base_def(&self, id: TypeId) -> &GenericPartiallyResolvedStruct {
+    pub fn get_generic_base_def(&self, id: TypeId) -> &StructDef<PartiallyResolvedType> {
         &self.generic_struct_id_map[&id]
     }
 }
