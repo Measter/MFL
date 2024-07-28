@@ -199,11 +199,10 @@ impl PassContext {
             PassState::IdentResolvedSignature
         );
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_signature));
+        let _span = debug_span!("IdentSig").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "IdentSig"
         );
 
         let mut had_error = ErrorSignal::new();
@@ -225,11 +224,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::DeclareStructs);
 
-        let _span = debug_span!(stringify!(ensure_declare_structs));
+        let _span = debug_span!("DeclStruct").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "DeclStruct",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -251,11 +249,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::DefineStructs);
 
-        let _span = debug_span!(stringify!(ensure_define_structs));
+        let _span = debug_span!("DefStruct").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "DefStruct",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -296,11 +293,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::SelfContainingStruct);
 
-        let _span = debug_span!(stringify!(ensure_self_containing_structs));
+        let _span = debug_span!("SelfContainingStruct").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "SelfContainingStruct",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -322,11 +318,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::IdentResolvedBody);
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("IdentBody").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "IdentBody",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -354,11 +349,10 @@ impl PassContext {
             PassState::PartiallyTypeResolved
         );
 
-        let _span = debug_span!(stringify!(ensure_partially_resolve_types));
+        let _span = debug_span!("PartialType").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "PartialType",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -372,6 +366,7 @@ impl PassContext {
             Ok(())
         }
     }
+
     pub fn ensure_type_resolved_signature(
         &mut self,
         ctx: &mut Context,
@@ -386,11 +381,10 @@ impl PassContext {
             PassState::TypeResolvedSignature
         );
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("TypeSig").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "TypeSig",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -412,11 +406,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::BuildNames);
 
-        let _span = debug_span!(stringify!(ensure_build_names));
+        let _span = debug_span!("BuildNames").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "BuildNames",
         );
 
         stores.build_friendly_name(ctx, self, cur_item);
@@ -433,11 +426,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::TypeResolvedBody);
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("TypeBody").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "TypeBody",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -459,11 +451,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::CyclicRefCheckBody);
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("CycleCheck").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "CycleCheck",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -491,11 +482,10 @@ impl PassContext {
             PassState::TerminalBlockCheckBody
         );
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("TerminalCheck").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "TerminalCheck",
         );
 
         passes::terminal::determine_terminal_blocks(ctx, stores, cur_item);
@@ -517,11 +507,10 @@ impl PassContext {
             PassState::StackAndTypeCheckedBody
         );
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("StackTypeCheck").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "StackTypeCheck",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -550,11 +539,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::ConstPropBody);
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("ConstProp").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "ConstProp",
         );
 
         let mut had_error = ErrorSignal::new();
@@ -583,11 +571,10 @@ impl PassContext {
             PassState::EvaluatedConstsAsserts
         );
 
-        let _span = debug_span!(stringify!(ensure_ident_resolved_body));
+        let _span = debug_span!("EvaluateConstAsserts").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "EvaluateConstAsserts",
         );
 
         let result = simulate_execute_program(ctx, stores, self, cur_item);
@@ -635,11 +622,10 @@ impl PassContext {
     ) -> Result<(), ()> {
         ensure_state_deps!(self, ctx, stores, cur_item, PassState::CheckAsserts);
 
-        let _span = debug_span!(stringify!(ensure_check_asserts));
+        let _span = debug_span!("CheckAsserts").entered();
         trace!(
             name = stores.strings.get_symbol_name(ctx, cur_item),
             id = ?cur_item,
-            "CheckAsserts",
         );
 
         // Type check and const prop ensure this value exists.

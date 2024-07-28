@@ -22,7 +22,6 @@ use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use stores::{types::BuiltinTypes, Stores};
-use tracing_subscriber::fmt::format::FmtSpan;
 
 mod backend_llvm;
 mod context;
@@ -215,7 +214,6 @@ fn main() -> Result<()> {
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(max_log_level)
-        .with_span_events(FmtSpan::ACTIVE)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;

@@ -4,6 +4,7 @@ use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
+use tracing::{debug_span, trace};
 
 use crate::{
     context::{ItemId, LangItem},
@@ -568,6 +569,9 @@ impl TypeStore {
             return self.kinds[id];
         }
 
+        let _span = debug_span!(stringify!(instantiate_generic_struct)).entered();
+        trace!(?base_item_id, ?base_type_id, ?type_params,);
+
         let base_type_info = self.get_type_info(base_type_id);
         let base_def = &self.generic_struct_id_map[&base_type_id].clone();
 
@@ -641,17 +645,18 @@ impl TypeStore {
         let friendly_name = string_store.intern(&friendly_name);
         let mangled_name = string_store.intern(&mangled_name);
 
-        let type_id = self.add_type(
+        let new_type_id = self.add_type(
             friendly_name,
             mangled_name,
             base_type_info.location,
             TypeKind::GenericStructInstance(base_item_id),
         );
-        self.fixed_struct_defs.insert(type_id, new_def);
+        trace!(?new_type_id);
+        self.fixed_struct_defs.insert(new_type_id, new_def);
         self.generic_struct_instance_map
-            .insert((base_type_id, type_params), type_id);
+            .insert((base_type_id, type_params), new_type_id);
 
-        self.kinds[&type_id]
+        self.kinds[&new_type_id]
     }
 
     #[inline]

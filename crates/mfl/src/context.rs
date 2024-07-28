@@ -5,6 +5,7 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
+use tracing::{debug_span, trace};
 
 use crate::{
     diagnostics,
@@ -858,6 +859,9 @@ impl Context {
             return Ok(*id);
         }
 
+        let _span = debug_span!(stringify!(get_generic_function_instance)).entered();
+        trace!(?base_fn_id, ?resolved_generic_params,);
+
         // We need to make sure the generic function has been partially type-resolved before this step.
         let resolve_res = pass_ctx.ensure_partially_resolve_types(self, stores, base_fn_id);
         if resolve_res.is_err() {
@@ -907,6 +911,7 @@ impl Context {
             orig_unresolved_sig.entry,
             orig_unresolved_sig.exit,
         );
+        trace!(?new_proc_id);
         self.trir_mut()
             .set_item_signature(new_proc_id, instantiated_sig);
 
