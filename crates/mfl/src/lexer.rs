@@ -346,20 +346,6 @@ impl TokenKind {
             TokenKind::If | TokenKind::Elif | TokenKind::Else | TokenKind::While
         )
     }
-
-    // pub fn is_matched_open(self) -> bool {
-    //     matches!(
-    //         self,
-    //         TokenKind::ParenthesisOpen | TokenKind::SquareBracketOpen | TokenKind::BraceOpen
-    //     )
-    // }
-
-    // pub fn is_matched_close(self) -> bool {
-    //     matches!(
-    //         self,
-    //         TokenKind::ParenthesisClosed | TokenKind::SquareBracketClosed | TokenKind::BraceClosed
-    //     )
-    // }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
