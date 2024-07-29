@@ -615,7 +615,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 OpCode::Complex(cmp_op) => match cmp_op {
                     TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, *id)?,
-                    TypeResolvedOp::CallFunction { id: callee_id } => {
+                    TypeResolvedOp::CallFunction { id: callee_id, .. } => {
                         self.build_function_call(ds, value_store, op_id, *callee_id)?
                     }
                     TypeResolvedOp::Const { id } => {

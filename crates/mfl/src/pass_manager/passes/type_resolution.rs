@@ -216,11 +216,15 @@ fn fully_resolve_block(
 
             OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
                 let called_item_header = ctx.get_item_header(id);
-                if called_item_header.kind != ItemKind::GenericFunction {
-                    OpCode::Complex(TypeResolvedOp::CallFunction { id })
-                } else if !generic_params.is_empty() {
+                if called_item_header.kind != ItemKind::GenericFunction || generic_params.is_empty()
+                {
+                    OpCode::Complex(TypeResolvedOp::CallFunction {
+                        id,
+                        generic_params: Vec::new(),
+                    })
+                } else {
                     let unresolved_generic_params = &generic_params;
-                    let mut resolved_generic_params = SmallVec::<[TypeId; 4]>::new();
+                    let mut resolved_generic_params = Vec::new();
                     let mut unresolved_generic_params_sm = SmallVec::<[NameResolvedType; 4]>::new();
 
                     for ugp in unresolved_generic_params {
@@ -255,16 +259,16 @@ fn fully_resolve_block(
                         pass_ctx,
                         had_error,
                         id,
-                        resolved_generic_params,
+                        &resolved_generic_params,
                     ) else {
                         had_error.set();
                         continue;
                     };
 
-                    OpCode::Complex(TypeResolvedOp::CallFunction { id: new_id })
-                } else {
-                    // No parameters were provided, we'll try to resolve this during type checking.
-                    OpCode::Complex(TypeResolvedOp::CallFunction { id })
+                    OpCode::Complex(TypeResolvedOp::CallFunction {
+                        id: new_id,
+                        generic_params: resolved_generic_params,
+                    })
                 }
             }
             OpCode::Complex(NameResolvedOp::Const { id }) => {

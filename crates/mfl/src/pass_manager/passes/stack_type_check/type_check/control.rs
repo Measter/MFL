@@ -2,7 +2,6 @@ use std::ops::ControlFlow;
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
-use smallvec::SmallVec;
 
 use crate::{
     context::{Context, ItemId, ItemKind},
@@ -137,9 +136,13 @@ pub(crate) fn call_function_const(
         };
 
         // Need to update the op to point at the correct new function ID.
-        stores
-            .ops
-            .overwrite_type_resolved(op_id, OpCode::Complex(TypeResolvedOp::CallFunction { id }));
+        stores.ops.overwrite_type_resolved(
+            op_id,
+            OpCode::Complex(TypeResolvedOp::CallFunction {
+                id,
+                generic_params: Vec::new(),
+            }),
+        );
         id
     } else {
         callee_id
@@ -208,7 +211,7 @@ fn call_generic_function_infer_params(
     let inputs = &op_data.inputs;
     let generic_params = ctx.get_function_template_paramaters(callee_id);
 
-    let mut param_types = SmallVec::new();
+    let mut param_types = Vec::new();
 
     // Essentially, iterate over each parameter, then search the signature looking for
     // a type we can pattern match against to infer the generic type parameter.
@@ -259,7 +262,7 @@ fn call_generic_function_infer_params(
     }
 
     let Ok(new_id) =
-        ctx.get_generic_function_instance(stores, pass_ctx, had_error, callee_id, param_types)
+        ctx.get_generic_function_instance(stores, pass_ctx, had_error, callee_id, &param_types)
     else {
         had_error.set();
         return ControlFlow::Break(());

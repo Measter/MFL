@@ -419,7 +419,7 @@ fn analyze_block(
 
                     had_error.merge_with(local_had_error);
                 }
-                TypeResolvedOp::CallFunction { id } | TypeResolvedOp::Const { id } => {
+                TypeResolvedOp::CallFunction { id, .. } | TypeResolvedOp::Const { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::control::call_function_const(
                         ctx,

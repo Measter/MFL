@@ -437,62 +437,19 @@ pub enum UnresolvedOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum NameResolvedOp {
-    Cast {
-        id: NameResolvedType,
-    },
-    CallFunction {
-        id: ItemId,
-        generic_params: Vec<NameResolvedType>,
-    },
-    Const {
-        id: ItemId,
-    },
-    PackStruct {
-        id: NameResolvedType,
-    },
-    Variable {
-        id: ItemId,
-        is_global: bool,
-    },
-    SizeOf {
-        id: NameResolvedType,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum PartiallyResolvedOp {
-    Cast {
-        id: PartiallyResolvedType,
-    },
-    CallFunction {
-        id: ItemId,
-        generic_params: Vec<PartiallyResolvedType>,
-    },
-    Const {
-        id: ItemId,
-    },
-    PackStruct {
-        id: PartiallyResolvedType,
-    },
-    Variable {
-        id: ItemId,
-        is_global: bool,
-    },
-    SizeOf {
-        id: PartiallyResolvedType,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeResolvedOp {
-    Cast { id: TypeId },
-    CallFunction { id: ItemId },
+pub enum NResolvedOp<T> {
+    Cast { id: T },
+    CallFunction { id: ItemId, generic_params: Vec<T> },
     Const { id: ItemId },
-    PackStruct { id: TypeId },
+    PackStruct { id: T },
     Variable { id: ItemId, is_global: bool },
-    SizeOf { id: TypeId },
+    SizeOf { id: T },
 }
+
+// These are the same shape, just differ in the resolve type.
+pub type NameResolvedOp = NResolvedOp<NameResolvedType>;
+pub type PartiallyResolvedOp = NResolvedOp<PartiallyResolvedType>;
+pub type TypeResolvedOp = NResolvedOp<TypeId>;
 
 #[derive(Debug, Clone)]
 pub enum OpCode<T> {

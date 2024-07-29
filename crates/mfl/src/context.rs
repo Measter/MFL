@@ -783,7 +783,7 @@ impl Context {
                     }
 
                     PartiallyResolvedOp::CallFunction { id, generic_params } => {
-                        let new_params: SmallVec<_> = generic_params
+                        let new_params: Vec<_> = generic_params
                             .iter()
                             .map(|gp| {
                                 stores.types.resolve_generic_type(
@@ -799,7 +799,11 @@ impl Context {
                             id
                         } else if !new_params.is_empty() {
                             self.get_generic_function_instance(
-                                stores, pass_ctx, had_error, id, new_params,
+                                stores,
+                                pass_ctx,
+                                had_error,
+                                id,
+                                &new_params,
                             )
                             .unwrap()
                             //
@@ -808,7 +812,10 @@ impl Context {
                             id
                         };
 
-                        OpCode::Complex(TypeResolvedOp::CallFunction { id: callee_id })
+                        OpCode::Complex(TypeResolvedOp::CallFunction {
+                            id: callee_id,
+                            generic_params: new_params,
+                        })
                     }
                 },
             };
@@ -850,11 +857,11 @@ impl Context {
         pass_ctx: &mut PassContext,
         had_error: &mut ErrorSignal,
         base_fn_id: ItemId,
-        resolved_generic_params: SmallVec<[TypeId; 4]>,
+        resolved_generic_params: &[TypeId],
     ) -> Result<ItemId, ()> {
         if let Some(id) = self
             .generic_function_cache
-            .get(&(base_fn_id, resolved_generic_params.clone()))
+            .get(&(base_fn_id, resolved_generic_params.into()))
         {
             return Ok(*id);
         }
@@ -875,7 +882,7 @@ impl Context {
 
         let param_map: HashMap<_, _> = base_fd_params
             .iter()
-            .zip(&resolved_generic_params)
+            .zip(resolved_generic_params)
             .map(|(name, ty)| (name.inner, *ty))
             .collect();
 
@@ -885,7 +892,7 @@ impl Context {
         let mut instantiated_sig = TypeResolvedItemSignature {
             exit: Vec::new(),
             entry: Vec::new(),
-            generic_params: resolved_generic_params.as_slice().to_owned(),
+            generic_params: resolved_generic_params.to_owned(),
         };
 
         for stack_item in &partial_type_resolved_sig.exit {
@@ -971,7 +978,7 @@ impl Context {
         );
         self.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
-            .insert((base_fn_id, resolved_generic_params), new_proc_id);
+            .insert((base_fn_id, resolved_generic_params.into()), new_proc_id);
         pass_ctx.add_new_item(
             new_proc_id,
             base_fn_id,
