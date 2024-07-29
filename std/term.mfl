@@ -18,13 +18,13 @@ proc writeln [String] to [] {
 proc write_char[u8] to [] {
     var buf {u8}
     buf!
-    1 buf String write
+    1 buf cast(u8*) String write
 }
 
 proc write_char_ln[u8] to [] {
     var buf {u8}
     buf!
-    1 buf String writeln
+    1 buf cast(u8*) String writeln
 }
 
 proc write_si [s64] to [] {

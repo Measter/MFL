@@ -275,7 +275,8 @@ impl<'ctx> CodeGen<'ctx> {
             .find(|(_, fi)| fi.name.inner == pointer_field_name)
             .unwrap();
 
-        let TypeKind::Pointer(store_type) = ds.type_store.get_type_info(ptr_field_info.kind).kind
+        let (TypeKind::MultiPointer(store_type) | TypeKind::SinglePointer(store_type)) =
+            ds.type_store.get_type_info(ptr_field_info.kind).kind
         else {
             unreachable!()
         };
@@ -345,7 +346,7 @@ impl<'ctx> CodeGen<'ctx> {
                     stored_ptee_type,
                 )
             }
-            TypeKind::Pointer(sub_type_id) => {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let sub_type_info = ds.type_store.get_type_info(sub_type_id);
                 match sub_type_info.kind {
                     TypeKind::Array {
@@ -482,7 +483,7 @@ impl<'ctx> CodeGen<'ctx> {
                     array_type_id,
                 )
             }
-            TypeKind::Pointer(sub_type_id) => {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let sub_type_info = ds.type_store.get_type_info(sub_type_id);
                 match sub_type_info.kind {
                     TypeKind::Array {
@@ -633,7 +634,7 @@ impl<'ctx> CodeGen<'ctx> {
                 };
                 (aggr_value, struct_def, input_struct_type_id)
             }
-            TypeKind::Pointer(sub_type_id) => {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let struct_def = ds.type_store.get_struct_def(sub_type_id).clone();
                 let ptee_type = self.get_type(ds.type_store, sub_type_id);
                 let aggr_value = if struct_def.is_union {
@@ -756,7 +757,7 @@ impl<'ctx> CodeGen<'ctx> {
                 };
                 (aggr_value, struct_def, input_struct_type_id)
             }
-            TypeKind::Pointer(sub_type_id) => {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let struct_def = ds.type_store.get_struct_def(sub_type_id).clone();
                 let ptee_type = self.get_type(ds.type_store, sub_type_id);
                 let aggr_value = if struct_def.is_union {
@@ -829,7 +830,9 @@ impl<'ctx> CodeGen<'ctx> {
         let ptr_value_id = op_io.inputs()[0];
         let [ptr_type_id] = ds.analyzer.value_types([ptr_value_id]).unwrap();
         let ptr_type_info = ds.type_store.get_type_info(ptr_type_id);
-        let TypeKind::Pointer(ptee_id) = ptr_type_info.kind else {
+        let (TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id)) =
+            ptr_type_info.kind
+        else {
             unreachable!()
         };
 
@@ -856,7 +859,9 @@ impl<'ctx> CodeGen<'ctx> {
         let input_type_ids = ds.analyzer.value_types(input_ids).unwrap();
         let [data_type_kind, ptr_type_kind] =
             input_type_ids.map(|id| ds.type_store.get_type_info(id).kind);
-        let TypeKind::Pointer(pointee_type_id) = ptr_type_kind else {
+        let (TypeKind::MultiPointer(pointee_type_id) | TypeKind::SinglePointer(pointee_type_id)) =
+            ptr_type_kind
+        else {
             unreachable!()
         };
         let pointee_type_kind = ds.type_store.get_type_info(pointee_type_id).kind;

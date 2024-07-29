@@ -1,6 +1,6 @@
 struct lang(string) String {
     length u64,
-    pointer u8&,
+    pointer u8*,
 }
 
 proc oob_handler [core::String u64 u64] to [] {
@@ -23,7 +23,7 @@ proc oob_handler [core::String u64 u64] to [] {
 
             10 / swap 1+
         } swap drop
-        BUF cast(u8&) over 20 swap -+
+        BUF cast(u8*) over 20 swap -+
     }
     swap 1 2 rot(4>2) syscall(4) drop
 
@@ -39,7 +39,7 @@ proc oob_handler [core::String u64 u64] to [] {
 
             10 / swap 1+
         } swap drop
-        BUF cast(u8&) over 20 swap -+
+        BUF cast(u8*) over 20 swap -+
     }
     swap 1 2 rot(4>2) syscall(4) drop
     1 2 "\n" unpack swap syscall(4) drop

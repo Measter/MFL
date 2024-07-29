@@ -92,13 +92,15 @@ fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature
     };
 
     let expected_argc_id = stores.types.get_builtin(BuiltinTypes::U64).id;
-    let u8_ptr_type = stores.types.get_builtin_ptr(BuiltinTypes::U8).id;
-    let expected_argv_id = stores
+    let u8_type = stores.types.get_builtin(BuiltinTypes::U8);
+    let u8_ptr_type = stores
         .types
-        .get_pointer(&mut stores.strings, u8_ptr_type)
-        .id;
+        .get_multi_pointer(&mut stores.strings, u8_type.id);
+    let u8_ptr_ptr_type = stores
+        .types
+        .get_multi_pointer(&mut stores.strings, u8_ptr_type.id);
 
-    *argc_id == expected_argc_id && *argv_id == expected_argv_id
+    *argc_id == expected_argc_id && *argv_id == u8_ptr_ptr_type.id
 }
 
 fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {

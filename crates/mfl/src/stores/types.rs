@@ -170,7 +170,8 @@ impl From<(IntWidth, Signedness)> for Integer {
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },
     Integer(Integer),
-    Pointer(TypeId),
+    MultiPointer(TypeId),
+    SinglePointer(TypeId),
     Bool,
     Struct(ItemId),
     GenericStructBase(ItemId),
@@ -248,15 +249,11 @@ pub struct TypeSize {
     pub alignement: u64,
 }
 
-#[derive(Debug, Clone)]
-struct PointerInfo {
-    ptr_id: TypeId,
-}
-
 #[derive(Debug)]
 pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
-    pointer_map: HashMap<TypeId, PointerInfo>,
+    multi_pointer_map: HashMap<TypeId, TypeId>,
+    single_pointer_map: HashMap<TypeId, TypeId>,
     array_map: HashMap<(TypeId, usize), TypeId>,
     builtins: [TypeId; 10],
 
@@ -274,7 +271,8 @@ impl TypeStore {
     pub fn new(string_store: &mut StringStore) -> Self {
         let mut s = Self {
             kinds: HashMap::new(),
-            pointer_map: HashMap::new(),
+            multi_pointer_map: HashMap::new(),
+            single_pointer_map: HashMap::new(),
             array_map: HashMap::new(),
             builtins: [TypeId(0); 10],
             struct_id_map: HashMap::new(),
@@ -339,7 +337,7 @@ impl TypeStore {
             self.builtins[builtin as usize] = id;
 
             // A couple parts of the compiler need to construct pointers to basic types.
-            self.get_pointer(string_store, id);
+            self.get_multi_pointer(string_store, id);
         }
     }
 
@@ -397,9 +395,13 @@ impl TypeStore {
                 let inner = self.resolve_type(string_store, at)?;
                 Ok(self.get_array(string_store, inner.id, *length))
             }
-            NameResolvedType::Pointer(pt) => {
+            NameResolvedType::MultiPointer(pt) => {
                 let pointee = self.resolve_type(string_store, pt)?;
-                Ok(self.get_pointer(string_store, pointee.id))
+                Ok(self.get_multi_pointer(string_store, pointee.id))
+            }
+            NameResolvedType::SinglePointer(pt) => {
+                let pointee = self.resolve_type(string_store, pt)?;
+                Ok(self.get_single_pointer(string_store, pointee.id))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let base_struct_id = self.struct_id_map[id];
@@ -419,35 +421,69 @@ impl TypeStore {
         }
     }
 
-    pub fn get_pointer(&mut self, string_store: &mut StringStore, pointee_id: TypeId) -> TypeInfo {
+    pub fn get_multi_pointer(
+        &mut self,
+        string_store: &mut StringStore,
+        pointee_id: TypeId,
+    ) -> TypeInfo {
         let pointee = self.get_type_info(pointee_id);
 
-        if let Some(pi) = self.pointer_map.get(&pointee.id) {
-            self.kinds[&pi.ptr_id]
+        if let Some(pi) = self.multi_pointer_map.get(&pointee.id) {
+            self.kinds[pi]
         } else {
-            let pointee_friendly_name = string_store.resolve(pointee.friendly_name);
-            let friendly_name = format!("{pointee_friendly_name}{}", stores::FRENDLY_PTR);
-            let friendly_name = string_store.intern(&friendly_name);
-
-            let pointee_mangled_name = string_store.resolve(pointee.mangled_name);
-            let mangled_name = format!("{pointee_mangled_name}{}", stores::MANGLED_PTR);
-            let mangled_name = string_store.intern(&mangled_name);
-
-            let pointer_info = self.add_type(
-                friendly_name,
-                mangled_name,
-                None,
-                TypeKind::Pointer(pointee.id),
+            let pointer_id = self.make_pointer_impl(
+                string_store,
+                pointee,
+                TypeKind::MultiPointer,
+                stores::FRENDLY_PTR_MULTI,
+                stores::MANGLED_PTR_MULTI,
             );
-            self.pointer_map.insert(
-                pointee.id,
-                PointerInfo {
-                    ptr_id: pointer_info,
-                },
-            );
+            self.multi_pointer_map.insert(pointee.id, pointer_id);
 
-            self.kinds[&pointer_info]
+            self.kinds[&pointer_id]
         }
+    }
+
+    pub fn get_single_pointer(
+        &mut self,
+        string_store: &mut StringStore,
+        pointee_id: TypeId,
+    ) -> TypeInfo {
+        let pointee = self.get_type_info(pointee_id);
+
+        if let Some(pi) = self.single_pointer_map.get(&pointee.id) {
+            self.kinds[pi]
+        } else {
+            let pointer_id = self.make_pointer_impl(
+                string_store,
+                pointee,
+                TypeKind::SinglePointer,
+                stores::FRENDLY_PTR_SINGLE,
+                stores::MANGLED_PTR_SINGLE,
+            );
+            self.single_pointer_map.insert(pointee.id, pointer_id);
+
+            self.kinds[&pointer_id]
+        }
+    }
+
+    fn make_pointer_impl(
+        &mut self,
+        string_store: &mut StringStore,
+        pointee: TypeInfo,
+        cons: fn(TypeId) -> TypeKind,
+        friendly_part: &str,
+        mangle_part: &str,
+    ) -> TypeId {
+        let pointee_friendly_name = string_store.resolve(pointee.friendly_name);
+        let friendly_name = format!("{pointee_friendly_name}{friendly_part}");
+        let friendly_name = string_store.intern(&friendly_name);
+
+        let pointee_mangled_name = string_store.resolve(pointee.mangled_name);
+        let mangled_name = format!("{pointee_mangled_name}{mangle_part}");
+        let mangled_name = string_store.intern(&mangled_name);
+
+        self.add_type(friendly_name, mangled_name, None, cons(pointee.id))
     }
 
     pub fn get_array(
@@ -512,9 +548,13 @@ impl TypeStore {
                 let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
                 PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
             }
-            NameResolvedType::Pointer(sub_type) => {
+            NameResolvedType::MultiPointer(sub_type) => {
                 let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
-                PartiallyResolvedType::GenericParamPointer(Box::new(inner_kind))
+                PartiallyResolvedType::GenericParamMultiPointer(Box::new(inner_kind))
+            }
+            NameResolvedType::SinglePointer(sub_type) => {
+                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
+                PartiallyResolvedType::GenericParamSinglePointer(Box::new(inner_kind))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
                 let generic_params = params
@@ -572,9 +612,13 @@ impl TypeStore {
         match kind {
             PartiallyResolvedType::Fixed(id) => *id,
             PartiallyResolvedType::GenericParamSimple(n) => type_params[&n.inner],
-            PartiallyResolvedType::GenericParamPointer(sub_type) => {
+            PartiallyResolvedType::GenericParamMultiPointer(sub_type) => {
                 let pointee_id = self.resolve_generic_type(string_store, sub_type, type_params);
-                self.get_pointer(string_store, pointee_id).id
+                self.get_multi_pointer(string_store, pointee_id).id
+            }
+            PartiallyResolvedType::GenericParamSinglePointer(sub_type) => {
+                let pointee_id = self.resolve_generic_type(string_store, sub_type, type_params);
+                self.get_single_pointer(string_store, pointee_id).id
             }
             PartiallyResolvedType::GenericParamArray(sub_type, length) => {
                 let content_type_id =
@@ -714,11 +758,6 @@ impl TypeStore {
         self.kinds[&self.builtins[id as usize]]
     }
 
-    pub fn get_builtin_ptr(&self, id: BuiltinTypes) -> TypeInfo {
-        let id = &self.pointer_map[&self.builtins[id as usize]];
-        self.kinds[&id.ptr_id]
-    }
-
     pub fn get_size_info(&mut self, id: TypeId) -> TypeSize {
         if let Some(info) = self.type_sizes.get(&id) {
             return *info;
@@ -738,7 +777,7 @@ impl TypeStore {
                 byte_width: int.width.byte_width(),
                 alignement: int.width.byte_width(),
             },
-            TypeKind::Pointer(_) => TypeSize {
+            TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => TypeSize {
                 byte_width: 8,
                 alignement: 8,
             },

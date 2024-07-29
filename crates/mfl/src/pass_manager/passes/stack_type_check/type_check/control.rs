@@ -84,7 +84,10 @@ pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
         let input_type_info = stores.types.get_type_info(input_type_id);
         if matches!(
             input_type_info.kind,
-            TypeKind::Integer(_) | TypeKind::Pointer(_) | TypeKind::Bool
+            TypeKind::Integer(_)
+                | TypeKind::MultiPointer(_)
+                | TypeKind::SinglePointer(_)
+                | TypeKind::Bool
         ) {
             continue;
         }
@@ -294,7 +297,7 @@ pub(crate) fn variable(
 
     let ptr_type_id = stores
         .types
-        .get_pointer(&mut stores.strings, variable_type_id);
+        .get_single_pointer(&mut stores.strings, variable_type_id);
     stores
         .values
         .set_value_type(output_value_id, ptr_type_id.id);

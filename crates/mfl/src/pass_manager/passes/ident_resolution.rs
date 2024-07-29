@@ -175,10 +175,15 @@ fn resolve_idents_in_type(
                 resolve_idents_in_type(ctx, stores, had_error, cur_id, sub_type, generic_params)?;
             NameResolvedType::Array(Box::new(sub_type), *length)
         }
-        UnresolvedType::Pointer(sub_type) => {
+        UnresolvedType::MultiPointer(sub_type) => {
             let sub_type =
                 resolve_idents_in_type(ctx, stores, had_error, cur_id, sub_type, generic_params)?;
-            NameResolvedType::Pointer(Box::new(sub_type))
+            NameResolvedType::MultiPointer(Box::new(sub_type))
+        }
+        UnresolvedType::SinglePointer(sub_type) => {
+            let sub_type =
+                resolve_idents_in_type(ctx, stores, had_error, cur_id, sub_type, generic_params)?;
+            NameResolvedType::SinglePointer(Box::new(sub_type))
         }
     };
 

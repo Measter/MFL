@@ -29,8 +29,8 @@ pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId)
                 .id
         }
 
-        [(ptr_id, TypeKind::Pointer(_)), (_, TypeKind::Integer(int))]
-        | [(_, TypeKind::Integer(int)), (ptr_id, TypeKind::Pointer(_))]
+        [(ptr_id, TypeKind::MultiPointer(_)), (_, TypeKind::Integer(int))]
+        | [(_, TypeKind::Integer(int)), (ptr_id, TypeKind::MultiPointer(_))]
             if int.is_unsigned() =>
         {
             ptr_id
@@ -98,10 +98,10 @@ pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: 
                 .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
         }
-        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {
+        [TypeKind::MultiPointer(a), TypeKind::MultiPointer(b)] if a == b => {
             stores.types.get_builtin(BuiltinTypes::U64).id
         }
-        [TypeKind::Pointer(_), TypeKind::Integer(int)] if int.is_unsigned() => inputs[0],
+        [TypeKind::MultiPointer(_), TypeKind::Integer(int)] if int.is_unsigned() => inputs[0],
 
         _ => {
             // Type mismatch

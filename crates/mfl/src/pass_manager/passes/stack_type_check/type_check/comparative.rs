@@ -27,7 +27,8 @@ pub(crate) fn equal(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
     match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {}
         [TypeKind::Bool, TypeKind::Bool] => {}
-        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {}
+        [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
+            if a == b => {}
         _ => {
             // Type mismatch.
             had_error.set();
@@ -52,7 +53,8 @@ pub(crate) fn compare(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
     match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {}
-        [TypeKind::Pointer(a), TypeKind::Pointer(b)] if a == b => {}
+        [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
+            if a == b => {}
         _ => {
             // Type mismatch.
             had_error.set();
@@ -75,7 +77,10 @@ pub(crate) fn is_null(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
         return;
     };
     let input_type_info = stores.types.get_type_info(input);
-    if !matches!(input_type_info.kind, TypeKind::Pointer(_)) {
+    if !matches!(
+        input_type_info.kind,
+        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_)
+    ) {
         // Type mismatch.
         had_error.set();
         let op_token = stores.ops.get_token(op_id);

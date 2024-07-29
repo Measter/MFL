@@ -1,4 +1,4 @@
-use ariadne::Color;
+use ariadne::{Color, Label};
 
 use crate::{
     context::{Context, ItemId, ItemKind},
@@ -6,10 +6,7 @@ use crate::{
     error_signal::ErrorSignal,
     pass_manager::PassContext,
     simulate::SimulatorValue,
-    stores::{
-        analyzer::{ConstVal, PtrId},
-        ops::OpId,
-    },
+    stores::{analyzer::ConstVal, ops::OpId},
     Stores,
 };
 
@@ -23,8 +20,12 @@ pub(crate) fn epilogue_return(
 
     for &input_value_id in &op_data.inputs {
         let Some(
-            [ConstVal::Ptr {
-                id: PtrId::Mem(variable_item_id),
+            [ConstVal::MultiPtr {
+                source_variable: variable_item_id,
+                ..
+            }
+            | ConstVal::SinglePtr {
+                source_variable: variable_item_id,
                 ..
             }],
         ) = stores.values.value_consts([input_value_id])
@@ -39,11 +40,17 @@ pub(crate) fn epilogue_return(
             continue;
         }
 
-        let labels = diagnostics::build_creator_label_chain(
+        let mut labels = diagnostics::build_creator_label_chain(
             stores,
-            [(input_value_id, 0, "")],
+            [(input_value_id, 0, "pointer")],
             Color::Yellow,
             Color::Cyan,
+        );
+
+        labels.push(
+            Label::new(variable_header.name.location)
+                .with_color(Color::Cyan)
+                .with_message("points to this variable"),
         );
 
         let op_loc = stores.ops.get_token(op_id).location;
@@ -91,13 +98,10 @@ pub(crate) fn cp_const(
 
 pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
-    let src_op_loc = stores.ops.get_token(op_id).location;
     stores.values.set_value_const(
         op_data.outputs[0],
-        ConstVal::Ptr {
-            id: PtrId::Mem(variable_item_id),
-            src_op_loc,
-            offset: Some(0),
+        ConstVal::SinglePtr {
+            source_variable: variable_item_id,
         },
     );
 }

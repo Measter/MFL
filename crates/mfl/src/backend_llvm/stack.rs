@@ -43,11 +43,13 @@ impl<'ctx> CodeGen<'ctx> {
 
                         self.cast_int(val, target_type, Signedness::Unsigned)?
                     }
-                    TypeKind::Pointer(_) => self.builder.build_ptr_to_int(
-                        input_data.into_pointer_value(),
-                        self.ctx.i64_type(),
-                        "cast_ptr",
-                    )?,
+                    TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
+                        self.builder.build_ptr_to_int(
+                            input_data.into_pointer_value(),
+                            self.ctx.i64_type(),
+                            "cast_ptr",
+                        )?
+                    }
                     TypeKind::Array { .. }
                     | TypeKind::Struct(_)
                     | TypeKind::GenericStructBase(_)
@@ -58,7 +60,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
-            TypeKind::Pointer(_) => {
+            TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.type_store.get_type_info(input_type_id);
@@ -73,7 +75,7 @@ impl<'ctx> CodeGen<'ctx> {
                             "cast_int",
                         )?
                     }
-                    TypeKind::Pointer(_) => {
+                    TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                         let to_ptr_type = self.ctx.ptr_type(AddressSpace::default());
                         self.builder.build_pointer_cast(
                             input_data.into_pointer_value(),

@@ -1,0 +1,19 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+var A {u8}
+
+proc a [] to [u8&] {
+    A
+}
+
+proc b [] to [u8*] {
+    A cast(u8*)
+}
+
+proc c [] to [u8&] {
+    A cast(u8*) cast (u8&)
+}

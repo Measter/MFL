@@ -2,7 +2,7 @@ import std::term
 
 struct lang(string) String {
     length u64,
-    pointer u8&,
+    pointer u8*,
 }
 
 struct SplitResult {

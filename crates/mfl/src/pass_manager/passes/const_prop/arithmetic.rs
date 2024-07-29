@@ -47,18 +47,15 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
         }
 
         // Pointer offset.
-        [ConstVal::Ptr {
-            id,
-            src_op_loc,
+        [ConstVal::MultiPtr {
+            source_variable: id,
             offset: Some(offset),
         }, ConstVal::Int(IntKind::Unsigned(v))]
-        | [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::Ptr {
-            id,
-            src_op_loc,
+        | [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::MultiPtr {
+            source_variable: id,
             offset: Some(offset),
-        }] => ConstVal::Ptr {
-            id,
-            src_op_loc,
+        }] => ConstVal::MultiPtr {
+            source_variable: id,
             offset: Some(offset + v),
         },
         _ => return,
@@ -284,19 +281,23 @@ pub(crate) fn subtract(
         }
 
         // Known pointer, constant offset.
-        [ConstVal::Ptr {
-            id,
-            src_op_loc,
+        [ConstVal::MultiPtr {
+            source_variable: id,
             offset,
-        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::Ptr {
-            id,
-            src_op_loc,
+        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::MultiPtr {
+            source_variable: id,
             offset: offset.map(|off| off - v),
         },
 
         // Pointers with different known sources.
         // Clearly an error.
-        [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
+        [ConstVal::MultiPtr {
+            source_variable: id1,
+            ..
+        }, ConstVal::MultiPtr {
+            source_variable: id2,
+            ..
+        }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
                 [
@@ -320,10 +321,10 @@ pub(crate) fn subtract(
         }
 
         // Pointers to the same known source, with known offsets.
-        [ConstVal::Ptr {
+        [ConstVal::MultiPtr {
             offset: Some(offset1),
             ..
-        }, ConstVal::Ptr {
+        }, ConstVal::MultiPtr {
             offset: Some(offset2),
             ..
         }] => {
@@ -359,9 +360,11 @@ pub(crate) fn subtract(
         }
 
         // Pointers with the same ID, but one or both have runtime offsets.
-        [ConstVal::Ptr { id, src_op_loc, .. }, ConstVal::Ptr { .. }] => ConstVal::Ptr {
-            id,
-            src_op_loc,
+        [ConstVal::MultiPtr {
+            source_variable: id,
+            ..
+        }, ConstVal::MultiPtr { .. }] => ConstVal::MultiPtr {
+            source_variable: id,
             offset: None,
         },
 

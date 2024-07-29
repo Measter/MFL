@@ -31,18 +31,15 @@ pub struct Value {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PtrId {
-    Mem(ItemId),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstVal {
     Int(IntKind),
     Bool(bool),
-    Ptr {
-        id: PtrId,
-        src_op_loc: SourceLocation,
+    MultiPtr {
+        source_variable: ItemId,
         offset: Option<u64>,
+    },
+    SinglePtr {
+        source_variable: ItemId,
     },
 }
 

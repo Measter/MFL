@@ -286,7 +286,11 @@ pub(crate) fn pack_struct(
                 struct_def.fields.len()
             }
         }
-        TypeKind::Array { .. } | TypeKind::Integer(_) | TypeKind::Pointer(_) | TypeKind::Bool => {
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_)
+        | TypeKind::Bool => {
             unreachable!()
         }
     };

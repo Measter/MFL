@@ -10,7 +10,7 @@ const SYS_MMAP [u64] { 0x09 }
 const SYS_MUNMAP [u64] { 0x0B }
 
 struct MMap(T) {
-    pointer T&,
+    pointer T*,
     length u64,
 }
 
@@ -35,14 +35,14 @@ proc lang(alloc) alloc(T) [
         // Drop the len and pointer
         rot(3>1) drop(2)
         // Store a null pointer and 0 length.
-        0(u64) cast(T&) 0
+        0(u64) cast(T*) 0
         pack(MMap)
         pack(Result) return
     }
     drop 0
     // [len ptr errcode]
     rev(3)
-    swap cast(T&) swap
+    swap cast(T*) swap
     pack(MMap)
     pack(Result)
 }
@@ -102,7 +102,7 @@ proc mmap_file [
     if xtr(errno) 0!= {
         rot(3>1) drop(2)
         xtrd(errno)
-        0(u64) cast(u8&) // Null pointer
+        0(u64) cast(u8*) // Null pointer
         0                    // length
         pack(MMap)
         pack(Result) return
@@ -130,12 +130,12 @@ proc mmap_file [
         // Drop the len and pointer
         rev(3) drop(2)
         // Store a null pointer.
-        0(u64) cast(u8&)
+        0(u64) cast(u8*)
         // And a 0 length
         0
         pack(MMap)
     } else {
-        drop cast(u8&) swap pack(MMap) 0 swap
+        drop cast(u8*) swap pack(MMap) 0 swap
     }
 
     pack(Result) return

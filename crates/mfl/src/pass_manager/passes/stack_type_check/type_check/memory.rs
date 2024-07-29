@@ -36,7 +36,7 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
             TypeKind::Integer(Integer::U64) if field.name.inner == length_spur => {
                 has_valid_length_field = true
             }
-            TypeKind::Pointer(ptr_id) if field.name.inner == pointer_spur => {
+            TypeKind::MultiPointer(ptr_id) if field.name.inner == pointer_spur => {
                 store_type_id = Some(ptr_id)
             }
             _ => {}
@@ -99,7 +99,7 @@ pub(crate) fn extract_array(
 
     let store_type = match array_type_info.kind {
         TypeKind::Array { type_id, .. } => type_id,
-        TypeKind::Pointer(sub_type) => {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
             let ptr_type_info = stores.types.get_type_info(sub_type);
             match ptr_type_info.kind {
                 TypeKind::Array { type_id, .. } => type_id,
@@ -230,7 +230,7 @@ pub(crate) fn extract_struct(
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             (input_struct_type_id, struct_item_id)
         }
-        TypeKind::Pointer(sub_type) => {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
             let ptr_type_info = stores.types.get_type_info(sub_type);
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
@@ -347,7 +347,7 @@ pub(crate) fn insert_array(
 
     let store_type_id = match array_type_info.kind {
         TypeKind::Array { type_id, .. } => type_id,
-        TypeKind::Pointer(sub_type) => {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
             let ptr_type_info = stores.types.get_type_info(sub_type);
             match ptr_type_info.kind {
                 TypeKind::Array { type_id, .. } => type_id,
@@ -437,7 +437,7 @@ pub(crate) fn insert_array(
         let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
         let array_type_name = match array_type_info.kind {
             TypeKind::Array { .. } => stores.strings.resolve(array_type_info.friendly_name),
-            TypeKind::Pointer(sub_type_id) => {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let sub_type_info = stores.types.get_type_info(sub_type_id);
                 stores.strings.resolve(sub_type_info.friendly_name)
             }
@@ -514,7 +514,7 @@ pub(crate) fn insert_struct(
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             (input_struct_type_id, struct_item_id)
         }
-        TypeKind::Pointer(sub_type) => {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
             let ptr_type_info = stores.types.get_type_info(sub_type);
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
@@ -595,7 +595,9 @@ pub(crate) fn insert_struct(
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 input_struct_info.friendly_name
             }
-            TypeKind::Pointer(sub_type) => stores.types.get_type_info(sub_type).friendly_name,
+            TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
+                stores.types.get_type_info(sub_type).friendly_name
+            }
             _ => unreachable!(),
         };
         let struct_type_name = stores.strings.resolve(struct_type_name);
@@ -636,7 +638,9 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId
     };
     let ptr_info = stores.types.get_type_info(ptr_type);
 
-    let TypeKind::Pointer(ptee_type_id) = ptr_info.kind else {
+    let (TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id)) =
+        ptr_info.kind
+    else {
         let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
 
         let mut labels = diagnostics::build_creator_label_chain(
@@ -745,7 +749,9 @@ pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
     let ptr_type_info = stores.types.get_type_info(ptr_type_id);
     let data_type_info = stores.types.get_type_info(data_type_id);
 
-    let TypeKind::Pointer(ptee_type_id) = ptr_type_info.kind else {
+    let (TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id)) =
+        ptr_type_info.kind
+    else {
         let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
         let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
 
@@ -823,7 +829,8 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
             }
         }
         TypeKind::Integer(_)
-        | TypeKind::Pointer(_)
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);

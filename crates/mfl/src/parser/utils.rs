@@ -354,6 +354,7 @@ pub fn valid_type_token(tt: &TokenTree) -> bool {
                 | TokenKind::Integer { .. }
                 | TokenKind::ColonColon
                 | TokenKind::Ampersand
+                | TokenKind::Star
         ),
         TokenTree::Group(tg) => {
             (tg.bracket_kind == BracketKind::Paren || tg.bracket_kind == BracketKind::Square)
@@ -510,11 +511,13 @@ pub fn parse_unresolved_type(
     let mut parsed_type = UnresolvedType::Simple(ident);
     fn pointer_or_array(tt: &TokenTree) -> bool {
         match tt {
-            TokenTree::Single(tk) => tk.inner.kind == TokenKind::Ampersand,
+            TokenTree::Single(tk) => {
+                matches!(tk.inner.kind, TokenKind::Ampersand | TokenKind::Star)
+            }
             TokenTree::Group(tg) => tg.bracket_kind == BracketKind::Square,
         }
     }
-    while token_iter.next_is(Matcher("[` or `&", pointer_or_array)) {
+    while token_iter.next_is(Matcher("[`, `*` or `&", pointer_or_array)) {
         let Some(next_token) = token_iter.peek() else {
             unreachable!()
         };
@@ -546,7 +549,11 @@ pub fn parse_unresolved_type(
                 let next = token_iter.next().unwrap_single();
 
                 type_span = type_span.merge(next.location);
-                parsed_type = UnresolvedType::Pointer(Box::new(parsed_type));
+                parsed_type = match next.inner.kind {
+                    TokenKind::Ampersand => UnresolvedType::SinglePointer(Box::new(parsed_type)),
+                    TokenKind::Star => UnresolvedType::MultiPointer(Box::new(parsed_type)),
+                    _ => unreachable!(),
+                }
             }
         }
     }

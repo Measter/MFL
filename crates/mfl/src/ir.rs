@@ -53,7 +53,8 @@ pub struct StructDefField<Kind> {
 pub enum UnresolvedType {
     Simple(UnresolvedIdent),
     Array(Box<UnresolvedType>, usize),
-    Pointer(Box<UnresolvedType>),
+    MultiPointer(Box<UnresolvedType>),
+    SinglePointer(Box<UnresolvedType>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -65,7 +66,8 @@ pub enum NameResolvedType {
     SimpleBuiltin(BuiltinTypes),
     SimpleGenericParam(Spanned<Spur>),
     Array(Box<NameResolvedType>, usize),
-    Pointer(Box<NameResolvedType>),
+    MultiPointer(Box<NameResolvedType>),
+    SinglePointer(Box<NameResolvedType>),
     GenericInstance {
         id: ItemId,
         id_token: Spanned<Spur>,
@@ -79,19 +81,20 @@ impl NameResolvedType {
             NameResolvedType::SimpleCustom { id, .. }
             | NameResolvedType::GenericInstance { id, .. } => Some(*id),
             NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => None,
-            NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
-                sub_type.item_id()
-            }
+            NameResolvedType::Array(sub_type, _)
+            | NameResolvedType::MultiPointer(sub_type)
+            | NameResolvedType::SinglePointer(sub_type) => sub_type.item_id(),
         }
     }
 }
 #[derive(Debug, Clone)]
 pub enum PartiallyResolvedType {
     Fixed(TypeId),
-    GenericParamSimple(Spanned<Spur>),   // T
-    GenericParamPointer(Box<Self>),      // T&
-    GenericParamArray(Box<Self>, usize), // T[N]
-    GenericStruct(ItemId, Vec<Self>),    // Bar(u32), Bar(T), Bar(Baz(T))
+    GenericParamSimple(Spanned<Spur>),    // T
+    GenericParamMultiPointer(Box<Self>),  // T*
+    GenericParamSinglePointer(Box<Self>), // T&
+    GenericParamArray(Box<Self>, usize),  // T[N]
+    GenericStruct(ItemId, Vec<Self>),     // Bar(u32), Bar(T), Bar(Baz(T))
 }
 
 impl PartiallyResolvedType {
@@ -105,7 +108,14 @@ impl PartiallyResolvedType {
             (PartiallyResolvedType::GenericParamSimple(s), _) if s.inner == param => {
                 Some(input_type_info.id)
             }
-            (PartiallyResolvedType::GenericParamPointer(t), TypeKind::Pointer(ptr_type)) => {
+            (
+                PartiallyResolvedType::GenericParamMultiPointer(t),
+                TypeKind::MultiPointer(ptr_type),
+            )
+            | (
+                PartiallyResolvedType::GenericParamSinglePointer(t),
+                TypeKind::SinglePointer(ptr_type),
+            ) => {
                 let inner_info = stores.types.get_type_info(ptr_type);
                 t.match_generic_type(stores, param, inner_info)
             }

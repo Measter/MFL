@@ -12,7 +12,7 @@
 // args = ["3"]
 // END
 
-proc entry [u64 u8&&] to [] {
+proc entry [u64 u8**] to [] {
     // We'll just assume we're being called correctly.
     swap drop 
 

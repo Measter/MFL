@@ -27,13 +27,14 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
 
     let array_length = match array_type_info.kind {
         TypeKind::Array { length, .. } => length,
-        TypeKind::Pointer(ptee_id) => {
+        TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id) => {
             let info = stores.types.get_type_info(ptee_id);
             match info.kind {
                 TypeKind::Array { length, .. } => length,
                 TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
                 TypeKind::Integer(_)
-                | TypeKind::Pointer(_)
+                | TypeKind::MultiPointer(_)
+                | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
                 | TypeKind::GenericStructBase(_) => unreachable!(),
             }

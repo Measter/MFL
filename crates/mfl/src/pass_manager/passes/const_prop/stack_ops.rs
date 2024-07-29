@@ -42,7 +42,7 @@ pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
 
     match target_type_info.kind {
         TypeKind::Integer(int_kind) => cast_to_int(stores, op_id, int_kind),
-        TypeKind::Pointer(_) => cast_to_ptr(stores, op_id, target_type_id),
+        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => cast_to_ptr(stores, op_id),
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -51,22 +51,49 @@ pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
     }
 }
 
-fn cast_to_ptr(stores: &mut Stores, op_id: OpId, ptr_type_id: TypeId) {
+fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
+    let output_value_id = op_data.outputs[0];
     let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
         return;
     };
-    let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
+    let Some(type_ids @ [input_type_id, output_type_id]) =
+        stores.values.value_types([input_value_id, output_value_id])
+    else {
         return;
     };
+    let type_kinds = type_ids.map(|id| stores.types.get_type_info(id).kind);
 
-    // For now only const-prop if the pointers are the same type. Given the warning it might be a
-    // bit silly, but this could be expanded later to other casts.
-    if input_type_id == ptr_type_id {
-        stores
+    match type_kinds {
+        [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)] => {
+            let ConstVal::MultiPtr {
+                source_variable, ..
+            } = input_const_val
+            else {
+                unreachable!()
+            };
+            stores
+                .values
+                .set_value_const(output_value_id, ConstVal::SinglePtr { source_variable });
+        }
+        [TypeKind::SinglePointer(_), TypeKind::MultiPointer(_)] => {
+            let ConstVal::SinglePtr { source_variable } = input_const_val else {
+                unreachable!()
+            };
+            stores.values.set_value_const(
+                output_value_id,
+                ConstVal::MultiPtr {
+                    source_variable,
+                    offset: Some(0),
+                },
+            );
+        }
+
+        _ if input_type_id == output_type_id => stores
             .values
-            .set_value_const(op_data.outputs[0], input_const_val);
+            .set_value_const(output_value_id, input_const_val),
+        _ => {}
     }
 }
 
@@ -81,7 +108,7 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: Integer) {
         ConstVal::Int(v) => ConstVal::Int(v.cast(int_kind)),
         ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(IntKind::Unsigned(b as _)),
         ConstVal::Bool(b) => ConstVal::Int(IntKind::Signed(b as _)),
-        ConstVal::Ptr { .. } => unreachable!(),
+        ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => unreachable!(),
     };
 
     stores
@@ -110,7 +137,8 @@ pub(crate) fn size_of(
 
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
-        | TypeKind::Pointer(_)
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {}
     }

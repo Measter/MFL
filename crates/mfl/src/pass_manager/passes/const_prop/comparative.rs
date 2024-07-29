@@ -55,7 +55,20 @@ pub(crate) fn equal(
         [ConstVal::Bool(a), ConstVal::Bool(b)] => comp_code.get_bool_binary_op()(a, b),
 
         // Static pointers with different IDs.
-        [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
+        [ConstVal::MultiPtr {
+            source_variable: id1,
+            ..
+        }, ConstVal::MultiPtr {
+            source_variable: id2,
+            ..
+        }]
+        | [ConstVal::SinglePtr {
+            source_variable: id1,
+            ..
+        }, ConstVal::SinglePtr {
+            source_variable: id2,
+            ..
+        }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
                 [
@@ -79,11 +92,28 @@ pub(crate) fn equal(
             return;
         }
 
-        // Pointers with same IDs, but different static offsets.
-        [ConstVal::Ptr {
+        // Single-Pointers with same IDs
+        [ConstVal::SinglePtr { .. }, ConstVal::SinglePtr { .. }] => {
+            let mut labels = diagnostics::build_creator_label_chain(
+                stores,
+                [
+                    (input_value_ids[0], 0, "..and this"),
+                    (input_value_ids[1], 1, "comparing this..."),
+                ],
+                Color::Cyan,
+                Color::Green,
+            );
+            labels.push(Label::new(op_loc).with_color(Color::Yellow));
+            diagnostics::emit_error(stores, op_loc, "pointers always equal", labels, None);
+
+            comp_code.get_unsigned_binary_op()(1, 1) != 0
+        }
+
+        // Multi-Pointers with same IDs
+        [ConstVal::MultiPtr {
             offset: Some(offset1),
             ..
-        }, ConstVal::Ptr {
+        }, ConstVal::MultiPtr {
             offset: Some(offset2),
             ..
         }] => {
@@ -156,7 +186,13 @@ pub(crate) fn compare(
         }
 
         // Static pointers with different IDs.
-        [ConstVal::Ptr { id: id1, .. }, ConstVal::Ptr { id: id2, .. }] if id1 != id2 => {
+        [ConstVal::MultiPtr {
+            source_variable: id1,
+            ..
+        }, ConstVal::MultiPtr {
+            source_variable: id2,
+            ..
+        }] if id1 != id2 => {
             let mut labels = diagnostics::build_creator_label_chain(
                 stores,
                 [
@@ -182,10 +218,10 @@ pub(crate) fn compare(
         }
 
         // Pointers with same IDs, but different static offsets.
-        [ConstVal::Ptr {
+        [ConstVal::MultiPtr {
             offset: Some(offset1),
             ..
-        }, ConstVal::Ptr {
+        }, ConstVal::MultiPtr {
             offset: Some(offset2),
             ..
         }] => comp_code.get_unsigned_binary_op()(offset1, offset2) != 0,

@@ -97,7 +97,9 @@ pub(super) fn ensure_structs_declared_in_type(
             }
         }
         NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
-        NameResolvedType::Array(sub_type, _) | NameResolvedType::Pointer(sub_type) => {
+        NameResolvedType::Array(sub_type, _)
+        | NameResolvedType::MultiPointer(sub_type)
+        | NameResolvedType::SinglePointer(sub_type) => {
             ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
         }
     };

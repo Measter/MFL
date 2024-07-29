@@ -24,7 +24,8 @@ pub const MANGLED_GENERIC_CLOSE: &str = "$GC$";
 pub const MANGLED_GENERIC_SEP: &str = "_";
 pub const MANGLED_ARRAY_OPEN: &str = "$BO$";
 pub const MANGLED_ARRAY_CLOSE: &str = "$BC$";
-pub const MANGLED_PTR: &str = "$PTR$";
+pub const MANGLED_PTR_MULTI: &str = "$PTR$";
+pub const MANGLED_PTR_SINGLE: &str = "$SPTR$";
 
 pub const FRENDLY_PATH_SEP: &str = "::";
 pub const FRENDLY_GENERIC_OPEN: &str = "(";
@@ -32,7 +33,8 @@ pub const FRENDLY_GENERIC_CLOSE: &str = ")";
 pub const FRENDLY_GENERIC_SEP: &str = ", ";
 pub const FRENDLY_ARRAY_OPEN: &str = "[";
 pub const FRENDLY_ARRAY_CLOSE: &str = "]";
-pub const FRENDLY_PTR: &str = "&";
+pub const FRENDLY_PTR_MULTI: &str = "*";
+pub const FRENDLY_PTR_SINGLE: &str = "&";
 
 pub struct Stores {
     pub source: SourceStore,

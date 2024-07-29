@@ -87,7 +87,11 @@ pub(crate) fn push_str(stores: &mut Stores, op_id: OpId, is_c_str: bool) {
     let op_data = stores.ops.get_op_io(op_id);
 
     let kind = if is_c_str {
-        stores.types.get_builtin_ptr(BuiltinTypes::U8).id
+        let u8_type = stores.types.get_builtin(BuiltinTypes::U8);
+        stores
+            .types
+            .get_multi_pointer(&mut stores.strings, u8_type.id)
+            .id
     } else {
         stores.types.get_builtin(BuiltinTypes::String).id
     };
@@ -104,7 +108,9 @@ pub(crate) fn cast(
     let output_type_info = stores.types.get_type_info(target_id);
     match output_type_info.kind {
         TypeKind::Integer(int) => cast_to_int(stores, had_error, op_id, target_id, int),
-        TypeKind::Pointer(_) => cast_to_ptr(stores, had_error, op_id, target_id),
+        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
+            cast_to_ptr(stores, had_error, op_id, target_id)
+        }
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -134,7 +140,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::Pointer(_) if input_type_id == to_id => {
+        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) if input_type_id == to_id => {
             let ptr_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
             let mut labels = diagnostics::build_creator_label_chain(
@@ -147,7 +153,9 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
 
             diagnostics::emit_warning(stores, op_token.location, "unnecessary cast", labels, None);
         }
-        TypeKind::Integer(Integer::U64) | TypeKind::Pointer(_) => {}
+        TypeKind::Integer(Integer::U64)
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_) => {}
 
         TypeKind::Integer(_) => {
             let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
@@ -204,7 +212,7 @@ fn cast_to_int(
 
     match input_type_info.kind {
         TypeKind::Bool => {}
-        TypeKind::Pointer(_) => {
+        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             if to_int != Integer::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
                 let output_type_info = stores.types.get_type_info(to_id);

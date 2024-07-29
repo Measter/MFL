@@ -48,7 +48,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let func = op_code.get_arith_fn();
                 func(&self.builder, a_val, b_val, &output_name)?.into()
             }
-            [TypeKind::Integer(int_type), TypeKind::Pointer(ptee_type)] => {
+            [TypeKind::Integer(int_type), TypeKind::MultiPointer(ptee_type)] => {
                 assert!(matches!(
                     op_code,
                     OpCode::Basic(Basic::Arithmetic(Arithmetic::Add))
@@ -66,7 +66,7 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 .into()
             }
-            [TypeKind::Pointer(ptee_type), TypeKind::Integer(int_type)] => {
+            [TypeKind::MultiPointer(ptee_type), TypeKind::Integer(int_type)] => {
                 assert_eq!(int_type.signed, Signedness::Unsigned);
                 let offset = value_store.load_value(self, b, ds)?.into_int_value();
 
@@ -88,7 +88,7 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 .into()
             }
-            [TypeKind::Pointer(ptee_type), TypeKind::Pointer(_)] => {
+            [TypeKind::MultiPointer(ptee_type), TypeKind::MultiPointer(_)] => {
                 assert!(matches!(
                     op_code,
                     OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract))
@@ -300,7 +300,8 @@ impl<'ctx> CodeGen<'ctx> {
 
                 (a_val, b_val, to_int.signed)
             }
-            [TypeKind::Pointer(_), TypeKind::Pointer(_)] => todo!(),
+            [TypeKind::MultiPointer(_), TypeKind::MultiPointer(_)]
+            | [TypeKind::SinglePointer(_), TypeKind::SinglePointer(_)] => todo!(),
             [TypeKind::Bool, TypeKind::Bool] => (
                 a_val.into_int_value(),
                 b_val.into_int_value(),
@@ -328,7 +329,9 @@ impl<'ctx> CodeGen<'ctx> {
         let input_value_id = op_io.inputs()[0];
         let [input_type_id] = ds.analyzer.value_types([input_value_id]).unwrap();
         let input_type_info = ds.type_store.get_type_info(input_type_id);
-        let TypeKind::Pointer(ptee_id) = input_type_info.kind else {
+        let (TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id)) =
+            input_type_info.kind
+        else {
             unreachable!()
         };
         let ptee_type = self.get_type(ds.type_store, ptee_id);

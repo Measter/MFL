@@ -62,7 +62,7 @@ proc write_ui [FD u64] to [WriteResult] {
     30 over -
     // [idx.start, length]
 
-    swap buf cast(u8&) +
+    swap buf cast(u8*) +
     
     pack(String) write
 }
