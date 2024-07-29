@@ -31,7 +31,6 @@ pub struct Integer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringToken {
     pub id: Spur,
-    pub is_c_str: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,7 +236,7 @@ pub enum TokenKind {
     Star,
 
     // We do a fixup later, in the consume loop
-    #[regex(r#""([^"\\]|\\["\\rnt0])*"c?"#, |_| StringToken{id: Spur::default(), is_c_str: false})]
+    #[regex(r#""([^"\\]|\\["\\rnt0])*""#, |_| StringToken{id: Spur::default() })]
     String(StringToken),
 
     #[token("!")]
@@ -482,20 +481,14 @@ fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
     escaped
 }
 
-fn process_string(stores: &mut Stores, string: &str) -> (Spur, bool) {
-    let (string, is_c_str) = if string.ends_with('c') {
-        (&string[1..string.len() - 2], true)
-    } else {
-        (&string[1..string.len() - 1], false)
-    };
+fn process_string(stores: &mut Stores, string: &str) -> Spur {
+    let string = &string[1..string.len() - 1];
 
     let mut new_string = escape_string_or_char_literal(string, true);
     // All strings are null terminated, as it makes supporting C-strings easier.
     new_string.push('\0');
 
-    let id = stores.strings.intern(&new_string);
-
-    (id, is_c_str)
+    stores.strings.intern(&new_string)
 }
 
 pub(crate) fn lex_file(
@@ -540,9 +533,7 @@ pub(crate) fn lex_file(
         // parser, so we do it here.
         match &mut kind {
             TokenKind::String(string_token) => {
-                let (id, is_c_str) = process_string(stores, lexer.slice());
-                string_token.is_c_str = is_c_str;
-                string_token.id = id;
+                string_token.id = process_string(stores, lexer.slice());
             }
             TokenKind::Char(ch) => {
                 let literal = lexer.slice();

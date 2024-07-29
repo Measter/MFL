@@ -83,19 +83,9 @@ pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, int: Integer) {
         .set_value_type(op_data.outputs[0], stores.types.get_builtin(int.into()).id);
 }
 
-pub(crate) fn push_str(stores: &mut Stores, op_id: OpId, is_c_str: bool) {
+pub(crate) fn push_str(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
-
-    let kind = if is_c_str {
-        let u8_type = stores.types.get_builtin(BuiltinTypes::U8);
-        stores
-            .types
-            .get_multi_pointer(&mut stores.strings, u8_type.id)
-            .id
-    } else {
-        stores.types.get_builtin(BuiltinTypes::String).id
-    };
-
+    let kind = stores.types.get_builtin(BuiltinTypes::String).id;
     stores.values.set_value_type(op_data.outputs[0], kind);
 }
 

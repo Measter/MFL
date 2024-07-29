@@ -366,7 +366,7 @@ pub enum Basic {
 
     PushBool(bool),
     PushInt { width: IntWidth, value: IntKind },
-    PushStr { id: Spur, is_c_str: bool },
+    PushStr { id: Spur },
 }
 
 #[derive(Debug, Clone, Eq)]

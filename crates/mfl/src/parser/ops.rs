@@ -206,13 +206,9 @@ pub fn parse_simple_op(
             return parse_ident_op(stores, token_iter, token)
         }
         TokenKind::Integer { .. } => return parse_integer_op(stores, token_iter, token, false),
-        TokenKind::String(StringToken { id, is_c_str }) => {
-            OpCode::Basic(Basic::PushStr { id, is_c_str })
+        TokenKind::String(StringToken { id }) | TokenKind::Here(id) => {
+            OpCode::Basic(Basic::PushStr { id })
         }
-        TokenKind::Here(id) => OpCode::Basic(Basic::PushStr {
-            id,
-            is_c_str: false,
-        }),
         TokenKind::EmitStack => return parse_emit_stack(stores, token_iter, token),
 
         TokenKind::Minus => return parse_minus(stores, token_iter, token),

@@ -404,9 +404,9 @@ fn analyze_block(
                         (width, value.to_signedness()).into(),
                     );
                 }
-                Basic::PushStr { is_c_str, .. } => {
+                Basic::PushStr { .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::stack_ops::push_str(stores, op_id, is_c_str);
+                    type_check::stack_ops::push_str(stores, op_id);
                 }
             },
             OpCode::Complex(co) => match co {

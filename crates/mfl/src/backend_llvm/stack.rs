@@ -169,31 +169,26 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         str_id: Spur,
-        is_c_str: bool,
     ) -> InkwellResult {
         let op_io = ds.op_store.get_op_io(op_id);
         let str_ptr = value_store.get_string_literal(self, ds, str_id)?;
 
-        let store_value = if is_c_str {
-            str_ptr.as_basic_value_enum()
-        } else {
-            let string = ds.strings_store.resolve(str_id);
-            let len = string.len() - 1; // It's null-terminated.
-            let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
+        let string = ds.strings_store.resolve(str_id);
+        let len = string.len() - 1; // It's null-terminated.
+        let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
-            let struct_type = self.get_type(
-                ds.type_store,
-                ds.type_store.get_builtin(BuiltinTypes::String).id,
-            );
+        let struct_type = self.get_type(
+            ds.type_store,
+            ds.type_store.get_builtin(BuiltinTypes::String).id,
+        );
 
-            struct_type
-                .into_struct_type()
-                .const_named_struct(&[
-                    len_value.as_basic_value_enum(),
-                    str_ptr.as_basic_value_enum(),
-                ])
-                .as_basic_value_enum()
-        };
+        let store_value = struct_type
+            .into_struct_type()
+            .const_named_struct(&[
+                len_value.as_basic_value_enum(),
+                str_ptr.as_basic_value_enum(),
+            ])
+            .as_basic_value_enum();
 
         value_store.store_value(self, op_io.outputs()[0], store_value)?;
 
