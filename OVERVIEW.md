@@ -20,9 +20,15 @@ The language does have implicit integer widening. In integer of type `A` can wid
 
 Boolean values have the type `bool`.
 
-## Pointers
+## Single Pointers
 
-Pointers notation is `T&`, where `T` is some type.
+Single-Pointer notation is `T&`, where `T` is some type. Single-pointers can be null, and do not require the pointee to be
+initialized.
+
+## Multi Pointers
+
+Multi-Pointer notation is `T*`, where `T` is some type. Multi-pointers are like Single-pointers, with the additional
+support of pointer arithmetic.
 
 ## Arrays
 
@@ -30,25 +36,27 @@ Arrays are `T[N]`, where `T` is some type, and `N` is a positive integer.
 
 ## Strings
 
-C-like strings are just a `u8&`, MFL-strings are the following struct:
+Strings are the following struct:
 
 ```
-struct String is
-    field len u64
-    field data u8&
-end
+struct String {
+    length u64,
+    pointer u8*,
+}
 ```
 
 ## Structs
 
-Structs are defined with the syntax
+Structs are defined with the following syntax
 
 ```
-struct <name> is 
-    field <name> <type>
+struct <name> {
+    <name> <type>,
     ...
-end
+}
 ```
+
+Note that trailing commas are not optional.
 
 # Supported Operations
 
@@ -71,8 +79,8 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`iN`|
-|`uN`|`T&`|`T&`|
-|`T&`|`uN`|`T&`|
+|`uN`|`T*`|`T*`|
+|`T*`|`uN`|`T*`|
 
 ### `-` (Subtract)
 
@@ -85,8 +93,8 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`iN`|
-|`T&`|`T&`|`u64`|
-|`T&`|`uN`|`T&`|
+|`T*`|`T*`|`u64`|
+|`T*`|`uN`|`T*`|
 
 ### `*` (Multiplication), `/` (Division), `%` (Remainder)
 
@@ -136,7 +144,7 @@ Supported Types:
 
 Stack: `[a b]` to `[c]`
 
-Operation (`shl`): `c` = `a` << `b`    
+Operation (`shl`): `c` = `a` << `b`
 Operation (`shr`): `c` = `a` >> `b`
 
 Supported Types:
@@ -152,7 +160,7 @@ Supported Types:
 
 Stack: `[a b]` to `[c]`
 
-Operation: `c` = `a` == `b`    
+Operation: `c` = `a` == `b`
 Operation: `c` = `a` != `b`
 
 Supported Types:
@@ -162,6 +170,7 @@ Supported Types:
 |`iN`|`iN`|`bool`|
 |`bool`|`bool`|`bool`|
 |`T&`|`T&`|`bool`|
+|`T*`|`T*`|`bool`|
 
 
 ### `<`, `>`, `<=` `>=`
@@ -178,7 +187,7 @@ Supported Types:
 |a|b|c|
 |---|---|---|
 |`iN`|`iN`|`bool`|
-|`T&`|`T&`|`bool`|
+|`T*`|`T*`|`bool`|
 
 ## Memory
 
@@ -193,6 +202,7 @@ Supported Types:
 |a|b|
 |---|---|
 |`T&`|`T`|
+|`T*`|`T`|
 
 ### `!` (Store)
 
@@ -205,6 +215,7 @@ Supported Types:
 |a|b|
 |---|---|
 |`T`|`T&`|
+|`T`|`T*`|
 
 ### `pack(N)`
 
@@ -262,8 +273,10 @@ Supported Types:
 |---|---|---|---|
 |`T`|`T[N]`|`uN`|`T[N]`|
 |`T`|`T[N]&`|`uN`|`T[N]&`|
+|`T`|`T[N]*`|`uN`|`T[N]*`|
 |`T`|`U`|`uN`|`U`|
 |`T`|`U&`|`uN`|`U&`|
+|`T`|`U*`|`uN`|`U*`|
 
 ### `xtr`, `xtrd` (Extract from Array)
 
@@ -284,8 +297,10 @@ Supported Types:
 |---|---|---|---|
 |`T[N]`|`uN`|`T[N]`|`T`|
 |`T[N]&`|`uN`|`T[N]&`|`T`|
+|`T[N]*`|`uN`|`T[N]*`|`T`|
 |`U`|`uN`|`U`|`T`|
 |`U&`|`uN`|`U&`|`T`|
+|`U*`|`uN`|`U*`|`T`|
 
 ### `ins(Field[.Field]*)`, `insd(Field[.Field]*)` (Insert into Struct)
 
@@ -306,6 +321,7 @@ Supported Types:
 |---|---|---|
 |`F`|`T`|`T`|
 |`F`|`T&`|`T&`|
+|`F`|`T*`|`T*`|
 
 ### `xtr(Field[.Field]*)`, `xtrd(Field[.Field]*)` (Extract from Struct)
 
@@ -326,6 +342,7 @@ Supported Types:
 |---|---|---|
 |`T`|`T`|`F`|
 |`T&`|`T&`|`F`|
+|`T*`|`T*`|`F`|
 
 ## Stack Manipulation
 
