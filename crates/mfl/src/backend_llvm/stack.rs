@@ -4,10 +4,9 @@ use lasso::Spur;
 
 use crate::{
     context::ItemId,
-    ir::IntKind,
     stores::{
         ops::OpId,
-        types::{BuiltinTypes, IntWidth, Integer, Signedness, TypeId, TypeKind},
+        types::{BuiltinTypes, IntKind, IntWidth, Integer, Signedness, TypeId, TypeKind},
     },
 };
 

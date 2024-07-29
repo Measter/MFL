@@ -23,14 +23,14 @@ use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
     context::{Context as MflContext, ItemId, ItemKind},
-    ir::{Arithmetic, Basic, Compare, Control, IntKind, Memory, OpCode, Stack, TypeResolvedOp},
+    ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     stores::{
         analyzer::{ValueId, ValueStore},
         block::{BlockId, BlockStore},
         ops::OpStore,
         source::SourceStore,
         strings::StringStore,
-        types::{BuiltinTypes, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+        types::{BuiltinTypes, IntKind, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,
 };

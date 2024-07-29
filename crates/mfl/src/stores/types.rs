@@ -21,6 +21,51 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntKind {
+    Signed(i64),
+    Unsigned(u64),
+}
+
+impl IntKind {
+    pub fn to_signedness(self) -> Signedness {
+        match self {
+            IntKind::Signed(_) => Signedness::Signed,
+            IntKind::Unsigned(_) => Signedness::Unsigned,
+        }
+    }
+
+    // The cast has already been typechecked, so we know it's valid.
+    pub fn cast(self, to: Integer) -> IntKind {
+        match (self, to.signed) {
+            (IntKind::Signed(v), Signedness::Signed) if to.width == IntWidth::I64 => {
+                IntKind::Signed(v)
+            }
+            (IntKind::Signed(v), Signedness::Signed) => {
+                let (min, max) = to.width.bounds_signed().into_inner();
+                let full_range = to.width.bounds_unsigned().into_inner().1 as i64;
+                let v = if v < min {
+                    v + full_range
+                } else if v > max {
+                    v - full_range
+                } else {
+                    v
+                };
+                IntKind::Signed(v)
+            }
+
+            (IntKind::Unsigned(v), Signedness::Unsigned) => IntKind::Unsigned(v & to.width.mask()),
+
+            (IntKind::Signed(v), Signedness::Unsigned) => {
+                IntKind::Unsigned((v & to.width.mask() as i64) as u64)
+            }
+            (IntKind::Unsigned(v), Signedness::Signed) => {
+                IntKind::Signed((v & to.width.mask()) as i64)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IntWidth {
     I8,

@@ -1,11 +1,10 @@
 use crate::{
     context::Context,
-    ir::IntKind,
     pass_manager::PassContext,
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{Integer, TypeId, TypeKind},
+        types::{IntKind, Integer, TypeId, TypeKind},
     },
     Stores,
 };

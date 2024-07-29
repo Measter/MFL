@@ -4,8 +4,11 @@ use intcast::IntCast;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::IntKind,
-    stores::{analyzer::ConstVal, ops::OpId, types::TypeKind},
+    stores::{
+        analyzer::ConstVal,
+        ops::OpId,
+        types::{IntKind, TypeKind},
+    },
     Stores,
 };
 

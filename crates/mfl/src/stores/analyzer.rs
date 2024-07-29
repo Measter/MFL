@@ -4,9 +4,13 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use smallvec::SmallVec;
 
-use crate::{context::ItemId, ir::IntKind, n_ops::HashMapNOps, option::OptionExt};
+use crate::{context::ItemId, n_ops::HashMapNOps, option::OptionExt};
 
-use super::{ops::OpId, source::SourceLocation, types::TypeId};
+use super::{
+    ops::OpId,
+    source::SourceLocation,
+    types::{IntKind, TypeId},
+};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ValueId(u32);

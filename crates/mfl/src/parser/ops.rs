@@ -7,14 +7,14 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, IntKind, Memory, OpCode,
-        Stack, UnresolvedOp, While, WhileTokens,
+        Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, Memory, OpCode, Stack,
+        UnresolvedOp, While, WhileTokens,
     },
     lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind, TokenTree},
     stores::{
         ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
-        types::{IntWidth, Signedness},
+        types::{IntKind, IntWidth, Signedness},
     },
     Stores,
 };
