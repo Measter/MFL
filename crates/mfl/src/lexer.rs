@@ -152,6 +152,9 @@ pub enum TokenKind {
     #[token("xtrd", |_| Extract{emit_struct: false})]
     Extract(Extract),
 
+    #[regex("[0-9][0-9_]*\\.[0-9][0-9_]*([eE][-\\+]?[0-9][0-9_]*)?")]
+    Float,
+
     #[token("to")]
     GoesTo,
 
@@ -306,6 +309,7 @@ impl TokenKind {
             TokenKind::Extern => "extern",
             TokenKind::Extract(Extract { emit_struct: true }) => "xtr",
             TokenKind::Extract(Extract { emit_struct: false }) => "xtrd",
+            TokenKind::Float => "float literal",
             TokenKind::GoesTo => "to",
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",

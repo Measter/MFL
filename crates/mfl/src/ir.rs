@@ -3,7 +3,7 @@ use lasso::Spur;
 use crate::stores::{
     block::BlockId,
     source::{SourceLocation, Spanned},
-    types::{BuiltinTypes, IntKind, IntWidth, TypeId, TypeInfo, TypeKind},
+    types::{BuiltinTypes, Float, FloatWidth, IntKind, IntWidth, TypeId, TypeInfo, TypeKind},
     Stores,
 };
 
@@ -366,6 +366,7 @@ pub enum Basic {
 
     PushBool(bool),
     PushInt { width: IntWidth, value: IntKind },
+    PushFloat { width: FloatWidth, value: Float },
     PushStr { id: Spur },
 }
 

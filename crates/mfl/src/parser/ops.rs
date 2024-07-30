@@ -11,10 +11,11 @@ use crate::{
         UnresolvedOp, While, WhileTokens,
     },
     lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind, TokenTree},
+    parser::utils::parse_float_lexeme,
     stores::{
         ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
-        types::{IntKind, IntWidth, Signedness},
+        types::{Float, FloatWidth, IntKind, IntWidth, Signedness},
     },
     Stores,
 };
@@ -206,6 +207,7 @@ pub fn parse_simple_op(
             return parse_ident_op(stores, token_iter, token)
         }
         TokenKind::Integer { .. } => return parse_integer_op(stores, token_iter, token, false),
+        TokenKind::Float => return parse_float_op(stores, token_iter, token, false),
         TokenKind::String(StringToken { id }) | TokenKind::Here(id) => {
             OpCode::Basic(Basic::PushStr { id })
         }
@@ -582,6 +584,91 @@ fn parse_integer_op(
 
     Ok((
         OpCode::Basic(Basic::PushInt { width, value }),
+        overall_location,
+    ))
+}
+
+fn parse_float_op(
+    stores: &Stores,
+    token_iter: &mut TokenIter,
+    token: Spanned<Token>,
+    is_known_negative: bool,
+) -> ParseOpResult {
+    let mut had_error = ErrorSignal::new();
+    let mut overall_location = token.location;
+    let literal_value: f64 = match parse_float_lexeme(stores, token) {
+        Ok(lit) => lit,
+        Err(_) => {
+            had_error.set();
+            0.0
+        }
+    };
+
+    let value = if is_known_negative {
+        -literal_value
+    } else {
+        literal_value
+    };
+
+    let width = if token_iter.next_is_group(BracketKind::Paren) {
+        let delim = token_iter
+            .expect_group(stores, BracketKind::Paren, token)
+            .with_kinds(stores, TokenKind::Ident)
+            .with_length(stores, 1)?;
+
+        let ident_token = delim.tokens[0].unwrap_single();
+        overall_location = overall_location.merge(delim.last_token().location);
+
+        match stores.strings.resolve(ident_token.inner.lexeme) {
+            "f32" => FloatWidth::F32,
+            "f64" => FloatWidth::F64,
+
+            _ => {
+                diagnostics::emit_error(
+                    stores,
+                    ident_token.location,
+                    "invalid float type",
+                    [Label::new(ident_token.location)
+                        .with_color(Color::Red)
+                        .with_message("unknown type")],
+                    None,
+                );
+                return Err(());
+            }
+        }
+    } else if FloatWidth::F32.bounds().contains(&value) {
+        FloatWidth::F32
+    } else {
+        FloatWidth::F64
+    };
+
+    if !width.bounds().contains(&value) {
+        diagnostics::emit_error(
+            stores,
+            token.location,
+            "literal out of bounds",
+            [Label::new(token.location)
+                .with_color(Color::Red)
+                .with_message(format!(
+                    "valid range for {} is {:?}",
+                    width.name(),
+                    width.bounds(),
+                ))],
+            None,
+        );
+        return Err(());
+    }
+
+    // Return down here so that we consume any given parameters.
+    if had_error.into_bool() {
+        return Err(());
+    }
+
+    Ok((
+        OpCode::Basic(Basic::PushFloat {
+            width,
+            value: Float(value),
+        }),
         overall_location,
     ))
 }

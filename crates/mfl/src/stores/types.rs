@@ -166,6 +166,45 @@ impl From<(IntWidth, Signedness)> for Integer {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FloatWidth {
+    F32,
+    F64,
+}
+
+impl FloatWidth {
+    pub fn name(self) -> &'static str {
+        match self {
+            FloatWidth::F32 => "f32",
+            FloatWidth::F64 => "f64",
+        }
+    }
+
+    pub fn bounds(self) -> RangeInclusive<f64> {
+        match self {
+            FloatWidth::F32 => f32::MIN as f64..=f32::MAX as f64,
+            FloatWidth::F64 => f64::MIN..=f64::MAX,
+        }
+    }
+
+    pub fn bit_width(self) -> u8 {
+        match self {
+            FloatWidth::F32 => 32,
+            FloatWidth::F64 => 64,
+        }
+    }
+
+    pub fn byte_width(self) -> u64 {
+        match self {
+            FloatWidth::F32 => 4,
+            FloatWidth::F64 => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Float(pub f64);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },

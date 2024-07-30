@@ -238,6 +238,7 @@ fn simulate_execute_program_block(
             OpCode::Basic(Basic::PushInt { width, value }) => {
                 value_stack.push(SimulatorValue::Int { width, kind: value })
             }
+            OpCode::Basic(Basic::PushFloat { .. }) => todo!(),
             OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
                 Stack::Dup { count } => {
                     let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();

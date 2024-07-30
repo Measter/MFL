@@ -620,6 +620,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushInt { width, value }) => {
                     self.build_push_int(ds, value_store, op_id, *width, *value)?
                 }
+                OpCode::Basic(Basic::PushFloat { .. }) => todo!(),
                 OpCode::Basic(Basic::PushStr { id }) => {
                     self.build_push_str(ds, value_store, op_id, *id)?
                 }

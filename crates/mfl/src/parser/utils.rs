@@ -1,7 +1,7 @@
 use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use ariadne::{Color, Label};
-use num_traits::{PrimInt, Unsigned};
+use num_traits::{Float, PrimInt, Unsigned};
 
 use crate::{
     diagnostics,
@@ -720,6 +720,37 @@ where
                 .with_color(Color::Red)
                 .with_message(format!(
                     "integer must be in range {}..={}",
+                    T::min_value(),
+                    T::max_value()
+                ))],
+            None,
+        );
+        return Err(());
+    };
+
+    Ok(int)
+}
+
+pub fn parse_float_lexeme<T>(stores: &Stores, float_token: Spanned<Token>) -> Result<T, ()>
+where
+    T: Float + FromStr + Display,
+{
+    let TokenKind::Float = float_token.inner.kind else {
+        panic!("ICE: called parse_float_lexeme with a non-float token")
+    };
+    let string = stores.strings.resolve(float_token.inner.lexeme);
+    let string: String = string.chars().filter(|&c| c != '_').collect();
+
+    let res = T::from_str(&string);
+    let Ok(int) = res else {
+        diagnostics::emit_error(
+            stores,
+            float_token.location,
+            "float out bounds",
+            [Label::new(float_token.location)
+                .with_color(Color::Red)
+                .with_message(format!(
+                    "float must be in range {}..={}",
                     T::min_value(),
                     T::max_value()
                 ))],
