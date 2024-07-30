@@ -15,7 +15,7 @@ use crate::{
     stores::{
         ops::OpId,
         source::{SourceLocation, Spanned, WithSpan},
-        types::{Float, FloatWidth, IntKind, IntWidth, Signedness},
+        types::{Float, FloatWidth, IntSignedness, IntWidth, Integer},
     },
     Stores,
 };
@@ -200,7 +200,7 @@ pub fn parse_simple_op(
         TokenKind::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
         TokenKind::Char(ch) => OpCode::Basic(Basic::PushInt {
             width: IntWidth::I8,
-            value: IntKind::Unsigned((ch as u8).to_u64()),
+            value: Integer::Unsigned((ch as u8).to_u64()),
         }),
 
         TokenKind::Ident | TokenKind::ColonColon => {
@@ -469,14 +469,14 @@ fn parse_integer_op(
         overall_location = overall_location.merge(delim.last_token().location);
 
         let (width, is_signed_kind) = match stores.strings.resolve(ident_token.inner.lexeme) {
-            "u8" => (IntWidth::I8, Signedness::Unsigned),
-            "s8" => (IntWidth::I8, Signedness::Signed),
-            "u16" => (IntWidth::I16, Signedness::Unsigned),
-            "s16" => (IntWidth::I16, Signedness::Signed),
-            "u32" => (IntWidth::I32, Signedness::Unsigned),
-            "s32" => (IntWidth::I32, Signedness::Signed),
-            "u64" => (IntWidth::I64, Signedness::Unsigned),
-            "s64" => (IntWidth::I64, Signedness::Signed),
+            "u8" => (IntWidth::I8, IntSignedness::Unsigned),
+            "s8" => (IntWidth::I8, IntSignedness::Signed),
+            "u16" => (IntWidth::I16, IntSignedness::Unsigned),
+            "s16" => (IntWidth::I16, IntSignedness::Signed),
+            "u32" => (IntWidth::I32, IntSignedness::Unsigned),
+            "s32" => (IntWidth::I32, IntSignedness::Signed),
+            "u64" => (IntWidth::I64, IntSignedness::Unsigned),
+            "s64" => (IntWidth::I64, IntSignedness::Signed),
 
             _ => {
                 diagnostics::emit_error(
@@ -493,7 +493,7 @@ fn parse_integer_op(
         };
 
         // The user specified an unsigned type, but gave a negative literal.
-        if is_signed_kind == Signedness::Unsigned && is_known_negative {
+        if is_signed_kind == IntSignedness::Unsigned && is_known_negative {
             diagnostics::emit_error(
                 stores,
                 ident_token.location,
@@ -505,7 +505,7 @@ fn parse_integer_op(
         }
 
         let int_value = match is_signed_kind {
-            Signedness::Signed => {
+            IntSignedness::Signed => {
                 // FIXME: Need to check bounds before cast
                 let value: i64 = literal_value as i64;
                 let value = if is_known_negative { -value } else { value };
@@ -526,9 +526,9 @@ fn parse_integer_op(
                     );
                     return Err(());
                 }
-                IntKind::Signed(value)
+                Integer::Signed(value)
             }
-            Signedness::Unsigned => {
+            IntSignedness::Unsigned => {
                 if !width.bounds_unsigned().contains(&literal_value) {
                     diagnostics::emit_error(
                         stores,
@@ -545,7 +545,7 @@ fn parse_integer_op(
                     );
                     return Err(());
                 }
-                IntKind::Unsigned(literal_value)
+                Integer::Unsigned(literal_value)
             }
         };
 
@@ -562,7 +562,7 @@ fn parse_integer_op(
             }
         }
 
-        (width, IntKind::Signed(literal_value))
+        (width, Integer::Signed(literal_value))
     } else {
         let sizes = [IntWidth::I8, IntWidth::I16, IntWidth::I32, IntWidth::I64];
         let mut width = IntWidth::I64;
@@ -574,7 +574,7 @@ fn parse_integer_op(
             }
         }
 
-        (width, IntKind::Unsigned(literal_value))
+        (width, Integer::Unsigned(literal_value))
     };
 
     // Return down here so that we consume any given parameters.

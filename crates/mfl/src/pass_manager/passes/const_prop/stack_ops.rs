@@ -4,7 +4,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{IntKind, Integer, TypeId, TypeKind},
+        types::{IntKind, TypeId, TypeKind, Integer},
     },
     Stores,
 };
@@ -30,7 +30,7 @@ pub(crate) fn push_bool(stores: &mut Stores, op_id: OpId, value: bool) {
         .set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
-pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, value: IntKind) {
+pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, value: Integer) {
     let op_data = stores.ops.get_op_io(op_id);
     stores
         .values
@@ -97,7 +97,7 @@ fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
     }
 }
 
-fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: Integer) {
+fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
@@ -106,8 +106,8 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: Integer) {
 
     let output_const_val = match input_const_val {
         ConstVal::Int(v) => ConstVal::Int(v.cast(int_kind)),
-        ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(IntKind::Unsigned(b as _)),
-        ConstVal::Bool(b) => ConstVal::Int(IntKind::Signed(b as _)),
+        ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(b as _)),
+        ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(b as _)),
         ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => unreachable!(),
     };
 
@@ -144,5 +144,5 @@ pub(crate) fn size_of(
     }
 
     let size_info = stores.types.get_size_info(type_id);
-    push_int(stores, op_id, IntKind::Unsigned(size_info.byte_width));
+    push_int(stores, op_id, Integer::Unsigned(size_info.byte_width));
 }

@@ -8,7 +8,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{IntKind, TypeKind},
+        types::{Integer, TypeKind},
     },
     Stores,
 };
@@ -34,11 +34,11 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             let a_kind = a.cast(output_int);
             let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => {
-                    IntKind::Signed(arith_code.get_signed_binary_op()(a, b))
+                (Integer::Signed(a), Integer::Signed(b)) => {
+                    Integer::Signed(arith_code.get_signed_binary_op()(a, b))
                 }
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
-                    IntKind::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
+                    Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
                 }
                 _ => unreachable!(),
             };
@@ -50,8 +50,8 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
         [ConstVal::MultiPtr {
             source_variable: id,
             offset: Some(offset),
-        }, ConstVal::Int(IntKind::Unsigned(v))]
-        | [ConstVal::Int(IntKind::Unsigned(v)), ConstVal::MultiPtr {
+        }, ConstVal::Int(Integer::Unsigned(v))]
+        | [ConstVal::Int(Integer::Unsigned(v)), ConstVal::MultiPtr {
             source_variable: id,
             offset: Some(offset),
         }] => ConstVal::MultiPtr {
@@ -86,11 +86,11 @@ pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: 
             let a_kind = a.cast(output_int);
             let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => {
-                    IntKind::Signed(arith_code.get_signed_binary_op()(a, b))
+                (Integer::Signed(a), Integer::Signed(b)) => {
+                    Integer::Signed(arith_code.get_signed_binary_op()(a, b))
                 }
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
-                    IntKind::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
+                    Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
                 }
                 _ => unreachable!(),
             };
@@ -121,17 +121,17 @@ pub(crate) fn bitnot(stores: &mut Stores, op_id: OpId) {
     let output_type_info = stores.types.get_type_info(output_type_id);
 
     let output_const_val = match input_const_val {
-        ConstVal::Int(IntKind::Unsigned(a)) => {
+        ConstVal::Int(Integer::Unsigned(a)) => {
             let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
-            ConstVal::Int(IntKind::Unsigned((!a) & output_int.width.mask()))
+            ConstVal::Int(Integer::Unsigned((!a) & output_int.width.mask()))
         }
-        ConstVal::Int(IntKind::Signed(a)) => {
+        ConstVal::Int(Integer::Signed(a)) => {
             let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
-            ConstVal::Int(IntKind::Signed((!a) & output_int.width.mask() as i64))
+            ConstVal::Int(Integer::Signed((!a) & output_int.width.mask() as i64))
         }
         ConstVal::Bool(b) => ConstVal::Bool(!b),
         _ => return,
@@ -169,15 +169,15 @@ pub(crate) fn multiply_div_rem_shift(
     match arith_code {
         Arithmetic::ShiftLeft | Arithmetic::ShiftRight => {
             let (is_out_of_range, shift_value_string) = match b_const_val {
-                IntKind::Signed(v @ 0..) if v < output_int.width.bit_width() as _ => {
+                Integer::Signed(v @ 0..) if v < output_int.width.bit_width() as _ => {
                     (false, String::new())
                 }
-                IntKind::Unsigned(v @ 0..) if v < output_int.width.bit_width() as _ => {
+                Integer::Unsigned(v @ 0..) if v < output_int.width.bit_width() as _ => {
                     (false, String::new())
                 }
 
-                IntKind::Signed(v) => (true, v.to_string()),
-                IntKind::Unsigned(v) => (true, v.to_string()),
+                Integer::Signed(v) => (true, v.to_string()),
+                Integer::Unsigned(v) => (true, v.to_string()),
             };
 
             if is_out_of_range {
@@ -203,7 +203,7 @@ pub(crate) fn multiply_div_rem_shift(
         }
 
         Arithmetic::Div | Arithmetic::Rem => {
-            let div_is_zero = matches!(b_const_val, IntKind::Signed(0) | IntKind::Unsigned(0));
+            let div_is_zero = matches!(b_const_val, Integer::Signed(0) | Integer::Unsigned(0));
             if div_is_zero {
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,
@@ -226,11 +226,11 @@ pub(crate) fn multiply_div_rem_shift(
     let b_val = b_const_val.cast(output_int);
 
     let new_kind = match (a_val, b_val) {
-        (IntKind::Signed(a), IntKind::Signed(b)) => {
-            IntKind::Signed(arith_code.get_signed_binary_op()(a, b))
+        (Integer::Signed(a), Integer::Signed(b)) => {
+            Integer::Signed(arith_code.get_signed_binary_op()(a, b))
         }
-        (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
-            IntKind::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+        (Integer::Unsigned(a), Integer::Unsigned(b)) => {
+            Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
         }
         _ => unreachable!(),
     };
@@ -268,11 +268,11 @@ pub(crate) fn subtract(
             let a_kind = a.cast(output_int);
             let b_kind = b.cast(output_int);
             let kind = match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => {
-                    IntKind::Signed(arith_code.get_signed_binary_op()(a, b))
+                (Integer::Signed(a), Integer::Signed(b)) => {
+                    Integer::Signed(arith_code.get_signed_binary_op()(a, b))
                 }
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
-                    IntKind::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
+                    Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
                 }
                 _ => unreachable!(),
             };
@@ -284,7 +284,7 @@ pub(crate) fn subtract(
         [ConstVal::MultiPtr {
             source_variable: id,
             offset,
-        }, ConstVal::Int(IntKind::Unsigned(v))] => ConstVal::MultiPtr {
+        }, ConstVal::Int(Integer::Unsigned(v))] => ConstVal::MultiPtr {
             source_variable: id,
             offset: offset.map(|off| off - v),
         },
@@ -356,7 +356,7 @@ pub(crate) fn subtract(
                 return;
             }
 
-            ConstVal::Int(IntKind::Unsigned(offset2 - offset1))
+            ConstVal::Int(Integer::Unsigned(offset2 - offset1))
         }
 
         // Pointers with the same ID, but one or both have runtime offsets.

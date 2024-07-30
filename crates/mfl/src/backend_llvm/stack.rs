@@ -6,7 +6,7 @@ use crate::{
     context::ItemId,
     stores::{
         ops::OpId,
-        types::{BuiltinTypes, IntKind, IntWidth, Integer, Signedness, TypeId, TypeKind},
+        types::{BuiltinTypes, Integer, IntWidth, IntKind, IntSignedness, TypeId, TypeKind},
     },
 };
 
@@ -41,7 +41,7 @@ impl<'ctx> CodeGen<'ctx> {
                         let val = input_data.into_int_value();
                         let target_type = output_int.width.get_int_type(self.ctx);
 
-                        self.cast_int(val, target_type, Signedness::Unsigned)?
+                        self.cast_int(val, target_type, IntSignedness::Unsigned)?
                     }
                     TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                         self.builder.build_ptr_to_int(
@@ -67,7 +67,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_data = value_store.load_value(self, input_id, ds)?;
 
                 let output = match input_type_info.kind {
-                    TypeKind::Integer(Integer::U64) => {
+                    TypeKind::Integer(IntKind::U64) => {
                         let ptr_type = self.ctx.ptr_type(AddressSpace::default());
                         self.builder.build_int_to_ptr(
                             input_data.into_int_value(),
@@ -128,17 +128,17 @@ impl<'ctx> CodeGen<'ctx> {
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         width: IntWidth,
-        value: IntKind,
+        value: Integer,
     ) -> InkwellResult {
         let op_io = ds.op_store.get_op_io(op_id);
 
         let int_type = width.get_int_type(self.ctx);
         let value = match value {
-            IntKind::Signed(v) => int_type
+            Integer::Signed(v) => int_type
                 .const_int(v as _, false)
                 .const_cast(int_type, true)
                 .into(),
-            IntKind::Unsigned(v) => int_type
+            Integer::Unsigned(v) => int_type
                 .const_int(v, false)
                 .const_cast(int_type, false)
                 .into(),
@@ -217,11 +217,11 @@ impl<'ctx> CodeGen<'ctx> {
                 SimulatorValue::Int { width, kind } => {
                     let int_type = width.get_int_type(self.ctx);
                     let value = match kind {
-                        IntKind::Signed(v) => int_type
+                        Integer::Signed(v) => int_type
                             .const_int(*v as _, false)
                             .const_cast(int_type, true)
                             .into(),
-                        IntKind::Unsigned(v) => int_type
+                        Integer::Unsigned(v) => int_type
                             .const_int(*v, false)
                             .const_cast(int_type, false)
                             .into(),

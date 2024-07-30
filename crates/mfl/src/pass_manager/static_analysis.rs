@@ -13,23 +13,23 @@ use crate::{
         analyzer::ValueId,
         ops::OpId,
         source::SourceLocation,
-        types::{Integer, Signedness, TypeId},
+        types::{IntKind, IntSignedness, TypeId},
     },
     Stores,
 };
 
 use super::PassContext;
 
-pub fn can_promote_int_unidirectional(from: Integer, to: Integer) -> bool {
+pub fn can_promote_int_unidirectional(from: IntKind, to: IntKind) -> bool {
     promote_int_type_uni_directional(from, to).is_some()
 }
 
-pub fn promote_int_type_uni_directional(from: Integer, to: Integer) -> Option<Integer> {
-    if from.signed == Signedness::Unsigned
-        && to.signed == Signedness::Signed
+pub fn promote_int_type_uni_directional(from: IntKind, to: IntKind) -> Option<IntKind> {
+    if from.signed == IntSignedness::Unsigned
+        && to.signed == IntSignedness::Signed
         && to.width > from.width
     {
-        Some((to.width, Signedness::Signed).into())
+        Some((to.width, IntSignedness::Signed).into())
     } else if from.signed == to.signed && to.width >= from.width {
         Some((to.width, to.signed).into())
     } else {
@@ -37,18 +37,18 @@ pub fn promote_int_type_uni_directional(from: Integer, to: Integer) -> Option<In
     }
 }
 
-pub fn can_promote_int_bidirectional(a: Integer, b: Integer) -> bool {
+pub fn can_promote_int_bidirectional(a: IntKind, b: IntKind) -> bool {
     promote_int_type_bidirectional(a, b).is_some()
 }
 
-pub fn promote_int_type_bidirectional(a: Integer, b: Integer) -> Option<Integer> {
+pub fn promote_int_type_bidirectional(a: IntKind, b: IntKind) -> Option<IntKind> {
     promote_int_type_uni_directional(a, b).or_else(|| promote_int_type_uni_directional(b, a))
 }
 
 #[test]
 fn test_promote_int() {
     use crate::stores::types::IntWidth::*;
-    use Signedness::*;
+    use IntSignedness::*;
 
     assert_eq!(
         promote_int_type_bidirectional((I16, Unsigned).into(), (I16, Unsigned).into()),

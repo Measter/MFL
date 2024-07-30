@@ -11,7 +11,7 @@ use crate::{
     stores::{
         block::BlockId,
         ops::OpId,
-        types::{IntKind, IntWidth},
+        types::{IntWidth, Integer},
     },
     Stores,
 };
@@ -24,7 +24,7 @@ pub enum SimulationError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimulatorValue {
-    Int { width: IntWidth, kind: IntKind },
+    Int { width: IntWidth, kind: Integer },
     Bool(bool),
 }
 
@@ -54,8 +54,8 @@ fn apply_int_op(
             let b_kind = b_kind.cast(to_int);
 
             let out_kind = match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => IntKind::Signed(s_op(a, b)),
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => IntKind::Unsigned(u_op(a, b)),
+                (Integer::Signed(a), Integer::Signed(b)) => Integer::Signed(s_op(a, b)),
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => Integer::Unsigned(u_op(a, b)),
                 _ => unreachable!(),
             };
 
@@ -95,8 +95,8 @@ fn apply_bool_op(
             let b_kind = b_kind.cast(to_int);
 
             let res = match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => s_op(a, b) != 0,
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => u_op(a, b) != 0,
+                (Integer::Signed(a), Integer::Signed(b)) => s_op(a, b) != 0,
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => u_op(a, b) != 0,
                 _ => unreachable!(),
             };
 
@@ -142,11 +142,11 @@ fn simulate_execute_program_block(
                     match a {
                         SimulatorValue::Int {
                             width,
-                            kind: IntKind::Signed(v),
+                            kind: Integer::Signed(v),
                         } => *v = !*v & width.mask() as i64,
                         SimulatorValue::Int {
                             width,
-                            kind: IntKind::Unsigned(v),
+                            kind: Integer::Unsigned(v),
                         } => *v = !*v & width.mask(),
                         SimulatorValue::Bool(v) => *v = !*v,
                     }
@@ -289,7 +289,7 @@ fn simulate_execute_program_block(
                 let size = stores.types.get_size_info(id);
                 value_stack.push(SimulatorValue::Int {
                     width: IntWidth::I64,
-                    kind: IntKind::Unsigned(size.byte_width),
+                    kind: Integer::Unsigned(size.byte_width),
                 });
             }
             OpCode::Complex(TypeResolvedOp::Const { id }) => {

@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassContext,
-    stores::{analyzer::ValueId, block::BlockId, ops::OpId, types::Integer},
+    stores::{analyzer::ValueId, block::BlockId, ops::OpId, types::IntKind},
     Stores,
 };
 
@@ -465,7 +465,7 @@ fn analyze_block(
                 }
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::stack_ops::push_int(stores, op_id, Integer::U64);
+                    type_check::stack_ops::push_int(stores, op_id, IntKind::U64);
                 }
             },
         }

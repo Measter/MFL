@@ -9,7 +9,7 @@ use crate::{context::ItemId, n_ops::HashMapNOps, option::OptionExt};
 use super::{
     ops::OpId,
     source::SourceLocation,
-    types::{IntKind, TypeId},
+    types::{Integer, TypeId},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -32,7 +32,7 @@ pub struct Value {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstVal {
-    Int(IntKind),
+    Int(Integer),
     Bool(bool),
     MultiPtr {
         source_variable: ItemId,

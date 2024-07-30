@@ -22,26 +22,26 @@ use crate::{
 pub struct TypeId(u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntKind {
+pub enum Integer {
     Signed(i64),
     Unsigned(u64),
 }
 
-impl IntKind {
-    pub fn to_signedness(self) -> Signedness {
+impl Integer {
+    pub fn to_signedness(self) -> IntSignedness {
         match self {
-            IntKind::Signed(_) => Signedness::Signed,
-            IntKind::Unsigned(_) => Signedness::Unsigned,
+            Integer::Signed(_) => IntSignedness::Signed,
+            Integer::Unsigned(_) => IntSignedness::Unsigned,
         }
     }
 
     // The cast has already been typechecked, so we know it's valid.
-    pub fn cast(self, to: Integer) -> IntKind {
+    pub fn cast(self, to: IntKind) -> Integer {
         match (self, to.signed) {
-            (IntKind::Signed(v), Signedness::Signed) if to.width == IntWidth::I64 => {
-                IntKind::Signed(v)
+            (Integer::Signed(v), IntSignedness::Signed) if to.width == IntWidth::I64 => {
+                Integer::Signed(v)
             }
-            (IntKind::Signed(v), Signedness::Signed) => {
+            (Integer::Signed(v), IntSignedness::Signed) => {
                 let (min, max) = to.width.bounds_signed().into_inner();
                 let full_range = to.width.bounds_unsigned().into_inner().1 as i64;
                 let v = if v < min {
@@ -51,16 +51,18 @@ impl IntKind {
                 } else {
                     v
                 };
-                IntKind::Signed(v)
+                Integer::Signed(v)
             }
 
-            (IntKind::Unsigned(v), Signedness::Unsigned) => IntKind::Unsigned(v & to.width.mask()),
-
-            (IntKind::Signed(v), Signedness::Unsigned) => {
-                IntKind::Unsigned((v & to.width.mask() as i64) as u64)
+            (Integer::Unsigned(v), IntSignedness::Unsigned) => {
+                Integer::Unsigned(v & to.width.mask())
             }
-            (IntKind::Unsigned(v), Signedness::Signed) => {
-                IntKind::Signed((v & to.width.mask()) as i64)
+
+            (Integer::Signed(v), IntSignedness::Unsigned) => {
+                Integer::Unsigned((v & to.width.mask() as i64) as u64)
+            }
+            (Integer::Unsigned(v), IntSignedness::Signed) => {
+                Integer::Signed((v & to.width.mask()) as i64)
             }
         }
     }
@@ -75,16 +77,16 @@ pub enum IntWidth {
 }
 
 impl IntWidth {
-    pub fn name(self, sign: Signedness) -> &'static str {
+    pub fn name(self, sign: IntSignedness) -> &'static str {
         match (self, sign) {
-            (IntWidth::I8, Signedness::Signed) => "s8",
-            (IntWidth::I16, Signedness::Signed) => "s16",
-            (IntWidth::I32, Signedness::Signed) => "s32",
-            (IntWidth::I64, Signedness::Signed) => "s64",
-            (IntWidth::I8, Signedness::Unsigned) => "u8",
-            (IntWidth::I16, Signedness::Unsigned) => "u16",
-            (IntWidth::I32, Signedness::Unsigned) => "u32",
-            (IntWidth::I64, Signedness::Unsigned) => "u64",
+            (IntWidth::I8, IntSignedness::Signed) => "s8",
+            (IntWidth::I16, IntSignedness::Signed) => "s16",
+            (IntWidth::I32, IntSignedness::Signed) => "s32",
+            (IntWidth::I64, IntSignedness::Signed) => "s64",
+            (IntWidth::I8, IntSignedness::Unsigned) => "u8",
+            (IntWidth::I16, IntSignedness::Unsigned) => "u16",
+            (IntWidth::I32, IntSignedness::Unsigned) => "u32",
+            (IntWidth::I64, IntSignedness::Unsigned) => "u64",
         }
     }
 
@@ -135,30 +137,30 @@ impl IntWidth {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Signedness {
+pub enum IntSignedness {
     Signed,
     Unsigned,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Integer {
+pub struct IntKind {
     pub width: IntWidth,
-    pub signed: Signedness,
+    pub signed: IntSignedness,
 }
 
-impl Integer {
+impl IntKind {
     pub const U64: Self = Self {
         width: IntWidth::I64,
-        signed: Signedness::Unsigned,
+        signed: IntSignedness::Unsigned,
     };
 
     pub fn is_unsigned(self) -> bool {
-        self.signed == Signedness::Unsigned
+        self.signed == IntSignedness::Unsigned
     }
 }
 
-impl From<(IntWidth, Signedness)> for Integer {
-    fn from(value: (IntWidth, Signedness)) -> Self {
+impl From<(IntWidth, IntSignedness)> for IntKind {
+    fn from(value: (IntWidth, IntSignedness)) -> Self {
         Self {
             width: value.0,
             signed: value.1,
@@ -208,7 +210,7 @@ pub struct Float(pub f64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },
-    Integer(Integer),
+    Integer(IntKind),
     MultiPointer(TypeId),
     SinglePointer(TypeId),
     Bool,
@@ -258,17 +260,17 @@ impl BuiltinTypes {
     }
 }
 
-impl From<Integer> for BuiltinTypes {
-    fn from(value: Integer) -> Self {
+impl From<IntKind> for BuiltinTypes {
+    fn from(value: IntKind) -> Self {
         match (value.signed, value.width) {
-            (Signedness::Signed, IntWidth::I8) => BuiltinTypes::S8,
-            (Signedness::Signed, IntWidth::I16) => BuiltinTypes::S16,
-            (Signedness::Signed, IntWidth::I32) => BuiltinTypes::S32,
-            (Signedness::Signed, IntWidth::I64) => BuiltinTypes::S64,
-            (Signedness::Unsigned, IntWidth::I8) => BuiltinTypes::U8,
-            (Signedness::Unsigned, IntWidth::I16) => BuiltinTypes::U16,
-            (Signedness::Unsigned, IntWidth::I32) => BuiltinTypes::U32,
-            (Signedness::Unsigned, IntWidth::I64) => BuiltinTypes::U64,
+            (IntSignedness::Signed, IntWidth::I8) => BuiltinTypes::S8,
+            (IntSignedness::Signed, IntWidth::I16) => BuiltinTypes::S16,
+            (IntSignedness::Signed, IntWidth::I32) => BuiltinTypes::S32,
+            (IntSignedness::Signed, IntWidth::I64) => BuiltinTypes::S64,
+            (IntSignedness::Unsigned, IntWidth::I8) => BuiltinTypes::U8,
+            (IntSignedness::Unsigned, IntWidth::I16) => BuiltinTypes::U16,
+            (IntSignedness::Unsigned, IntWidth::I32) => BuiltinTypes::U32,
+            (IntSignedness::Unsigned, IntWidth::I64) => BuiltinTypes::U64,
         }
     }
 }
@@ -330,42 +332,42 @@ impl TypeStore {
             (
                 "u8",
                 BuiltinTypes::U8,
-                TypeKind::Integer((IntWidth::I8, Signedness::Unsigned).into()),
+                TypeKind::Integer((IntWidth::I8, IntSignedness::Unsigned).into()),
             ),
             (
                 "u16",
                 BuiltinTypes::U16,
-                TypeKind::Integer((IntWidth::I16, Signedness::Unsigned).into()),
+                TypeKind::Integer((IntWidth::I16, IntSignedness::Unsigned).into()),
             ),
             (
                 "u32",
                 BuiltinTypes::U32,
-                TypeKind::Integer((IntWidth::I32, Signedness::Unsigned).into()),
+                TypeKind::Integer((IntWidth::I32, IntSignedness::Unsigned).into()),
             ),
             (
                 "u64",
                 BuiltinTypes::U64,
-                TypeKind::Integer((IntWidth::I64, Signedness::Unsigned).into()),
+                TypeKind::Integer((IntWidth::I64, IntSignedness::Unsigned).into()),
             ),
             (
                 "s8",
                 BuiltinTypes::S8,
-                TypeKind::Integer((IntWidth::I8, Signedness::Signed).into()),
+                TypeKind::Integer((IntWidth::I8, IntSignedness::Signed).into()),
             ),
             (
                 "s16",
                 BuiltinTypes::S16,
-                TypeKind::Integer((IntWidth::I16, Signedness::Signed).into()),
+                TypeKind::Integer((IntWidth::I16, IntSignedness::Signed).into()),
             ),
             (
                 "s32",
                 BuiltinTypes::S32,
-                TypeKind::Integer((IntWidth::I32, Signedness::Signed).into()),
+                TypeKind::Integer((IntWidth::I32, IntSignedness::Signed).into()),
             ),
             (
                 "s64",
                 BuiltinTypes::S64,
-                TypeKind::Integer((IntWidth::I64, Signedness::Signed).into()),
+                TypeKind::Integer((IntWidth::I64, IntSignedness::Signed).into()),
             ),
             ("bool", BuiltinTypes::Bool, TypeKind::Bool),
         ];

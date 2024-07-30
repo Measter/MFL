@@ -15,7 +15,7 @@ use crate::{
     stores::{
         ops::OpId,
         source::Spanned,
-        types::{Integer, TypeId, TypeInfo, TypeKind},
+        types::{IntKind, TypeId, TypeInfo, TypeKind},
     },
     Stores,
 };
@@ -33,7 +33,7 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
         let field_kind = stores.types.get_type_info(field.kind).kind;
 
         match field_kind {
-            TypeKind::Integer(Integer::U64) if field.name.inner == length_spur => {
+            TypeKind::Integer(IntKind::U64) if field.name.inner == length_spur => {
                 has_valid_length_field = true
             }
             TypeKind::MultiPointer(ptr_id) if field.name.inner == pointer_spur => {

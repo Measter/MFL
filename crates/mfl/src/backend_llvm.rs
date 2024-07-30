@@ -30,7 +30,7 @@ use crate::{
         ops::OpStore,
         source::SourceStore,
         strings::StringStore,
-        types::{BuiltinTypes, IntKind, IntWidth, Signedness, TypeId, TypeKind, TypeStore},
+        types::{BuiltinTypes, Integer, IntWidth, IntSignedness, TypeId, TypeKind, TypeStore},
     },
     Args, Stores,
 };
@@ -81,35 +81,35 @@ impl OpCode<TypeResolvedOp> {
 
     fn get_div_rem_fn<'ctx, T: IntMathValue<'ctx>>(
         &self,
-        signed: Signedness,
+        signed: IntSignedness,
     ) -> BuilderArithFunc<'ctx, T> {
         let OpCode::Basic(Basic::Arithmetic(arith_op)) = self else {
             panic!("ICE: Called get_div_rem_fn on non-arith opcode");
         };
         match (arith_op, signed) {
-            (Arithmetic::Div, Signedness::Signed) => Builder::build_int_signed_div,
-            (Arithmetic::Div, Signedness::Unsigned) => Builder::build_int_unsigned_div,
-            (Arithmetic::Rem, Signedness::Signed) => Builder::build_int_signed_rem,
-            (Arithmetic::Rem, Signedness::Unsigned) => Builder::build_int_unsigned_rem,
+            (Arithmetic::Div, IntSignedness::Signed) => Builder::build_int_signed_div,
+            (Arithmetic::Div, IntSignedness::Unsigned) => Builder::build_int_unsigned_div,
+            (Arithmetic::Rem, IntSignedness::Signed) => Builder::build_int_signed_rem,
+            (Arithmetic::Rem, IntSignedness::Unsigned) => Builder::build_int_unsigned_rem,
             _ => panic!("ICE: Called get_div_rem_fn on non-div-rem opcode"),
         }
     }
 
-    fn get_predicate(&self, signed: Signedness) -> IntPredicate {
+    fn get_predicate(&self, signed: IntSignedness) -> IntPredicate {
         let OpCode::Basic(Basic::Compare(cmp_op)) = self else {
             panic!("ICE: Called get_predicate on non-compare opcode");
         };
 
         match (cmp_op, signed) {
             (Compare::Equal, _) => IntPredicate::EQ,
-            (Compare::Less, Signedness::Unsigned) => IntPredicate::ULT,
-            (Compare::LessEqual, Signedness::Unsigned) => IntPredicate::ULE,
-            (Compare::Greater, Signedness::Unsigned) => IntPredicate::UGT,
-            (Compare::GreaterEqual, Signedness::Unsigned) => IntPredicate::UGE,
-            (Compare::Less, Signedness::Signed) => IntPredicate::SLT,
-            (Compare::LessEqual, Signedness::Signed) => IntPredicate::SLE,
-            (Compare::Greater, Signedness::Signed) => IntPredicate::SGT,
-            (Compare::GreaterEqual, Signedness::Signed) => IntPredicate::SGE,
+            (Compare::Less, IntSignedness::Unsigned) => IntPredicate::ULT,
+            (Compare::LessEqual, IntSignedness::Unsigned) => IntPredicate::ULE,
+            (Compare::Greater, IntSignedness::Unsigned) => IntPredicate::UGT,
+            (Compare::GreaterEqual, IntSignedness::Unsigned) => IntPredicate::UGE,
+            (Compare::Less, IntSignedness::Signed) => IntPredicate::SLT,
+            (Compare::LessEqual, IntSignedness::Signed) => IntPredicate::SLE,
+            (Compare::Greater, IntSignedness::Signed) => IntPredicate::SGT,
+            (Compare::GreaterEqual, IntSignedness::Signed) => IntPredicate::SGE,
             (Compare::NotEq, _) => IntPredicate::NE,
             _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
         }
@@ -385,7 +385,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         v: IntValue<'ctx>,
         target_type: IntType<'ctx>,
-        from_signedness: Signedness,
+        from_signedness: IntSignedness,
     ) -> InkwellResult<IntValue<'ctx>> {
         use std::cmp::Ordering;
         let name = v.get_name().to_str().unwrap(); // Our name came from us, so should be valid.
@@ -395,11 +395,11 @@ impl<'ctx> CodeGen<'ctx> {
             .cmp(&target_type.get_bit_width())
         {
             Ordering::Less => match from_signedness {
-                Signedness::Signed => {
+                IntSignedness::Signed => {
                     self.builder
                         .build_int_s_extend_or_bit_cast(v, target_type, name)?
                 }
-                Signedness::Unsigned => {
+                IntSignedness::Unsigned => {
                     self.builder
                         .build_int_z_extend_or_bit_cast(v, target_type, name)?
                 }
@@ -644,7 +644,7 @@ impl<'ctx> CodeGen<'ctx> {
                             value_store,
                             op_id,
                             IntWidth::I64,
-                            IntKind::Unsigned(size_info.byte_width),
+                            Integer::Unsigned(size_info.byte_width),
                         )?;
                     }
                 },

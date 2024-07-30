@@ -16,7 +16,7 @@ use crate::{
         analyzer::ValueId,
         ops::OpId,
         source::Spanned,
-        types::{BuiltinTypes, Signedness, TypeId, TypeInfo, TypeKind},
+        types::{BuiltinTypes, IntSignedness, TypeId, TypeInfo, TypeKind},
     },
 };
 
@@ -410,7 +410,7 @@ impl<'ctx> CodeGen<'ctx> {
         let idx_val = self.cast_int(
             idx_val.into_int_value(),
             self.ctx.i64_type(),
-            Signedness::Unsigned,
+            IntSignedness::Unsigned,
         )?;
 
         self.build_bounds_check(ds, op_id, function, idx_val, length)?;
@@ -547,7 +547,7 @@ impl<'ctx> CodeGen<'ctx> {
         let idx_val = self.cast_int(
             idx_val.into_int_value(),
             self.ctx.i64_type(),
-            Signedness::Unsigned,
+            IntSignedness::Unsigned,
         )?;
 
         self.build_bounds_check(ds, op_id, function, idx_val, length)?;

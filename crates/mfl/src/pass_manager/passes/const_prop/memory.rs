@@ -7,7 +7,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{IntKind, TypeKind},
+        types::{Integer, TypeKind},
     },
     Stores,
 };
@@ -17,7 +17,7 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };
-    let Some([ConstVal::Int(IntKind::Unsigned(idx))]) = stores.values.value_consts([idx_value_id])
+    let Some([ConstVal::Int(Integer::Unsigned(idx))]) = stores.values.value_consts([idx_value_id])
     else {
         return;
     };

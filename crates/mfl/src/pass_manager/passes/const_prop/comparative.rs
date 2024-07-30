@@ -9,7 +9,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{IntKind, TypeKind},
+        types::{Integer, TypeKind},
     },
     Stores,
 };
@@ -41,10 +41,10 @@ pub(crate) fn equal(
             let a_kind = a.cast(biggest_input_int);
             let b_kind = b.cast(biggest_input_int);
             match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                (Integer::Signed(a), Integer::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
                 }
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
                     comp_code.get_unsigned_binary_op()(a, b) != 0
                 }
 
@@ -174,10 +174,10 @@ pub(crate) fn compare(
             let b_kind = b.cast(biggest_input_int);
 
             match (a_kind, b_kind) {
-                (IntKind::Signed(a), IntKind::Signed(b)) => {
+                (Integer::Signed(a), Integer::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
                 }
-                (IntKind::Unsigned(a), IntKind::Unsigned(b)) => {
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
                     comp_code.get_unsigned_binary_op()(a, b) != 0
                 }
 

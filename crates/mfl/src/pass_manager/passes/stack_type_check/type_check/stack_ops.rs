@@ -10,7 +10,7 @@ use crate::{
     stores::{
         analyzer::ValueId,
         ops::OpId,
-        types::{BuiltinTypes, Integer, TypeId, TypeKind},
+        types::{BuiltinTypes, IntKind, TypeId, TypeKind},
     },
     Stores,
 };
@@ -76,7 +76,7 @@ pub(crate) fn push_bool(stores: &mut Stores, op_id: OpId) {
     );
 }
 
-pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, int: Integer) {
+pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, int: IntKind) {
     let op_data = stores.ops.get_op_io(op_id);
     stores
         .values
@@ -143,7 +143,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
 
             diagnostics::emit_warning(stores, op_token.location, "unnecessary cast", labels, None);
         }
-        TypeKind::Integer(Integer::U64)
+        TypeKind::Integer(IntKind::U64)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_) => {}
 
@@ -190,7 +190,7 @@ fn cast_to_int(
     had_error: &mut ErrorSignal,
     op_id: OpId,
     to_id: TypeId,
-    to_int: Integer,
+    to_int: IntKind,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
     let op_token = stores.ops.get_token(op_id);
@@ -203,7 +203,7 @@ fn cast_to_int(
     match input_type_info.kind {
         TypeKind::Bool => {}
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
-            if to_int != Integer::U64 {
+            if to_int != IntKind::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
                 let output_type_info = stores.types.get_type_info(to_id);
                 let output_type_name = stores.strings.resolve(output_type_info.friendly_name);

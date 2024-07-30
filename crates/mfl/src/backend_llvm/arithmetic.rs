@@ -7,7 +7,7 @@ use crate::{
     pass_manager::static_analysis::promote_int_type_bidirectional,
     stores::{
         ops::OpId,
-        types::{Signedness, TypeKind},
+        types::{IntSignedness, TypeKind},
     },
 };
 
@@ -53,10 +53,10 @@ impl<'ctx> CodeGen<'ctx> {
                     op_code,
                     OpCode::Basic(Basic::Arithmetic(Arithmetic::Add))
                 ));
-                assert_eq!(int_type.signed, Signedness::Unsigned);
+                assert_eq!(int_type.signed, IntSignedness::Unsigned);
                 let offset = value_store.load_value(self, a, ds)?.into_int_value();
 
-                let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned)?;
+                let offset = self.cast_int(offset, self.ctx.i64_type(), IntSignedness::Unsigned)?;
                 let ptr = value_store.load_value(self, b, ds)?.into_pointer_value();
 
                 unsafe {
@@ -67,10 +67,10 @@ impl<'ctx> CodeGen<'ctx> {
                 .into()
             }
             [TypeKind::MultiPointer(ptee_type), TypeKind::Integer(int_type)] => {
-                assert_eq!(int_type.signed, Signedness::Unsigned);
+                assert_eq!(int_type.signed, IntSignedness::Unsigned);
                 let offset = value_store.load_value(self, b, ds)?.into_int_value();
 
-                let offset = self.cast_int(offset, self.ctx.i64_type(), Signedness::Unsigned)?;
+                let offset = self.cast_int(offset, self.ctx.i64_type(), IntSignedness::Unsigned)?;
                 let ptr = value_store.load_value(self, a, ds)?.into_pointer_value();
 
                 // If we're subtracting, then we need to negate the offset.
@@ -241,7 +241,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_right_shift(
                     a_val,
                     b_val,
-                    output_int.signed == Signedness::Signed,
+                    output_int.signed == IntSignedness::Signed,
                     &output_name,
                 )?
             }
@@ -305,7 +305,7 @@ impl<'ctx> CodeGen<'ctx> {
             [TypeKind::Bool, TypeKind::Bool] => (
                 a_val.into_int_value(),
                 b_val.into_int_value(),
-                Signedness::Unsigned,
+                IntSignedness::Unsigned,
             ),
             _ => unreachable!(),
         };
