@@ -156,14 +156,15 @@ pub(crate) fn multiply_div_rem_shift(
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
-    let TypeKind::Integer(output_int) = output_type_info.kind else {
-        unreachable!()
-    };
 
     let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) =
         stores.values.value_consts(input_value_ids)
     else {
         return;
+    };
+
+    let TypeKind::Integer(output_int) = output_type_info.kind else {
+        unreachable!()
     };
 
     match arith_code {

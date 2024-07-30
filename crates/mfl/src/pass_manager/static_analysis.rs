@@ -13,7 +13,7 @@ use crate::{
         analyzer::ValueId,
         ops::OpId,
         source::SourceLocation,
-        types::{IntKind, IntSignedness, TypeId},
+        types::{FloatWidth, IntKind, IntSignedness, TypeId},
     },
     Stores,
 };
@@ -73,6 +73,18 @@ fn test_promote_int() {
         promote_int_type_bidirectional((I16, Signed).into(), (I64, Unsigned).into()),
         None
     );
+}
+
+pub fn can_promote_float_unidirectional(from: FloatWidth, to: FloatWidth) -> bool {
+    promote_float_unidirectional(from, to).is_some()
+}
+
+fn promote_float_unidirectional(from: FloatWidth, to: FloatWidth) -> Option<FloatWidth> {
+    if to == FloatWidth::F64 || from == to {
+        Some(to)
+    } else {
+        None
+    }
 }
 
 pub(super) fn ensure_structs_declared_in_type(

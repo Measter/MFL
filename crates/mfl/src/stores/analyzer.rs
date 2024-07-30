@@ -9,7 +9,7 @@ use crate::{context::ItemId, n_ops::HashMapNOps, option::OptionExt};
 use super::{
     ops::OpId,
     source::SourceLocation,
-    types::{Integer, TypeId},
+    types::{Float, Integer, TypeId},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,9 +30,10 @@ pub struct Value {
     pub consumer: SmallVec<[OpId; 4]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConstVal {
     Int(Integer),
+    Float(Float),
     Bool(bool),
     MultiPtr {
         source_variable: ItemId,

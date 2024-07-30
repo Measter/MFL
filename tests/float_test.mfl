@@ -1,7 +1,6 @@
 // CFG
 // [compile]
 // expected = "Ok"
-// args = ["--lib"]
 // END
 
 proc literals[] to [] {
@@ -11,7 +10,9 @@ proc literals[] to [] {
     1.1e-1
     1.1e+2
     1.1e1_0
-    drop(6)
+    1.1(f32)
+    1.1(f64)
+    drop(8)
 }
 
 proc cast_to_int_f32 [f32] to [s32] {
@@ -19,7 +20,7 @@ proc cast_to_int_f32 [f32] to [s32] {
 }
 
 proc cast_to_int_f64 [f64] to [s64] {
-    cast(s32)
+    cast(s64)
 }
 
 proc cast_to_float_f32 [s32] to [f32] {
@@ -28,6 +29,14 @@ proc cast_to_float_f32 [s32] to [f32] {
 
 proc cast_to_float_f64 [s32] to [f64] {
     cast(f64)
+}
+
+proc promote_call_f32 [f32] to [s64] {
+    cast_to_int_f64
+}
+
+proc promote_call_f64 [f64] to [s64] {
+    cast_to_int_f64
 }
 
 proc promote_test_add [f32 f64] to [f64] {
@@ -48,4 +57,29 @@ proc promote_test_div [f32 f64] to [f64] {
 
 proc promote_test_rem [f32 f64] to [f64] {
     %
+}
+
+proc promote_test_eq [f32 f64] to [bool] {
+    =
+}
+
+proc promote_test_less [f32 f64] to [bool] {
+    <
+}
+
+proc entry [] to [] {
+    literals
+    1 cast_to_float_f32 cast_to_int_f32 drop
+    1 cast_to_float_f64 cast_to_int_f64 drop
+
+    1.0(f32) promote_call_f32 drop
+    1.0(f64) promote_call_f64 drop
+
+    1.0(f32) 1.0(f64) promote_test_add drop
+    1.0(f32) 1.0(f64) promote_test_sub drop
+    1.0(f32) 1.0(f64) promote_test_mul drop
+    1.0(f32) 1.0(f64) promote_test_div drop
+    1.0(f32) 1.0(f64) promote_test_rem drop
+    1.0(f32) 1.0(f64) promote_test_eq drop
+    1.0(f32) 1.0(f64) promote_test_less drop
 }

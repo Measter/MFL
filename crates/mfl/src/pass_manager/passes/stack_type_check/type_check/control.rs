@@ -10,8 +10,9 @@ use crate::{
     ir::{If, OpCode, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
-            can_promote_int_bidirectional, can_promote_int_unidirectional,
-            failed_compare_stack_types, promote_int_type_bidirectional,
+            can_promote_float_unidirectional, can_promote_int_bidirectional,
+            can_promote_int_unidirectional, failed_compare_stack_types,
+            promote_int_type_bidirectional,
         },
         PassContext,
     },
@@ -177,6 +178,11 @@ pub(crate) fn call_function_const(
                     TypeKind::Integer(actual),
                     TypeKind::Integer(expected)
                 ) if can_promote_int_unidirectional(actual, expected))
+                && !matches!(
+                    (actual_type_info.kind, expected_type_info.kind),
+                    (TypeKind::Float(actual), TypeKind::Float(expected))
+                    if can_promote_float_unidirectional(actual, expected)
+                )
             {
                 failed_compare_stack_types(
                     stores,

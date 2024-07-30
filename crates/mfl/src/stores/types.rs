@@ -257,7 +257,7 @@ impl BuiltinTypes {
             "u64" => BuiltinTypes::U64,
             "s64" => BuiltinTypes::S64,
             "f32" => BuiltinTypes::F32,
-            "F64" => BuiltinTypes::F64,
+            "f64" => BuiltinTypes::F64,
             "bool" => BuiltinTypes::Bool,
             _ => return None,
         };
@@ -276,6 +276,15 @@ impl From<IntKind> for BuiltinTypes {
             (IntSignedness::Unsigned, IntWidth::I16) => BuiltinTypes::U16,
             (IntSignedness::Unsigned, IntWidth::I32) => BuiltinTypes::U32,
             (IntSignedness::Unsigned, IntWidth::I64) => BuiltinTypes::U64,
+        }
+    }
+}
+
+impl From<FloatWidth> for BuiltinTypes {
+    fn from(width: FloatWidth) -> Self {
+        match width {
+            FloatWidth::F32 => BuiltinTypes::F32,
+            FloatWidth::F64 => BuiltinTypes::F64,
         }
     }
 }

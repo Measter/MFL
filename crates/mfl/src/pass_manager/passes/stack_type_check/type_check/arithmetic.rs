@@ -1,5 +1,6 @@
 use crate::{
     error_signal::ErrorSignal,
+    ir::{Arithmetic, Basic, OpCode},
     n_ops::SliceNOps,
     pass_manager::static_analysis::{
         can_promote_int_bidirectional, generate_type_mismatch_diag, promote_int_type_bidirectional,
@@ -36,6 +37,11 @@ pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId)
             ptr_id
         }
 
+        [(_, TypeKind::Float(a)), (_, TypeKind::Float(b))] => {
+            let output_width = a.max(b);
+            stores.types.get_builtin(output_width.into()).id
+        }
+
         // Type mismatch
         _ => {
             had_error.set();
@@ -62,12 +68,24 @@ pub(crate) fn multiply_div_rem_shift(
     };
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
 
+    let op_kind = stores.ops.get_type_resolved(op_id);
+    let is_shift = matches!(
+        op_kind,
+        OpCode::Basic(Basic::Arithmetic(
+            Arithmetic::ShiftLeft | Arithmetic::ShiftRight
+        ))
+    );
+
     let new_type = match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {
             stores
                 .types
                 .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
+        }
+        [TypeKind::Float(a), TypeKind::Float(b)] if !is_shift => {
+            let output_width = a.max(b);
+            stores.types.get_builtin(output_width.into()).id
         }
         _ => {
             // Type mismatch
@@ -97,6 +115,10 @@ pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: 
                 .types
                 .get_builtin(promote_int_type_bidirectional(a, b).unwrap().into())
                 .id
+        }
+        [TypeKind::Float(a), TypeKind::Float(b)] => {
+            let output_width = a.max(b);
+            stores.types.get_builtin(output_width.into()).id
         }
         [TypeKind::MultiPointer(a), TypeKind::MultiPointer(b)] if a == b => {
             stores.types.get_builtin(BuiltinTypes::U64).id

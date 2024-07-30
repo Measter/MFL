@@ -26,7 +26,7 @@ pub(crate) fn equal(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
     match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {}
-        [TypeKind::Bool, TypeKind::Bool] => {}
+        [TypeKind::Float(_), TypeKind::Float(_)] | [TypeKind::Bool, TypeKind::Bool] => {}
         [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
             if a == b => {}
         _ => {
@@ -53,6 +53,7 @@ pub(crate) fn compare(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
     let input_type_info = inputs.map(|id| stores.types.get_type_info(id));
     match input_type_info.map(|ti| ti.kind) {
         [TypeKind::Integer(a), TypeKind::Integer(b)] if can_promote_int_bidirectional(a, b) => {}
+        [TypeKind::Float(_), TypeKind::Float(_)] => {}
         [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
             if a == b => {}
         _ => {

@@ -10,7 +10,7 @@ use crate::{
     stores::{
         analyzer::ValueId,
         ops::OpId,
-        types::{BuiltinTypes, IntKind, TypeId, TypeKind},
+        types::{BuiltinTypes, FloatWidth, IntKind, TypeId, TypeKind},
     },
     Stores,
 };
@@ -83,6 +83,14 @@ pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, int: IntKind) {
         .set_value_type(op_data.outputs[0], stores.types.get_builtin(int.into()).id);
 }
 
+pub(crate) fn push_float(stores: &mut Stores, op_id: OpId, width: FloatWidth) {
+    let op_data = stores.ops.get_op_io(op_id);
+    stores.values.set_value_type(
+        op_data.outputs[0],
+        stores.types.get_builtin(width.into()).id,
+    );
+}
+
 pub(crate) fn push_str(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let kind = stores.types.get_builtin(BuiltinTypes::String).id;
@@ -101,7 +109,7 @@ pub(crate) fn cast(
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             cast_to_ptr(stores, had_error, op_id, target_id)
         }
-        TypeKind::Float(_) => todo!(),
+        TypeKind::Float(_) => cast_to_float(stores, had_error, op_id, target_id),
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -203,7 +211,7 @@ fn cast_to_int(
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::Bool => {}
+        TypeKind::Bool | TypeKind::Float(_) => {}
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             if to_int != IntKind::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
@@ -250,9 +258,58 @@ fn cast_to_int(
                 );
             }
         }
-        TypeKind::Float(_) => todo!(),
 
         TypeKind::Array { .. }
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::GenericStructInstance(_) => {
+            let lexeme = stores.strings.resolve(op_token.inner);
+            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_value_id]);
+            had_error.set();
+            return;
+        }
+    }
+
+    stores.values.set_value_type(op_data.outputs[0], to_id);
+}
+
+fn cast_to_float(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to_id: TypeId) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let op_token = stores.ops.get_token(op_id);
+    let input_value_id = op_data.inputs[0];
+    let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
+        return;
+    };
+    let input_type_info = stores.types.get_type_info(input_type_id);
+
+    match input_type_info.kind {
+        TypeKind::Integer(_) => {}
+        TypeKind::Float(_) => {
+            if input_type_id == to_id {
+                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
+
+                let mut labels = diagnostics::build_creator_label_chain(
+                    stores,
+                    [(input_value_id, 0, input_type_name)],
+                    Color::Green,
+                    Color::Cyan,
+                );
+                labels.push(Label::new(op_token.location).with_color(Color::Yellow));
+
+                diagnostics::emit_warning(
+                    stores,
+                    op_token.location,
+                    "unnecessary cast",
+                    labels,
+                    None,
+                );
+            }
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_)
+        | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {

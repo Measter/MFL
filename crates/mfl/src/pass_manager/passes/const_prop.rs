@@ -93,7 +93,7 @@ fn analyze_block(
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
-                Basic::PushFloat { .. } => todo!(),
+                Basic::PushFloat { value, .. } => stack_ops::push_float(stores, op_id, value),
                 Basic::PushStr { .. } => {}
             },
             OpCode::Complex(co) => match co {
