@@ -126,7 +126,7 @@ pub fn parse_item_body_contents(
                             token.location,
                             format!(
                                 "unexpected token `{}` in input",
-                                stores.strings.resolve(token.inner.lexeme)
+                                token.inner.kind.kind_str()
                             ),
                             Some(Label::new(token.location).with_color(Color::Red)),
                             None,
@@ -273,7 +273,7 @@ pub(super) fn parse_file(
                             token.location,
                             format!(
                                 "unexpected token `{}` in input",
-                                stores.strings.resolve(token.inner.lexeme)
+                                token.inner.kind.kind_str()
                             ),
                             Some(Label::new(token.location).with_color(Color::Red)),
                             None,

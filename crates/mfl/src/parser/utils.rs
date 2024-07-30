@@ -126,7 +126,7 @@ impl<'a> TokenIter<'a> {
                     format!(
                         "expected `{}`, found `{}`",
                         filter.kind_str(),
-                        stores.strings.resolve(tk.inner.lexeme)
+                        tk.inner.kind.kind_str()
                     ),
                     Some(Label::new(tk.location).with_color(Color::Red)),
                     None,
@@ -183,7 +183,7 @@ impl<'a> TokenIter<'a> {
                     format!(
                         "expected `{}`, found `{}`",
                         expected,
-                        stores.strings.resolve(tk.inner.lexeme)
+                        tk.inner.kind.kind_str()
                     ),
                     Some(Label::new(tk.location).with_color(Color::Red)),
                     None,
