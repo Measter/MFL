@@ -288,6 +288,7 @@ pub(crate) fn pack_struct(
         }
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
+        | TypeKind::Float(_)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool => {

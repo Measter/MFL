@@ -4,7 +4,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{IntKind, TypeId, TypeKind, Integer},
+        types::{IntKind, Integer, TypeId, TypeKind},
     },
     Stores,
 };
@@ -42,6 +42,7 @@ pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
 
     match target_type_info.kind {
         TypeKind::Integer(int_kind) => cast_to_int(stores, op_id, int_kind),
+        TypeKind::Float(_) => todo!(),
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => cast_to_ptr(stores, op_id),
         TypeKind::Array { .. }
         | TypeKind::Bool
@@ -137,6 +138,7 @@ pub(crate) fn size_of(
 
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
+        | TypeKind::Float(_)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool

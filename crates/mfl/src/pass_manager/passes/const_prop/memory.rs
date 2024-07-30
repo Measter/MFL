@@ -33,6 +33,7 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
                 TypeKind::Array { length, .. } => length,
                 TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
                 TypeKind::Integer(_)
+                | TypeKind::Float(_)
                 | TypeKind::MultiPointer(_)
                 | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
@@ -40,7 +41,10 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
             }
         }
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
-        TypeKind::Integer(_) | TypeKind::Bool | TypeKind::GenericStructBase(_) => unreachable!(),
+        TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => unreachable!(),
     };
 
     if idx.to_usize() < array_length {

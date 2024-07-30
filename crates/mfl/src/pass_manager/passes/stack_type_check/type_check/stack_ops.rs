@@ -101,6 +101,7 @@ pub(crate) fn cast(
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             cast_to_ptr(stores, had_error, op_id, target_id)
         }
+        TypeKind::Float(_) => todo!(),
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -172,6 +173,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
 
         TypeKind::Array { .. }
         | TypeKind::Bool
+        | TypeKind::Float(_)
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {
@@ -248,6 +250,8 @@ fn cast_to_int(
                 );
             }
         }
+        TypeKind::Float(_) => todo!(),
+
         TypeKind::Array { .. }
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)

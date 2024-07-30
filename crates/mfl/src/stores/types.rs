@@ -211,6 +211,7 @@ pub struct Float(pub f64);
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },
     Integer(IntKind),
+    Float(FloatWidth),
     MultiPointer(TypeId),
     SinglePointer(TypeId),
     Bool,
@@ -238,6 +239,8 @@ pub enum BuiltinTypes {
     S16,
     S32,
     S64,
+    F32,
+    F64,
     Bool,
     String,
 }
@@ -253,6 +256,8 @@ impl BuiltinTypes {
             "s32" => BuiltinTypes::S32,
             "u64" => BuiltinTypes::U64,
             "s64" => BuiltinTypes::S64,
+            "f32" => BuiltinTypes::F32,
+            "F64" => BuiltinTypes::F64,
             "bool" => BuiltinTypes::Bool,
             _ => return None,
         };
@@ -296,7 +301,7 @@ pub struct TypeStore {
     multi_pointer_map: HashMap<TypeId, TypeId>,
     single_pointer_map: HashMap<TypeId, TypeId>,
     array_map: HashMap<(TypeId, usize), TypeId>,
-    builtins: [TypeId; 10],
+    builtins: [TypeId; 12],
 
     // Maps ItemIds to TypeIds of non-generic structs.
     struct_id_map: HashMap<ItemId, TypeId>,
@@ -315,7 +320,7 @@ impl TypeStore {
             multi_pointer_map: HashMap::new(),
             single_pointer_map: HashMap::new(),
             array_map: HashMap::new(),
-            builtins: [TypeId(0); 10],
+            builtins: [TypeId(0); 12],
             struct_id_map: HashMap::new(),
             lang_item_ids: HashMap::new(),
             fixed_struct_defs: HashMap::new(),
@@ -369,6 +374,8 @@ impl TypeStore {
                 BuiltinTypes::S64,
                 TypeKind::Integer((IntWidth::I64, IntSignedness::Signed).into()),
             ),
+            ("f32", BuiltinTypes::F32, TypeKind::Float(FloatWidth::F32)),
+            ("f64", BuiltinTypes::F64, TypeKind::Float(FloatWidth::F64)),
             ("bool", BuiltinTypes::Bool, TypeKind::Bool),
         ];
 
@@ -817,6 +824,10 @@ impl TypeStore {
             TypeKind::Integer(int) => TypeSize {
                 byte_width: int.width.byte_width(),
                 alignement: int.width.byte_width(),
+            },
+            TypeKind::Float(float) => TypeSize {
+                byte_width: float.byte_width(),
+                alignement: float.byte_width(),
             },
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => TypeSize {
                 byte_width: 8,

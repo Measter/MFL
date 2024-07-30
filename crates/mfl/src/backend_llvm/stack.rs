@@ -6,7 +6,7 @@ use crate::{
     context::ItemId,
     stores::{
         ops::OpId,
-        types::{BuiltinTypes, Integer, IntWidth, IntKind, IntSignedness, TypeId, TypeKind},
+        types::{BuiltinTypes, IntKind, IntSignedness, IntWidth, Integer, TypeId, TypeKind},
     },
 };
 
@@ -37,6 +37,7 @@ impl<'ctx> CodeGen<'ctx> {
                         let target_type = output_int.width.get_int_type(self.ctx);
                         self.cast_int(val, target_type, input_int.signed)?
                     }
+                    TypeKind::Float(_) => todo!(),
                     TypeKind::Bool => {
                         let val = input_data.into_int_value();
                         let target_type = output_int.width.get_int_type(self.ctx);
@@ -60,6 +61,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
+            TypeKind::Float(_) => todo!(),
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
@@ -85,6 +87,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
 
                     TypeKind::Integer { .. }
+                    | TypeKind::Float(_)
                     | TypeKind::Bool
                     | TypeKind::Array { .. }
                     | TypeKind::Struct(_)

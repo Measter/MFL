@@ -30,7 +30,9 @@ use crate::{
         ops::OpStore,
         source::SourceStore,
         strings::StringStore,
-        types::{BuiltinTypes, Integer, IntWidth, IntSignedness, TypeId, TypeKind, TypeStore},
+        types::{
+            BuiltinTypes, FloatWidth, IntSignedness, IntWidth, Integer, TypeId, TypeKind, TypeStore,
+        },
     },
     Args, Stores,
 };
@@ -426,6 +428,8 @@ impl<'ctx> CodeGen<'ctx> {
                 IntWidth::I32 => self.ctx.i32_type().into(),
                 IntWidth::I64 => self.ctx.i64_type().into(),
             },
+            TypeKind::Float(FloatWidth::F32) => self.ctx.f32_type().into(),
+            TypeKind::Float(FloatWidth::F64) => self.ctx.f64_type().into(),
             TypeKind::Bool => self.ctx.bool_type().into(),
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 self.ctx.ptr_type(AddressSpace::default()).into()
@@ -749,6 +753,7 @@ impl<'ctx> CodeGen<'ctx> {
                         (type_id, length.to_u32().unwrap(), true)
                     }
                     TypeKind::Integer { .. }
+                    | TypeKind::Float(_)
                     | TypeKind::MultiPointer(_)
                     | TypeKind::SinglePointer(_)
                     | TypeKind::Bool

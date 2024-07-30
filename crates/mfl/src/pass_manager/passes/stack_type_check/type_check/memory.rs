@@ -150,7 +150,10 @@ pub(crate) fn extract_array(
             };
             store_type
         }
-        TypeKind::Integer(_) | TypeKind::Bool | TypeKind::GenericStructBase(_) => {
+        TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
             make_error_for_aggr(stores, None);
             return;
         }
@@ -244,6 +247,7 @@ pub(crate) fn extract_struct(
 
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
+        | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             not_struct_error();
@@ -399,7 +403,10 @@ pub(crate) fn insert_array(
             };
             store_type
         }
-        TypeKind::Integer(_) | TypeKind::Bool | TypeKind::GenericStructBase(_) => {
+        TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
             make_error_for_aggr(stores, None);
             return;
         }
@@ -529,6 +536,7 @@ pub(crate) fn insert_struct(
 
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
+        | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             not_struct_error();
@@ -829,6 +837,7 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
             }
         }
         TypeKind::Integer(_)
+        | TypeKind::Float(_)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool
