@@ -1,0 +1,51 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+proc literals[] to [] {
+    0.0
+    0_0.1_1
+    1.0e5
+    1.1e-1
+    1.1e+2
+    1.1e1_0
+    drop(6)
+}
+
+proc cast_to_int_f32 [f32] to [s32] {
+    cast(s32)
+}
+
+proc cast_to_int_f64 [f64] to [s64] {
+    cast(s32)
+}
+
+proc cast_to_float_f32 [s32] to [f32] {
+    cast(f32)
+}
+
+proc cast_to_float_f64 [s32] to [f64] {
+    cast(f64)
+}
+
+proc promote_test_add [f32 f64] to [f64] {
+    +
+}
+
+proc promote_test_sub [f32 f64] to [f64] {
+    -
+}
+
+proc promote_test_mul [f32 f64] to [f64] {
+    *
+}
+
+proc promote_test_div [f32 f64] to [f64] {
+    /
+}
+
+proc promote_test_rem [f32 f64] to [f64] {
+    %
+}
