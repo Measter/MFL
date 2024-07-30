@@ -188,12 +188,12 @@ fn run_compile(args: &Args) -> Result<()> {
 
     let output_path = args.output.clone().unwrap();
 
-    let ld = Command::new("ld")
+    let ld = Command::new("gcc")
         .arg("-o")
         .arg(&output_path)
         .args(&objects)
         .status()
-        .with_context(|| eyre!("Failed to execude ld"))?;
+        .with_context(|| eyre!("Failed to link"))?;
 
     if !ld.success() {
         std::process::exit(-3);

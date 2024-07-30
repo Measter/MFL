@@ -40,7 +40,6 @@ mod control;
 mod memory;
 mod stack;
 
-const BOOTSTRAP_OBJ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.o"));
 const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
 
 const CALL_CONV_COLD: u32 = 9;
@@ -840,12 +839,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         let function_type = self
             .ctx
-            .void_type()
+            .i32_type() // We only support x86-64, so the size of a C int is 32-bit.
             .fn_type(&[argc_type.into(), argv_type.into()], false);
 
         let entry_func = self
             .module
-            .add_function("entry", function_type, Some(Linkage::External));
+            .add_function("main", function_type, Some(Linkage::External));
         entry_func.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
 
         let block = self.ctx.append_basic_block(entry_func, "entry");
@@ -862,7 +861,8 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder
             .build_call(user_entry, &args, "call_user_entry")?;
 
-        self.builder.build_return(None)?;
+        let success = self.ctx.i32_type().const_zero();
+        self.builder.build_return(Some(&success))?;
 
         Ok(())
     }
@@ -890,8 +890,8 @@ pub(crate) fn compile(
     let mut output_obj = args.obj_dir.clone();
     output_obj.push(args.file.file_stem().unwrap());
     output_obj.set_extension("o");
-    let mut bootstrap_obj = args.obj_dir.clone();
-    bootstrap_obj.push("bootstrap.o");
+    // let mut bootstrap_obj = args.obj_dir.clone();
+    // bootstrap_obj.push("bootstrap.o");
     let mut syscalls_obj = args.obj_dir.clone();
     syscalls_obj.push("syscalls.o");
 
@@ -974,17 +974,11 @@ pub(crate) fn compile(
             .map_err(|e| eyre!("Error writing object: {e}"))?;
     }
 
-    if !args.is_library {
-        let _span = trace_span!("Writing bootstrap").entered();
-        std::fs::write(&bootstrap_obj, BOOTSTRAP_OBJ)
-            .map_err(|e| eyre!("Error writing bootstrap: {e}"))?;
-    }
-
     {
         let _span = trace_span!("Writing syscalls").entered();
         std::fs::write(&syscalls_obj, SYSCALLS)
             .map_err(|e| eyre!("Error writing syscall wrappers: {e}"))?;
     }
 
-    Ok(vec![bootstrap_obj, output_obj, syscalls_obj])
+    Ok(vec![output_obj, syscalls_obj])
 }
