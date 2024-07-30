@@ -32,7 +32,7 @@ proc open [
         return
     }
 
-    SYS_OPEN rot(3>1) 0x1b6 // 0o666
+    SYS_OPEN rot(3>1) 0o666
     // [sysid, path, flags, mode]
 
     rot(3<1) xtrd(pointer) rot(3>1)

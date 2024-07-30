@@ -1,0 +1,12 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+proc binary [] to [u8] { 0b10_100 }
+proc binary2 [] to [u8] { 0B10_100 }
+proc octal [] to [u8] { 0o2_4 }
+proc decimal [] to [u8] { 2_0 }
+proc hex [] to [u8] { 0x1_4 }
+proc hex2 [] to [u8] { 0X1_4 }

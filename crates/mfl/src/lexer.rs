@@ -24,8 +24,11 @@ pub struct Extract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Integer {
-    pub is_hex: bool,
+pub enum IntegerBase {
+    Binary = 2,
+    Octal = 8,
+    Decimal = 10,
+    Hexidecimal = 16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,9 +171,11 @@ pub enum TokenKind {
     #[token("insd", |_| Insert{emit_struct: false})]
     Insert(Insert),
 
-    #[regex("[0-9][0-9_]*", |_| Integer{is_hex: false})]
-    #[regex("0[xX][0-9A-Fa-f][0-9A-Fa-f_]*", |_| Integer{is_hex: true})]
-    Integer(Integer),
+    #[regex("0[bB][01][01_]*", |_| IntegerBase::Binary)]
+    #[regex("[0-9][0-9_]*", |_| IntegerBase::Decimal)]
+    #[regex("0[o][0-7][0-7_]*", |_| IntegerBase::Octal)]
+    #[regex("0[xX][0-9A-Fa-f][0-9A-Fa-f_]*", |_| IntegerBase::Hexidecimal)]
+    Integer(IntegerBase),
 
     #[token("import")]
     Import,

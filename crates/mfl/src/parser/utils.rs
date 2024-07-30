@@ -7,7 +7,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
-    lexer::{BracketKind, Integer, Token, TokenKind, TokenTree, TreeGroup},
+    lexer::{BracketKind, IntegerBase, Token, TokenKind, TokenTree, TreeGroup},
     stores::source::{SourceLocation, Spanned, WithSpan},
     Stores,
 };
@@ -674,20 +674,20 @@ pub fn parse_integer_lexeme<T>(stores: &Stores, int_token: Spanned<Token>) -> Re
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer(Integer { is_hex }) = int_token.inner.kind else {
+    let TokenKind::Integer(literal_base) = int_token.inner.kind else {
         panic!("ICE: called parse_integer_lexeme with a non-integer token")
     };
     let string = stores.strings.resolve(int_token.inner.lexeme);
-    // Need to skip the "0x"
-    let string = if is_hex { &string[2..] } else { string };
+    // Need to skip the non-decimal prefix
+    let string = if literal_base != IntegerBase::Decimal {
+        &string[2..]
+    } else {
+        string
+    };
 
     let string: String = string.chars().filter(|&c| c != '_').collect();
 
-    let res = if is_hex {
-        T::from_str_radix(&string, 16)
-    } else {
-        T::from_str_radix(&string, 10)
-    };
+    let res = T::from_str_radix(&string, literal_base as _);
     let Ok(int) = res else {
         diagnostics::emit_error(
             stores,
