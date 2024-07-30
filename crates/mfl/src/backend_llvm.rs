@@ -291,9 +291,13 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proto_span = debug_span!("building prototypes").entered();
         for item in mfl_ctx.get_all_items() {
-            if item.kind != ItemKind::Function {
+            if !matches!(
+                item.kind,
+                ItemKind::Function { .. } | ItemKind::FunctionDecl
+            ) {
                 continue;
             }
+
             let item_sig = mfl_ctx.trir().get_item_signature(item.id);
 
             let name = string_store.get_mangled_name(item.id);
@@ -318,9 +322,15 @@ impl<'ctx> CodeGen<'ctx> {
                     .fn_type(entry_stack.as_slice(), false)
             };
 
-            let function = self
-                .module
-                .add_function(name, function_type, Some(Linkage::Private));
+            let linkage = if matches!(
+                item.kind,
+                ItemKind::Function { is_extern: true } | ItemKind::FunctionDecl
+            ) {
+                Linkage::External
+            } else {
+                Linkage::Private
+            };
+            let function = self.module.add_function(name, function_type, Some(linkage));
             function.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
             if name == "builtins$oob_handler" {
                 self.oob_handler = function;

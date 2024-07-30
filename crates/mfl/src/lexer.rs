@@ -145,6 +145,9 @@ pub enum TokenKind {
     #[token("exit")]
     Exit,
 
+    #[token("extern")]
+    Extern,
+
     #[token("xtr", |_| Extract{emit_struct: true})]
     #[token("xtrd", |_| Extract{emit_struct: false})]
     Extract(Extract),
@@ -300,6 +303,7 @@ impl TokenKind {
             TokenKind::Equal => "=",
             TokenKind::EmitStack => "emit",
             TokenKind::Exit => "exit",
+            TokenKind::Extern => "extern",
             TokenKind::Extract(Extract { emit_struct: true }) => "xtr",
             TokenKind::Extract(Extract { emit_struct: false }) => "xtrd",
             TokenKind::GoesTo => "to",

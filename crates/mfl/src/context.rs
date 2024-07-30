@@ -40,7 +40,8 @@ pub enum ItemKind {
     Assert,
     Const,
     Variable,
-    Function,
+    Function { is_extern: bool },
+    FunctionDecl,
     GenericFunction,
     StructDef,
     Module,
@@ -498,10 +499,33 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
+        is_extern: bool,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Function);
+        let header = self.new_header(name, Some(parent), ItemKind::Function { is_extern });
+        self.urir.item_signatures.insert(
+            header.id,
+            UnresolvedItemSignature {
+                exit: exit_stack,
+                entry: entry_stack,
+            },
+        );
+
+        self.add_to_parent(stores, had_error, parent, name, header.id);
+        header.id
+    }
+
+    pub fn new_function_decl(
+        &mut self,
+        stores: &Stores,
+        had_error: &mut ErrorSignal,
+        name: Spanned<Spur>,
+        parent: ItemId,
+        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+    ) -> ItemId {
+        let header = self.new_header(name, Some(parent), ItemKind::FunctionDecl);
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {
@@ -523,7 +547,7 @@ impl Context {
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Function);
+        let header = self.new_header(name, Some(parent), ItemKind::Function { is_extern: false });
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {

@@ -51,6 +51,10 @@ pub struct Args {
     #[arg(short = 'L', value_delimiter = ',')]
     library_paths: Vec<PathBuf>,
 
+    /// Comma-separated list of library paths.
+    #[arg(short = 'l', value_delimiter = ',')]
+    addition_obj_paths: Vec<PathBuf>,
+
     /// The MFL file to compile
     file: PathBuf,
 
@@ -118,7 +122,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         let entry_scope = context.nrir().get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
             let item_header = context.get_item_header(item_id.inner);
-            if item_header.kind == ItemKind::Function {
+            if item_header.kind == (ItemKind::Function { is_extern: true }) {
                 top_level_symbols.push(item_id.inner);
             }
         }
@@ -134,7 +138,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
 
         debug!("checking entry signature");
         let entry_item = context.get_item_header(entry_function_id);
-        if !matches!(entry_item.kind, ItemKind::Function) {
+        if !matches!(entry_item.kind, ItemKind::Function { .. }) {
             let name = entry_item.name;
             diagnostics::emit_error(
                 &stores,
@@ -179,7 +183,8 @@ fn run_compile(args: &Args) -> Result<()> {
         }
     };
 
-    let objects = backend_llvm::compile(&ctx, &mut stores, &top_level_items, args)?;
+    let mut objects = backend_llvm::compile(&ctx, &mut stores, &top_level_items, args)?;
+    objects.extend(args.addition_obj_paths.iter().cloned());
 
     if args.is_library {
         println!(" {}", "Finished".green());

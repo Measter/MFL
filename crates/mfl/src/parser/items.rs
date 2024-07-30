@@ -18,7 +18,8 @@ use super::{
     parse_item_body_contents,
     utils::{
         get_terminated_tokens, parse_ident, parse_multiple_unresolved_types, parse_stack_def,
-        valid_type_token, Matcher, Terminated, TokenIter, TokenTreeOptionExt, TreeGroupResultExt,
+        valid_type_token, Matcher, Min, Terminated, TokenIter, TokenTreeOptionExt,
+        TreeGroupResultExt,
     },
     Recover,
 };
@@ -83,11 +84,26 @@ pub fn parse_function(
 ) -> Result<(), ()> {
     let mut had_error = ErrorSignal::new();
 
+    let (is_extern, extern_token, prev_token) = if token_iter.next_is_group(BracketKind::Paren) {
+        let fallback = TreeGroup::fallback(BracketKind::Paren, keyword);
+        let attribute_group = token_iter
+            .expect_group(stores, BracketKind::Paren, keyword)
+            .with_kinds(stores, TokenKind::Extern)
+            .with_length(stores, Min(1))
+            .recover(&mut had_error, &fallback);
+
+        let extern_token = attribute_group.tokens[0].unwrap_single();
+
+        (true, extern_token, attribute_group.last_token())
+    } else {
+        (false, keyword, keyword)
+    };
+
     let lang_item = try_get_lang_item(stores, token_iter).recover(&mut had_error, None);
 
     let name_token = token_iter
-        .expect_single(stores, TokenKind::Ident, keyword.location)
-        .recover(&mut had_error, keyword);
+        .expect_single(stores, TokenKind::Ident, prev_token.location)
+        .recover(&mut had_error, prev_token);
 
     let fallback = TreeGroup::fallback(BracketKind::Paren, name_token);
     let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
@@ -109,38 +125,96 @@ pub fn parse_function(
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
-    let item_id = if generic_params.tokens.is_empty() {
-        ctx.new_function(
+    let has_body = token_iter.next_is_group(BracketKind::Brace);
+
+    if !has_body {
+        // TODO: Move these after parsing.
+        if !generic_params.tokens.is_empty() {
+            diagnostics::emit_error(
+                stores,
+                extern_token.location,
+                "generic functions cannot be external",
+                [
+                    Label::new(extern_token.location).with_color(Color::Red),
+                    Label::new(name_token.location).with_color(Color::Cyan),
+                ],
+                None,
+            );
+            had_error.set();
+        }
+
+        if let Some(lang_item_token) = lang_item {
+            diagnostics::emit_error(
+                stores,
+                lang_item_token.location,
+                "externally defined functions cannot be lang items",
+                [
+                    Label::new(lang_item_token.location).with_color(Color::Cyan),
+                    Label::new(extern_token.location).with_color(Color::Red),
+                    Label::new(name_token.location).with_color(Color::Cyan),
+                ],
+                None,
+            );
+            had_error.set();
+        }
+
+        ctx.new_function_decl(
             stores,
             &mut had_error,
             name_token.map(|t| t.lexeme),
             parent_id,
             entry_stack,
             exit_stack,
-        )
+        );
     } else {
-        ctx.new_generic_function(
-            stores,
-            &mut had_error,
-            name_token.map(|t| t.lexeme),
-            parent_id,
-            entry_stack,
-            exit_stack,
-            generic_params
-                .tokens
-                .iter()
-                .map(|t| t.unwrap_single().map(|t| t.lexeme))
-                .collect(),
-        )
-    };
+        let item_id = if generic_params.tokens.is_empty() {
+            ctx.new_function(
+                stores,
+                &mut had_error,
+                name_token.map(|t| t.lexeme),
+                parent_id,
+                is_extern,
+                entry_stack,
+                exit_stack,
+            )
+        } else {
+            if is_extern {
+                diagnostics::emit_error(
+                    stores,
+                    extern_token.location,
+                    "generic functions cannot be external",
+                    [
+                        Label::new(extern_token.location).with_color(Color::Red),
+                        Label::new(name_token.location).with_color(Color::Cyan),
+                    ],
+                    None,
+                );
+                had_error.set();
+            }
 
-    if let Some(lang_item_id) = lang_item {
-        ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+            ctx.new_generic_function(
+                stores,
+                &mut had_error,
+                name_token.map(|t| t.lexeme),
+                parent_id,
+                entry_stack,
+                exit_stack,
+                generic_params
+                    .tokens
+                    .iter()
+                    .map(|t| t.unwrap_single().map(|t| t.lexeme))
+                    .collect(),
+            )
+        };
+
+        if let Some(lang_item_id) = lang_item {
+            ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+        }
+
+        let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
+        let body_block_id = stores.blocks.new_block(body);
+        ctx.set_item_body(item_id, body_block_id);
     }
-
-    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
-    let body_block_id = stores.blocks.new_block(body);
-    ctx.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())

@@ -88,7 +88,7 @@ pub fn resolve_signature(
                 .set_partial_item_signature(cur_id, resolved_sig);
         }
 
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } | ItemKind::FunctionDecl => {
             let unresolved_sig = ctx.nrir().get_item_signature(cur_id).clone();
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
@@ -470,7 +470,7 @@ pub fn resolve_body(
 ) {
     let cur_item_header = ctx.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef | ItemKind::FunctionDecl => {
             panic!(
                 "ICE: Tried to body type-resolve a {:?}",
                 cur_item_header.kind
@@ -482,7 +482,7 @@ pub fn resolve_body(
             partially_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
         }
 
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } => {
             let unresolved_body = ctx.get_item_body(cur_id);
             fully_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
         }

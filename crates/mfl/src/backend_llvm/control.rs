@@ -3,7 +3,7 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    context::ItemId,
+    context::{ItemId, ItemKind},
     ir::{If, While},
     stores::{ops::OpId, source::Spanned, types::TypeKind},
 };
@@ -53,7 +53,10 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder
                 .build_call(callee_value, &args, &format!("call_{callee_name}"))?;
 
-        self.enqueue_function(callee_id);
+        let callee_header = ds.context.get_item_header(callee_id);
+        if matches!(callee_header.kind, ItemKind::Function { .. }) {
+            self.enqueue_function(callee_id);
+        }
 
         let Some(BasicValueEnum::StructValue(result)) = result.try_as_basic_value().left() else {
             // It was a void-type, so nothing to do.

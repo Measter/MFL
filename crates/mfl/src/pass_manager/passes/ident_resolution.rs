@@ -323,7 +323,11 @@ pub fn resolve_signature(
             resolve_idents_in_module_imports(ctx, stores, had_error, cur_id);
         }
         // These are all treated the same.
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
+        ItemKind::Assert
+        | ItemKind::Const
+        | ItemKind::Function { .. }
+        | ItemKind::FunctionDecl
+        | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
@@ -497,7 +501,9 @@ fn resolve_idents_in_block(
                     let found_item_header = ctx.get_item_header(resolved_ident);
                     let new_code = match found_item_header.kind {
                         ItemKind::Const => NameResolvedOp::Const { id: resolved_ident },
-                        ItemKind::Function | ItemKind::GenericFunction => {
+                        ItemKind::Function { .. }
+                        | ItemKind::FunctionDecl
+                        | ItemKind::GenericFunction => {
                             // Generic functions can't get type resolved, only their instantiations.
                             // This means we'll need to abort type resolving our body on a generic call.
                             NameResolvedOp::CallFunction {
@@ -582,10 +588,13 @@ pub fn resolve_body(
 ) {
     let header = ctx.get_item_header(cur_id);
     match header.kind {
-        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef | ItemKind::FunctionDecl => {
             // Nothing to do.
         }
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
+        ItemKind::Assert
+        | ItemKind::Const
+        | ItemKind::Function { .. }
+        | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);

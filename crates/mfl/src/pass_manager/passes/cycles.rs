@@ -28,7 +28,11 @@ pub fn check_invalid_cycles(
             check_invalid_cycles_structs(ctx, stores, pass_ctx, had_error, cur_id)
         }
         // Nothing to do here.
-        ItemKind::Variable | ItemKind::Function | ItemKind::GenericFunction | ItemKind::Module => {}
+        ItemKind::Variable
+        | ItemKind::Function { .. }
+        | ItemKind::FunctionDecl
+        | ItemKind::GenericFunction
+        | ItemKind::Module => {}
     }
 }
 

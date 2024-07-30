@@ -72,6 +72,17 @@ impl Stores {
     ) -> Spur {
         let item_header = ctx.get_item_header(item_id);
 
+        if matches!(
+            item_header.kind,
+            ItemKind::Function { is_extern: true } | ItemKind::FunctionDecl
+        ) {
+            // No mangling here, just use the bare name.
+            let name = self.strings.resolve(item_header.name.inner).to_owned();
+            self.strings.set_mangled_name(item_id, &name);
+
+            return item_header.name.inner;
+        }
+
         let mut mangled_name = String::new();
         if let Some(parent_id) = item_header.parent {
             let _ = pass_ctx.ensure_build_names(ctx, self, parent_id);
@@ -82,7 +93,7 @@ impl Stores {
 
         mangled_name.push_str(self.strings.resolve(item_header.name.inner));
 
-        if item_header.kind == ItemKind::Function
+        if matches!(item_header.kind, ItemKind::Function { .. })
             && pass_ctx
                 .ensure_type_resolved_signature(ctx, self, item_id)
                 .is_ok()
@@ -128,7 +139,7 @@ impl Stores {
 
         friendly_name.push_str(self.strings.resolve(item_header.name.inner));
 
-        if item_header.kind == ItemKind::Function
+        if matches!(item_header.kind, ItemKind::Function { .. })
             && pass_ctx
                 .ensure_type_resolved_signature(ctx, self, item_id)
                 .is_ok()

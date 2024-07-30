@@ -662,7 +662,9 @@ impl PassContext {
         let needed_states = match ctx.get_item_header(cur_item).kind {
             ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
             ItemKind::StructDef => &[PassState::SelfContainingStruct, PassState::DefineStructs],
-            ItemKind::Variable => &[PassState::BuildNames, PassState::TypeResolvedSignature],
+            ItemKind::Variable | ItemKind::FunctionDecl => {
+                &[PassState::BuildNames, PassState::TypeResolvedSignature]
+            }
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
                 PassState::PartiallyTypeResolved,
@@ -670,7 +672,7 @@ impl PassContext {
             ],
             ItemKind::Assert => &[PassState::CheckAsserts],
             ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
-            ItemKind::Function => &[PassState::BuildNames, PassState::ConstPropBody],
+            ItemKind::Function { .. } => &[PassState::BuildNames, PassState::ConstPropBody],
         };
 
         let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);

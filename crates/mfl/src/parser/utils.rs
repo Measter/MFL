@@ -247,6 +247,29 @@ impl<T, E> Recover<T, E> for Result<T, E> {
     }
 }
 
+pub(super) trait LengthRequirement: Display {
+    fn is_met(&self, len: usize) -> bool;
+}
+
+impl LengthRequirement for usize {
+    fn is_met(&self, len: usize) -> bool {
+        *self == len
+    }
+}
+
+pub struct Min(pub usize);
+impl Display for Min {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(">=")?;
+        self.0.fmt(f)
+    }
+}
+impl LengthRequirement for Min {
+    fn is_met(&self, len: usize) -> bool {
+        len >= self.0
+    }
+}
+
 pub(super) trait TreeGroupResultExt {
     fn with_kinds<'a>(
         self,
@@ -255,7 +278,7 @@ pub(super) trait TreeGroupResultExt {
     ) -> Self
     where
         Self: 'a;
-    fn with_length(self, stores: &Stores, length: usize) -> Self;
+    fn with_length(self, stores: &Stores, length: impl LengthRequirement) -> Self;
 }
 impl TreeGroupResultExt for Result<&TreeGroup, ()> {
     fn with_kinds<'a>(
@@ -293,9 +316,9 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
         }
     }
 
-    fn with_length(self, stores: &Stores, length: usize) -> Self {
+    fn with_length(self, stores: &Stores, length: impl LengthRequirement) -> Self {
         let group = self?;
-        if group.tokens.len() != length {
+        if !length.is_met(group.tokens.len()) {
             diagnostics::emit_error(
                 stores,
                 group.span(),
