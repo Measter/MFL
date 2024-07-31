@@ -18,7 +18,7 @@ use color_eyre::{
     eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
-use context::{Context, ItemId, ItemKind, TypeResolvedItemSignature};
+use context::{Context, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use stores::{types::BuiltinTypes, Stores};
@@ -122,7 +122,9 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         let entry_scope = context.nrir().get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
             let item_header = context.get_item_header(item_id.inner);
-            if item_header.kind == (ItemKind::Function { is_extern: true }) {
+            if item_header.kind == ItemKind::Function
+                && item_header.attributes.contains(ItemAttribute::Extern)
+            {
                 top_level_symbols.push(item_id.inner);
             }
         }

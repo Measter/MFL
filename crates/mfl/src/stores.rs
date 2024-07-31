@@ -7,7 +7,7 @@ use strings::StringStore;
 use types::TypeStore;
 
 use crate::{
-    context::{Context, ItemId, ItemKind},
+    context::{Context, ItemAttribute, ItemId, ItemKind},
     pass_manager::PassContext,
 };
 
@@ -74,8 +74,9 @@ impl Stores {
 
         if matches!(
             item_header.kind,
-            ItemKind::Function { is_extern: true } | ItemKind::FunctionDecl
-        ) {
+            ItemKind::Function | ItemKind::FunctionDecl
+        ) && item_header.attributes.contains(ItemAttribute::Extern)
+        {
             // No mangling here, just use the bare name.
             let name = self.strings.resolve(item_header.name.inner).to_owned();
             self.strings.set_mangled_name(item_id, &name);
@@ -93,7 +94,7 @@ impl Stores {
 
         mangled_name.push_str(self.strings.resolve(item_header.name.inner));
 
-        if matches!(item_header.kind, ItemKind::Function { .. })
+        if matches!(item_header.kind, ItemKind::Function)
             && pass_ctx
                 .ensure_type_resolved_signature(ctx, self, item_id)
                 .is_ok()

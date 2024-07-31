@@ -1,6 +1,6 @@
 import std::term
 
-struct lang(string) String {
+struct(lang(string)) String {
     length u64,
     pointer u8*,
 }

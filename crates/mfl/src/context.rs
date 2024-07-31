@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use ariadne::{Color, Label};
+use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
@@ -32,6 +33,16 @@ pub enum LangItem {
     Free,
 }
 
+impl LangItem {
+    pub fn kind_str(self) -> &'static str {
+        match self {
+            LangItem::String => "String",
+            LangItem::Alloc => "Alloc",
+            LangItem::Free => "Free",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId(u16);
 
@@ -40,11 +51,32 @@ pub enum ItemKind {
     Assert,
     Const,
     Variable,
-    Function { is_extern: bool },
+    Function,
     FunctionDecl,
     GenericFunction,
     StructDef,
     Module,
+}
+
+impl ItemKind {
+    pub fn kind_str(self) -> &'static str {
+        match self {
+            ItemKind::Assert => "assert",
+            ItemKind::Const => "const",
+            ItemKind::Variable => "variable",
+            ItemKind::Function => "function",
+            ItemKind::FunctionDecl => "extern function",
+            ItemKind::GenericFunction => "generic function",
+            ItemKind::StructDef => "struct",
+            ItemKind::Module => "module",
+        }
+    }
+}
+
+flags! {
+    pub enum ItemAttribute: u8 {
+        Extern
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +85,7 @@ pub struct ItemHeader {
     pub id: ItemId,
     pub parent: Option<ItemId>,
     pub kind: ItemKind,
+    pub attributes: FlagSet<ItemAttribute>,
     pub lang_item: Option<LangItem>,
 }
 
@@ -454,6 +487,7 @@ impl Context {
         name: Spanned<Spur>,
         parent: Option<ItemId>,
         kind: ItemKind,
+        attributes: FlagSet<ItemAttribute>,
     ) -> ItemHeader {
         let new_id = self.headers.len();
         let new_id = ItemId(new_id.to_u16().unwrap());
@@ -464,6 +498,7 @@ impl Context {
             parent,
             kind,
             lang_item: None,
+            attributes,
         };
 
         self.headers.push(item_header);
@@ -480,7 +515,7 @@ impl Context {
         parent: Option<ItemId>,
         is_top_level: bool,
     ) -> ItemId {
-        let header = self.new_header(name, parent, ItemKind::Module);
+        let header = self.new_header(name, parent, ItemKind::Module, FlagSet::default());
 
         if let Some(parent_id) = parent {
             self.add_to_parent(stores, had_error, parent_id, name, header.id);
@@ -499,11 +534,11 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
-        is_extern: bool,
+        attributes: FlagSet<ItemAttribute>,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Function { is_extern });
+        let header = self.new_header(name, Some(parent), ItemKind::Function, attributes);
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {
@@ -522,10 +557,16 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
+        attributes: FlagSet<ItemAttribute>,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::FunctionDecl);
+        let header = self.new_header(
+            name,
+            Some(parent),
+            ItemKind::FunctionDecl,
+            attributes | ItemAttribute::Extern,
+        );
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {
@@ -544,10 +585,11 @@ impl Context {
         &mut self,
         name: Spanned<Spur>,
         parent: ItemId,
+        attributes: FlagSet<ItemAttribute>,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Function { is_extern: false });
+        let header = self.new_header(name, Some(parent), ItemKind::Function, attributes);
         self.urir.item_signatures.insert(
             header.id,
             UnresolvedItemSignature {
@@ -566,7 +608,7 @@ impl Context {
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Assert);
+        let header = self.new_header(name, Some(parent), ItemKind::Assert, FlagSet::default());
 
         // Hardcode a bool output type
         let bool_symbol = stores.strings.get("bool");
@@ -597,7 +639,7 @@ impl Context {
         parent: ItemId,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Const);
+        let header = self.new_header(name, Some(parent), ItemKind::Const, FlagSet::default());
 
         self.urir.item_signatures.insert(
             header.id,
@@ -617,11 +659,12 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
+        attributes: FlagSet<ItemAttribute>,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::GenericFunction);
+        let header = self.new_header(name, Some(parent), ItemKind::GenericFunction, attributes);
 
         self.urir.item_signatures.insert(
             header.id,
@@ -642,9 +685,10 @@ impl Context {
         had_error: &mut ErrorSignal,
         module: ItemId,
         def: StructDef<UnresolvedType>,
+        attributes: FlagSet<ItemAttribute>,
     ) -> ItemId {
         let name = def.name;
-        let header = self.new_header(name, Some(module), ItemKind::StructDef);
+        let header = self.new_header(name, Some(module), ItemKind::StructDef, attributes);
 
         if !def.generic_params.is_empty() {
             self.generic_structs.push(header.id);
@@ -661,9 +705,10 @@ impl Context {
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
+        attributes: FlagSet<ItemAttribute>,
         variable_type: Spanned<UnresolvedType>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Variable);
+        let header = self.new_header(name, Some(parent), ItemKind::Variable, attributes);
         self.urir.variable_type.insert(header.id, variable_type);
         self.add_to_parent(stores, had_error, parent, name, header.id);
         header.id
@@ -939,6 +984,7 @@ impl Context {
         let new_proc_id = self.new_function_generic_instance(
             base_header.name.inner.with_span(base_header.name.location),
             base_header.parent.unwrap(),
+            base_header.attributes,
             orig_unresolved_sig.entry,
             orig_unresolved_sig.exit,
         );
@@ -974,6 +1020,7 @@ impl Context {
                 had_error,
                 child_item_header.name,
                 new_proc_id,
+                child_item_header.attributes,
                 alloc_type_unresolved.map(|i| i.clone()),
             );
             let alloc_type = self.trir.get_partial_variable_type(child_item_header.id);

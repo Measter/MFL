@@ -14,7 +14,7 @@ struct MMap(T) {
     length u64,
 }
 
-proc lang(alloc) alloc(T) [
+proc(lang(alloc)) alloc(T) [
     u64 // Number of Ts to allocate for
 ] to [Result(MMap(T))] {
     dup
@@ -47,7 +47,7 @@ proc lang(alloc) alloc(T) [
     pack(Result)
 }
 
-proc lang(free) free(T) [MMap(T)] to [SimpleResult] {
+proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
     unpack
     // [ptr len]
     sizeof(T) *

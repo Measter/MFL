@@ -40,6 +40,7 @@ flags! {
         TerminalBlockCheckBody,
         TypeResolvedBody,
         TypeResolvedSignature,
+        ValidAttributes,
     }
 }
 
@@ -63,15 +64,18 @@ impl PassState {
             PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
             PassState::CheckAsserts => PassContext::ensure_check_asserts,
             PassState::PartiallyTypeResolved => PassContext::ensure_partially_resolve_types,
+            PassState::ValidAttributes => PassContext::ensure_valid_attributes,
         }
     }
 
     fn get_deps(self) -> (FlagSet<PassState>, &'static [PassState]) {
         use PassState::*;
         match self {
-            IdentResolvedSignature | IdentResolvedBody | TerminalBlockCheckBody | BuildNames => {
-                (FlagSet::default(), &[])
-            }
+            IdentResolvedSignature
+            | IdentResolvedBody
+            | TerminalBlockCheckBody
+            | BuildNames
+            | ValidAttributes => (FlagSet::default(), &[]),
             SelfContainingStruct | DeclareStructs | TypeResolvedSignature => {
                 (IdentResolvedSignature.into(), &[IdentResolvedSignature])
             }
@@ -185,6 +189,31 @@ macro_rules! ensure_state_deps {
 }
 
 impl PassContext {
+    pub fn ensure_valid_attributes(
+        &mut self,
+        ctx: &mut Context,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        ensure_state_deps!(self, ctx, stores, cur_item, PassState::ValidAttributes);
+
+        let _span = debug_span!("ValidAttrib").entered();
+        trace!(
+            name = stores.strings.get_symbol_name(ctx, cur_item),
+            id = ?cur_item,
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::attributes::validate_attributes(ctx, stores, &mut had_error, cur_item);
+        if had_error.into_bool() {
+            self.set_error(cur_item);
+            Err(())
+        } else {
+            self.set_state(cur_item, PassState::ValidAttributes);
+            Ok(())
+        }
+    }
+
     pub fn ensure_ident_resolved_signature(
         &mut self,
         ctx: &mut Context,
@@ -660,19 +689,37 @@ impl PassContext {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         let needed_states = match ctx.get_item_header(cur_item).kind {
-            ItemKind::Module => [PassState::IdentResolvedSignature].as_slice(),
-            ItemKind::StructDef => &[PassState::SelfContainingStruct, PassState::DefineStructs],
-            ItemKind::Variable | ItemKind::FunctionDecl => {
-                &[PassState::BuildNames, PassState::TypeResolvedSignature]
-            }
+            ItemKind::Module => [
+                PassState::ValidAttributes,
+                PassState::IdentResolvedSignature,
+            ]
+            .as_slice(),
+            ItemKind::StructDef => &[
+                PassState::ValidAttributes,
+                PassState::SelfContainingStruct,
+                PassState::DefineStructs,
+            ],
+            ItemKind::Variable | ItemKind::FunctionDecl => &[
+                PassState::ValidAttributes,
+                PassState::BuildNames,
+                PassState::TypeResolvedSignature,
+            ],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => &[
+                PassState::ValidAttributes,
                 PassState::PartiallyTypeResolved,
                 PassState::IdentResolvedBody,
             ],
-            ItemKind::Assert => &[PassState::CheckAsserts],
-            ItemKind::Const => &[PassState::EvaluatedConstsAsserts],
-            ItemKind::Function { .. } => &[PassState::BuildNames, PassState::ConstPropBody],
+            ItemKind::Assert => &[PassState::ValidAttributes, PassState::CheckAsserts],
+            ItemKind::Const => &[
+                PassState::ValidAttributes,
+                PassState::EvaluatedConstsAsserts,
+            ],
+            ItemKind::Function { .. } => &[
+                PassState::ValidAttributes,
+                PassState::BuildNames,
+                PassState::ConstPropBody,
+            ],
         };
 
         let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);
