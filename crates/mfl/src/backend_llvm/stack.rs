@@ -6,7 +6,10 @@ use crate::{
     context::ItemId,
     stores::{
         ops::OpId,
-        types::{BuiltinTypes, IntKind, IntSignedness, IntWidth, Integer, TypeId, TypeKind},
+        types::{
+            BuiltinTypes, Float, FloatWidth, IntKind, IntSignedness, IntWidth, Integer, TypeId,
+            TypeKind,
+        },
     },
 };
 
@@ -37,7 +40,20 @@ impl<'ctx> CodeGen<'ctx> {
                         let target_type = output_int.width.get_int_type(self.ctx);
                         self.cast_int(val, target_type, input_int.signed)?
                     }
-                    TypeKind::Float(_) => todo!(),
+                    TypeKind::Float(_) => {
+                        let val = input_data.into_float_value();
+                        let target_type = output_int.width.get_int_type(self.ctx);
+                        match output_int.signed {
+                            IntSignedness::Signed => {
+                                self.builder
+                                    .build_float_to_signed_int(val, target_type, "")?
+                            }
+                            IntSignedness::Unsigned => {
+                                self.builder
+                                    .build_float_to_unsigned_int(val, target_type, "")?
+                            }
+                        }
+                    }
                     TypeKind::Bool => {
                         let val = input_data.into_int_value();
                         let target_type = output_int.width.get_int_type(self.ctx);
@@ -61,7 +77,45 @@ impl<'ctx> CodeGen<'ctx> {
 
                 value_store.store_value(self, op_io.outputs()[0], output.into())?;
             }
-            TypeKind::Float(_) => todo!(),
+            TypeKind::Float(output_float) => {
+                let input_id = op_io.inputs()[0];
+                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.type_store.get_type_info(input_type_id);
+
+                let input_data = value_store.load_value(self, input_id, ds)?;
+
+                let output = match input_type_info.kind {
+                    TypeKind::Integer(input_int) => {
+                        let val = input_data.into_int_value();
+                        let target_type = output_float.get_float_type(self.ctx);
+                        match input_int.signed {
+                            IntSignedness::Signed => {
+                                self.builder
+                                    .build_signed_int_to_float(val, target_type, "")?
+                            }
+                            IntSignedness::Unsigned => {
+                                self.builder
+                                    .build_unsigned_int_to_float(val, target_type, "")?
+                            }
+                        }
+                    }
+                    TypeKind::Float(_) => {
+                        let val = input_data.into_float_value();
+                        let target_type = output_float.get_float_type(self.ctx);
+                        self.builder.build_float_cast(val, target_type, "")?
+                    }
+
+                    TypeKind::Array { .. }
+                    | TypeKind::MultiPointer(_)
+                    | TypeKind::SinglePointer(_)
+                    | TypeKind::Bool
+                    | TypeKind::Struct(_)
+                    | TypeKind::GenericStructBase(_)
+                    | TypeKind::GenericStructInstance(_) => unreachable!(),
+                };
+
+                value_store.store_value(self, op_io.outputs[0], output.into())?;
+            }
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
@@ -147,6 +201,25 @@ impl<'ctx> CodeGen<'ctx> {
                 .into(),
         };
         value_store.store_value(self, op_io.outputs()[0], value)?;
+
+        Ok(())
+    }
+    pub(super) fn build_push_float(
+        &self,
+        ds: &mut DataStore,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        width: FloatWidth,
+        value: Float,
+    ) -> InkwellResult {
+        let op_io = ds.op_store.get_op_io(op_id);
+
+        let float_type = width.get_float_type(self.ctx);
+        let value = float_type
+            .const_float(value.0)
+            .const_cast(float_type)
+            .into();
+        value_store.store_value(self, op_io.outputs[0], value)?;
 
         Ok(())
     }

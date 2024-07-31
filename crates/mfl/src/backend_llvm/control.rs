@@ -39,6 +39,14 @@ impl<'ctx> CodeGen<'ctx> {
                             input_int.signed,
                         )?
                         .as_basic_value_enum(),
+                    (TypeKind::Float(expected_float), TypeKind::Float(_)) => self
+                        .builder
+                        .build_float_cast(
+                            value.into_float_value(),
+                            expected_float.get_float_type(self.ctx),
+                            "",
+                        )?
+                        .as_basic_value_enum(),
                     _ => value,
                 };
                 Ok(v)

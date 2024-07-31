@@ -13,9 +13,12 @@ use inkwell::{
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
-    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType},
-    values::{BasicValueEnum, FunctionValue, GlobalValue, IntMathValue, IntValue, PointerValue},
-    AddressSpace, IntPredicate, OptimizationLevel,
+    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FloatType, IntType},
+    values::{
+        BasicValueEnum, FloatMathValue, FunctionValue, GlobalValue, IntMathValue, IntValue,
+        PointerValue,
+    },
+    AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel,
 };
 use intcast::IntCast;
 use lasso::Spur;
@@ -60,10 +63,19 @@ impl IntWidth {
     }
 }
 
+impl FloatWidth {
+    fn get_float_type(self, ctx: &InkwellContext) -> FloatType<'_> {
+        match self {
+            FloatWidth::F32 => ctx.f32_type(),
+            FloatWidth::F64 => ctx.f64_type(),
+        }
+    }
+}
+
 impl OpCode<TypeResolvedOp> {
-    fn get_arith_fn<'ctx, T: IntMathValue<'ctx>>(&self) -> BuilderArithFunc<'ctx, T> {
+    fn get_int_arith_fn<'ctx, T: IntMathValue<'ctx>>(&self) -> BuilderArithFunc<'ctx, T> {
         let OpCode::Basic(Basic::Arithmetic(arith_op)) = self else {
-            panic!("ICE: Called get_arith_fn on non-arith opcode");
+            panic!("ICE: Called get_int_arith_fn on non-arith opcode");
         };
         match arith_op {
             Arithmetic::Add => Builder::build_int_add,
@@ -77,29 +89,29 @@ impl OpCode<TypeResolvedOp> {
             | Arithmetic::Div
             | Arithmetic::Rem
             | Arithmetic::ShiftLeft
-            | Arithmetic::ShiftRight => panic!("ICE: Called get_arith_fn for non-trivial op"),
+            | Arithmetic::ShiftRight => panic!("ICE: Called get_int_arith_fn for non-trivial op"),
         }
     }
 
-    fn get_div_rem_fn<'ctx, T: IntMathValue<'ctx>>(
+    fn get_int_div_rem_fn<'ctx, T: IntMathValue<'ctx>>(
         &self,
         signed: IntSignedness,
     ) -> BuilderArithFunc<'ctx, T> {
         let OpCode::Basic(Basic::Arithmetic(arith_op)) = self else {
-            panic!("ICE: Called get_div_rem_fn on non-arith opcode");
+            panic!("ICE: Called get_int_div_rem_fn on non-arith opcode");
         };
         match (arith_op, signed) {
             (Arithmetic::Div, IntSignedness::Signed) => Builder::build_int_signed_div,
             (Arithmetic::Div, IntSignedness::Unsigned) => Builder::build_int_unsigned_div,
             (Arithmetic::Rem, IntSignedness::Signed) => Builder::build_int_signed_rem,
             (Arithmetic::Rem, IntSignedness::Unsigned) => Builder::build_int_unsigned_rem,
-            _ => panic!("ICE: Called get_div_rem_fn on non-div-rem opcode"),
+            _ => panic!("ICE: Called get_int_div_rem_fn on non-div-rem opcode"),
         }
     }
 
-    fn get_predicate(&self, signed: IntSignedness) -> IntPredicate {
+    fn get_int_predicate(&self, signed: IntSignedness) -> IntPredicate {
         let OpCode::Basic(Basic::Compare(cmp_op)) = self else {
-            panic!("ICE: Called get_predicate on non-compare opcode");
+            panic!("ICE: Called get_int_predicate on non-compare opcode");
         };
 
         match (cmp_op, signed) {
@@ -114,6 +126,44 @@ impl OpCode<TypeResolvedOp> {
             (Compare::GreaterEqual, IntSignedness::Signed) => IntPredicate::SGE,
             (Compare::NotEq, _) => IntPredicate::NE,
             _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
+        }
+    }
+
+    fn get_float_predicate(&self) -> FloatPredicate {
+        let OpCode::Basic(Basic::Compare(cmp_op)) = self else {
+            panic!("ICE: Called get_float_predicate on non-compare opcode");
+        };
+
+        match cmp_op {
+            Compare::Equal => FloatPredicate::OEQ,
+            Compare::Less => FloatPredicate::OLT,
+            Compare::LessEqual => FloatPredicate::OLE,
+            Compare::Greater => FloatPredicate::OGT,
+            Compare::GreaterEqual => FloatPredicate::OGE,
+            Compare::NotEq => FloatPredicate::ONE,
+            _ => panic!("ICE: Called get_predicate on non-predicate opcode"),
+        }
+    }
+
+    fn get_float_arith_fn<'ctx, T: FloatMathValue<'ctx>>(&self) -> BuilderArithFunc<'ctx, T> {
+        let OpCode::Basic(Basic::Arithmetic(arith_op)) = self else {
+            panic!("ICE: Called get_float_arith_fn on non-arith opcode");
+        };
+        match arith_op {
+            Arithmetic::Add => Builder::build_float_add,
+            Arithmetic::Div => Builder::build_float_div,
+            Arithmetic::Multiply => Builder::build_float_mul,
+            Arithmetic::Rem => Builder::build_float_rem,
+            Arithmetic::Subtract => Builder::build_float_sub,
+
+            Arithmetic::BitAnd
+            | Arithmetic::BitNot
+            | Arithmetic::BitOr
+            | Arithmetic::BitXor
+            | Arithmetic::ShiftLeft
+            | Arithmetic::ShiftRight => {
+                panic!("ICE: Called get_float_arith_fn with unsupported op: {self:?}")
+            }
         }
     }
 }
@@ -624,7 +674,9 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushInt { width, value }) => {
                     self.build_push_int(ds, value_store, op_id, *width, *value)?
                 }
-                OpCode::Basic(Basic::PushFloat { .. }) => todo!(),
+                OpCode::Basic(Basic::PushFloat { width, value }) => {
+                    self.build_push_float(ds, value_store, op_id, *width, *value)?
+                }
                 OpCode::Basic(Basic::PushStr { id }) => {
                     self.build_push_str(ds, value_store, op_id, *id)?
                 }

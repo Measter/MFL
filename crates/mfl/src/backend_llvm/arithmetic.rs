@@ -45,7 +45,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = self.cast_int(a_val, target_type, a_from.signed)?;
                 let b_val = self.cast_int(b_val, target_type, b_from.signed)?;
 
-                let func = op_code.get_arith_fn();
+                let func = op_code.get_int_arith_fn();
                 func(&self.builder, a_val, b_val, &output_name)?.into()
             }
             [TypeKind::Integer(int_type), TypeKind::MultiPointer(ptee_type)] => {
@@ -104,6 +104,19 @@ impl<'ctx> CodeGen<'ctx> {
                     .build_int_cast(diff, self.ctx.i64_type(), &output_name)?
                     .into()
             }
+            [TypeKind::Float(a_from), TypeKind::Float(b_from)] => {
+                let to_float = a_from.max(b_from);
+
+                let a_val = value_store.load_value(self, a, ds)?.into_float_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_float_value();
+
+                let target_type = to_float.get_float_type(self.ctx);
+                let a_val = self.builder.build_float_cast(a_val, target_type, "")?;
+                let b_val = self.builder.build_float_cast(b_val, target_type, "")?;
+
+                let func = op_code.get_float_arith_fn();
+                func(&self.builder, a_val, b_val, &output_name)?.into()
+            }
             _ => panic!("ICE: Unexpected types"),
         };
 
@@ -128,28 +141,50 @@ impl<'ctx> CodeGen<'ctx> {
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let a_val = value_store.load_value(self, a, ds)?.into_int_value();
-        let b_val = value_store.load_value(self, b, ds)?.into_int_value();
+        let output_value = match output_type_info.kind {
+            TypeKind::Integer(output_int) => {
+                let a_val = value_store.load_value(self, a, ds)?.into_int_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_int_value();
 
-        let (a_val, b_val) = if let TypeKind::Integer(output_int) = output_type_info.kind {
-            let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
-                input_type_infos.map(|ti| ti.kind)
-            else {
-                unreachable!()
-            };
+                let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
+                    input_type_infos.map(|ti| ti.kind)
+                else {
+                    unreachable!()
+                };
 
-            let target_type = output_int.width.get_int_type(self.ctx);
-            let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
-            let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
+                let target_type = output_int.width.get_int_type(self.ctx);
+                let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+                let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-            (a_val, b_val)
-        } else {
-            (a_val, b_val)
+                let func = op_code.get_int_arith_fn();
+                let sum = func(&self.builder, a_val, b_val, &output_name)?;
+                sum.into()
+            }
+            TypeKind::Bool => {
+                let a_val = value_store.load_value(self, a, ds)?.into_int_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_int_value();
+
+                let func = op_code.get_int_arith_fn();
+                let sum = func(&self.builder, a_val, b_val, &output_name)?;
+                sum.into()
+            }
+            TypeKind::Float(output_float) => {
+                let a_val = value_store.load_value(self, a, ds)?.into_float_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_float_value();
+
+                let target_type = output_float.get_float_type(self.ctx);
+                let a_val = self.builder.build_float_cast(a_val, target_type, "")?;
+                let b_val = self.builder.build_float_cast(b_val, target_type, "")?;
+
+                let func = op_code.get_float_arith_fn();
+                let sum = func(&self.builder, a_val, b_val, &output_name)?;
+
+                sum.into()
+            }
+            _ => unreachable!(),
         };
 
-        let func = op_code.get_arith_fn();
-        let sum = func(&self.builder, a_val, b_val, &output_name)?;
-        value_store.store_value(self, op_io.outputs()[0], sum.into())?;
+        value_store.store_value(self, op_io.outputs()[0], output_value)?;
 
         Ok(())
     }
@@ -165,32 +200,50 @@ impl<'ctx> CodeGen<'ctx> {
 
         let inputs @ [a, b] = *op_io.inputs().as_arr();
         let input_type_ids = ds.analyzer.value_types(inputs).unwrap();
-        let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
-            input_type_ids.map(|id| ds.type_store.get_type_info(id).kind)
-        else {
-            panic!("ICE: DivMod has non-int inputs");
-        };
 
         let [output_type_id] = ds.analyzer.value_types([op_io.outputs()[0]]).unwrap();
         let output_type_info = ds.type_store.get_type_info(output_type_id);
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let TypeKind::Integer(output_int) = output_type_info.kind else {
-            panic!("ICE: Non-int output of int-int arithmetic");
+        let input_type_kinds = input_type_ids.map(|id| ds.type_store.get_type_info(id).kind);
+        let result = match input_type_kinds {
+            [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] => {
+                let TypeKind::Integer(output_int) = output_type_info.kind else {
+                    panic!("ICE: Non-int output of int-int arithmetic");
+                };
+
+                let a_val = value_store.load_value(self, a, ds)?.into_int_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_int_value();
+
+                let target_type = output_int.width.get_int_type(self.ctx);
+                let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
+                let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
+
+                let func = op_code.get_int_div_rem_fn(output_int.signed);
+                let res = func(&self.builder, a_val, b_val, &output_name)?;
+                res.into()
+            }
+
+            [TypeKind::Float(a_float), TypeKind::Float(b_float)] => {
+                let output_float = a_float.max(b_float);
+
+                let a_val = value_store.load_value(self, a, ds)?.into_float_value();
+                let b_val = value_store.load_value(self, b, ds)?.into_float_value();
+
+                let target_type = output_float.get_float_type(self.ctx);
+                let a_val = self.builder.build_float_cast(a_val, target_type, "")?;
+                let b_val = self.builder.build_float_cast(b_val, target_type, "")?;
+
+                let func = op_code.get_float_arith_fn();
+                let res = func(&self.builder, a_val, b_val, &output_name)?;
+                res.into()
+            }
+
+            _ => unreachable!(),
         };
 
-        let a_val = value_store.load_value(self, a, ds)?.into_int_value();
-        let b_val = value_store.load_value(self, b, ds)?.into_int_value();
-
-        let target_type = output_int.width.get_int_type(self.ctx);
-        let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
-        let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
-
-        let func = op_code.get_div_rem_fn(output_int.signed);
-        let res = func(&self.builder, a_val, b_val, &output_name)?;
-
-        let [res_val] = *op_io.outputs().as_arr();
-        value_store.store_value(self, res_val, res.into())?;
+        let [res_value_id] = *op_io.outputs().as_arr();
+        value_store.store_value(self, res_value_id, result)?;
 
         Ok(())
     }
@@ -287,7 +340,7 @@ impl<'ctx> CodeGen<'ctx> {
         let b_val = value_store.load_value(self, b, ds)?;
         let output_name = format!("{}", op_io.outputs()[0]);
 
-        let (a_val, b_val, signed) = match input_type_infos.map(|ti| ti.kind) {
+        let comp_result = match input_type_infos.map(|ti| ti.kind) {
             [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] => {
                 let to_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
                 let target_type = to_int.width.get_int_type(self.ctx);
@@ -298,23 +351,39 @@ impl<'ctx> CodeGen<'ctx> {
                 let a_val = self.cast_int(a_val, target_type, a_int.signed)?;
                 let b_val = self.cast_int(b_val, target_type, b_int.signed)?;
 
-                (a_val, b_val, to_int.signed)
+                let pred = op_code.get_int_predicate(to_int.signed);
+                self.builder
+                    .build_int_compare(pred, a_val, b_val, &output_name)?
             }
             [TypeKind::MultiPointer(_), TypeKind::MultiPointer(_)]
             | [TypeKind::SinglePointer(_), TypeKind::SinglePointer(_)] => todo!(),
-            [TypeKind::Bool, TypeKind::Bool] => (
-                a_val.into_int_value(),
-                b_val.into_int_value(),
-                IntSignedness::Unsigned,
-            ),
+            [TypeKind::Bool, TypeKind::Bool] => {
+                let pred = op_code.get_int_predicate(IntSignedness::Unsigned);
+                self.builder.build_int_compare(
+                    pred,
+                    a_val.into_int_value(),
+                    b_val.into_int_value(),
+                    &output_name,
+                )?
+            }
+            [TypeKind::Float(a_float), TypeKind::Float(b_float)] => {
+                let to_float = a_float.max(b_float);
+                let target_type = to_float.get_float_type(self.ctx);
+
+                let a_val = a_val.into_float_value();
+                let b_val = b_val.into_float_value();
+
+                let a_val = self.builder.build_float_cast(a_val, target_type, "")?;
+                let b_val = self.builder.build_float_cast(b_val, target_type, "")?;
+
+                let pred = op_code.get_float_predicate();
+                self.builder
+                    .build_float_compare(pred, a_val, b_val, &output_name)?
+            }
             _ => unreachable!(),
         };
 
-        let pred = op_code.get_predicate(signed);
-        let res = self
-            .builder
-            .build_int_compare(pred, a_val, b_val, &output_name)?;
-        value_store.store_value(self, op_io.outputs()[0], res.into())?;
+        value_store.store_value(self, op_io.outputs()[0], comp_result.into())?;
 
         Ok(())
     }
