@@ -19,7 +19,8 @@ strict digraph {
 
         TerminalBlockCheckBody,
         TypeResolvedBody,
-        TypeResolvedSignature
+        TypeResolvedSignature,
+        ValidAttributes
     }
 
     subgraph items {
@@ -55,15 +56,22 @@ strict digraph {
     TypeResolvedBody -> IdentResolvedBody;
     TypeResolvedSignature -> IdentResolvedSignature;
 
+    Module -> BuildNames;
+    Module -> ValidAttributes;
     Module -> IdentResolvedSignature;
-    StructDef -> DefineStructs;
+    StructDef -> ValidAttributes;
     StructDef -> SelfContainingStruct;
+    StructDef -> DefineStructs;
     Variable -> BuildNames;
+    Variable -> ValidAttributes;
     Variable -> TypeResolvedSignature;
-    GenericFunction -> IdentResolvedBody;
+    GenericFunction -> ValidAttributes;
     GenericFunction -> PartiallyTypeResolved;
+    Assert -> ValidAttributes;
     Assert -> CheckAsserts;
+    Const -> ValidAttributes;
     Const -> EvaluatedConstsAsserts;
     Function -> BuildNames;
+    Function -> ValidAttributes;
     Function -> ConstPropBody;
 }
