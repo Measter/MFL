@@ -319,7 +319,7 @@ impl TypeResolvedIr {
     }
 }
 
-pub struct Context {
+pub struct ItemStore {
     core_module_id: Option<ItemId>,
     top_level_modules: HashMap<Spur, ItemId>,
     lang_items: HashMap<LangItem, ItemId>,
@@ -340,7 +340,7 @@ pub struct Context {
     generic_template_parameters: HashMap<ItemId, Vec<Spanned<Spur>>>,
 }
 
-impl Context {
+impl ItemStore {
     #[inline]
     pub fn get_all_items(&self) -> impl Iterator<Item = ItemHeader> + '_ {
         self.headers.iter().copied()
@@ -449,9 +449,9 @@ impl Context {
     }
 }
 
-impl Context {
+impl ItemStore {
     pub fn new() -> Self {
-        Context {
+        ItemStore {
             core_module_id: None,
             top_level_modules: HashMap::new(),
             lang_items: HashMap::new(),

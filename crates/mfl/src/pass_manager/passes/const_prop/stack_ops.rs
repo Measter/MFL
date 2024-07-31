@@ -1,10 +1,10 @@
 use crate::{
-    item_store::Context,
+    item_store::ItemStore,
     pass_manager::PassManager,
     stores::{
-        values::ConstVal,
         ops::OpId,
         types::{Float, FloatWidth, IntKind, Integer, TypeId, TypeKind},
+        values::ConstVal,
     },
     Stores,
 };
@@ -168,7 +168,7 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
 }
 
 pub(crate) fn size_of(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     op_id: OpId,
@@ -179,7 +179,7 @@ pub(crate) fn size_of(
     match type_info.kind {
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             if pass_manager
-                .ensure_define_structs(ctx, stores, struct_item_id)
+                .ensure_define_structs(item_store, stores, struct_item_id)
                 .is_err()
             {
                 return;

@@ -1,13 +1,13 @@
 use smallvec::SmallVec;
 
 use crate::{
-    item_store::{
-        Context, ItemId, ItemKind, PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature,
-    },
     error_signal::ErrorSignal,
     ir::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
         PartiallyResolvedType, TypeResolvedOp,
+    },
+    item_store::{
+        ItemId, ItemKind, ItemStore, PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature,
     },
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
@@ -18,13 +18,13 @@ use crate::{
 };
 
 pub fn resolve_signature(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let cur_item_header = ctx.get_item_header(cur_id);
+    let cur_item_header = item_store.get_item_header(cur_id);
     match cur_item_header.kind {
         ItemKind::Module | ItemKind::StructDef => {
             panic!(
@@ -34,7 +34,7 @@ pub fn resolve_signature(
         }
 
         ItemKind::GenericFunction => {
-            let unresolved_sig = ctx.nrir().get_item_signature(cur_id).clone();
+            let unresolved_sig = item_store.nrir().get_item_signature(cur_id).clone();
             let mut resolved_sig = PartiallyTypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
@@ -48,7 +48,7 @@ pub fn resolve_signature(
                         {
                             let mut single_check_error = ErrorSignal::new();
                             ensure_structs_declared_in_type(
-                                ctx,
+                                item_store,
                                 stores,
                                 pass_manager,
                                 &mut single_check_error,
@@ -84,12 +84,13 @@ pub fn resolve_signature(
                 return;
             }
 
-            ctx.trir_mut()
+            item_store
+                .trir_mut()
                 .set_partial_item_signature(cur_id, resolved_sig);
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } | ItemKind::FunctionDecl => {
-            let unresolved_sig = ctx.nrir().get_item_signature(cur_id).clone();
+            let unresolved_sig = item_store.nrir().get_item_signature(cur_id).clone();
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
@@ -103,7 +104,7 @@ pub fn resolve_signature(
                     {
                         let mut single_check_error = ErrorSignal::new();
                         ensure_structs_declared_in_type(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             &mut single_check_error,
@@ -137,13 +138,15 @@ pub fn resolve_signature(
                 return;
             }
 
-            ctx.trir_mut().set_item_signature(cur_id, resolved_sig);
+            item_store
+                .trir_mut()
+                .set_item_signature(cur_id, resolved_sig);
         }
         ItemKind::Variable => {
-            let variable_type_unresolved = ctx.nrir().get_variable_type(cur_id).clone();
+            let variable_type_unresolved = item_store.nrir().get_variable_type(cur_id).clone();
             if let Some(type_item) = variable_type_unresolved.item_id() {
                 if pass_manager
-                    .ensure_declare_structs(ctx, stores, type_item)
+                    .ensure_declare_structs(item_store, stores, type_item)
                     .is_err()
                 {
                     had_error.set();
@@ -151,7 +154,7 @@ pub fn resolve_signature(
             }
 
             let parent_id = cur_item_header.parent.unwrap(); // It's a variable, it must have a parent.
-            let parent_header = ctx.get_item_header(parent_id);
+            let parent_header = item_store.get_item_header(parent_id);
 
             if parent_header.kind == ItemKind::GenericFunction {
                 let partial_type = match stores
@@ -166,7 +169,8 @@ pub fn resolve_signature(
                     }
                 };
 
-                ctx.trir_mut()
+                item_store
+                    .trir_mut()
                     .set_partial_variable_type(cur_id, partial_type);
             } else {
                 let info = match stores
@@ -181,14 +185,14 @@ pub fn resolve_signature(
                     }
                 };
 
-                ctx.trir_mut().set_variable_type(cur_id, info.id);
+                item_store.trir_mut().set_variable_type(cur_id, info.id);
             }
         }
     }
 }
 
 fn fully_resolve_block(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -201,13 +205,43 @@ fn fully_resolve_block(
             OpCode::Basic(bo) => {
                 match bo {
                     Basic::Control(Control::If(if_op)) => {
-                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.condition);
-                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.then_block);
-                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.else_block);
+                        fully_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.condition,
+                        );
+                        fully_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.then_block,
+                        );
+                        fully_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.else_block,
+                        );
                     }
                     Basic::Control(Control::While(while_op)) => {
-                        fully_resolve_block(ctx, stores, pass_manager, had_error, while_op.condition);
-                        fully_resolve_block(ctx, stores, pass_manager, had_error, while_op.body_block);
+                        fully_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            while_op.condition,
+                        );
+                        fully_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            while_op.body_block,
+                        );
                     }
                     _ => {}
                 }
@@ -215,7 +249,7 @@ fn fully_resolve_block(
             }
 
             OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
-                let called_item_header = ctx.get_item_header(id);
+                let called_item_header = item_store.get_item_header(id);
                 if called_item_header.kind != ItemKind::GenericFunction || generic_params.is_empty()
                 {
                     OpCode::Complex(TypeResolvedOp::CallFunction {
@@ -230,7 +264,7 @@ fn fully_resolve_block(
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();
                         ensure_structs_declared_in_type(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -254,7 +288,7 @@ fn fully_resolve_block(
                         unresolved_generic_params_sm.push(ugp.clone());
                     }
 
-                    let Ok(new_id) = ctx.get_generic_function_instance(
+                    let Ok(new_id) = item_store.get_generic_function_instance(
                         stores,
                         pass_manager,
                         had_error,
@@ -284,7 +318,13 @@ fn fully_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(ctx, stores, pass_manager, &mut local_had_error, id);
+                ensure_structs_declared_in_type(
+                    item_store,
+                    stores,
+                    pass_manager,
+                    &mut local_had_error,
+                    id,
+                );
                 if local_had_error.into_bool() {
                     had_error.set();
                     continue;
@@ -320,7 +360,7 @@ fn fully_resolve_block(
 }
 
 fn partially_resolve_block(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -333,20 +373,38 @@ fn partially_resolve_block(
             OpCode::Basic(bo) => {
                 match bo {
                     Basic::Control(Control::If(if_op)) => {
-                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.condition);
-                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.then_block);
-                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.else_block);
+                        partially_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.condition,
+                        );
+                        partially_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.then_block,
+                        );
+                        partially_resolve_block(
+                            item_store,
+                            stores,
+                            pass_manager,
+                            had_error,
+                            if_op.else_block,
+                        );
                     }
                     Basic::Control(Control::While(while_op)) => {
                         partially_resolve_block(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             had_error,
                             while_op.condition,
                         );
                         partially_resolve_block(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             had_error,
@@ -359,7 +417,7 @@ fn partially_resolve_block(
             }
 
             OpCode::Complex(NameResolvedOp::CallFunction { id, generic_params }) => {
-                let called_item_header = ctx.get_item_header(id);
+                let called_item_header = item_store.get_item_header(id);
                 if called_item_header.kind != ItemKind::GenericFunction {
                     OpCode::Complex(PartiallyResolvedOp::CallFunction {
                         id,
@@ -372,7 +430,7 @@ fn partially_resolve_block(
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();
                         ensure_structs_declared_in_type(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -423,7 +481,13 @@ fn partially_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(ctx, stores, pass_manager, &mut local_had_error, id);
+                ensure_structs_declared_in_type(
+                    item_store,
+                    stores,
+                    pass_manager,
+                    &mut local_had_error,
+                    id,
+                );
                 if local_had_error.into_bool() {
                     had_error.set();
                     continue;
@@ -462,13 +526,13 @@ fn partially_resolve_block(
 }
 
 pub fn resolve_body(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let cur_item_header = ctx.get_item_header(cur_id);
+    let cur_item_header = item_store.get_item_header(cur_id);
     match cur_item_header.kind {
         ItemKind::Variable | ItemKind::Module | ItemKind::StructDef | ItemKind::FunctionDecl => {
             panic!(
@@ -478,13 +542,13 @@ pub fn resolve_body(
         }
 
         ItemKind::GenericFunction => {
-            let unresolved_body = ctx.get_item_body(cur_id);
-            partially_resolve_block(ctx, stores, pass_manager, had_error, unresolved_body);
+            let unresolved_body = item_store.get_item_body(cur_id);
+            partially_resolve_block(item_store, stores, pass_manager, had_error, unresolved_body);
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } => {
-            let unresolved_body = ctx.get_item_body(cur_id);
-            fully_resolve_block(ctx, stores, pass_manager, had_error, unresolved_body);
+            let unresolved_body = item_store.get_item_body(cur_id);
+            fully_resolve_block(item_store, stores, pass_manager, had_error, unresolved_body);
         }
     };
 }

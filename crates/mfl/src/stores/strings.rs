@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lasso::{Rodeo, Spur};
 
 use crate::{
-    item_store::{Context, ItemId},
+    item_store::{ItemId, ItemStore},
     option::OptionExt,
     stores::FRENDLY_PATH_SEP,
 };
@@ -77,7 +77,7 @@ impl StringStore {
 
     #[inline]
     #[track_caller]
-    pub(crate) fn get_symbol_name(&mut self, ctx: &Context, item_id: ItemId) -> &str {
+    pub(crate) fn get_symbol_name(&mut self, item_store: &ItemStore, item_id: ItemId) -> &str {
         if let Some(&name) = self.friendly_names.get(&item_id) {
             return self.resolve(name);
         } else if let Some(&name) = self.fallback_symbol_names.get(&item_id) {
@@ -86,12 +86,12 @@ impl StringStore {
 
         let mut parts = Vec::new();
 
-        let item = ctx.get_item_header(item_id);
+        let item = item_store.get_item_header(item_id);
         parts.push(self.resolve(item.name.inner));
 
         let mut parent = item.parent;
         while let Some(parent_id) = parent {
-            let item = ctx.get_item_header(parent_id);
+            let item = item_store.get_item_header(parent_id);
             parts.push(self.resolve(item.name.inner));
             parent = item.parent;
         }

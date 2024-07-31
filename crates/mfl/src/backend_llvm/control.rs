@@ -3,8 +3,8 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    item_store::{ItemId, ItemKind},
     ir::{If, While},
+    item_store::{ItemId, ItemKind},
     stores::{ops::OpId, source::Spanned, types::TypeKind},
 };
 
@@ -23,7 +23,7 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(&ds.context.trir().get_item_signature(callee_id).entry)
+            .zip(&ds.item_store.trir().get_item_signature(callee_id).entry)
             .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
                 let value = value_store.load_value(self, value_id, ds)?;
                 let [input_type_id] = ds.analyzer.value_types([value_id]).unwrap();
@@ -61,7 +61,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder
                 .build_call(callee_value, &args, &format!("call_{callee_name}"))?;
 
-        let callee_header = ds.context.get_item_header(callee_id);
+        let callee_header = ds.item_store.get_item_header(callee_id);
         if matches!(callee_header.kind, ItemKind::Function { .. }) {
             self.enqueue_function(callee_id);
         }
@@ -98,7 +98,7 @@ impl<'ctx> CodeGen<'ctx> {
             return Ok(());
         }
 
-        let sig = ds.context.trir().get_item_signature(self_id);
+        let sig = ds.item_store.trir().get_item_signature(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()

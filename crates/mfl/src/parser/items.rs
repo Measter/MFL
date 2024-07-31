@@ -5,10 +5,10 @@ use flagset::FlagSet;
 use lasso::Spur;
 
 use crate::{
-    item_store::{ItemAttribute, Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, OpCode, StructDef, StructDefField},
+    item_store::{ItemAttribute, ItemId, ItemStore},
     lexer::{BracketKind, Token, TokenKind, TokenTree, TreeGroup},
     program::ModuleQueueType,
     stores::{ops::OpId, source::Spanned},
@@ -156,7 +156,7 @@ fn try_get_attributes(
 }
 
 fn parse_item_body(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     token_iter: &mut TokenIter,
@@ -168,7 +168,7 @@ fn parse_item_body(
         .expect_group(stores, BracketKind::Brace, name_token)
         .recover(had_error, &fallback);
 
-    let mut body = parse_item_body_contents(ctx, stores, &delim.tokens, parent_id)
+    let mut body = parse_item_body_contents(item_store, stores, &delim.tokens, parent_id)
         .recover(had_error, Vec::new());
 
     // Makes later logic easier if we always have a prologue and epilogue.
@@ -188,7 +188,7 @@ fn parse_item_body(
 }
 
 pub fn parse_function(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -226,7 +226,7 @@ pub fn parse_function(
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
     if !has_body {
-        ctx.new_function_decl(
+        item_store.new_function_decl(
             stores,
             &mut had_error,
             name_token.map(|t| t.lexeme),
@@ -237,7 +237,7 @@ pub fn parse_function(
         );
     } else {
         let item_id = if generic_params.tokens.is_empty() {
-            ctx.new_function(
+            item_store.new_function(
                 stores,
                 &mut had_error,
                 name_token.map(|t| t.lexeme),
@@ -247,7 +247,7 @@ pub fn parse_function(
                 exit_stack,
             )
         } else {
-            ctx.new_generic_function(
+            item_store.new_generic_function(
                 stores,
                 &mut had_error,
                 name_token.map(|t| t.lexeme),
@@ -264,12 +264,19 @@ pub fn parse_function(
         };
 
         if let Some(lang_item_id) = attributes.lang_item {
-            ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+            item_store.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
         }
 
-        let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
+        let body = parse_item_body(
+            item_store,
+            stores,
+            &mut had_error,
+            token_iter,
+            name_token,
+            item_id,
+        );
         let body_block_id = stores.blocks.new_block(body);
-        ctx.set_item_body(item_id, body_block_id);
+        item_store.set_item_body(item_id, body_block_id);
     }
 
     if had_error.into_bool() {
@@ -280,7 +287,7 @@ pub fn parse_function(
 }
 
 pub fn parse_assert(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -292,16 +299,23 @@ pub fn parse_assert(
         .expect_single(stores, TokenKind::Ident, keyword.location)
         .recover(&mut had_error, keyword);
 
-    let item_id = ctx.new_assert(
+    let item_id = item_store.new_assert(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
     );
 
-    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
+    let body = parse_item_body(
+        item_store,
+        stores,
+        &mut had_error,
+        token_iter,
+        name_token,
+        item_id,
+    );
     let body_block_id = stores.blocks.new_block(body);
-    ctx.set_item_body(item_id, body_block_id);
+    item_store.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())
@@ -311,7 +325,7 @@ pub fn parse_assert(
 }
 
 pub fn parse_const(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -325,7 +339,7 @@ pub fn parse_const(
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
-    let item_id = ctx.new_const(
+    let item_id = item_store.new_const(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
@@ -333,9 +347,16 @@ pub fn parse_const(
         exit_stack,
     );
 
-    let body = parse_item_body(ctx, stores, &mut had_error, token_iter, name_token, item_id);
+    let body = parse_item_body(
+        item_store,
+        stores,
+        &mut had_error,
+        token_iter,
+        name_token,
+        item_id,
+    );
     let body_block_id = stores.blocks.new_block(body);
-    ctx.set_item_body(item_id, body_block_id);
+    item_store.set_item_body(item_id, body_block_id);
 
     if had_error.into_bool() {
         Err(())
@@ -345,7 +366,7 @@ pub fn parse_const(
 }
 
 pub fn parse_variable(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -391,7 +412,7 @@ pub fn parse_variable(
 
     let variable_type = unresolved_store_type.pop().unwrap();
 
-    ctx.new_variable(
+    item_store.new_variable(
         stores,
         &mut had_error,
         name_token.map(|t| t.lexeme),
@@ -408,7 +429,7 @@ pub fn parse_variable(
 }
 
 pub fn parse_struct_or_union(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     module_id: ItemId,
@@ -508,7 +529,7 @@ pub fn parse_struct_or_union(
         is_union: keyword.inner.kind == TokenKind::Union,
     };
 
-    let item_id = ctx.new_struct(
+    let item_id = item_store.new_struct(
         stores,
         &mut had_error,
         module_id,
@@ -516,7 +537,7 @@ pub fn parse_struct_or_union(
         attributes.attributes,
     );
     if let Some(lang_item_id) = attributes.lang_item {
-        ctx.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
+        item_store.set_lang_item(stores, &mut had_error, lang_item_id, item_id);
     }
 
     if had_error.into_bool() {
@@ -544,7 +565,7 @@ pub fn parse_module(
 }
 
 pub fn parse_import(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     token_iter: &mut TokenIter,
@@ -564,7 +585,7 @@ pub fn parse_import(
         return Ok(());
     };
 
-    ctx.urir_mut()
+    item_store.urir_mut()
         .get_scope_mut(module_id)
         .add_unresolved_import(path);
 

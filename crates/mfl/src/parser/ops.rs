@@ -3,13 +3,13 @@ use intcast::IntCast;
 use smallvec::SmallVec;
 
 use crate::{
-    item_store::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, Memory, OpCode, Stack,
         UnresolvedOp, While, WhileTokens,
     },
+    item_store::{ItemId, ItemStore},
     lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind, TokenTree},
     parser::utils::parse_float_lexeme,
     stores::{
@@ -753,7 +753,7 @@ pub fn parse_pack(
 }
 
 pub fn parse_if(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -769,14 +769,14 @@ pub fn parse_if(
         false,
     )?;
 
-    let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
+    let condition = parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
     let then_block_tokens =
         token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
     let mut close_token = then_block_tokens.last_token();
 
-    let then_block = parse_item_body_contents(ctx, stores, &then_block_tokens.tokens, parent_id)?;
+    let then_block = parse_item_body_contents(item_store, stores, &then_block_tokens.tokens, parent_id)?;
     let then_block = stores.blocks.new_block(then_block);
 
     let else_token = close_token;
@@ -795,14 +795,14 @@ pub fn parse_if(
         )?;
 
         let elif_condition =
-            parse_item_body_contents(ctx, stores, &elif_condition_tokens.list, parent_id)?;
+            parse_item_body_contents(item_store, stores, &elif_condition_tokens.list, parent_id)?;
         let elif_condition = stores.blocks.new_block(elif_condition);
 
         let elif_block_tokens =
             token_iter.expect_group(stores, BracketKind::Brace, elif_condition_tokens.close)?;
 
         let elif_block =
-            parse_item_body_contents(ctx, stores, &elif_block_tokens.tokens, parent_id)?;
+            parse_item_body_contents(item_store, stores, &elif_block_tokens.tokens, parent_id)?;
         let elif_block = stores.blocks.new_block(elif_block);
 
         elif_blocks.push((
@@ -819,7 +819,7 @@ pub fn parse_if(
         let else_token = token_iter.next().unwrap_single();
         let else_block_tokens = token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
         let else_block =
-            parse_item_body_contents(ctx, stores, &else_block_tokens.tokens, parent_id)?;
+            parse_item_body_contents(item_store, stores, &else_block_tokens.tokens, parent_id)?;
         close_token = else_block_tokens.last_token();
         else_block
     } else {
@@ -866,7 +866,7 @@ pub fn parse_if(
 }
 
 pub fn parse_while(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
@@ -882,13 +882,13 @@ pub fn parse_while(
         false,
     )?;
 
-    let condition = parse_item_body_contents(ctx, stores, &condition_tokens.list, parent_id)?;
+    let condition = parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
     let body_tokens =
         token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
 
-    let body_block = parse_item_body_contents(ctx, stores, &body_tokens.tokens, parent_id)?;
+    let body_block = parse_item_body_contents(item_store, stores, &body_tokens.tokens, parent_id)?;
     let body_block = stores.blocks.new_block(body_block);
 
     let while_tokens = WhileTokens {

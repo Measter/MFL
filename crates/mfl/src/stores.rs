@@ -7,7 +7,7 @@ use types::TypeStore;
 use values::ValueStore;
 
 use crate::{
-    item_store::{Context, ItemAttribute, ItemId, ItemKind},
+    item_store::{ItemAttribute, ItemId, ItemKind, ItemStore},
     pass_manager::PassManager,
 };
 
@@ -66,11 +66,11 @@ impl Stores {
 
     pub fn build_mangled_name(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         pass_manager: &mut PassManager,
         item_id: ItemId,
     ) -> Spur {
-        let item_header = ctx.get_item_header(item_id);
+        let item_header = item_store.get_item_header(item_id);
 
         if matches!(
             item_header.kind,
@@ -86,7 +86,7 @@ impl Stores {
 
         let mut mangled_name = String::new();
         if let Some(parent_id) = item_header.parent {
-            let _ = pass_manager.ensure_build_names(ctx, self, parent_id);
+            let _ = pass_manager.ensure_build_names(item_store, self, parent_id);
 
             mangled_name.push_str(self.strings.get_mangled_name(parent_id));
             mangled_name.push_str(MANGLED_PATH_SEP);
@@ -96,10 +96,10 @@ impl Stores {
 
         if matches!(item_header.kind, ItemKind::Function)
             && pass_manager
-                .ensure_type_resolved_signature(ctx, self, item_id)
+                .ensure_type_resolved_signature(item_store, self, item_id)
                 .is_ok()
         {
-            let signature = ctx.trir().get_item_signature(item_id);
+            let signature = item_store.trir().get_item_signature(item_id);
             if let [first, rest @ ..] = signature.generic_params.as_slice() {
                 mangled_name.push_str(MANGLED_GENERIC_OPEN);
 
@@ -124,15 +124,15 @@ impl Stores {
     // Creates the user-friendly name displayed in the compiler diagnostics.
     pub fn build_friendly_name(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         pass_manager: &mut PassManager,
         item_id: ItemId,
     ) -> Spur {
-        let item_header = ctx.get_item_header(item_id);
+        let item_header = item_store.get_item_header(item_id);
 
         let mut friendly_name = String::new();
         if let Some(parent_id) = item_header.parent {
-            let _ = pass_manager.ensure_build_names(ctx, self, parent_id);
+            let _ = pass_manager.ensure_build_names(item_store, self, parent_id);
 
             friendly_name.push_str(self.strings.get_friendly_name(parent_id));
             friendly_name.push_str(FRENDLY_PATH_SEP);
@@ -142,10 +142,10 @@ impl Stores {
 
         if matches!(item_header.kind, ItemKind::Function { .. })
             && pass_manager
-                .ensure_type_resolved_signature(ctx, self, item_id)
+                .ensure_type_resolved_signature(item_store, self, item_id)
                 .is_ok()
         {
-            let signature = ctx.trir().get_item_signature(item_id);
+            let signature = item_store.trir().get_item_signature(item_id);
             if let [first, rest @ ..] = signature.generic_params.as_slice() {
                 friendly_name.push_str(FRENDLY_GENERIC_OPEN);
 

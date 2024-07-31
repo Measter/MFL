@@ -1,17 +1,17 @@
 use ariadne::{Color, Label};
 
 use crate::{
-    item_store::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
+    item_store::{ItemId, ItemKind, ItemStore},
     pass_manager::PassManager,
     simulate::SimulatorValue,
-    stores::{values::ConstVal, ops::OpId},
+    stores::{ops::OpId, values::ConstVal},
     Stores,
 };
 
 pub(crate) fn epilogue_return(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     op_id: OpId,
@@ -33,10 +33,10 @@ pub(crate) fn epilogue_return(
             continue;
         };
 
-        let variable_header = ctx.get_item_header(variable_item_id);
+        let variable_header = item_store.get_item_header(variable_item_id);
         // We only care about local memories, not globals.
         let parent_id = variable_header.parent.unwrap(); // Only top-level-modules don't have a parent.
-        if ctx.get_item_header(parent_id).kind == ItemKind::Module {
+        if item_store.get_item_header(parent_id).kind == ItemKind::Module {
             continue;
         }
 
@@ -67,21 +67,21 @@ pub(crate) fn epilogue_return(
 }
 
 pub(crate) fn cp_const(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     op_id: OpId,
     const_item_id: ItemId,
 ) {
     if pass_manager
-        .ensure_evaluated_consts_asserts(ctx, stores, const_item_id)
+        .ensure_evaluated_consts_asserts(item_store, stores, const_item_id)
         .is_err()
     {
         return;
     }
 
     let op_data = stores.ops.get_op_io(op_id);
-    let Some(output_const_vals) = ctx.get_consts(const_item_id) else {
+    let Some(output_const_vals) = item_store.get_consts(const_item_id) else {
         return;
     };
 

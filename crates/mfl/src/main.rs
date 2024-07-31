@@ -18,7 +18,7 @@ use color_eyre::{
     eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
-use item_store::{Context, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
+use item_store::{ItemStore, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use stores::{types::BuiltinTypes, Stores};
@@ -107,21 +107,21 @@ fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature
     *argc_id == expected_argc_id && *argv_id == u8_ptr_ptr_type.id
 }
 
-fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
+fn load_program(args: &Args) -> Result<(ItemStore, Stores, Vec<ItemId>)> {
     let _span = debug_span!(stringify!(load_program)).entered();
     let mut stores = Stores::new();
 
-    let mut context = Context::new();
-    let entry_module_id = program::load_program(&mut context, &mut stores, args)?;
+    let mut item_store = ItemStore::new();
+    let entry_module_id = program::load_program(&mut item_store, &mut stores, args)?;
 
-    pass_manager::run(&mut context, &mut stores, args.print_analyzer_stats)?;
+    pass_manager::run(&mut item_store, &mut stores, args.print_analyzer_stats)?;
 
     let mut top_level_symbols = Vec::new();
 
     if args.is_library {
-        let entry_scope = context.nrir().get_scope(entry_module_id);
+        let entry_scope = item_store.nrir().get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
-            let item_header = context.get_item_header(item_id.inner);
+            let item_header = item_store.get_item_header(item_id.inner);
             if item_header.kind == ItemKind::Function
                 && item_header.attributes.contains(ItemAttribute::Extern)
             {
@@ -130,7 +130,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         }
     } else {
         let entry_symbol = stores.strings.intern("entry");
-        let entry_scope = context.nrir().get_scope(entry_module_id);
+        let entry_scope = item_store.nrir().get_scope(entry_module_id);
 
         let entry_function_id = entry_scope
             .get_symbol(entry_symbol)
@@ -139,7 +139,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         top_level_symbols.push(entry_function_id);
 
         debug!("checking entry signature");
-        let entry_item = context.get_item_header(entry_function_id);
+        let entry_item = item_store.get_item_header(entry_function_id);
         if !matches!(entry_item.kind, ItemKind::Function { .. }) {
             let name = entry_item.name;
             diagnostics::emit_error(
@@ -156,7 +156,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
             return Err(eyre!("invalid `entry` procedure type"));
         }
 
-        let entry_sig = context.trir().get_item_signature(entry_function_id);
+        let entry_sig = item_store.trir().get_item_signature(entry_function_id);
         if !is_valid_entry_sig(&mut stores, entry_sig) {
             let name = entry_item.name;
             diagnostics::emit_error(
@@ -170,7 +170,7 @@ fn load_program(args: &Args) -> Result<(Context, Stores, Vec<ItemId>)> {
         }
     }
 
-    Ok((context, stores, top_level_symbols))
+    Ok((item_store, stores, top_level_symbols))
 }
 
 fn run_compile(args: &Args) -> Result<()> {

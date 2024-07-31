@@ -281,7 +281,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.op_store.get_op_io(op_id);
         let output_ids = op_io.outputs();
 
-        let Some(const_vals) = ds.context.get_consts(const_id) else {
+        let Some(const_vals) = ds.item_store.get_consts(const_id) else {
             panic!("ICE: Const wasn't ready during codegen");
         };
 

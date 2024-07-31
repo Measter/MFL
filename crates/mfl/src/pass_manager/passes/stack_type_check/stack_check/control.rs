@@ -6,16 +6,16 @@ use smallvec::SmallVec;
 use tracing::trace;
 
 use crate::{
-    item_store::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
     ir::{If, While},
+    item_store::{ItemId, ItemStore},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
-        values::{IfMerge, ValueId, WhileMerge, WhileMerges},
         ops::OpId,
         source::Spanned,
+        values::{IfMerge, ValueId, WhileMerge, WhileMerges},
     },
     Stores,
 };
@@ -23,15 +23,15 @@ use crate::{
 use super::ensure_stack_depth;
 
 pub(crate) fn epilogue_return(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
     item_id: ItemId,
 ) {
-    let item_header = ctx.get_item_header(item_id);
-    let item_sig = ctx.urir().get_item_signature(item_id);
+    let item_header = item_store.get_item_header(item_id);
+    let item_sig = item_store.urir().get_item_signature(item_id);
 
     let exit_sig = &item_sig.exit.inner;
     if stack.len() != exit_sig.len() {
@@ -93,14 +93,14 @@ pub(crate) fn epilogue_return(
 }
 
 pub(crate) fn prologue(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
     item_id: ItemId,
 ) {
     let mut outputs = SmallVec::<[_; 8]>::new();
-    let sig = ctx.urir().get_item_signature(item_id);
+    let sig = item_store.urir().get_item_signature(item_id);
 
     for arg in &sig.entry.inner {
         let new_id = stores.values.new_value(arg.location, None);
@@ -147,7 +147,7 @@ pub(crate) fn syscall(
 }
 
 pub(crate) fn call_function_const(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
@@ -155,7 +155,7 @@ pub(crate) fn call_function_const(
     callee_id: ItemId,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    let callee_sig = ctx.urir().get_item_signature(callee_id);
+    let callee_sig = item_store.urir().get_item_signature(callee_id);
     let entry_arg_count = callee_sig.entry.inner.len();
 
     if stack.len() < entry_arg_count {
@@ -199,7 +199,7 @@ pub(crate) fn call_function_const(
 }
 
 pub(crate) fn analyze_if(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -214,7 +214,7 @@ pub(crate) fn analyze_if(
 
     // Evaluate condition.
     super::super::analyze_block(
-        ctx,
+        item_store,
         stores,
         pass_manager,
         had_error,
@@ -245,7 +245,7 @@ pub(crate) fn analyze_if(
 
     // Now we can do the then-block
     super::super::analyze_block(
-        ctx,
+        item_store,
         stores,
         pass_manager,
         had_error,
@@ -265,7 +265,7 @@ pub(crate) fn analyze_if(
 
     // Now analyze the else block.
     super::super::analyze_block(
-        ctx,
+        item_store,
         stores,
         pass_manager,
         had_error,
@@ -333,7 +333,7 @@ pub(crate) fn analyze_if(
 }
 
 pub(crate) fn analyze_while(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -348,7 +348,7 @@ pub(crate) fn analyze_while(
 
     // Evaluate the condition.
     super::super::analyze_block(
-        ctx,
+        item_store,
         stores,
         pass_manager,
         had_error,
@@ -425,7 +425,7 @@ pub(crate) fn analyze_while(
 
     // Now do the same, but with the body.
     super::super::analyze_block(
-        ctx,
+        item_store,
         stores,
         pass_manager,
         had_error,

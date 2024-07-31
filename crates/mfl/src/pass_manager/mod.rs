@@ -8,7 +8,7 @@ use prettytable::{row, Table};
 use tracing::{debug_span, trace};
 
 use crate::{
-    item_store::{Context, ItemHeader, ItemId, ItemKind, LangItem},
+    item_store::{ItemStore, ItemHeader, ItemId, ItemKind, LangItem},
     diagnostics,
     error_signal::ErrorSignal,
     option::OptionExt,
@@ -47,7 +47,7 @@ flags! {
 impl PassState {
     fn get_function(
         self,
-    ) -> fn(&mut PassManager, &mut Context, &mut Stores, ItemId) -> Result<(), ()> {
+    ) -> fn(&mut PassManager, &mut ItemStore, &mut Stores, ItemId) -> Result<(), ()> {
         match self {
             PassState::IdentResolvedSignature => PassManager::ensure_ident_resolved_signature,
             PassState::IdentResolvedBody => PassManager::ensure_ident_resolved_body,
@@ -185,47 +185,47 @@ macro_rules! ensure_state_deps {
 impl PassManager {
     pub fn ensure_build_names(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::BuildNames;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("BuildNames").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
-        stores.build_friendly_name(ctx, self, cur_item);
-        stores.build_mangled_name(ctx, self, cur_item);
+        stores.build_friendly_name(item_store, self, cur_item);
+        stores.build_mangled_name(item_store, self, cur_item);
         self.set_passed(cur_item, STATE);
         Ok(())
     }
 
     fn ensure_check_asserts(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::CheckAsserts;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("CheckAsserts").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         // Type check and const prop ensure this value exists.
-        let Some([SimulatorValue::Bool(assert_is_true)]) = ctx.get_consts(cur_item) else {
+        let Some([SimulatorValue::Bool(assert_is_true)]) = item_store.get_consts(cur_item) else {
             unreachable!()
         };
 
         if !assert_is_true {
-            let item_header = ctx.get_item_header(cur_item);
+            let item_header = item_store.get_item_header(cur_item);
             diagnostics::emit_error(
                 stores,
                 item_header.name.location,
@@ -246,21 +246,21 @@ impl PassManager {
 
     fn ensure_const_prop_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::ConstPropBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, PassState::ConstPropBody);
+        ensure_state_deps!(self, item_store, stores, cur_item, PassState::ConstPropBody);
 
         let _span = debug_span!("ConstProp").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::const_prop::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+        passes::const_prop::analyze_item(item_store, stores, self, &mut had_error, cur_item);
 
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
@@ -273,21 +273,21 @@ impl PassManager {
 
     fn ensure_cyclic_ref_check_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::CyclicRefCheckBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("CycleCheck").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
+        passes::cycles::check_invalid_cycles(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -299,21 +299,21 @@ impl PassManager {
 
     pub fn ensure_declare_structs(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::DeclareStructs;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("DeclStruct").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::declare_struct(ctx, stores, self, &mut had_error, cur_item);
+        passes::structs::declare_struct(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -325,27 +325,27 @@ impl PassManager {
 
     fn ensure_define_structs(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::DefineStructs;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("DefStruct").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
-        let struct_def = ctx.nrir().get_struct(cur_item);
+        let struct_def = item_store.nrir().get_struct(cur_item);
         if struct_def.generic_params.is_empty() && !self.defined_generic_structs {
-            let all_generic_structs = ctx.get_generic_structs().to_owned();
+            let all_generic_structs = item_store.get_generic_structs().to_owned();
             for gsi in all_generic_structs {
-                if self.ensure_define_structs(ctx, stores, gsi).is_err() {
+                if self.ensure_define_structs(item_store, stores, gsi).is_err() {
                     had_error.set();
                 }
             }
@@ -358,7 +358,7 @@ impl PassManager {
         }
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::define_struct(ctx, stores, self, &mut had_error, cur_item);
+        passes::structs::define_struct(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -370,23 +370,23 @@ impl PassManager {
 
     pub fn ensure_evaluated_consts_asserts(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::EvaluatedConstsAsserts;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("EvaluateConstAsserts").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
-        let result = simulate_execute_program(ctx, stores, self, cur_item);
+        let result = simulate_execute_program(item_store, stores, self, cur_item);
         match result {
             Ok(stack) => {
-                let type_sig = ctx.trir().get_item_signature(cur_item);
+                let type_sig = item_store.trir().get_item_signature(cur_item);
                 let const_vals = stack
                     .into_iter()
                     .zip(&type_sig.exit)
@@ -408,7 +408,7 @@ impl PassManager {
                     })
                     .collect();
 
-                ctx.set_consts(cur_item, const_vals);
+                item_store.set_consts(cur_item, const_vals);
 
                 self.set_passed(cur_item, STATE);
                 Ok(())
@@ -422,21 +422,21 @@ impl PassManager {
 
     pub fn ensure_ident_resolved_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("IdentBody").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::ident_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
+        passes::ident_resolution::resolve_body(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -448,21 +448,21 @@ impl PassManager {
 
     pub fn ensure_ident_resolved_signature(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedSignature;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("IdentSig").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::ident_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
+        passes::ident_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -474,22 +474,22 @@ impl PassManager {
 
     pub fn ensure_partially_resolve_types(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::PartiallyTypeResolved;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("PartialType").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
-        passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_body(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -501,21 +501,21 @@ impl PassManager {
 
     fn ensure_self_containing_structs(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::SelfContainingStruct;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("SelfContainingStruct").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::cycles::check_invalid_cycles(ctx, stores, self, &mut had_error, cur_item);
+        passes::cycles::check_invalid_cycles(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -527,25 +527,25 @@ impl PassManager {
 
     fn ensure_stack_and_type_checked_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::StackAndTypeCheckedBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("StackTypeCheck").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
         let stats =
-            passes::stack_type_check::analyze_item(ctx, stores, self, &mut had_error, cur_item);
+            passes::stack_type_check::analyze_item(item_store, stores, self, &mut had_error, cur_item);
 
         self.stack_stats_table.add_row(row![
-            stores.strings.get_symbol_name(ctx, cur_item),
+            stores.strings.get_symbol_name(item_store, cur_item),
             stats.max_stack_depth,
             stats.unique_item_count
         ]);
@@ -560,41 +560,41 @@ impl PassManager {
 
     fn ensure_terminal_block_check_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TerminalBlockCheckBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("TerminalCheck").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
-        passes::terminal::determine_terminal_blocks(ctx, stores, cur_item);
+        passes::terminal::determine_terminal_blocks(item_store, stores, cur_item);
         self.set_passed(cur_item, STATE);
         Ok(())
     }
 
     fn ensure_type_resolved_body(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedBody;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("TypeBody").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::type_resolution::resolve_body(ctx, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_body(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -606,21 +606,21 @@ impl PassManager {
 
     pub fn ensure_type_resolved_signature(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedSignature;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("TypeSig").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::type_resolution::resolve_signature(ctx, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -632,21 +632,21 @@ impl PassManager {
 
     pub fn ensure_valid_attributes(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::ValidAttributes;
-        ensure_state_deps!(self, ctx, stores, cur_item, STATE);
+        ensure_state_deps!(self, item_store, stores, cur_item, STATE);
 
         let _span = debug_span!("ValidAttrib").entered();
         trace!(
-            name = stores.strings.get_symbol_name(ctx, cur_item),
+            name = stores.strings.get_symbol_name(item_store, cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::attributes::validate_attributes(ctx, stores, &mut had_error, cur_item);
+        passes::attributes::validate_attributes(item_store, stores, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -658,11 +658,11 @@ impl PassManager {
 
     fn ensure_done(
         &mut self,
-        ctx: &mut Context,
+        item_store: &mut ItemStore,
         stores: &mut Stores,
         cur_item: ItemId,
     ) -> Result<(), ()> {
-        let needed_states = match ctx.get_item_header(cur_item).kind {
+        let needed_states = match item_store.get_item_header(cur_item).kind {
             ItemKind::Module => [
                 PassState::BuildNames,
                 PassState::ValidAttributes,
@@ -705,29 +705,29 @@ impl PassManager {
         }
 
         for state in needed_states {
-            state.get_function()(self, ctx, stores, cur_item)?;
+            state.get_function()(self, item_store, stores, cur_item)?;
         }
 
         Ok(())
     }
 }
 
-pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
+pub fn run(item_store: &mut ItemStore, stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
     let _span = debug_span!(stringify!(pass_manager)).entered();
-    let mut pass_manager = PassManager::new(ctx.get_all_items());
+    let mut pass_manager = PassManager::new(item_store.get_all_items());
     let mut had_error = ErrorSignal::new();
 
     // Need to make sure the String type is declared before anything else.
-    let string_id = ctx.get_lang_items()[&LangItem::String];
+    let string_id = item_store.get_lang_items()[&LangItem::String];
     if pass_manager
-        .ensure_declare_structs(ctx, stores, string_id)
+        .ensure_declare_structs(item_store, stores, string_id)
         .is_err()
     {
         panic!("ICE: Failed to declared String type");
     };
 
     while let Some(cur_item_id) = pass_manager.next_item() {
-        if pass_manager.ensure_done(ctx, stores, cur_item_id).is_err() {
+        if pass_manager.ensure_done(item_store, stores, cur_item_id).is_err() {
             had_error.set();
         }
     }

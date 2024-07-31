@@ -1,5 +1,5 @@
 use crate::{
-    item_store::{Context, ItemId},
+    item_store::{ItemStore, ItemId},
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
@@ -14,7 +14,7 @@ mod memory;
 mod stack_ops;
 
 fn analyze_block(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -62,7 +62,7 @@ fn analyze_block(
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {
-                        control::epilogue_return(ctx, stores, had_error, op_id);
+                        control::epilogue_return(item_store, stores, had_error, op_id);
 
                         // We're terminated the current block, so don't process any remaining ops.
                         break;
@@ -98,10 +98,10 @@ fn analyze_block(
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
-                TypeResolvedOp::Const { id } => control::cp_const(ctx, stores, pass_manager, op_id, id),
+                TypeResolvedOp::Const { id } => control::cp_const(item_store, stores, pass_manager, op_id, id),
                 TypeResolvedOp::Variable { id, .. } => control::variable(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
-                    stack_ops::size_of(ctx, stores, pass_manager, op_id, id)
+                    stack_ops::size_of(item_store, stores, pass_manager, op_id, id)
                 }
 
                 // Nothing to do here.
@@ -112,11 +112,11 @@ fn analyze_block(
 }
 
 pub fn analyze_item(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) {
-    analyze_block(ctx, stores, pass_manager, had_error, ctx.get_item_body(item_id));
+    analyze_block(item_store, stores, pass_manager, had_error, item_store.get_item_body(item_id));
 }

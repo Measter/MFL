@@ -5,7 +5,7 @@ use tracing::info;
 use crate::{
     diagnostics,
     ir::{Arithmetic, Basic, Compare, Control, Direction, OpCode, Stack, TypeResolvedOp},
-    item_store::{Context, ItemId},
+    item_store::{ItemStore, ItemId},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{
@@ -108,7 +108,7 @@ fn apply_bool_op(
 }
 
 fn simulate_execute_program_block(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     block_id: BlockId,
@@ -177,7 +177,7 @@ fn simulate_execute_program_block(
                 }
                 Control::If(if_op) => {
                     simulate_execute_program_block(
-                        ctx,
+                        item_store,
                         stores,
                         pass_manager,
                         if_op.condition,
@@ -187,7 +187,7 @@ fn simulate_execute_program_block(
                     let a = value_stack.pop().unwrap();
                     if a == SimulatorValue::Bool(true) {
                         simulate_execute_program_block(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             if_op.then_block,
@@ -195,7 +195,7 @@ fn simulate_execute_program_block(
                         )?;
                     } else {
                         simulate_execute_program_block(
-                            ctx,
+                            item_store,
                             stores,
                             pass_manager,
                             if_op.else_block,
@@ -205,7 +205,7 @@ fn simulate_execute_program_block(
                 }
                 Control::While(while_op) => loop {
                     simulate_execute_program_block(
-                        ctx,
+                        item_store,
                         stores,
                         pass_manager,
                         while_op.condition,
@@ -216,7 +216,7 @@ fn simulate_execute_program_block(
                         break;
                     }
                     simulate_execute_program_block(
-                        ctx,
+                        item_store,
                         stores,
                         pass_manager,
                         while_op.body_block,
@@ -294,13 +294,13 @@ fn simulate_execute_program_block(
             }
             OpCode::Complex(TypeResolvedOp::Const { id }) => {
                 if pass_manager
-                    .ensure_evaluated_consts_asserts(ctx, stores, id)
+                    .ensure_evaluated_consts_asserts(item_store, stores, id)
                     .is_err()
                 {
                     return Err(SimulationError::UnavailableConst);
                 }
 
-                let Some(vals) = ctx.get_consts(id) else {
+                let Some(vals) = item_store.get_consts(id) else {
                     unreachable!();
                 };
                 value_stack.extend(vals.iter().copied());
@@ -325,7 +325,7 @@ fn emit_unsupported_diag(stores: &mut Stores, op_id: OpId) {
 }
 
 pub(crate) fn simulate_execute_program(
-    ctx: &mut Context,
+    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     item_id: ItemId,
@@ -333,8 +333,8 @@ pub(crate) fn simulate_execute_program(
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
-    let block = ctx.get_item_body(item_id);
-    simulate_execute_program_block(ctx, stores, pass_manager, block, &mut value_stack)?;
+    let block = item_store.get_item_body(item_id);
+    simulate_execute_program_block(item_store, stores, pass_manager, block, &mut value_stack)?;
 
     Ok(value_stack)
 }

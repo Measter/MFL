@@ -25,10 +25,9 @@ use lasso::Spur;
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
-    item_store::{Context as MflContext, ItemAttribute, ItemId, ItemKind},
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
+    item_store::{ItemAttribute, ItemId, ItemKind, ItemStore},
     stores::{
-        values::{ValueId, ValueStore},
         block::{BlockId, BlockStore},
         ops::OpStore,
         source::SourceStore,
@@ -36,6 +35,7 @@ use crate::{
         types::{
             BuiltinTypes, FloatWidth, IntSignedness, IntWidth, Integer, TypeId, TypeKind, TypeStore,
         },
+        values::{ValueId, ValueStore},
     },
     Args, Stores,
 };
@@ -169,7 +169,7 @@ impl OpCode<TypeResolvedOp> {
 }
 
 struct DataStore<'a> {
-    context: &'a MflContext,
+    item_store: &'a ItemStore,
     strings_store: &'a mut StringStore,
     analyzer: &'a ValueStore,
     type_store: &'a mut TypeStore,
@@ -335,14 +335,14 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_function_prototypes(
         &mut self,
-        mfl_ctx: &MflContext,
+        item_store: &ItemStore,
         string_store: &mut StringStore,
         type_store: &mut TypeStore,
     ) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
-        for item in mfl_ctx.get_all_items() {
+        for item in item_store.get_all_items() {
             if !matches!(
                 item.kind,
                 ItemKind::Function { .. } | ItemKind::FunctionDecl
@@ -350,7 +350,7 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let item_sig = mfl_ctx.trir().get_item_signature(item.id);
+            let item_sig = item_store.trir().get_item_signature(item.id);
 
             let name = string_store.get_mangled_name(item.id);
             trace!(name, "Building prototype");
@@ -408,21 +408,21 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_global_variables(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) {
+    fn build_global_variables(&mut self, item_store: &ItemStore, stores: &mut Stores) {
         let _span = debug_span!(stringify!(CodeGen::build_global_variables)).entered();
-        for item in mfl_ctx.get_all_items() {
+        for item in item_store.get_all_items() {
             if item.kind != ItemKind::Variable {
                 continue;
             }
             let parent_id = item.parent.unwrap();
-            if mfl_ctx.get_item_header(parent_id).kind != ItemKind::Module {
+            if item_store.get_item_header(parent_id).kind != ItemKind::Module {
                 continue;
             }
 
             let name = stores.strings.get_mangled_name(item.id);
             trace!(name, "Building global");
 
-            let variable_store_type = mfl_ctx.trir().get_variable_type(item.id);
+            let variable_store_type = item_store.trir().get_variable_type(item.id);
             let llvm_type = self.get_type(&mut stores.types, variable_store_type);
             let global = self
                 .module
@@ -775,7 +775,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_procedure(
         &mut self,
-        mfl_ctx: &MflContext,
+        item_store: &ItemStore,
         id: ItemId,
         function: FunctionValue<'ctx>,
         stores: &mut Stores,
@@ -789,15 +789,15 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let scope = mfl_ctx.nrir().get_scope(id);
+        let scope = item_store.nrir().get_scope(id);
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
-            let item_header = mfl_ctx.get_item_header(item_id);
+            let item_header = item_store.get_item_header(item_id);
             if item_header.kind != ItemKind::Variable {
                 continue;
             }
 
-            let alloc_type_id = mfl_ctx.trir().get_variable_type(item_id);
+            let alloc_type_id = item_store.trir().get_variable_type(item_id);
             let (store_type_id, alloc_size, is_array) =
                 match stores.types.get_type_info(alloc_type_id).kind {
                     TypeKind::Array { type_id, length } => {
@@ -835,7 +835,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         let mut data_store = DataStore {
-            context: mfl_ctx,
+            item_store,
             analyzer: &stores.values,
             strings_store: &mut stores.strings,
             type_store: &mut stores.types,
@@ -847,7 +847,7 @@ impl<'ctx> CodeGen<'ctx> {
         trace!("Defining merge variables");
         self.build_merge_variables(
             &mut data_store,
-            mfl_ctx.get_item_body(id),
+            item_store.get_item_body(id),
             &mut value_store.merge_pair_map,
         )?;
 
@@ -857,7 +857,7 @@ impl<'ctx> CodeGen<'ctx> {
                 &mut data_store,
                 &mut value_store,
                 id,
-                mfl_ctx.get_item_body(id),
+                item_store.get_item_body(id),
                 function,
             )?;
 
@@ -877,11 +877,11 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn build(&mut self, mfl_ctx: &MflContext, stores: &mut Stores) -> InkwellResult {
+    fn build(&mut self, item_store: &ItemStore, stores: &mut Stores) -> InkwellResult {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(item_id) = self.function_queue.pop() {
             let function = self.item_function_map[&item_id];
-            self.compile_procedure(mfl_ctx, item_id, function, stores)?;
+            self.compile_procedure(item_store, item_id, function, stores)?;
         }
 
         self.pass_manager.run_on(&self.module);
@@ -891,7 +891,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_entry(
         &mut self,
-        mfl_ctx: &MflContext,
+        item_store: &ItemStore,
         string_store: &mut StringStore,
         type_store: &mut TypeStore,
         entry_id: ItemId,
@@ -917,7 +917,7 @@ impl<'ctx> CodeGen<'ctx> {
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
 
-        let entry_sig = mfl_ctx.trir().get_item_signature(entry_id);
+        let entry_sig = item_store.trir().get_item_signature(entry_id);
         let args = if entry_sig.entry.is_empty() {
             Vec::new()
         } else {
@@ -940,7 +940,7 @@ impl<'ctx> CodeGen<'ctx> {
 }
 
 pub(crate) fn compile(
-    mfl_ctx: &MflContext,
+    item_store: &ItemStore,
     stores: &mut Stores,
     top_level_items: &[ItemId],
     args: &Args,
@@ -1001,11 +1001,11 @@ pub(crate) fn compile(
     top_level_items
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
-    codegen.build_function_prototypes(mfl_ctx, &mut stores.strings, &mut stores.types);
-    codegen.build_global_variables(mfl_ctx, stores);
+    codegen.build_function_prototypes(item_store, &mut stores.strings, &mut stores.types);
+    codegen.build_global_variables(item_store, stores);
     if !args.is_library {
         codegen.build_entry(
-            mfl_ctx,
+            item_store,
             &mut stores.strings,
             &mut stores.types,
             top_level_items[0],
@@ -1017,7 +1017,7 @@ pub(crate) fn compile(
             .iter()
             .for_each(|id| codegen.item_function_map[id].set_linkage(Linkage::External));
     }
-    codegen.build(mfl_ctx, stores)?;
+    codegen.build(item_store, stores)?;
 
     {
         let _span = trace_span!("Writing object file").entered();
