@@ -9,7 +9,7 @@ use crate::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
         PartiallyResolvedType, TypeResolvedOp,
     },
-    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassContext},
+    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
         block::BlockId,
         types::{emit_type_error_diag, TypeId},
@@ -20,7 +20,7 @@ use crate::{
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -50,7 +50,7 @@ pub fn resolve_signature(
                             ensure_structs_declared_in_type(
                                 ctx,
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 &mut single_check_error,
                                 kind,
                             );
@@ -105,7 +105,7 @@ pub fn resolve_signature(
                         ensure_structs_declared_in_type(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut single_check_error,
                             kind,
                         );
@@ -142,7 +142,7 @@ pub fn resolve_signature(
         ItemKind::Variable => {
             let variable_type_unresolved = ctx.nrir().get_variable_type(cur_id).clone();
             if let Some(type_item) = variable_type_unresolved.item_id() {
-                if pass_ctx
+                if pass_manager
                     .ensure_declare_structs(ctx, stores, type_item)
                     .is_err()
                 {
@@ -190,7 +190,7 @@ pub fn resolve_signature(
 fn fully_resolve_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     unresolved_block_id: BlockId,
 ) {
@@ -201,13 +201,13 @@ fn fully_resolve_block(
             OpCode::Basic(bo) => {
                 match bo {
                     Basic::Control(Control::If(if_op)) => {
-                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
-                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
-                        fully_resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
+                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.condition);
+                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.then_block);
+                        fully_resolve_block(ctx, stores, pass_manager, had_error, if_op.else_block);
                     }
                     Basic::Control(Control::While(while_op)) => {
-                        fully_resolve_block(ctx, stores, pass_ctx, had_error, while_op.condition);
-                        fully_resolve_block(ctx, stores, pass_ctx, had_error, while_op.body_block);
+                        fully_resolve_block(ctx, stores, pass_manager, had_error, while_op.condition);
+                        fully_resolve_block(ctx, stores, pass_manager, had_error, while_op.body_block);
                     }
                     _ => {}
                 }
@@ -232,7 +232,7 @@ fn fully_resolve_block(
                         ensure_structs_declared_in_type(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             ugp,
                         );
@@ -256,7 +256,7 @@ fn fully_resolve_block(
 
                     let Ok(new_id) = ctx.get_generic_function_instance(
                         stores,
-                        pass_ctx,
+                        pass_manager,
                         had_error,
                         id,
                         &resolved_generic_params,
@@ -284,7 +284,7 @@ fn fully_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
+                ensure_structs_declared_in_type(ctx, stores, pass_manager, &mut local_had_error, id);
                 if local_had_error.into_bool() {
                     had_error.set();
                     continue;
@@ -322,7 +322,7 @@ fn fully_resolve_block(
 fn partially_resolve_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     unresolved_block_id: BlockId,
 ) {
@@ -333,22 +333,22 @@ fn partially_resolve_block(
             OpCode::Basic(bo) => {
                 match bo {
                     Basic::Control(Control::If(if_op)) => {
-                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.condition);
-                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.then_block);
-                        partially_resolve_block(ctx, stores, pass_ctx, had_error, if_op.else_block);
+                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.condition);
+                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.then_block);
+                        partially_resolve_block(ctx, stores, pass_manager, had_error, if_op.else_block);
                     }
                     Basic::Control(Control::While(while_op)) => {
                         partially_resolve_block(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             while_op.condition,
                         );
                         partially_resolve_block(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             while_op.body_block,
                         );
@@ -374,7 +374,7 @@ fn partially_resolve_block(
                         ensure_structs_declared_in_type(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             ugp,
                         );
@@ -423,7 +423,7 @@ fn partially_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(ctx, stores, pass_ctx, &mut local_had_error, id);
+                ensure_structs_declared_in_type(ctx, stores, pass_manager, &mut local_had_error, id);
                 if local_had_error.into_bool() {
                     had_error.set();
                     continue;
@@ -464,7 +464,7 @@ fn partially_resolve_block(
 pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -479,12 +479,12 @@ pub fn resolve_body(
 
         ItemKind::GenericFunction => {
             let unresolved_body = ctx.get_item_body(cur_id);
-            partially_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
+            partially_resolve_block(ctx, stores, pass_manager, had_error, unresolved_body);
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } => {
             let unresolved_body = ctx.get_item_body(cur_id);
-            fully_resolve_block(ctx, stores, pass_ctx, had_error, unresolved_body);
+            fully_resolve_block(ctx, stores, pass_manager, had_error, unresolved_body);
         }
     };
 }

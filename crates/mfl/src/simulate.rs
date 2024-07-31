@@ -7,7 +7,7 @@ use crate::{
     diagnostics,
     ir::{Arithmetic, Basic, Compare, Control, Direction, OpCode, Stack, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
-    pass_manager::{static_analysis::promote_int_type_bidirectional, PassContext},
+    pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{
         block::BlockId,
         ops::OpId,
@@ -110,7 +110,7 @@ fn apply_bool_op(
 fn simulate_execute_program_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     block_id: BlockId,
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
@@ -179,7 +179,7 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         ctx,
                         stores,
-                        pass_ctx,
+                        pass_manager,
                         if_op.condition,
                         value_stack,
                     )?;
@@ -189,7 +189,7 @@ fn simulate_execute_program_block(
                         simulate_execute_program_block(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             if_op.then_block,
                             value_stack,
                         )?;
@@ -197,7 +197,7 @@ fn simulate_execute_program_block(
                         simulate_execute_program_block(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             if_op.else_block,
                             value_stack,
                         )?;
@@ -207,7 +207,7 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         ctx,
                         stores,
-                        pass_ctx,
+                        pass_manager,
                         while_op.condition,
                         value_stack,
                     )?;
@@ -218,7 +218,7 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         ctx,
                         stores,
-                        pass_ctx,
+                        pass_manager,
                         while_op.body_block,
                         value_stack,
                     )?;
@@ -293,7 +293,7 @@ fn simulate_execute_program_block(
                 });
             }
             OpCode::Complex(TypeResolvedOp::Const { id }) => {
-                if pass_ctx
+                if pass_manager
                     .ensure_evaluated_consts_asserts(ctx, stores, id)
                     .is_err()
                 {
@@ -327,14 +327,14 @@ fn emit_unsupported_diag(stores: &mut Stores, op_id: OpId) {
 pub(crate) fn simulate_execute_program(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     item_id: ItemId,
 ) -> Result<Vec<SimulatorValue>, SimulationError> {
     info!("Make simulator type representation better.");
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     let block = ctx.get_item_body(item_id);
-    simulate_execute_program_block(ctx, stores, pass_ctx, block, &mut value_stack)?;
+    simulate_execute_program_block(ctx, stores, pass_manager, block, &mut value_stack)?;
 
     Ok(value_stack)
 }

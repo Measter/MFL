@@ -5,7 +5,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
-    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassContext},
+    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::types::TypeKind,
     Stores,
 };
@@ -13,7 +13,7 @@ use crate::{
 pub fn declare_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -57,8 +57,8 @@ pub fn declare_struct(
     let has_generics = !def.generic_params.is_empty();
     let def_name = def.name;
 
-    let friendly_name = stores.build_friendly_name(ctx, pass_ctx, cur_id);
-    let mangled_name = stores.build_mangled_name(ctx, pass_ctx, cur_id);
+    let friendly_name = stores.build_friendly_name(ctx, pass_manager, cur_id);
+    let mangled_name = stores.build_mangled_name(ctx, pass_manager, cur_id);
 
     if has_generics {
         stores.types.add_type(
@@ -80,14 +80,14 @@ pub fn declare_struct(
 pub fn define_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let def = ctx.nrir().get_struct(cur_id).clone();
     for field in &def.fields {
         // Failure here can be handled by the type resolver.
-        ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, &field.kind);
+        ensure_structs_declared_in_type(ctx, stores, pass_manager, had_error, &field.kind);
     }
 
     if !def.generic_params.is_empty() {

@@ -1,6 +1,6 @@
 use crate::{
     context::Context,
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::{
         analyzer::ConstVal,
         ops::OpId,
@@ -170,7 +170,7 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
 pub(crate) fn size_of(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     op_id: OpId,
     type_id: TypeId,
 ) {
@@ -178,7 +178,7 @@ pub(crate) fn size_of(
 
     match type_info.kind {
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
-            if pass_ctx
+            if pass_manager
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {

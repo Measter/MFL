@@ -11,7 +11,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
     n_ops::SliceNOps,
-    pass_manager::{static_analysis::can_promote_int_unidirectional, PassContext},
+    pass_manager::{static_analysis::can_promote_int_unidirectional, PassManager},
     stores::{
         ops::OpId,
         source::Spanned,
@@ -53,7 +53,7 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
 pub(crate) fn extract_array(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     emit_array: bool,
@@ -104,7 +104,7 @@ pub(crate) fn extract_array(
             match ptr_type_info.kind {
                 TypeKind::Array { type_id, .. } => type_id,
                 TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-                    if pass_ctx
+                    if pass_manager
                         .ensure_define_structs(ctx, stores, item_id)
                         .is_err()
                     {
@@ -131,7 +131,7 @@ pub(crate) fn extract_array(
         }
 
         TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-            if pass_ctx
+            if pass_manager
                 .ensure_define_structs(ctx, stores, item_id)
                 .is_err()
             {
@@ -186,7 +186,7 @@ pub(crate) fn extract_array(
 pub(crate) fn extract_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     field_name: Spanned<Spur>,
@@ -256,7 +256,7 @@ pub(crate) fn extract_struct(
         }
     };
 
-    if pass_ctx
+    if pass_manager
         .ensure_define_structs(ctx, stores, actual_struct_item_id)
         .is_err()
     {
@@ -308,7 +308,7 @@ pub(crate) fn extract_struct(
 pub(crate) fn insert_array(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     emit_array: bool,
@@ -357,7 +357,7 @@ pub(crate) fn insert_array(
                 TypeKind::Array { type_id, .. } => type_id,
                 TypeKind::Struct(struct_item_id)
                 | TypeKind::GenericStructInstance(struct_item_id) => {
-                    if pass_ctx
+                    if pass_manager
                         .ensure_define_structs(ctx, stores, struct_item_id)
                         .is_err()
                     {
@@ -383,7 +383,7 @@ pub(crate) fn insert_array(
             }
         }
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
-            if pass_ctx
+            if pass_manager
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {
@@ -476,7 +476,7 @@ pub(crate) fn insert_array(
 pub(crate) fn insert_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     field_name: Spanned<Spur>,
@@ -545,7 +545,7 @@ pub(crate) fn insert_struct(
         }
     };
 
-    if pass_ctx
+    if pass_manager
         .ensure_define_structs(ctx, stores, actual_struct_item_id)
         .is_err()
     {

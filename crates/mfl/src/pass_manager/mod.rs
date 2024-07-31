@@ -47,24 +47,24 @@ flags! {
 impl PassState {
     fn get_function(
         self,
-    ) -> fn(&mut PassContext, &mut Context, &mut Stores, ItemId) -> Result<(), ()> {
+    ) -> fn(&mut PassManager, &mut Context, &mut Stores, ItemId) -> Result<(), ()> {
         match self {
-            PassState::IdentResolvedSignature => PassContext::ensure_ident_resolved_signature,
-            PassState::IdentResolvedBody => PassContext::ensure_ident_resolved_body,
-            PassState::DeclareStructs => PassContext::ensure_declare_structs,
-            PassState::DefineStructs => PassContext::ensure_define_structs,
-            PassState::SelfContainingStruct => PassContext::ensure_self_containing_structs,
-            PassState::TypeResolvedSignature => PassContext::ensure_type_resolved_signature,
-            PassState::TypeResolvedBody => PassContext::ensure_type_resolved_body,
-            PassState::BuildNames => PassContext::ensure_build_names,
-            PassState::CyclicRefCheckBody => PassContext::ensure_cyclic_ref_check_body,
-            PassState::TerminalBlockCheckBody => PassContext::ensure_terminal_block_check_body,
-            PassState::StackAndTypeCheckedBody => PassContext::ensure_stack_and_type_checked_body,
-            PassState::ConstPropBody => PassContext::ensure_const_prop_body,
-            PassState::EvaluatedConstsAsserts => PassContext::ensure_evaluated_consts_asserts,
-            PassState::CheckAsserts => PassContext::ensure_check_asserts,
-            PassState::PartiallyTypeResolved => PassContext::ensure_partially_resolve_types,
-            PassState::ValidAttributes => PassContext::ensure_valid_attributes,
+            PassState::IdentResolvedSignature => PassManager::ensure_ident_resolved_signature,
+            PassState::IdentResolvedBody => PassManager::ensure_ident_resolved_body,
+            PassState::DeclareStructs => PassManager::ensure_declare_structs,
+            PassState::DefineStructs => PassManager::ensure_define_structs,
+            PassState::SelfContainingStruct => PassManager::ensure_self_containing_structs,
+            PassState::TypeResolvedSignature => PassManager::ensure_type_resolved_signature,
+            PassState::TypeResolvedBody => PassManager::ensure_type_resolved_body,
+            PassState::BuildNames => PassManager::ensure_build_names,
+            PassState::CyclicRefCheckBody => PassManager::ensure_cyclic_ref_check_body,
+            PassState::TerminalBlockCheckBody => PassManager::ensure_terminal_block_check_body,
+            PassState::StackAndTypeCheckedBody => PassManager::ensure_stack_and_type_checked_body,
+            PassState::ConstPropBody => PassManager::ensure_const_prop_body,
+            PassState::EvaluatedConstsAsserts => PassManager::ensure_evaluated_consts_asserts,
+            PassState::CheckAsserts => PassManager::ensure_check_asserts,
+            PassState::PartiallyTypeResolved => PassManager::ensure_partially_resolve_types,
+            PassState::ValidAttributes => PassManager::ensure_valid_attributes,
         }
     }
 
@@ -109,14 +109,14 @@ impl ItemState {
     }
 }
 
-pub struct PassContext {
+pub struct PassManager {
     states: HashMap<ItemId, ItemState>,
     queue: VecDeque<ItemId>,
     defined_generic_structs: bool,
     stack_stats_table: Table,
 }
 
-impl PassContext {
+impl PassManager {
     fn new(i: impl Iterator<Item = ItemHeader>) -> Self {
         let (states, queue) = i.map(|i| ((i.id, ItemState::new()), i.id)).unzip();
         Self {
@@ -182,7 +182,7 @@ macro_rules! ensure_state_deps {
     };
 }
 
-impl PassContext {
+impl PassManager {
     pub fn ensure_build_names(
         &mut self,
         ctx: &mut Context,
@@ -714,26 +714,26 @@ impl PassContext {
 
 pub fn run(ctx: &mut Context, stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
     let _span = debug_span!(stringify!(pass_manager)).entered();
-    let mut pass_ctx = PassContext::new(ctx.get_all_items());
+    let mut pass_manager = PassManager::new(ctx.get_all_items());
     let mut had_error = ErrorSignal::new();
 
     // Need to make sure the String type is declared before anything else.
     let string_id = ctx.get_lang_items()[&LangItem::String];
-    if pass_ctx
+    if pass_manager
         .ensure_declare_structs(ctx, stores, string_id)
         .is_err()
     {
         panic!("ICE: Failed to declared String type");
     };
 
-    while let Some(cur_item_id) = pass_ctx.next_item() {
-        if pass_ctx.ensure_done(ctx, stores, cur_item_id).is_err() {
+    while let Some(cur_item_id) = pass_manager.next_item() {
+        if pass_manager.ensure_done(ctx, stores, cur_item_id).is_err() {
             had_error.set();
         }
     }
 
     if print_stack_stats {
-        println!("\n{}", pass_ctx.stack_stats_table);
+        println!("\n{}", pass_manager.stack_stats_table);
     }
 
     if had_error.into_bool() {

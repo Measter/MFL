@@ -2,7 +2,7 @@ use crate::{
     context::{Context, ItemId},
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::block::BlockId,
     Stores,
 };
@@ -16,7 +16,7 @@ mod stack_ops;
 fn analyze_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     block_id: BlockId,
 ) {
@@ -98,10 +98,10 @@ fn analyze_block(
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
-                TypeResolvedOp::Const { id } => control::cp_const(ctx, stores, pass_ctx, op_id, id),
+                TypeResolvedOp::Const { id } => control::cp_const(ctx, stores, pass_manager, op_id, id),
                 TypeResolvedOp::Variable { id, .. } => control::variable(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
-                    stack_ops::size_of(ctx, stores, pass_ctx, op_id, id)
+                    stack_ops::size_of(ctx, stores, pass_manager, op_id, id)
                 }
 
                 // Nothing to do here.
@@ -114,9 +114,9 @@ fn analyze_block(
 pub fn analyze_item(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) {
-    analyze_block(ctx, stores, pass_ctx, had_error, ctx.get_item_body(item_id));
+    analyze_block(ctx, stores, pass_manager, had_error, ctx.get_item_body(item_id));
 }

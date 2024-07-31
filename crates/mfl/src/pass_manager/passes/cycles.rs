@@ -6,7 +6,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::{block::BlockId, source::SourceLocation},
     Stores,
 };
@@ -14,7 +14,7 @@ use crate::{
 pub fn check_invalid_cycles(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -22,10 +22,10 @@ pub fn check_invalid_cycles(
 
     match root_header.kind {
         ItemKind::Assert | ItemKind::Const => {
-            check_invalid_cycles_const_assert(ctx, stores, pass_ctx, had_error, cur_id)
+            check_invalid_cycles_const_assert(ctx, stores, pass_manager, had_error, cur_id)
         }
         ItemKind::StructDef => {
-            check_invalid_cycles_structs(ctx, stores, pass_ctx, had_error, cur_id)
+            check_invalid_cycles_structs(ctx, stores, pass_manager, had_error, cur_id)
         }
         // Nothing to do here.
         ItemKind::Variable
@@ -39,7 +39,7 @@ pub fn check_invalid_cycles(
 fn check_invalid_cycles_structs(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     root_id: ItemId,
 ) {
@@ -50,7 +50,7 @@ fn check_invalid_cycles_structs(
 
     while let Some(item) = check_queue.pop() {
         if item != root_id
-            && pass_ctx
+            && pass_manager
                 .ensure_ident_resolved_signature(ctx, stores, item)
                 .is_err()
         {
@@ -142,7 +142,7 @@ fn check_invalid_cyclic_refs_in_field_kind(
 fn check_invalid_cycles_const_assert(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     root_id: ItemId,
 ) {
@@ -153,7 +153,7 @@ fn check_invalid_cycles_const_assert(
     while let Some(item) = check_queue.pop() {
         let header = ctx.get_item_header(root_id);
         if item != root_id
-            && pass_ctx
+            && pass_manager
                 .ensure_ident_resolved_body(ctx, stores, item)
                 .is_err()
         {

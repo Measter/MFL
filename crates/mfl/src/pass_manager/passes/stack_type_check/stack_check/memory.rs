@@ -7,7 +7,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     n_ops::{SliceNOps, VecNOps},
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::{
         analyzer::ValueId,
         ops::OpId,
@@ -168,7 +168,7 @@ pub(crate) fn store(
 pub(crate) fn unpack(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -187,7 +187,7 @@ pub(crate) fn unpack(
     let length = match input_type_info.kind {
         TypeKind::Array { length, .. } => length,
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
-            if pass_ctx
+            if pass_manager
                 .ensure_define_structs(ctx, stores, struct_item_id)
                 .is_err()
             {
@@ -238,7 +238,7 @@ pub(crate) fn unpack(
 pub(crate) fn pack_struct(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
     op_id: OpId,
@@ -261,7 +261,7 @@ pub(crate) fn pack_struct(
         return;
     };
 
-    if pass_ctx
+    if pass_manager
         .ensure_define_structs(ctx, stores, struct_item_id)
         .is_err()
     {

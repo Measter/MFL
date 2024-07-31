@@ -9,7 +9,7 @@ use crate::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField,
         UnresolvedIdent, UnresolvedOp, UnresolvedType,
     },
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::{
         block::BlockId,
         source::{FileId, Spanned, WithSpan},
@@ -274,7 +274,7 @@ fn get_parent_module(ctx: &Context, mut cur_id: ItemId) -> ItemId {
 pub fn resolve_signature(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -283,7 +283,7 @@ pub fn resolve_signature(
         ItemKind::StructDef => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
-            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+            let _ = pass_manager.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
             let def = ctx.urir().get_struct(cur_id);
             let resolved = resolve_idents_in_struct_def(ctx, stores, had_error, cur_id, def);
@@ -292,7 +292,7 @@ pub fn resolve_signature(
         ItemKind::Variable => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
-            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+            let _ = pass_manager.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
             let generic_params = match header.parent {
                 Some(parent_id)
@@ -330,7 +330,7 @@ pub fn resolve_signature(
         | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
-            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+            let _ = pass_manager.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
             let unresolved_sig = ctx.urir().get_item_signature(cur_id);
             let generic_params = ctx.get_function_template_paramaters(cur_id);
@@ -582,7 +582,7 @@ fn resolve_idents_in_block(
 pub fn resolve_body(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -597,7 +597,7 @@ pub fn resolve_body(
         | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(ctx, cur_id);
             // Just give a best-effort if this fails.
-            let _ = pass_ctx.ensure_ident_resolved_signature(ctx, stores, parent_module);
+            let _ = pass_manager.ensure_ident_resolved_signature(ctx, stores, parent_module);
 
             let generic_params = ctx.get_function_template_paramaters(cur_id);
             let body = ctx.get_item_body(cur_id);

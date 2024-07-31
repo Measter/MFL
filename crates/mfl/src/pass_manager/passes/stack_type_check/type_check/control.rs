@@ -14,7 +14,7 @@ use crate::{
             can_promote_int_unidirectional, failed_compare_stack_types,
             promote_int_type_bidirectional,
         },
-        PassContext,
+        PassManager,
     },
     stores::{
         analyzer::ValueId,
@@ -117,7 +117,7 @@ pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
 pub(crate) fn call_function_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     callee_id: ItemId,
@@ -125,7 +125,7 @@ pub(crate) fn call_function_const(
     let callee_header = ctx.get_item_header(callee_id);
 
     let callee_id = if callee_header.kind == ItemKind::GenericFunction {
-        if pass_ctx
+        if pass_manager
             .ensure_partially_resolve_types(ctx, stores, callee_id)
             .is_err()
         {
@@ -133,9 +133,14 @@ pub(crate) fn call_function_const(
             return;
         }
 
-        let ControlFlow::Continue(id) =
-            call_generic_function_infer_params(ctx, stores, pass_ctx, had_error, callee_id, op_id)
-        else {
+        let ControlFlow::Continue(id) = call_generic_function_infer_params(
+            ctx,
+            stores,
+            pass_manager,
+            had_error,
+            callee_id,
+            op_id,
+        ) else {
             return;
         };
 
@@ -152,7 +157,7 @@ pub(crate) fn call_function_const(
         callee_id
     };
 
-    if pass_ctx
+    if pass_manager
         .ensure_type_resolved_signature(ctx, stores, callee_id)
         .is_err()
     {
@@ -210,7 +215,7 @@ pub(crate) fn call_function_const(
 fn call_generic_function_infer_params(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     callee_id: ItemId,
     op_id: OpId,
@@ -271,7 +276,7 @@ fn call_generic_function_infer_params(
     }
 
     let Ok(new_id) =
-        ctx.get_generic_function_instance(stores, pass_ctx, had_error, callee_id, &param_types)
+        ctx.get_generic_function_instance(stores, pass_manager, had_error, callee_id, &param_types)
     else {
         had_error.set();
         return ControlFlow::Break(());
@@ -283,12 +288,12 @@ fn call_generic_function_infer_params(
 pub(crate) fn variable(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     variable_item_id: ItemId,
 ) {
-    if pass_ctx
+    if pass_manager
         .ensure_type_resolved_signature(ctx, stores, variable_item_id)
         .is_err()
     {

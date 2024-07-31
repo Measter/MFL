@@ -16,7 +16,7 @@ use crate::{
         StructDef, TypeResolvedOp, UnresolvedIdent, UnresolvedType, While,
     },
     option::OptionExt,
-    pass_manager::{PassContext, PassState},
+    pass_manager::{PassManager, PassState},
     simulate::SimulatorValue,
     stores::{
         block::BlockId,
@@ -746,7 +746,7 @@ impl Context {
     fn expand_generic_params_in_block(
         &mut self,
         stores: &mut Stores,
-        pass_ctx: &mut PassContext,
+        pass_manager: &mut PassManager,
         had_error: &mut ErrorSignal,
         block_id: BlockId,
         param_map: &HashMap<Spur, TypeId>,
@@ -762,7 +762,7 @@ impl Context {
                     Basic::Control(Control::If(if_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             if_op.condition,
                             param_map,
@@ -770,7 +770,7 @@ impl Context {
                         );
                         let resolved_then = self.expand_generic_params_in_block(
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             if_op.then_block,
                             param_map,
@@ -778,7 +778,7 @@ impl Context {
                         );
                         let resolved_else = self.expand_generic_params_in_block(
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             if_op.else_block,
                             param_map,
@@ -794,7 +794,7 @@ impl Context {
                     Basic::Control(Control::While(while_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             while_op.condition,
                             param_map,
@@ -802,7 +802,7 @@ impl Context {
                         );
                         let resolved_body = self.expand_generic_params_in_block(
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             had_error,
                             while_op.body_block,
                             param_map,
@@ -869,7 +869,7 @@ impl Context {
                         } else if !new_params.is_empty() {
                             self.get_generic_function_instance(
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 had_error,
                                 id,
                                 &new_params,
@@ -923,7 +923,7 @@ impl Context {
     pub fn get_generic_function_instance(
         &mut self,
         stores: &mut Stores,
-        pass_ctx: &mut PassContext,
+        pass_manager: &mut PassManager,
         had_error: &mut ErrorSignal,
         base_fn_id: ItemId,
         resolved_generic_params: &[TypeId],
@@ -939,7 +939,7 @@ impl Context {
         trace!(?base_fn_id, ?resolved_generic_params,);
 
         // We need to make sure the generic function has been partially type-resolved before this step.
-        let resolve_res = pass_ctx.ensure_partially_resolve_types(self, stores, base_fn_id);
+        let resolve_res = pass_manager.ensure_partially_resolve_types(self, stores, base_fn_id);
         if resolve_res.is_err() {
             had_error.set();
             return Err(());
@@ -1006,7 +1006,7 @@ impl Context {
                 continue;
             }
 
-            if pass_ctx
+            if pass_manager
                 .ensure_type_resolved_signature(self, stores, child_item_header.id)
                 .is_err()
             {
@@ -1029,7 +1029,7 @@ impl Context {
                     .types
                     .resolve_generic_type(&mut stores.strings, alloc_type, &param_map);
             self.trir.set_variable_type(new_alloc_id, new_variable_sig);
-            pass_ctx.add_new_item(
+            pass_manager.add_new_item(
                 new_alloc_id,
                 child_item_header.id,
                 PassState::IdentResolvedSignature | PassState::TypeResolvedSignature,
@@ -1041,7 +1041,7 @@ impl Context {
         let body = self.get_item_body(base_fn_id);
         let new_body = self.expand_generic_params_in_block(
             stores,
-            pass_ctx,
+            pass_manager,
             had_error,
             body,
             &param_map,
@@ -1050,7 +1050,7 @@ impl Context {
         self.set_item_body(new_proc_id, new_body);
         self.generic_function_cache
             .insert((base_fn_id, resolved_generic_params.into()), new_proc_id);
-        pass_ctx.add_new_item(
+        pass_manager.add_new_item(
             new_proc_id,
             base_fn_id,
             PassState::IdentResolvedBody

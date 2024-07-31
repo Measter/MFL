@@ -11,7 +11,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{If, While},
     n_ops::SliceNOps,
-    pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassContext},
+    pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
         analyzer::{IfMerge, ValueId, WhileMerge, WhileMerges},
         ops::OpId,
@@ -201,7 +201,7 @@ pub(crate) fn call_function_const(
 pub(crate) fn analyze_if(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
@@ -216,7 +216,7 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         if_op.condition,
@@ -247,7 +247,7 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         if_op.then_block,
@@ -267,7 +267,7 @@ pub(crate) fn analyze_if(
     super::super::analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         if_op.else_block,
@@ -335,7 +335,7 @@ pub(crate) fn analyze_if(
 pub(crate) fn analyze_while(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
     stack: &mut Vec<ValueId>,
@@ -350,7 +350,7 @@ pub(crate) fn analyze_while(
     super::super::analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         while_op.condition,
@@ -427,7 +427,7 @@ pub(crate) fn analyze_while(
     super::super::analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         while_op.body_block,

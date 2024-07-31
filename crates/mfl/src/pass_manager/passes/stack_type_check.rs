@@ -6,7 +6,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     stores::{analyzer::ValueId, block::BlockId, ops::OpId, types::IntKind},
     Stores,
 };
@@ -57,7 +57,7 @@ fn get_arith_cmp_fns(bo: &Basic) -> (StackCheckFn, TypeCheckFn) {
 fn analyze_block(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
     block_id: BlockId,
@@ -191,7 +191,7 @@ fn analyze_block(
                         stack_check::control::analyze_if(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             item_id,
                             stack,
@@ -221,7 +221,7 @@ fn analyze_block(
                         stack_check::control::analyze_while(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             item_id,
                             stack,
@@ -256,7 +256,7 @@ fn analyze_block(
                             type_check::memory::extract_array(
                                 ctx,
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 &mut local_had_error,
                                 op_id,
                                 emit_array,
@@ -281,7 +281,7 @@ fn analyze_block(
                             type_check::memory::extract_struct(
                                 ctx,
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 &mut local_had_error,
                                 op_id,
                                 field_name,
@@ -304,7 +304,7 @@ fn analyze_block(
                             type_check::memory::insert_array(
                                 ctx,
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 &mut local_had_error,
                                 op_id,
                                 emit_array,
@@ -328,7 +328,7 @@ fn analyze_block(
                             type_check::memory::insert_struct(
                                 ctx,
                                 stores,
-                                pass_ctx,
+                                pass_manager,
                                 &mut local_had_error,
                                 op_id,
                                 field_name,
@@ -380,7 +380,7 @@ fn analyze_block(
                         stack_check::memory::unpack(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             stack,
                             op_id,
@@ -437,7 +437,7 @@ fn analyze_block(
                         type_check::control::call_function_const(
                             ctx,
                             stores,
-                            pass_ctx,
+                            pass_manager,
                             &mut local_had_error,
                             op_id,
                             id,
@@ -451,7 +451,7 @@ fn analyze_block(
                     stack_check::memory::pack_struct(
                         ctx,
                         stores,
-                        pass_ctx,
+                        pass_manager,
                         &mut local_had_error,
                         stack,
                         op_id,
@@ -464,7 +464,7 @@ fn analyze_block(
                 }
                 TypeResolvedOp::Variable { id, .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::control::variable(ctx, stores, pass_ctx, had_error, op_id, id);
+                    type_check::control::variable(ctx, stores, pass_manager, had_error, op_id, id);
                 }
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, stack, op_id);
@@ -502,7 +502,7 @@ pub struct AnalyzerStats {
 pub fn analyze_item(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) -> AnalyzerStats {
@@ -513,7 +513,7 @@ pub fn analyze_item(
     analyze_block(
         ctx,
         stores,
-        pass_ctx,
+        pass_manager,
         had_error,
         item_id,
         ctx.get_item_body(item_id),

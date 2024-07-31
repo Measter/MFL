@@ -18,7 +18,7 @@ use crate::{
     Stores,
 };
 
-use super::PassContext;
+use super::PassManager;
 
 pub fn can_promote_int_unidirectional(from: IntKind, to: IntKind) -> bool {
     promote_int_type_uni_directional(from, to).is_some()
@@ -90,29 +90,29 @@ fn promote_float_unidirectional(from: FloatWidth, to: FloatWidth) -> Option<Floa
 pub(super) fn ensure_structs_declared_in_type(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     unresolved: &NameResolvedType,
 ) {
     match unresolved {
         NameResolvedType::SimpleCustom { id, .. } => {
-            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+            if pass_manager.ensure_declare_structs(ctx, stores, *id).is_err() {
                 had_error.set();
             }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
-            if pass_ctx.ensure_declare_structs(ctx, stores, *id).is_err() {
+            if pass_manager.ensure_declare_structs(ctx, stores, *id).is_err() {
                 had_error.set();
             }
             for p in params {
-                ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, p);
+                ensure_structs_declared_in_type(ctx, stores, pass_manager, had_error, p);
             }
         }
         NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
         NameResolvedType::Array(sub_type, _)
         | NameResolvedType::MultiPointer(sub_type)
         | NameResolvedType::SinglePointer(sub_type) => {
-            ensure_structs_declared_in_type(ctx, stores, pass_ctx, had_error, sub_type);
+            ensure_structs_declared_in_type(ctx, stores, pass_manager, had_error, sub_type);
         }
     };
 }

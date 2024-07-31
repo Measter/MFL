@@ -8,7 +8,7 @@ use types::TypeStore;
 
 use crate::{
     context::{Context, ItemAttribute, ItemId, ItemKind},
-    pass_manager::PassContext,
+    pass_manager::PassManager,
 };
 
 pub mod analyzer;
@@ -67,7 +67,7 @@ impl Stores {
     pub fn build_mangled_name(
         &mut self,
         ctx: &mut Context,
-        pass_ctx: &mut PassContext,
+        pass_manager: &mut PassManager,
         item_id: ItemId,
     ) -> Spur {
         let item_header = ctx.get_item_header(item_id);
@@ -86,7 +86,7 @@ impl Stores {
 
         let mut mangled_name = String::new();
         if let Some(parent_id) = item_header.parent {
-            let _ = pass_ctx.ensure_build_names(ctx, self, parent_id);
+            let _ = pass_manager.ensure_build_names(ctx, self, parent_id);
 
             mangled_name.push_str(self.strings.get_mangled_name(parent_id));
             mangled_name.push_str(MANGLED_PATH_SEP);
@@ -95,7 +95,7 @@ impl Stores {
         mangled_name.push_str(self.strings.resolve(item_header.name.inner));
 
         if matches!(item_header.kind, ItemKind::Function)
-            && pass_ctx
+            && pass_manager
                 .ensure_type_resolved_signature(ctx, self, item_id)
                 .is_ok()
         {
@@ -125,14 +125,14 @@ impl Stores {
     pub fn build_friendly_name(
         &mut self,
         ctx: &mut Context,
-        pass_ctx: &mut PassContext,
+        pass_manager: &mut PassManager,
         item_id: ItemId,
     ) -> Spur {
         let item_header = ctx.get_item_header(item_id);
 
         let mut friendly_name = String::new();
         if let Some(parent_id) = item_header.parent {
-            let _ = pass_ctx.ensure_build_names(ctx, self, parent_id);
+            let _ = pass_manager.ensure_build_names(ctx, self, parent_id);
 
             friendly_name.push_str(self.strings.get_friendly_name(parent_id));
             friendly_name.push_str(FRENDLY_PATH_SEP);
@@ -141,7 +141,7 @@ impl Stores {
         friendly_name.push_str(self.strings.resolve(item_header.name.inner));
 
         if matches!(item_header.kind, ItemKind::Function { .. })
-            && pass_ctx
+            && pass_manager
                 .ensure_type_resolved_signature(ctx, self, item_id)
                 .is_ok()
         {

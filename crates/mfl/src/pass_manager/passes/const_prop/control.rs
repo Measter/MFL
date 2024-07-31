@@ -4,7 +4,7 @@ use crate::{
     context::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
-    pass_manager::PassContext,
+    pass_manager::PassManager,
     simulate::SimulatorValue,
     stores::{analyzer::ConstVal, ops::OpId},
     Stores,
@@ -69,11 +69,11 @@ pub(crate) fn epilogue_return(
 pub(crate) fn cp_const(
     ctx: &mut Context,
     stores: &mut Stores,
-    pass_ctx: &mut PassContext,
+    pass_manager: &mut PassManager,
     op_id: OpId,
     const_item_id: ItemId,
 ) {
-    if pass_ctx
+    if pass_manager
         .ensure_evaluated_consts_asserts(ctx, stores, const_item_id)
         .is_err()
     {
