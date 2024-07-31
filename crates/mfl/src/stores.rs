@@ -7,7 +7,7 @@ use types::TypeStore;
 use values::ValueStore;
 
 use crate::{
-    context::{Context, ItemAttribute, ItemId, ItemKind},
+    item_store::{Context, ItemAttribute, ItemId, ItemKind},
     pass_manager::PassManager,
 };
 

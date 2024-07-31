@@ -3,7 +3,7 @@ use intcast::IntCast;
 use smallvec::SmallVec;
 
 use crate::{
-    context::Context,
+    item_store::Context,
     diagnostics,
     error_signal::ErrorSignal,
     n_ops::{SliceNOps, VecNOps},

@@ -2,7 +2,7 @@ use ariadne::{Color, Label};
 use lasso::Spur;
 
 use crate::{
-    context::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
+    item_store::{make_symbol_redef_error, Context, ItemId, ItemKind, NameResolvedItemSignature},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{

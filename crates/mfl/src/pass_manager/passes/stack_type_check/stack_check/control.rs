@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use tracing::trace;
 
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
     ir::{If, While},

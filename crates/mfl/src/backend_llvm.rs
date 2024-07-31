@@ -25,7 +25,7 @@ use lasso::Spur;
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
-    context::{Context as MflContext, ItemAttribute, ItemId, ItemKind},
+    item_store::{Context as MflContext, ItemAttribute, ItemId, ItemKind},
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     stores::{
         values::{ValueId, ValueStore},

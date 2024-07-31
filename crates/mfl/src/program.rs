@@ -7,7 +7,7 @@ use lasso::Spur;
 use tracing::debug_span;
 
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     lexer,

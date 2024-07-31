@@ -4,7 +4,7 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use smallvec::SmallVec;
 
-use crate::{context::ItemId, n_ops::HashMapNOps, option::OptionExt};
+use crate::{item_store::ItemId, n_ops::HashMapNOps, option::OptionExt};
 
 use super::{
     ops::OpId,

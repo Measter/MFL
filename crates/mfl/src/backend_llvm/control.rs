@@ -3,7 +3,7 @@ use intcast::IntCast;
 use tracing::trace;
 
 use crate::{
-    context::{ItemId, ItemKind},
+    item_store::{ItemId, ItemKind},
     ir::{If, While},
     stores::{ops::OpId, source::Spanned, types::TypeKind},
 };

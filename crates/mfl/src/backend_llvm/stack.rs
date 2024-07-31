@@ -3,7 +3,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    context::ItemId,
+    item_store::ItemId,
     stores::{
         ops::OpId,
         types::{

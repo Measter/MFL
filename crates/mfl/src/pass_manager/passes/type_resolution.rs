@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::{
-    context::{
+    item_store::{
         Context, ItemId, ItemKind, PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature,
     },
     error_signal::ErrorSignal,

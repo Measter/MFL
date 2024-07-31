@@ -10,7 +10,7 @@ use intcast::IntCast;
 use lasso::Spur;
 
 use crate::{
-    context::ItemId,
+    item_store::ItemId,
     n_ops::SliceNOps,
     stores::{
         values::ValueId,

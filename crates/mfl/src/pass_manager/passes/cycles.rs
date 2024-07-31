@@ -2,7 +2,7 @@ use ariadne::{Color, Label};
 use hashbrown::HashSet;
 
 use crate::{
-    context::{Context, ItemHeader, ItemId, ItemKind},
+    item_store::{Context, ItemHeader, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},

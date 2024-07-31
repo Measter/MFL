@@ -5,7 +5,7 @@ use intcast::IntCast;
 use prettytable::{row, Table};
 
 use crate::{
-    context::Context,
+    item_store::Context,
     diagnostics::{self, TABLE_FORMAT},
     error_signal::ErrorSignal,
     ir::NameResolvedType,

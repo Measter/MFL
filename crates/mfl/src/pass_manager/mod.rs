@@ -8,7 +8,7 @@ use prettytable::{row, Table};
 use tracing::{debug_span, trace};
 
 use crate::{
-    context::{Context, ItemHeader, ItemId, ItemKind, LangItem},
+    item_store::{Context, ItemHeader, ItemId, ItemKind, LangItem},
     diagnostics,
     error_signal::ErrorSignal,
     option::OptionExt,

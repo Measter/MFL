@@ -2,7 +2,7 @@ use ariadne::{Color, Label};
 use stack_check::{eat_one_make_one, eat_two_make_one, make_one};
 
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},

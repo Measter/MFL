@@ -5,7 +5,7 @@ use flagset::FlagSet;
 use lasso::Spur;
 
 use crate::{
-    context::{ItemAttribute, Context, ItemId},
+    item_store::{ItemAttribute, Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, OpCode, StructDef, StructDefField},

@@ -3,9 +3,9 @@ use intcast::IntCast;
 use tracing::info;
 
 use crate::{
-    context::{Context, ItemId},
     diagnostics,
     ir::{Arithmetic, Basic, Compare, Control, Direction, OpCode, Stack, TypeResolvedOp},
+    item_store::{Context, ItemId},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{

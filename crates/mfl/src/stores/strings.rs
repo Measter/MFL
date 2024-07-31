@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lasso::{Rodeo, Spur};
 
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     option::OptionExt,
     stores::FRENDLY_PATH_SEP,
 };

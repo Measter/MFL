@@ -1,5 +1,5 @@
 use crate::{
-    context::{Context, ItemId, ItemKind},
+    item_store::{Context, ItemId, ItemKind},
     ir::{Basic, Control, OpCode},
     stores::{block::BlockId, Stores},
 };

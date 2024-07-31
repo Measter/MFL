@@ -4,7 +4,7 @@ use ariadne::{Color, Label};
 use intcast::IntCast;
 
 use crate::{
-    context::{Context, ItemId, ItemKind},
+    item_store::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{If, OpCode, TypeResolvedOp, While},

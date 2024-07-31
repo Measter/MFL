@@ -18,16 +18,16 @@ use color_eyre::{
     eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
-use context::{Context, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
+use item_store::{Context, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use stores::{types::BuiltinTypes, Stores};
 
 mod backend_llvm;
-mod context;
 mod diagnostics;
 mod error_signal;
 mod ir;
+mod item_store;
 mod lexer;
 mod n_ops;
 mod option;

@@ -1,7 +1,7 @@
 use ariadne::{Color, Label};
 
 use crate::{
-    context::{Context, ItemId, ItemKind},
+    item_store::{Context, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
     pass_manager::PassManager,

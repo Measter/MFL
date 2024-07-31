@@ -1,5 +1,5 @@
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,

@@ -6,7 +6,7 @@ use lasso::Spur;
 use smallvec::SmallVec;
 
 use crate::{
-    context::{Context, ItemId},
+    item_store::{Context, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,

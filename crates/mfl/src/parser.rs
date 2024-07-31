@@ -5,7 +5,7 @@ use tracing::debug_span;
 use utils::TokenIter;
 
 use crate::{
-    context::Context,
+    item_store::Context,
     diagnostics,
     error_signal::ErrorSignal,
     lexer::{BracketKind, TokenKind, TokenTree},
