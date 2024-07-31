@@ -28,7 +28,7 @@ use crate::{
     context::{Context as MflContext, ItemAttribute, ItemId, ItemKind},
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     stores::{
-        analyzer::{ValueId, ValueStore},
+        values::{ValueId, ValueStore},
         block::{BlockId, BlockStore},
         ops::OpStore,
         source::SourceStore,

@@ -10,7 +10,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::NameResolvedType,
     stores::{
-        analyzer::ValueId,
+        values::ValueId,
         ops::OpId,
         source::SourceLocation,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},

@@ -5,7 +5,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     stores::{
-        analyzer::ConstVal,
+        values::ConstVal,
         ops::OpId,
         types::{Integer, TypeKind},
     },

@@ -6,7 +6,7 @@ use crate::{
     error_signal::ErrorSignal,
     pass_manager::PassManager,
     simulate::SimulatorValue,
-    stores::{analyzer::ConstVal, ops::OpId},
+    stores::{values::ConstVal, ops::OpId},
     Stores,
 };
 

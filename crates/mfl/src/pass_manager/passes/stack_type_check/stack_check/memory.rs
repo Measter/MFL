@@ -9,7 +9,7 @@ use crate::{
     n_ops::{SliceNOps, VecNOps},
     pass_manager::PassManager,
     stores::{
-        analyzer::ValueId,
+        values::ValueId,
         ops::OpId,
         types::{TypeId, TypeKind},
     },

@@ -2,7 +2,7 @@ use crate::{
     context::Context,
     pass_manager::PassManager,
     stores::{
-        analyzer::ConstVal,
+        values::ConstVal,
         ops::OpId,
         types::{Float, FloatWidth, IntKind, Integer, TypeId, TypeKind},
     },

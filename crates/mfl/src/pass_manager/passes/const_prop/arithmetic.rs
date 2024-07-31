@@ -6,7 +6,7 @@ use crate::{
     ir::Arithmetic,
     n_ops::SliceNOps,
     stores::{
-        analyzer::ConstVal,
+        values::ConstVal,
         ops::OpId,
         types::{Float, Integer, TypeKind},
     },

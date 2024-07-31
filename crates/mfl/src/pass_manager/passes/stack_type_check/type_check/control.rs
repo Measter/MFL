@@ -17,7 +17,7 @@ use crate::{
         PassManager,
     },
     stores::{
-        analyzer::ValueId,
+        values::ValueId,
         ops::OpId,
         source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},

@@ -13,7 +13,7 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
-        analyzer::{IfMerge, ValueId, WhileMerge, WhileMerges},
+        values::{IfMerge, ValueId, WhileMerge, WhileMerges},
         ops::OpId,
         source::Spanned,
     },

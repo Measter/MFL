@@ -1,22 +1,22 @@
-use analyzer::ValueStore;
 use block::BlockStore;
 use lasso::Spur;
 use ops::OpStore;
 use source::SourceStore;
 use strings::StringStore;
 use types::TypeStore;
+use values::ValueStore;
 
 use crate::{
     context::{Context, ItemAttribute, ItemId, ItemKind},
     pass_manager::PassManager,
 };
 
-pub mod analyzer;
 pub mod block;
 pub mod ops;
 pub mod source;
 pub mod strings;
 pub mod types;
+pub mod values;
 
 pub const MANGLED_PATH_SEP: &str = "$";
 pub const MANGLED_GENERIC_OPEN: &str = "$GO$";

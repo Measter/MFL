@@ -9,7 +9,7 @@ use crate::{
     option::OptionExt,
 };
 
-use super::{analyzer::ValueId, source::Spanned};
+use super::{source::Spanned, values::ValueId};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct OpId(u32);

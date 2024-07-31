@@ -13,7 +13,7 @@ use crate::{
     context::ItemId,
     n_ops::SliceNOps,
     stores::{
-        analyzer::ValueId,
+        values::ValueId,
         ops::OpId,
         source::Spanned,
         types::{BuiltinTypes, IntSignedness, TypeId, TypeInfo, TypeKind},

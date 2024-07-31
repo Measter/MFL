@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::{analyzer::ValueId, block::BlockId, ops::OpId, types::IntKind},
+    stores::{values::ValueId, block::BlockId, ops::OpId, types::IntKind},
     Stores,
 };
 

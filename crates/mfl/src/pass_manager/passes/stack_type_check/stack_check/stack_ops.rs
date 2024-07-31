@@ -7,7 +7,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::Direction,
     n_ops::SliceNOps,
-    stores::{analyzer::ValueId, ops::OpId, source::Spanned},
+    stores::{values::ValueId, ops::OpId, source::Spanned},
     Stores,
 };
 
