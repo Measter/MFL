@@ -206,6 +206,15 @@ impl FloatWidth {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Float(pub f64);
+impl Float {
+    pub(crate) fn cast(&self, output_float: FloatWidth) -> Float {
+        match output_float {
+            // Looks a bit dumb, but properly truncates the float.
+            FloatWidth::F32 => Float(self.0 as f32 as f64),
+            FloatWidth::F64 => Float(self.0),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {

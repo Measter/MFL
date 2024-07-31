@@ -8,7 +8,7 @@ use crate::{
     stores::{
         analyzer::ConstVal,
         ops::OpId,
-        types::{Integer, TypeKind},
+        types::{Float, Integer, TypeKind},
     },
     Stores,
 };
@@ -44,6 +44,19 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             };
 
             ConstVal::Int(kind)
+        }
+
+        [ConstVal::Float(a), ConstVal::Float(b)] => {
+            let TypeKind::Float(output_float) = output_type_info.kind else {
+                unreachable!()
+            };
+
+            // The cast has already been type checked.
+            let a_kind = a.cast(output_float);
+            let b_kind = b.cast(output_float);
+            let output_kind = Float(arith_code.get_float_binary_op()(a_kind.0, b_kind.0));
+            // Re-perform the cast to ensure the float is correctly truncated if it's an f32.
+            ConstVal::Float(output_kind.cast(output_float))
         }
 
         // Pointer offset.
@@ -157,18 +170,20 @@ pub(crate) fn multiply_div_rem_shift(
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
 
-    let Some([ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)]) =
-        stores.values.value_consts(input_value_ids)
-    else {
+    let Some([a_const_val, b_const_val]) = stores.values.value_consts(input_value_ids) else {
         return;
-    };
-
-    let TypeKind::Integer(output_int) = output_type_info.kind else {
-        unreachable!()
     };
 
     match arith_code {
         Arithmetic::ShiftLeft | Arithmetic::ShiftRight => {
+            let ConstVal::Int(b_const_val) = b_const_val else {
+                unreachable!()
+            };
+
+            let TypeKind::Integer(output_int) = output_type_info.kind else {
+                unreachable!()
+            };
+
             let (is_out_of_range, shift_value_string) = match b_const_val {
                 Integer::Signed(v @ 0..) if v < output_int.width.bit_width() as _ => {
                     (false, String::new())
@@ -204,7 +219,11 @@ pub(crate) fn multiply_div_rem_shift(
         }
 
         Arithmetic::Div | Arithmetic::Rem => {
-            let div_is_zero = matches!(b_const_val, Integer::Signed(0) | Integer::Unsigned(0));
+            let div_is_zero = matches!(
+                b_const_val,
+                ConstVal::Int(Integer::Signed(0) | Integer::Unsigned(0))
+                    | ConstVal::Float(Float(0.0))
+            );
             if div_is_zero {
                 let mut labels = diagnostics::build_creator_label_chain(
                     stores,
@@ -220,26 +239,47 @@ pub(crate) fn multiply_div_rem_shift(
             }
         }
 
-        _ => unreachable!(),
+        _ => {}
     }
 
-    let a_val = a_const_val.cast(output_int);
-    let b_val = b_const_val.cast(output_int);
+    let output_value = match [a_const_val, b_const_val] {
+        [ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)] => {
+            let TypeKind::Integer(output_int) = output_type_info.kind else {
+                unreachable!()
+            };
 
-    let new_kind = match (a_val, b_val) {
-        (Integer::Signed(a), Integer::Signed(b)) => {
-            Integer::Signed(arith_code.get_signed_binary_op()(a, b))
+            let a_val = a_const_val.cast(output_int);
+            let b_val = b_const_val.cast(output_int);
+
+            let new_kind = match (a_val, b_val) {
+                (Integer::Signed(a), Integer::Signed(b)) => {
+                    Integer::Signed(arith_code.get_signed_binary_op()(a, b))
+                }
+                (Integer::Unsigned(a), Integer::Unsigned(b)) => {
+                    Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+                }
+                _ => unreachable!(),
+            };
+
+            ConstVal::Int(new_kind)
         }
-        (Integer::Unsigned(a), Integer::Unsigned(b)) => {
-            Integer::Unsigned(arith_code.get_unsigned_binary_op()(a, b))
+        [ConstVal::Float(a_const_val), ConstVal::Float(b_const_val)] => {
+            let TypeKind::Float(output_float) = output_type_info.kind else {
+                unreachable!()
+            };
+
+            let a_val = a_const_val.cast(output_float);
+            let b_val = b_const_val.cast(output_float);
+
+            let new_kind = arith_code.get_float_binary_op()(a_val.0, b_val.0);
+            let new_kind = Float(new_kind).cast(output_float);
+            ConstVal::Float(new_kind)
         }
         _ => unreachable!(),
     };
 
     let output_value_id = op_data.outputs[0];
-    stores
-        .values
-        .set_value_const(output_value_id, ConstVal::Int(new_kind));
+    stores.values.set_value_const(output_value_id, output_value);
 }
 
 pub(crate) fn subtract(
@@ -279,6 +319,20 @@ pub(crate) fn subtract(
             };
 
             ConstVal::Int(kind)
+        }
+
+        [ConstVal::Float(a), ConstVal::Float(b)] => {
+            let TypeKind::Float(output_float) = output_type_info.kind else {
+                unreachable!()
+            };
+
+            // Cast is already type checked.
+            let a_kind = a.cast(output_float);
+            let b_kind = b.cast(output_float);
+            let new_kind = arith_code.get_float_binary_op()(a_kind.0, b_kind.0);
+            let new_kind = Float(new_kind).cast(output_float);
+
+            ConstVal::Float(new_kind)
         }
 
         // Known pointer, constant offset.

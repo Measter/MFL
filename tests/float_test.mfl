@@ -67,6 +67,34 @@ proc promote_test_less [f32 f64] to [bool] {
     <
 }
 
+proc const_prop_add [] to [f32] {
+    1.1 2.2 +
+}
+
+proc const_prop_sub [] to [f32] {
+    1.1 2.2 -
+}
+
+proc const_prop_mul [] to [f32] {
+    1.1 2.2 *
+}
+
+proc const_prop_div [] to [f32] {
+    1.1 2.2 /
+}
+
+proc const_prop_rem [] to [f32] {
+    1.1 2.2 %
+}
+
+proc const_prop_eq [] to [bool] {
+    1.1 2.2 =
+}
+
+proc const_prop_less [] to [bool] {
+    1.1 2.2 <
+}
+
 proc entry [] to [] {
     literals
     1 cast_to_float_f32 cast_to_int_f32 drop

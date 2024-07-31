@@ -236,6 +236,21 @@ impl Arithmetic {
             _ => panic!("ICE: Unsupported binary op on Bool"),
         }
     }
+
+    pub fn get_float_binary_op(self) -> fn(f64, f64) -> f64 {
+        use Arithmetic::*;
+        match self {
+            Add => |a, b| a + b,
+            Div => |a, b| a / b,
+            Multiply => |a, b| a * b,
+            Rem => |a, b| a % b,
+            Subtract => |a, b| a - b,
+
+            BitAnd | BitNot | BitOr | BitXor | ShiftLeft | ShiftRight => {
+                panic!("ICE: Unsupported float_binary_op: {self:?}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -289,6 +304,19 @@ impl Compare {
             #[allow(clippy::bool_comparison)]
             Less => |a, b| a < b,
             LessEqual => |a, b| a <= b,
+            IsNull => unimplemented!(),
+        }
+    }
+
+    pub fn get_float_binary_op(self) -> fn(f64, f64) -> bool {
+        use Compare::*;
+        match self {
+            Equal => |a, b| a == b,
+            Less => |a, b| a < b,
+            LessEqual => |a, b| a <= b,
+            Greater => |a, b| a > b,
+            GreaterEqual => |a, b| a >= b,
+            NotEq => |a, b| a != b,
             IsNull => unimplemented!(),
         }
     }

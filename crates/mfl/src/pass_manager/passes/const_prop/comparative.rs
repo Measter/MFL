@@ -52,6 +52,19 @@ pub(crate) fn equal(
             }
         }
 
+        [ConstVal::Float(a), ConstVal::Float(b)] => {
+            let [TypeKind::Float(a_float), TypeKind::Float(b_float)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            else {
+                unreachable!()
+            };
+
+            let biggest_input_float = a_float.max(b_float);
+            let a_kind = a.cast(biggest_input_float);
+            let b_kind = b.cast(biggest_input_float);
+            comp_code.get_float_binary_op()(a_kind.0, b_kind.0)
+        }
+
         [ConstVal::Bool(a), ConstVal::Bool(b)] => comp_code.get_bool_binary_op()(a, b),
 
         // Static pointers with different IDs.
@@ -183,6 +196,20 @@ pub(crate) fn compare(
 
                 _ => unreachable!(),
             }
+        }
+
+        [ConstVal::Float(a), ConstVal::Float(b)] => {
+            let [TypeKind::Float(a_float), TypeKind::Float(b_float)] =
+                input_type_ids.map(|id| stores.types.get_type_info(id).kind)
+            else {
+                unreachable!()
+            };
+
+            // The casts are already type checked.
+            let biggest_input_float = a_float.max(b_float);
+            let a_kind = a.cast(biggest_input_float);
+            let b_kind = b.cast(biggest_input_float);
+            comp_code.get_float_binary_op()(a_kind.0, b_kind.0)
         }
 
         // Static pointers with different IDs.
