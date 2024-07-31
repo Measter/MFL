@@ -71,26 +71,25 @@ impl PassState {
     fn get_deps(self) -> &'static [PassState] {
         use PassState::*;
         match self {
-            IdentResolvedSignature
+            BuildNames
             | IdentResolvedBody
+            | IdentResolvedSignature
             | TerminalBlockCheckBody
-            | BuildNames
             | ValidAttributes => &[],
-            SelfContainingStruct | DeclareStructs | TypeResolvedSignature => {
+            ConstPropBody => &[StackAndTypeCheckedBody],
+            CheckAsserts => &[EvaluatedConstsAsserts],
+            CyclicRefCheckBody | TypeResolvedBody => &[IdentResolvedBody],
+            DeclareStructs | SelfContainingStruct | TypeResolvedSignature => {
                 &[IdentResolvedSignature]
             }
-            PartiallyTypeResolved => &[IdentResolvedBody, IdentResolvedSignature],
-
             DefineStructs => &[DeclareStructs],
-            TypeResolvedBody | CyclicRefCheckBody => &[IdentResolvedBody],
+            EvaluatedConstsAsserts => &[CyclicRefCheckBody, ConstPropBody],
+            PartiallyTypeResolved => &[IdentResolvedBody, IdentResolvedSignature],
             StackAndTypeCheckedBody => &[
                 TypeResolvedSignature,
                 TypeResolvedBody,
                 TerminalBlockCheckBody,
             ],
-            ConstPropBody => &[StackAndTypeCheckedBody],
-            EvaluatedConstsAsserts => &[CyclicRefCheckBody, ConstPropBody],
-            CheckAsserts => &[EvaluatedConstsAsserts],
         }
     }
 }
