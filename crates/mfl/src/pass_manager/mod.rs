@@ -680,11 +680,9 @@ impl PassContext {
                 PassState::TypeResolvedSignature,
             ],
             // Type resolution happens after the generic function is instantiated.
-            ItemKind::GenericFunction => &[
-                PassState::ValidAttributes,
-                PassState::PartiallyTypeResolved,
-                PassState::IdentResolvedBody,
-            ],
+            ItemKind::GenericFunction => {
+                &[PassState::ValidAttributes, PassState::PartiallyTypeResolved]
+            }
             ItemKind::Assert => &[PassState::ValidAttributes, PassState::CheckAsserts],
             ItemKind::Const => &[
                 PassState::ValidAttributes,
