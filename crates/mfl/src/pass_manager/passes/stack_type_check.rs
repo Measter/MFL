@@ -459,8 +459,8 @@ fn analyze_block(
                     );
                     if local_had_error.is_ok() {
                         type_check::memory::pack_struct(stores, &mut local_had_error, op_id, id);
-                        had_error.merge_with(local_had_error);
                     }
+                    had_error.merge_with(local_had_error);
                 }
                 TypeResolvedOp::Variable { id, .. } => {
                     make_one(stores, stack, op_id);
