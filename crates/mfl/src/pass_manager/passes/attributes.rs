@@ -25,13 +25,17 @@ pub(crate) fn validate_attributes(
             }
         }
 
-        ItemKind::GenericFunction | ItemKind::FunctionDecl => {
+        ItemKind::GenericFunction => {
             if item_header.attributes.contains(ItemAttribute::Extern) {
                 bad_extern_diagnostic(stores, item_header, had_error);
             }
+
+            if let Some(lang_item @ LangItem::String) = item_header.lang_item {
+                bad_lang_item_diagnostic(stores, item_header, lang_item, had_error);
+            }
         }
 
-        ItemKind::Function => {
+        ItemKind::Function | ItemKind::FunctionDecl => {
             if let Some(lang_item @ LangItem::String) = item_header.lang_item {
                 bad_lang_item_diagnostic(stores, item_header, lang_item, had_error);
             }
