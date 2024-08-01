@@ -139,19 +139,6 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) if input_type_id == to_id => {
-            let ptr_type_name = stores.strings.resolve(input_type_info.friendly_name);
-
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(input_value_id, 0, ptr_type_name)],
-                Color::Green,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_token.location).with_color(Color::Yellow));
-
-            diagnostics::emit_warning(stores, op_token.location, "unnecessary cast", labels, None);
-        }
         TypeKind::Integer(IntKind::U64)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_) => {}
@@ -211,7 +198,7 @@ fn cast_to_int(
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::Bool | TypeKind::Float(_) => {}
+        TypeKind::Bool | TypeKind::Float(_) | TypeKind::Integer(_) => {}
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             if to_int != IntKind::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
@@ -235,27 +222,6 @@ fn cast_to_int(
                 );
 
                 had_error.set();
-            }
-        }
-        TypeKind::Integer(_) => {
-            if input_type_id == to_id {
-                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
-
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_id, 0, input_type_name)],
-                    Color::Green,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op_token.location).with_color(Color::Yellow));
-
-                diagnostics::emit_warning(
-                    stores,
-                    op_token.location,
-                    "unnecessary cast",
-                    labels,
-                    None,
-                );
             }
         }
 
@@ -283,28 +249,7 @@ fn cast_to_float(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, 
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::Integer(_) => {}
-        TypeKind::Float(_) => {
-            if input_type_id == to_id {
-                let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
-
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_id, 0, input_type_name)],
-                    Color::Green,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op_token.location).with_color(Color::Yellow));
-
-                diagnostics::emit_warning(
-                    stores,
-                    op_token.location,
-                    "unnecessary cast",
-                    labels,
-                    None,
-                );
-            }
-        }
+        TypeKind::Integer(_) | TypeKind::Float(_) => {}
 
         TypeKind::Array { .. }
         | TypeKind::MultiPointer(_)
