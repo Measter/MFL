@@ -769,14 +769,16 @@ pub fn parse_if(
         false,
     )?;
 
-    let condition = parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
+    let condition =
+        parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
     let then_block_tokens =
         token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
     let mut close_token = then_block_tokens.last_token();
 
-    let then_block = parse_item_body_contents(item_store, stores, &then_block_tokens.tokens, parent_id)?;
+    let then_block =
+        parse_item_body_contents(item_store, stores, &then_block_tokens.tokens, parent_id)?;
     let then_block = stores.blocks.new_block(then_block);
 
     let else_token = close_token;
@@ -882,7 +884,8 @@ pub fn parse_while(
         false,
     )?;
 
-    let condition = parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
+    let condition =
+        parse_item_body_contents(item_store, stores, &condition_tokens.list, parent_id)?;
     let condition = stores.blocks.new_block(condition);
 
     let body_tokens =

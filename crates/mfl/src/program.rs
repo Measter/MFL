@@ -7,9 +7,9 @@ use lasso::Spur;
 use tracing::debug_span;
 
 use crate::{
-    item_store::{ItemStore, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
+    item_store::{ItemId, ItemStore},
     lexer,
     stores::source::{FileId, SourceLocation, Spanned, WithSpan},
     Args, Stores,
@@ -25,7 +25,11 @@ pub enum ModuleQueueType {
     Include(Spanned<Spur>),
 }
 
-pub fn load_program(item_store: &mut ItemStore, stores: &mut Stores, args: &Args) -> Result<ItemId> {
+pub fn load_program(
+    item_store: &mut ItemStore,
+    stores: &mut Stores,
+    args: &Args,
+) -> Result<ItemId> {
     let _span = debug_span!(stringify!(Program::load_program)).entered();
     let mut had_error = ErrorSignal::new();
 
@@ -170,7 +174,14 @@ fn load_library(
         );
 
         first_module = first_module.or(Some(module_id));
-        let res = load_module(item_store, stores, module_id, &root, &contents, &mut module_queue);
+        let res = load_module(
+            item_store,
+            stores,
+            module_id,
+            &root,
+            &contents,
+            &mut module_queue,
+        );
 
         if res.is_err() {
             had_error.set();

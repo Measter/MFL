@@ -5,15 +5,15 @@ use intcast::IntCast;
 use prettytable::{row, Table};
 
 use crate::{
-    item_store::ItemStore,
     diagnostics::{self, TABLE_FORMAT},
     error_signal::ErrorSignal,
     ir::NameResolvedType,
+    item_store::ItemStore,
     stores::{
-        values::ValueId,
         ops::OpId,
         source::SourceLocation,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},
+        values::ValueId,
     },
     Stores,
 };
@@ -96,12 +96,18 @@ pub(super) fn ensure_structs_declared_in_type(
 ) {
     match unresolved {
         NameResolvedType::SimpleCustom { id, .. } => {
-            if pass_manager.ensure_declare_structs(item_store, stores, *id).is_err() {
+            if pass_manager
+                .ensure_declare_structs(item_store, stores, *id)
+                .is_err()
+            {
                 had_error.set();
             }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
-            if pass_manager.ensure_declare_structs(item_store, stores, *id).is_err() {
+            if pass_manager
+                .ensure_declare_structs(item_store, stores, *id)
+                .is_err()
+            {
                 had_error.set();
             }
             for p in params {

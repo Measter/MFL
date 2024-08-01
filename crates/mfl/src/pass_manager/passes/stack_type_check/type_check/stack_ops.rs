@@ -8,9 +8,9 @@ use crate::{
     error_signal::ErrorSignal,
     pass_manager::static_analysis::generate_type_mismatch_diag,
     stores::{
-        values::ValueId,
         ops::OpId,
         types::{BuiltinTypes, FloatWidth, IntKind, TypeId, TypeKind},
+        values::ValueId,
     },
     Stores,
 };

@@ -2,7 +2,7 @@ use crate::{
     error_signal::ErrorSignal,
     n_ops::VecNOps,
     pass_manager::static_analysis::generate_stack_length_mismatch_diag,
-    stores::{values::ValueId, ops::OpId},
+    stores::{ops::OpId, values::ValueId},
     Stores,
 };
 

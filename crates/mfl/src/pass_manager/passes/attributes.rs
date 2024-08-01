@@ -1,9 +1,9 @@
 use ariadne::{Color, Label};
 
 use crate::{
-    item_store::{ItemStore, ItemAttribute, ItemHeader, ItemId, ItemKind, LangItem},
     diagnostics,
     error_signal::ErrorSignal,
+    item_store::{ItemAttribute, ItemHeader, ItemId, ItemKind, ItemStore, LangItem},
     stores::Stores,
 };
 
@@ -40,6 +40,7 @@ pub(crate) fn validate_attributes(
                 bad_lang_item_diagnostic(stores, item_header, lang_item, had_error);
             }
         }
+
         ItemKind::StructDef => {
             if item_header.attributes.contains(ItemAttribute::Extern) {
                 bad_extern_diagnostic(stores, item_header, had_error);

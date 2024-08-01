@@ -5,7 +5,7 @@ use tracing::info;
 use crate::{
     diagnostics,
     ir::{Arithmetic, Basic, Compare, Control, Direction, OpCode, Stack, TypeResolvedOp},
-    item_store::{ItemStore, ItemId},
+    item_store::{ItemId, ItemStore},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{

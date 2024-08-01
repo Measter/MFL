@@ -8,9 +8,9 @@ use prettytable::{row, Table};
 use tracing::{debug_span, trace};
 
 use crate::{
-    item_store::{ItemStore, ItemHeader, ItemId, ItemKind, LangItem},
     diagnostics,
     error_signal::ErrorSignal,
+    item_store::{ItemHeader, ItemId, ItemKind, ItemStore, LangItem},
     option::OptionExt,
     simulate::{simulate_execute_program, SimulatorValue},
     stores::types::TypeKind,
@@ -462,7 +462,13 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::ident_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
+        passes::ident_resolution::resolve_signature(
+            item_store,
+            stores,
+            self,
+            &mut had_error,
+            cur_item,
+        );
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -488,7 +494,13 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::type_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_signature(
+            item_store,
+            stores,
+            self,
+            &mut had_error,
+            cur_item,
+        );
         passes::type_resolution::resolve_body(item_store, stores, self, &mut had_error, cur_item);
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
@@ -541,8 +553,13 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        let stats =
-            passes::stack_type_check::analyze_item(item_store, stores, self, &mut had_error, cur_item);
+        let stats = passes::stack_type_check::analyze_item(
+            item_store,
+            stores,
+            self,
+            &mut had_error,
+            cur_item,
+        );
 
         self.stack_stats_table.add_row(row![
             stores.strings.get_symbol_name(item_store, cur_item),
@@ -620,7 +637,13 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::type_resolution::resolve_signature(item_store, stores, self, &mut had_error, cur_item);
+        passes::type_resolution::resolve_signature(
+            item_store,
+            stores,
+            self,
+            &mut had_error,
+            cur_item,
+        );
         if had_error.into_bool() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -727,7 +750,10 @@ pub fn run(item_store: &mut ItemStore, stores: &mut Stores, print_stack_stats: b
     };
 
     while let Some(cur_item_id) = pass_manager.next_item() {
-        if pass_manager.ensure_done(item_store, stores, cur_item_id).is_err() {
+        if pass_manager
+            .ensure_done(item_store, stores, cur_item_id)
+            .is_err()
+        {
             had_error.set();
         }
     }

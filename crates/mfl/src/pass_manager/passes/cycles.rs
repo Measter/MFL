@@ -2,10 +2,10 @@ use ariadne::{Color, Label};
 use hashbrown::HashSet;
 
 use crate::{
-    item_store::{ItemStore, ItemHeader, ItemId, ItemKind},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},
+    item_store::{ItemHeader, ItemId, ItemKind, ItemStore},
     pass_manager::PassManager,
     stores::{block::BlockId, source::SourceLocation},
     Stores,

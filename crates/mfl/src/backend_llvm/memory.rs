@@ -13,10 +13,10 @@ use crate::{
     item_store::ItemId,
     n_ops::SliceNOps,
     stores::{
-        values::ValueId,
         ops::OpId,
         source::Spanned,
         types::{BuiltinTypes, IntSignedness, TypeId, TypeInfo, TypeKind},
+        values::ValueId,
     },
 };
 

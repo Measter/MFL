@@ -5,9 +5,9 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     stores::{
-        values::ConstVal,
         ops::OpId,
         types::{Integer, TypeKind},
+        values::ConstVal,
     },
     Stores,
 };

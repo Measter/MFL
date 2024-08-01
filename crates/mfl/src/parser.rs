@@ -5,9 +5,9 @@ use tracing::debug_span;
 use utils::TokenIter;
 
 use crate::{
-    item_store::ItemStore,
     diagnostics,
     error_signal::ErrorSignal,
+    item_store::ItemStore,
     lexer::{BracketKind, TokenKind, TokenTree},
     program::ModuleQueueType,
     stores::{
@@ -53,9 +53,13 @@ pub fn parse_item_body_contents(
                         parse_extract_insert_array(*token)
                     }
                     TokenKind::While => {
-                        let Ok(code) =
-                            ops::parse_while(item_store, stores, &mut token_iter, *token, parent_id)
-                        else {
+                        let Ok(code) = ops::parse_while(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            parent_id,
+                        ) else {
                             had_error.set();
                             continue;
                         };
@@ -72,8 +76,14 @@ pub fn parse_item_body_contents(
                     }
 
                     TokenKind::Assert => {
-                        if items::parse_assert(item_store, stores, &mut token_iter, *token, parent_id)
-                            .is_err()
+                        if items::parse_assert(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            parent_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
@@ -81,16 +91,28 @@ pub fn parse_item_body_contents(
                         continue;
                     }
                     TokenKind::Const => {
-                        if items::parse_const(item_store, stores, &mut token_iter, *token, parent_id)
-                            .is_err()
+                        if items::parse_const(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            parent_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
                         continue;
                     }
                     TokenKind::Variable => {
-                        if items::parse_variable(item_store, stores, &mut token_iter, *token, parent_id)
-                            .is_err()
+                        if items::parse_variable(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            parent_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
@@ -176,32 +198,56 @@ pub(super) fn parse_file(
             TokenTree::Single(token) => {
                 match token.inner.kind {
                     TokenKind::Assert => {
-                        if items::parse_assert(item_store, stores, &mut token_iter, *token, module_id)
-                            .is_err()
+                        if items::parse_assert(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            module_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Const => {
-                        if items::parse_const(item_store, stores, &mut token_iter, *token, module_id)
-                            .is_err()
+                        if items::parse_const(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            module_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Proc => {
-                        if items::parse_function(item_store, stores, &mut token_iter, *token, module_id)
-                            .is_err()
+                        if items::parse_function(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            module_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Variable => {
-                        if items::parse_variable(item_store, stores, &mut token_iter, *token, module_id)
-                            .is_err()
+                        if items::parse_variable(
+                            item_store,
+                            stores,
+                            &mut token_iter,
+                            *token,
+                            module_id,
+                        )
+                        .is_err()
                         {
                             had_error.set();
                         }

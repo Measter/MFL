@@ -2,12 +2,12 @@ use ariadne::{Color, Label};
 use stack_check::{eat_one_make_one, eat_two_make_one, make_one};
 
 use crate::{
-    item_store::{ItemStore, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
+    item_store::{ItemId, ItemStore},
     pass_manager::PassManager,
-    stores::{values::ValueId, block::BlockId, ops::OpId, types::IntKind},
+    stores::{block::BlockId, ops::OpId, types::IntKind, values::ValueId},
     Stores,
 };
 
@@ -464,7 +464,14 @@ fn analyze_block(
                 }
                 TypeResolvedOp::Variable { id, .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::control::variable(item_store, stores, pass_manager, had_error, op_id, id);
+                    type_check::control::variable(
+                        item_store,
+                        stores,
+                        pass_manager,
+                        had_error,
+                        op_id,
+                        id,
+                    );
                 }
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, stack, op_id);

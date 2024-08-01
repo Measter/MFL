@@ -1,10 +1,10 @@
 use ariadne::{Color, Label};
 
 use crate::{
-    item_store::{ItemStore, ItemId},
     diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
+    item_store::{ItemId, ItemStore},
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::types::TypeKind,
     Stores,

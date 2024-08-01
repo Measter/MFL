@@ -7,9 +7,9 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::static_analysis::promote_int_type_bidirectional,
     stores::{
-        values::ConstVal,
         ops::OpId,
         types::{Integer, TypeKind},
+        values::ConstVal,
     },
     Stores,
 };

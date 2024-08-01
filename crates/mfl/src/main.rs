@@ -18,7 +18,7 @@ use color_eyre::{
     eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
-use item_store::{ItemStore, ItemAttribute, ItemId, ItemKind, TypeResolvedItemSignature};
+use item_store::{ItemAttribute, ItemId, ItemKind, ItemStore, TypeResolvedItemSignature};
 use tracing::{debug, debug_span, Level};
 
 use stores::{types::BuiltinTypes, Stores};

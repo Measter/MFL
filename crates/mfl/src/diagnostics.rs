@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
-    stores::{values::ValueId, source::SourceLocation},
+    stores::{source::SourceLocation, values::ValueId},
     Stores,
 };
 

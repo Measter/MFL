@@ -7,9 +7,9 @@ use lasso::Spur;
 use tracing::{debug_span, trace};
 
 use crate::{
-    item_store::{ItemId, LangItem},
     diagnostics,
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
+    item_store::{ItemId, LangItem},
     stores::{
         self,
         source::{SourceLocation, Spanned},

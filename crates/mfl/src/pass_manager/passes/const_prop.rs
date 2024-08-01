@@ -1,7 +1,7 @@
 use crate::{
-    item_store::{ItemStore, ItemId},
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
+    item_store::{ItemId, ItemStore},
     pass_manager::PassManager,
     stores::block::BlockId,
     Stores,
@@ -98,7 +98,9 @@ fn analyze_block(
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
-                TypeResolvedOp::Const { id } => control::cp_const(item_store, stores, pass_manager, op_id, id),
+                TypeResolvedOp::Const { id } => {
+                    control::cp_const(item_store, stores, pass_manager, op_id, id)
+                }
                 TypeResolvedOp::Variable { id, .. } => control::variable(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(item_store, stores, pass_manager, op_id, id)
@@ -118,5 +120,11 @@ pub fn analyze_item(
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) {
-    analyze_block(item_store, stores, pass_manager, had_error, item_store.get_item_body(item_id));
+    analyze_block(
+        item_store,
+        stores,
+        pass_manager,
+        had_error,
+        item_store.get_item_body(item_id),
+    );
 }

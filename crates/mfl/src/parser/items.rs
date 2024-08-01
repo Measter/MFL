@@ -585,7 +585,8 @@ pub fn parse_import(
         return Ok(());
     };
 
-    item_store.urir_mut()
+    item_store
+        .urir_mut()
         .get_scope_mut(module_id)
         .add_unresolved_import(path);
 
