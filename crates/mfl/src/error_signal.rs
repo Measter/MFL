@@ -24,6 +24,10 @@ impl ErrorSignal {
         let Self(b) = self;
         !b
     }
+
+    pub fn forget(self) {
+        std::mem::forget(self);
+    }
 }
 
 impl Drop for ErrorSignal {

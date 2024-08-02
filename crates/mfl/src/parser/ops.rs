@@ -247,7 +247,11 @@ fn parse_ident_op(
 ) -> ParseOpResult {
     let mut local_had_error = ErrorSignal::new();
 
-    let (ident, last_token) = parse_ident(stores, &mut local_had_error, token_iter, token)?;
+    let Ok((ident, last_token)) = parse_ident(stores, &mut local_had_error, token_iter, token)
+    else {
+        local_had_error.forget();
+        return Err(());
+    };
 
     if local_had_error.into_bool() {
         return Err(());

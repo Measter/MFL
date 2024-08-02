@@ -41,12 +41,13 @@ pub fn parse_item_body_contents(
             TokenTree::Single(token) => {
                 let (kind, op_end) = match token.inner.kind {
                     TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
-                        // if token_iter
-                        //     .peek()
-                        //     .is_some_and(|tk| tk.inner.kind == TokenKind::ParenthesisOpen)
                         if token_iter.next_is_group(BracketKind::Paren) {
-                            let new_ops =
-                                parse_extract_insert_struct(stores, &mut token_iter, *token)?;
+                            let Ok(new_ops) =
+                                parse_extract_insert_struct(stores, &mut token_iter, *token)
+                            else {
+                                had_error.set();
+                                continue;
+                            };
                             ops.extend(new_ops);
                             continue;
                         }
@@ -153,11 +154,17 @@ pub fn parse_item_body_contents(
                             Some(Label::new(token.location).with_color(Color::Red)),
                             None,
                         );
-
-                        return Err(());
+                        had_error.set();
+                        continue;
                     }
 
-                    _ => parse_simple_op(stores, &mut token_iter, *token)?,
+                    _ => {
+                        let Ok(op) = parse_simple_op(stores, &mut token_iter, *token) else {
+                            had_error.set();
+                            continue;
+                        };
+                        op
+                    }
                 };
 
                 let token = token.inner.lexeme.with_span(token.location.merge(op_end));
