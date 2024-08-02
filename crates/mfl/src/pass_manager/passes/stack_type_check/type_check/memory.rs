@@ -9,10 +9,10 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
-    item_store::{ItemId, ItemStore},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::can_promote_int_unidirectional, PassManager},
     stores::{
+        item::ItemId,
         ops::OpId,
         source::Spanned,
         types::{IntKind, TypeId, TypeInfo, TypeKind},
@@ -51,7 +51,6 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
 }
 
 pub(crate) fn extract_array(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -104,10 +103,7 @@ pub(crate) fn extract_array(
             match ptr_type_info.kind {
                 TypeKind::Array { type_id, .. } => type_id,
                 TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-                    if pass_manager
-                        .ensure_define_structs(item_store, stores, item_id)
-                        .is_err()
-                    {
+                    if pass_manager.ensure_define_structs(stores, item_id).is_err() {
                         had_error.set();
                         return;
                     };
@@ -131,10 +127,7 @@ pub(crate) fn extract_array(
         }
 
         TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-            if pass_manager
-                .ensure_define_structs(item_store, stores, item_id)
-                .is_err()
-            {
+            if pass_manager.ensure_define_structs(stores, item_id).is_err() {
                 had_error.set();
                 return;
             }
@@ -184,7 +177,6 @@ pub(crate) fn extract_array(
 }
 
 pub(crate) fn extract_struct(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -257,7 +249,7 @@ pub(crate) fn extract_struct(
     };
 
     if pass_manager
-        .ensure_define_structs(item_store, stores, actual_struct_item_id)
+        .ensure_define_structs(stores, actual_struct_item_id)
         .is_err()
     {
         had_error.set();
@@ -306,7 +298,6 @@ pub(crate) fn extract_struct(
 }
 
 pub(crate) fn insert_array(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -358,7 +349,7 @@ pub(crate) fn insert_array(
                 TypeKind::Struct(struct_item_id)
                 | TypeKind::GenericStructInstance(struct_item_id) => {
                     if pass_manager
-                        .ensure_define_structs(item_store, stores, struct_item_id)
+                        .ensure_define_structs(stores, struct_item_id)
                         .is_err()
                     {
                         had_error.set();
@@ -384,7 +375,7 @@ pub(crate) fn insert_array(
         }
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             if pass_manager
-                .ensure_define_structs(item_store, stores, struct_item_id)
+                .ensure_define_structs(stores, struct_item_id)
                 .is_err()
             {
                 had_error.set();
@@ -474,7 +465,6 @@ pub(crate) fn insert_array(
 }
 
 pub(crate) fn insert_struct(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -546,7 +536,7 @@ pub(crate) fn insert_struct(
     };
 
     if pass_manager
-        .ensure_define_structs(item_store, stores, actual_struct_item_id)
+        .ensure_define_structs(stores, actual_struct_item_id)
         .is_err()
     {
         had_error.set();

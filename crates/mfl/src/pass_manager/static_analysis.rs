@@ -8,7 +8,6 @@ use crate::{
     diagnostics::{self, TABLE_FORMAT},
     error_signal::ErrorSignal,
     ir::NameResolvedType,
-    item_store::ItemStore,
     stores::{
         ops::OpId,
         source::SourceLocation,
@@ -88,7 +87,6 @@ fn promote_float_unidirectional(from: FloatWidth, to: FloatWidth) -> Option<Floa
 }
 
 pub(super) fn ensure_structs_declared_in_type(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -96,29 +94,23 @@ pub(super) fn ensure_structs_declared_in_type(
 ) {
     match unresolved {
         NameResolvedType::SimpleCustom { id, .. } => {
-            if pass_manager
-                .ensure_declare_structs(item_store, stores, *id)
-                .is_err()
-            {
+            if pass_manager.ensure_declare_structs(stores, *id).is_err() {
                 had_error.set();
             }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
-            if pass_manager
-                .ensure_declare_structs(item_store, stores, *id)
-                .is_err()
-            {
+            if pass_manager.ensure_declare_structs(stores, *id).is_err() {
                 had_error.set();
             }
             for p in params {
-                ensure_structs_declared_in_type(item_store, stores, pass_manager, had_error, p);
+                ensure_structs_declared_in_type(stores, pass_manager, had_error, p);
             }
         }
         NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
         NameResolvedType::Array(sub_type, _)
         | NameResolvedType::MultiPointer(sub_type)
         | NameResolvedType::SinglePointer(sub_type) => {
-            ensure_structs_declared_in_type(item_store, stores, pass_manager, had_error, sub_type);
+            ensure_structs_declared_in_type(stores, pass_manager, had_error, sub_type);
         }
     };
 }

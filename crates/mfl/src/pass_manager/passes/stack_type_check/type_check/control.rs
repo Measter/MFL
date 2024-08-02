@@ -7,7 +7,6 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{If, OpCode, TypeResolvedOp, While},
-    item_store::{ItemId, ItemKind, ItemStore},
     pass_manager::{
         static_analysis::{
             can_promote_float_unidirectional, can_promote_int_bidirectional,
@@ -17,6 +16,7 @@ use crate::{
         PassManager,
     },
     stores::{
+        item::{ItemId, ItemKind},
         ops::OpId,
         source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},
@@ -26,14 +26,13 @@ use crate::{
 };
 
 pub(crate) fn epilogue_return(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     item_id: ItemId,
 ) {
-    let item_urir_sig = item_store.urir().get_item_signature(item_id);
-    let item_trir_sig = item_store.trir().get_item_signature(item_id);
+    let item_urir_sig = stores.items.urir().get_item_signature(item_id);
+    let item_trir_sig = stores.items.trir().get_item_signature(item_id);
     let op_data = stores.ops.get_op_io(op_id);
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
@@ -64,14 +63,9 @@ pub(crate) fn epilogue_return(
     }
 }
 
-pub(crate) fn prologue(
-    item_store: &mut ItemStore,
-    stores: &mut Stores,
-    op_id: OpId,
-    item_id: ItemId,
-) {
+pub(crate) fn prologue(stores: &mut Stores, op_id: OpId, item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
-    let sigs = item_store.trir().get_item_signature(item_id);
+    let sigs = stores.items.trir().get_item_signature(item_id);
     let outputs = op_data.outputs.clone();
 
     for (output_id, &output_type) in outputs.into_iter().zip(&sigs.entry) {
@@ -120,32 +114,26 @@ pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
 }
 
 pub(crate) fn call_function_const(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     op_id: OpId,
     callee_id: ItemId,
 ) {
-    let callee_header = item_store.get_item_header(callee_id);
+    let callee_header = stores.items.get_item_header(callee_id);
 
     let callee_id = if callee_header.kind == ItemKind::GenericFunction {
         if pass_manager
-            .ensure_partially_resolve_types(item_store, stores, callee_id)
+            .ensure_partially_resolve_types(stores, callee_id)
             .is_err()
         {
             had_error.set();
             return;
         }
 
-        let ControlFlow::Continue(id) = call_generic_function_infer_params(
-            item_store,
-            stores,
-            pass_manager,
-            had_error,
-            callee_id,
-            op_id,
-        ) else {
+        let ControlFlow::Continue(id) =
+            call_generic_function_infer_params(stores, pass_manager, had_error, callee_id, op_id)
+        else {
             return;
         };
 
@@ -163,7 +151,7 @@ pub(crate) fn call_function_const(
     };
 
     if pass_manager
-        .ensure_type_resolved_signature(item_store, stores, callee_id)
+        .ensure_type_resolved_signature(stores, callee_id)
         .is_err()
     {
         had_error.set();
@@ -171,8 +159,8 @@ pub(crate) fn call_function_const(
     }
 
     let op_data = stores.ops.get_op_io(op_id);
-    let callee_sig_urir = item_store.urir().get_item_signature(callee_id);
-    let callee_sig_trir = item_store.trir().get_item_signature(callee_id);
+    let callee_sig_urir = stores.items.urir().get_item_signature(callee_id);
+    let callee_sig_trir = stores.items.trir().get_item_signature(callee_id);
 
     for (&actual_value_id, &expected_type_id) in op_data.inputs.iter().zip(&callee_sig_trir.entry) {
         let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
@@ -218,17 +206,16 @@ pub(crate) fn call_function_const(
 }
 
 fn call_generic_function_infer_params(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     callee_id: ItemId,
     op_id: OpId,
 ) -> ControlFlow<(), ItemId> {
-    let generic_sig = item_store.trir().get_partial_item_signature(callee_id);
+    let generic_sig = stores.items.trir().get_partial_item_signature(callee_id);
     let op_data = stores.ops.get_op_io(op_id);
     let inputs = &op_data.inputs;
-    let generic_params = item_store.get_function_template_paramaters(callee_id);
+    let generic_params = stores.items.get_function_template_paramaters(callee_id);
 
     let mut param_types = Vec::new();
 
@@ -280,13 +267,9 @@ fn call_generic_function_infer_params(
         return ControlFlow::Break(());
     }
 
-    let Ok(new_id) = item_store.get_generic_function_instance(
-        stores,
-        pass_manager,
-        had_error,
-        callee_id,
-        &param_types,
-    ) else {
+    let Ok(new_id) =
+        stores.get_generic_function_instance(pass_manager, had_error, callee_id, &param_types)
+    else {
         had_error.set();
         return ControlFlow::Break(());
     };
@@ -295,7 +278,6 @@ fn call_generic_function_infer_params(
 }
 
 pub(crate) fn variable(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -303,7 +285,7 @@ pub(crate) fn variable(
     variable_item_id: ItemId,
 ) {
     if pass_manager
-        .ensure_type_resolved_signature(item_store, stores, variable_item_id)
+        .ensure_type_resolved_signature(stores, variable_item_id)
         .is_err()
     {
         had_error.set();
@@ -313,7 +295,7 @@ pub(crate) fn variable(
     let op_data = stores.ops.get_op_io(op_id);
     let output_value_id = op_data.outputs[0];
 
-    let variable_type_id = item_store.trir().get_variable_type(variable_item_id);
+    let variable_type_id = stores.items.trir().get_variable_type(variable_item_id);
 
     let ptr_type_id = stores
         .types

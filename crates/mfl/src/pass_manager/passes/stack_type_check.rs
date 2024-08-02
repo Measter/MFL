@@ -5,9 +5,8 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
-    item_store::{ItemId, ItemStore},
     pass_manager::PassManager,
-    stores::{block::BlockId, ops::OpId, types::IntKind, values::ValueId},
+    stores::{block::BlockId, item::ItemId, ops::OpId, types::IntKind, values::ValueId},
     Stores,
 };
 
@@ -55,7 +54,6 @@ fn get_arith_cmp_fns(bo: &Basic) -> (StackCheckFn, TypeCheckFn) {
 }
 
 fn analyze_block(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -142,7 +140,6 @@ fn analyze_block(
                     Control::Epilogue | Control::Return => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::control::epilogue_return(
-                            item_store,
                             stores,
                             &mut local_had_error,
                             stack,
@@ -151,7 +148,6 @@ fn analyze_block(
                         );
                         if local_had_error.is_ok() {
                             type_check::control::epilogue_return(
-                                item_store,
                                 stores,
                                 &mut local_had_error,
                                 op_id,
@@ -168,8 +164,8 @@ fn analyze_block(
                         break;
                     }
                     Control::Prologue => {
-                        stack_check::control::prologue(item_store, stores, stack, op_id, item_id);
-                        type_check::control::prologue(item_store, stores, op_id, item_id);
+                        stack_check::control::prologue(stores, stack, op_id, item_id);
+                        type_check::control::prologue(stores, op_id, item_id);
                     }
                     Control::SysCall { arg_count } => {
                         let mut local_had_error = ErrorSignal::new();
@@ -189,7 +185,6 @@ fn analyze_block(
                     Control::If(if_op) => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::control::analyze_if(
-                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -219,7 +214,6 @@ fn analyze_block(
                     Control::While(while_op) => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::control::analyze_while(
-                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -254,7 +248,6 @@ fn analyze_block(
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::extract_array(
-                                item_store,
                                 stores,
                                 pass_manager,
                                 &mut local_had_error,
@@ -279,7 +272,6 @@ fn analyze_block(
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::extract_struct(
-                                item_store,
                                 stores,
                                 pass_manager,
                                 &mut local_had_error,
@@ -302,7 +294,6 @@ fn analyze_block(
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::insert_array(
-                                item_store,
                                 stores,
                                 pass_manager,
                                 &mut local_had_error,
@@ -326,7 +317,6 @@ fn analyze_block(
                         );
                         if local_had_error.is_ok() {
                             type_check::memory::insert_struct(
-                                item_store,
                                 stores,
                                 pass_manager,
                                 &mut local_had_error,
@@ -378,7 +368,6 @@ fn analyze_block(
                     Memory::Unpack => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::memory::unpack(
-                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -426,7 +415,6 @@ fn analyze_block(
                 TypeResolvedOp::CallFunction { id, .. } | TypeResolvedOp::Const { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::control::call_function_const(
-                        item_store,
                         stores,
                         &mut local_had_error,
                         stack,
@@ -435,7 +423,6 @@ fn analyze_block(
                     );
                     if local_had_error.is_ok() {
                         type_check::control::call_function_const(
-                            item_store,
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -449,7 +436,6 @@ fn analyze_block(
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::memory::pack_struct(
-                        item_store,
                         stores,
                         pass_manager,
                         &mut local_had_error,
@@ -464,14 +450,7 @@ fn analyze_block(
                 }
                 TypeResolvedOp::Variable { id, .. } => {
                     make_one(stores, stack, op_id);
-                    type_check::control::variable(
-                        item_store,
-                        stores,
-                        pass_manager,
-                        had_error,
-                        op_id,
-                        id,
-                    );
+                    type_check::control::variable(stores, pass_manager, had_error, op_id, id);
                 }
                 TypeResolvedOp::SizeOf { .. } => {
                     make_one(stores, stack, op_id);
@@ -507,7 +486,6 @@ pub struct AnalyzerStats {
 }
 
 pub fn analyze_item(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -517,13 +495,13 @@ pub fn analyze_item(
     let mut max_stack_depth = 0;
     let pre_value_count = stores.values.value_count();
 
+    let block_id = stores.items.get_item_body(item_id);
     analyze_block(
-        item_store,
         stores,
         pass_manager,
         had_error,
         item_id,
-        item_store.get_item_body(item_id),
+        block_id,
         &mut stack,
         &mut max_stack_depth,
     );

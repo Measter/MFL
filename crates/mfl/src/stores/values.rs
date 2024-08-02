@@ -4,9 +4,10 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use smallvec::SmallVec;
 
-use crate::{item_store::ItemId, n_ops::HashMapNOps, option::OptionExt};
+use crate::{n_ops::HashMapNOps, option::OptionExt};
 
 use super::{
+    item::ItemId,
     ops::OpId,
     source::SourceLocation,
     types::{Float, Integer, TypeId},

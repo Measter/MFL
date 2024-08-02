@@ -1,11 +1,14 @@
 use crate::{
     ir::{Basic, Control, OpCode},
-    item_store::{ItemId, ItemKind, ItemStore},
-    stores::{block::BlockId, Stores},
+    stores::{
+        block::BlockId,
+        item::{ItemId, ItemKind},
+        Stores,
+    },
 };
 
-pub fn determine_terminal_blocks(item_store: &mut ItemStore, stores: &mut Stores, cur_id: ItemId) {
-    let item_header = item_store.get_item_header(cur_id);
+pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {
+    let item_header = stores.items.get_item_header(cur_id);
     match item_header.kind {
         ItemKind::StructDef | ItemKind::Variable | ItemKind::Module | ItemKind::FunctionDecl => {
             return
@@ -16,7 +19,7 @@ pub fn determine_terminal_blocks(item_store: &mut ItemStore, stores: &mut Stores
         | ItemKind::GenericFunction => (),
     }
 
-    let body = item_store.get_item_body(cur_id);
+    let body = stores.items.get_item_body(cur_id);
     determine_terminal_blocks_in_block(stores, body);
 }
 

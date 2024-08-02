@@ -5,27 +5,29 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},
-    item_store::{ItemHeader, ItemId, ItemKind, ItemStore},
     pass_manager::PassManager,
-    stores::{block::BlockId, source::SourceLocation},
+    stores::{
+        block::BlockId,
+        item::{ItemHeader, ItemId, ItemKind},
+        source::SourceLocation,
+    },
     Stores,
 };
 
 pub fn check_invalid_cycles(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let root_header = item_store.get_item_header(cur_id);
+    let root_header = stores.items.get_item_header(cur_id);
 
     match root_header.kind {
         ItemKind::Assert | ItemKind::Const => {
-            check_invalid_cycles_const_assert(item_store, stores, pass_manager, had_error, cur_id)
+            check_invalid_cycles_const_assert(stores, pass_manager, had_error, cur_id)
         }
         ItemKind::StructDef => {
-            check_invalid_cycles_structs(item_store, stores, pass_manager, had_error, cur_id)
+            check_invalid_cycles_structs(stores, pass_manager, had_error, cur_id)
         }
         // Nothing to do here.
         ItemKind::Variable
@@ -37,13 +39,12 @@ pub fn check_invalid_cycles(
 }
 
 fn check_invalid_cycles_structs(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     root_id: ItemId,
 ) {
-    let root_struct_def = item_store.nrir().get_struct(root_id);
+    let root_struct_def = stores.items.nrir().get_struct(root_id);
     let name_location = root_struct_def.name.location;
     let mut check_queue = vec![root_id];
     let mut checked_items = HashSet::new();
@@ -51,13 +52,13 @@ fn check_invalid_cycles_structs(
     while let Some(item) = check_queue.pop() {
         if item != root_id
             && pass_manager
-                .ensure_ident_resolved_signature(item_store, stores, item)
+                .ensure_ident_resolved_signature(stores, item)
                 .is_err()
         {
             had_error.set();
         }
 
-        let struct_def = item_store.nrir().get_struct(item);
+        let struct_def = stores.items.nrir().get_struct(item);
         for field in &struct_def.fields {
             check_invalid_cyclic_refs_in_field_kind(
                 stores,
@@ -140,31 +141,31 @@ fn check_invalid_cyclic_refs_in_field_kind(
 }
 
 fn check_invalid_cycles_const_assert(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     root_id: ItemId,
 ) {
-    let root_header = item_store.get_item_header(root_id);
+    let root_header = stores.items.get_item_header(root_id);
     let mut check_queue = vec![root_id];
     let mut checked_items = HashSet::new();
 
     while let Some(item) = check_queue.pop() {
-        let header = item_store.get_item_header(root_id);
+        let header = stores.items.get_item_header(root_id);
         if item != root_id
             && pass_manager
-                .ensure_ident_resolved_body(item_store, stores, item)
+                .ensure_ident_resolved_body(stores, item)
                 .is_err()
         {
             had_error.set();
         }
 
+        let block_id = stores.items.get_item_body(item);
         check_invalid_cyclic_refs_in_block(
             stores,
             had_error,
             root_header,
-            item_store.get_item_body(item),
+            block_id,
             header,
             &mut checked_items,
             &mut check_queue,

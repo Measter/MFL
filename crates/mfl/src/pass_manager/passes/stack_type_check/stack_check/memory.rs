@@ -5,7 +5,6 @@ use smallvec::SmallVec;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    item_store::ItemStore,
     n_ops::{SliceNOps, VecNOps},
     pass_manager::PassManager,
     stores::{
@@ -166,7 +165,6 @@ pub(crate) fn store(
 }
 
 pub(crate) fn unpack(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -188,7 +186,7 @@ pub(crate) fn unpack(
         TypeKind::Array { length, .. } => length,
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             if pass_manager
-                .ensure_define_structs(item_store, stores, struct_item_id)
+                .ensure_define_structs(stores, struct_item_id)
                 .is_err()
             {
                 stores.ops.set_op_io(op_id, &[input_value_id], &[]);
@@ -236,7 +234,6 @@ pub(crate) fn unpack(
 }
 
 pub(crate) fn pack_struct(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -262,7 +259,7 @@ pub(crate) fn pack_struct(
     };
 
     if pass_manager
-        .ensure_define_structs(item_store, stores, struct_item_id)
+        .ensure_define_structs(stores, struct_item_id)
         .is_err()
     {
         stores.ops.set_op_io(op_id, &[], &[]);

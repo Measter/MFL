@@ -3,17 +3,18 @@ use ariadne::{Color, Label};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    item_store::{ItemAttribute, ItemHeader, ItemId, ItemKind, ItemStore, LangItem},
-    stores::Stores,
+    stores::{
+        item::{ItemAttribute, ItemHeader, ItemId, ItemKind, LangItem},
+        Stores,
+    },
 };
 
 pub(crate) fn validate_attributes(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     cur_item: ItemId,
 ) {
-    let item_header = item_store.get_item_header(cur_item);
+    let item_header = stores.items.get_item_header(cur_item);
 
     match item_header.kind {
         ItemKind::Assert | ItemKind::Const | ItemKind::Variable => {

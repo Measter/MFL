@@ -4,33 +4,39 @@ use tracing::trace;
 
 use crate::{
     ir::{If, While},
-    item_store::{ItemId, ItemKind},
-    stores::{ops::OpId, source::Spanned, types::TypeKind},
+    stores::{
+        item::{ItemId, ItemKind},
+        ops::OpId,
+        source::Spanned,
+        types::TypeKind,
+        Stores,
+    },
 };
 
-use super::{CodeGen, DataStore, InkwellResult, SsaMap};
+use super::{CodeGen, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_function_call(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         callee_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(&ds.item_store.trir().get_item_signature(callee_id).entry)
+            .zip(&ds.items.trir().get_item_signature(callee_id).entry)
             .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
-                let value = value_store.load_value(self, value_id, ds)?;
-                let [input_type_id] = ds.analyzer.value_types([value_id]).unwrap();
+                let value =
+                    value_store.load_value(self, value_id, &mut ds.values, &mut ds.types)?;
+                let [input_type_id] = ds.values.value_types([value_id]).unwrap();
 
                 let v = match (
-                    ds.type_store.get_type_info(expected_type).kind,
-                    ds.type_store.get_type_info(input_type_id).kind,
+                    ds.types.get_type_info(expected_type).kind,
+                    ds.types.get_type_info(input_type_id).kind,
                 ) {
                     (TypeKind::Integer(expected_int), TypeKind::Integer(input_int)) => self
                         .cast_int(
@@ -54,14 +60,14 @@ impl<'ctx> CodeGen<'ctx> {
             .map(|p| p.map(Into::into))
             .collect::<InkwellResult<_>>()?;
 
-        let callee_name = ds.strings_store.get_mangled_name(callee_id);
+        let callee_name = ds.strings.get_mangled_name(callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
         let result =
             self.builder
                 .build_call(callee_value, &args, &format!("call_{callee_name}"))?;
 
-        let callee_header = ds.item_store.get_item_header(callee_id);
+        let callee_header = ds.items.get_item_header(callee_id);
         if matches!(callee_header.kind, ItemKind::Function { .. }) {
             self.enqueue_function(callee_id);
         }
@@ -86,30 +92,31 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_epilogue_return(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         self_id: ItemId,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         if op_io.inputs().is_empty() {
             self.builder.build_return(None)?;
             return Ok(());
         }
 
-        let sig = ds.item_store.trir().get_item_signature(self_id);
+        let sig = ds.items.trir().get_item_signature(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()
             .iter()
             .zip(&sig.exit)
             .map(|(value_id, expected_type_id)| -> InkwellResult<_> {
-                let value = value_store.load_value(self, *value_id, ds)?;
-                let [value_type_id] = ds.analyzer.value_types([*value_id]).unwrap();
+                let value =
+                    value_store.load_value(self, *value_id, &mut ds.values, &mut ds.types)?;
+                let [value_type_id] = ds.values.value_types([*value_id]).unwrap();
 
-                let value_type_info = ds.type_store.get_type_info(value_type_id);
-                let expected_type_info = ds.type_store.get_type_info(*expected_type_id);
+                let value_type_info = ds.types.get_type_info(value_type_id);
+                let expected_type_info = ds.types.get_type_info(*expected_type_id);
 
                 let value = match (value_type_info.kind, expected_type_info.kind) {
                     (TypeKind::Integer(value_int), TypeKind::Integer(expected_int)) => self
@@ -146,12 +153,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_prologue(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let params = function.get_param_iter();
         for (id, param) in op_io.outputs().iter().zip(params) {
@@ -163,27 +170,27 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_syscall(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         arg_count: Spanned<u8>,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
         let callee_value = self.syscall_wrappers[arg_count.inner.to_usize() - 1];
 
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
             .map(|id| -> InkwellResult<_> {
-                match value_store.load_value(self, *id, ds)? {
+                match value_store.load_value(self, *id, &mut ds.values, &mut ds.types)? {
                     BasicValueEnum::PointerValue(v) => {
                         Ok(self
                             .builder
                             .build_ptr_to_int(v, self.ctx.i64_type(), "ptr_cast")?)
                     }
                     BasicValueEnum::IntValue(int_val) => {
-                        let [type_id] = ds.analyzer.value_types([*id]).unwrap();
-                        let TypeKind::Integer(int_type) = ds.type_store.get_type_info(type_id).kind
+                        let [type_id] = ds.values.value_types([*id]).unwrap();
+                        let TypeKind::Integer(int_type) = ds.types.get_type_info(type_id).kind
                         else {
                             unreachable!()
                         };
@@ -212,7 +219,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_if(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
@@ -229,31 +236,30 @@ impl<'ctx> CodeGen<'ctx> {
             .ctx
             .append_basic_block(function, &format!("if_{op_id}_else"));
 
-        let post_basic_block = if ds.block_store.is_terminal(if_op.then_block)
-            && ds.block_store.is_terminal(if_op.else_block)
-        {
-            None
-        } else {
-            Some(
-                self.ctx
-                    .append_basic_block(function, &format!("if_{op_id}_post")),
-            )
-        };
+        let post_basic_block =
+            if ds.blocks.is_terminal(if_op.then_block) && ds.blocks.is_terminal(if_op.else_block) {
+                None
+            } else {
+                Some(
+                    self.ctx
+                        .append_basic_block(function, &format!("if_{op_id}_post")),
+                )
+            };
 
         self.builder.position_at_end(current_block);
         // Compile condition
         trace!("Compiling condition for {:?}", op_id);
         self.compile_block(ds, value_store, id, if_op.condition, function)?;
 
-        if ds.block_store.is_terminal(if_op.condition) {
+        if ds.blocks.is_terminal(if_op.condition) {
             return Ok(());
         }
 
         trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
         let bool_value = value_store
-            .load_value(self, op_io.inputs()[0], ds)?
+            .load_value(self, op_io.inputs()[0], &mut ds.values, &mut ds.types)?
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, then_basic_block, else_basic_block)?;
@@ -264,18 +270,23 @@ impl<'ctx> CodeGen<'ctx> {
         self.compile_block(ds, value_store, id, if_op.then_block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
-        if !ds.block_store.is_terminal(if_op.then_block) {
-            let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
+        if !ds.blocks.is_terminal(if_op.then_block) {
+            let Some(merges) = ds.values.get_if_merges(op_id).cloned() else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
                 let type_ids = ds
-                    .analyzer
+                    .values
                     .value_types([merge.then_value, merge.output_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.then_value, ds)?;
+                let data = value_store.load_value(
+                    self,
+                    merge.then_value,
+                    &mut ds.values,
+                    &mut ds.types,
+                )?;
 
                 let data = if let [TypeKind::Integer(then_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -302,18 +313,23 @@ impl<'ctx> CodeGen<'ctx> {
         self.compile_block(ds, value_store, id, if_op.else_block, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
-        if !ds.block_store.is_terminal(if_op.else_block) {
-            let Some(merges) = ds.analyzer.get_if_merges(op_id) else {
+        if !ds.blocks.is_terminal(if_op.else_block) {
+            let Some(merges) = ds.values.get_if_merges(op_id).cloned() else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
                 let type_ids = ds
-                    .analyzer
+                    .values
                     .value_types([merge.else_value, merge.output_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.else_value, ds)?;
+                let data = value_store.load_value(
+                    self,
+                    merge.else_value,
+                    &mut ds.values,
+                    &mut ds.types,
+                )?;
 
                 let data = if let [TypeKind::Integer(else_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -344,7 +360,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_while(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         function: FunctionValue<'ctx>,
         id: ItemId,
@@ -371,17 +387,22 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.analyzer.get_while_merges(op_id) else {
+            let Some(merges) = ds.values.get_while_merges(op_id).cloned() else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.condition {
                 let type_ids = ds
-                    .analyzer
+                    .values
                     .value_types([merge.condition_value, merge.pre_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.condition_value, ds)?;
+                let data = value_store.load_value(
+                    self,
+                    merge.condition_value,
+                    &mut ds.values,
+                    &mut ds.types,
+                )?;
 
                 let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
                     type_info_kinds
@@ -400,10 +421,10 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let bool_value = value_store
-            .load_value(self, op_io.inputs()[0], ds)?
+            .load_value(self, op_io.inputs()[0], &mut ds.values, &mut ds.types)?
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, body_block, post_block)?;
@@ -415,17 +436,22 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.analyzer.get_while_merges(op_id) else {
+            let Some(merges) = ds.values.get_while_merges(op_id).cloned() else {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges.body {
                 let type_ids = ds
-                    .analyzer
+                    .values
                     .value_types([merge.condition_value, merge.pre_value])
                     .unwrap();
-                let type_info_kinds = type_ids.map(|id| ds.type_store.get_type_info(id).kind);
+                let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.condition_value, ds)?;
+                let data = value_store.load_value(
+                    self,
+                    merge.condition_value,
+                    &mut ds.values,
+                    &mut ds.types,
+                )?;
 
                 let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
                     type_info_kinds

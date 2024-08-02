@@ -4,20 +4,18 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
-    item_store::{ItemId, ItemStore},
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
-    stores::types::TypeKind,
+    stores::{item::ItemId, types::TypeKind},
     Stores,
 };
 
 pub fn declare_struct(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = item_store.nrir().get_struct(cur_id);
+    let def = stores.items.nrir().get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
         &mut stores.strings,
@@ -57,8 +55,8 @@ pub fn declare_struct(
     let has_generics = !def.generic_params.is_empty();
     let def_name = def.name;
 
-    let friendly_name = stores.build_friendly_name(item_store, pass_manager, cur_id);
-    let mangled_name = stores.build_mangled_name(item_store, pass_manager, cur_id);
+    let friendly_name = stores.build_friendly_name(pass_manager, cur_id);
+    let mangled_name = stores.build_mangled_name(pass_manager, cur_id);
 
     if has_generics {
         stores.types.add_type(
@@ -78,22 +76,15 @@ pub fn declare_struct(
 }
 
 pub fn define_struct(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = item_store.nrir().get_struct(cur_id).clone();
+    let def = stores.items.nrir().get_struct(cur_id).clone();
     for field in &def.fields {
         // Failure here can be handled by the type resolver.
-        ensure_structs_declared_in_type(
-            item_store,
-            stores,
-            pass_manager,
-            had_error,
-            &field.kind.inner,
-        );
+        ensure_structs_declared_in_type(stores, pass_manager, had_error, &field.kind.inner);
     }
 
     if !def.generic_params.is_empty() {

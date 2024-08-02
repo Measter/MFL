@@ -2,37 +2,37 @@ use inkwell::{values::BasicValue, AddressSpace};
 use intcast::IntCast;
 use lasso::Spur;
 
-use crate::{
-    item_store::ItemId,
-    stores::{
-        ops::OpId,
-        types::{
-            BuiltinTypes, Float, FloatWidth, IntKind, IntSignedness, IntWidth, Integer, TypeId,
-            TypeKind,
-        },
+use crate::stores::{
+    item::ItemId,
+    ops::OpId,
+    types::{
+        BuiltinTypes, Float, FloatWidth, IntKind, IntSignedness, IntWidth, Integer, TypeId,
+        TypeKind,
     },
+    Stores,
 };
 
-use super::{CodeGen, DataStore, InkwellResult, SsaMap};
+use super::{CodeGen, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
     pub(super) fn build_cast(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         to_type_id: TypeId,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
-        let to_type_info = ds.type_store.get_type_info(to_type_id);
+        let to_type_info = ds.types.get_type_info(to_type_id);
         match to_type_info.kind {
             TypeKind::Integer(output_int) => {
                 let input_id = op_io.inputs()[0];
-                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
-                let input_type_info = ds.type_store.get_type_info(input_type_id);
+                let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.types.get_type_info(input_type_id);
 
-                let input_data = value_store.load_value(self, input_id, ds)?;
+                let input_data =
+                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(input_int) => {
@@ -79,10 +79,11 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Float(output_float) => {
                 let input_id = op_io.inputs()[0];
-                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
-                let input_type_info = ds.type_store.get_type_info(input_type_id);
+                let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.types.get_type_info(input_type_id);
 
-                let input_data = value_store.load_value(self, input_id, ds)?;
+                let input_data =
+                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(input_int) => {
@@ -118,9 +119,10 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 let input_id = op_io.inputs()[0];
-                let input_type_id = ds.analyzer.value_types([input_id]).unwrap()[0];
-                let input_type_info = ds.type_store.get_type_info(input_type_id);
-                let input_data = value_store.load_value(self, input_id, ds)?;
+                let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
+                let input_type_info = ds.types.get_type_info(input_type_id);
+                let input_data =
+                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(IntKind::U64) => {
@@ -165,14 +167,14 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_dup_over(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-            let value = value_store.load_value(self, input_id, ds)?;
+            let value = value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
             value_store.store_value(self, output_id, value)?;
         }
 
@@ -181,13 +183,13 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_push_int(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         width: IntWidth,
         value: Integer,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let int_type = width.get_int_type(self.ctx);
         let value = match value {
@@ -206,13 +208,13 @@ impl<'ctx> CodeGen<'ctx> {
     }
     pub(super) fn build_push_float(
         &self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         width: FloatWidth,
         value: Float,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let float_type = width.get_float_type(self.ctx);
         let value = float_type
@@ -226,12 +228,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_push_bool(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         value: bool,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
 
         let value = self.ctx.bool_type().const_int(value as _, false).into();
         value_store.store_value(self, op_io.outputs()[0], value)?;
@@ -241,22 +243,20 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_push_str(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         str_id: Spur,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
-        let str_ptr = value_store.get_string_literal(self, ds, str_id)?;
+        let op_io = ds.ops.get_op_io(op_id);
+        let str_ptr = value_store.get_string_literal(self, &mut ds.strings, str_id)?;
 
-        let string = ds.strings_store.resolve(str_id);
+        let string = ds.strings.resolve(str_id);
         let len = string.len() - 1; // It's null-terminated.
         let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
-        let struct_type = self.get_type(
-            ds.type_store,
-            ds.type_store.get_builtin(BuiltinTypes::String).id,
-        );
+        let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
+        let struct_type = self.get_type(&mut ds.types, type_id);
 
         let store_value = struct_type
             .into_struct_type()
@@ -273,15 +273,15 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub(super) fn build_const(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
         const_id: ItemId,
     ) -> InkwellResult {
-        let op_io = ds.op_store.get_op_io(op_id);
+        let op_io = ds.ops.get_op_io(op_id);
         let output_ids = op_io.outputs();
 
-        let Some(const_vals) = ds.item_store.get_consts(const_id) else {
+        let Some(const_vals) = ds.items.get_consts(const_id) else {
             panic!("ICE: Const wasn't ready during codegen");
         };
 

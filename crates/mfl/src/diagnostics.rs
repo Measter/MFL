@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
+    error_signal::ErrorSignal,
     stores::{source::SourceLocation, values::ValueId},
     Stores,
 };
@@ -104,4 +105,33 @@ pub fn emit<Labels>(
     }
 
     diag.finish().eprint(&mut &stores.source).unwrap();
+}
+
+pub struct NameCollision {
+    pub prev: SourceLocation,
+    pub new: SourceLocation,
+}
+
+pub fn handle_symbol_redef_error(
+    stores: &Stores,
+    had_error: &mut ErrorSignal,
+    prev_def: Option<NameCollision>,
+) {
+    let Some(coll) = prev_def else {
+        return;
+    };
+
+    had_error.set();
+    emit_error(
+        stores,
+        coll.new,
+        "item of that name already exists",
+        [
+            Label::new(coll.new).with_color(Color::Red),
+            Label::new(coll.prev)
+                .with_color(Color::Cyan)
+                .with_message("previously defined here"),
+        ],
+        None,
+    );
 }

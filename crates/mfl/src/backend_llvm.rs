@@ -26,11 +26,9 @@ use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
-    item_store::{ItemAttribute, ItemId, ItemKind, ItemStore},
     stores::{
-        block::{BlockId, BlockStore},
-        ops::OpStore,
-        source::SourceStore,
+        block::BlockId,
+        item::{ItemAttribute, ItemId, ItemKind},
         strings::StringStore,
         types::{
             BuiltinTypes, FloatWidth, IntSignedness, IntWidth, Integer, TypeId, TypeKind, TypeStore,
@@ -168,16 +166,6 @@ impl OpCode<TypeResolvedOp> {
     }
 }
 
-struct DataStore<'a> {
-    item_store: &'a ItemStore,
-    strings_store: &'a mut StringStore,
-    analyzer: &'a ValueStore,
-    type_store: &'a mut TypeStore,
-    source_store: &'a SourceStore,
-    op_store: &'a OpStore,
-    block_store: &'a BlockStore,
-}
-
 #[derive(Debug)]
 struct SsaMap<'ctx> {
     value_map: HashMap<ValueId, BasicValueEnum<'ctx>>,
@@ -215,13 +203,13 @@ impl<'ctx> SsaMap<'ctx> {
     fn get_string_literal(
         &mut self,
         cg: &CodeGen<'ctx>,
-        ds: &mut DataStore,
+        string_store: &mut StringStore,
         id: Spur,
     ) -> InkwellResult<PointerValue<'ctx>> {
         match self.string_map.get(&id) {
             Some(&ptr) => Ok(ptr),
             None => {
-                let string = ds.strings_store.resolve(id);
+                let string = string_store.resolve(id);
                 let name = format!("SId{}", id.into_inner());
                 let global = cg.builder.build_global_string_ptr(string, &name)?;
 
@@ -239,13 +227,14 @@ impl<'ctx> SsaMap<'ctx> {
         &mut self,
         cg: &mut CodeGen<'ctx>,
         id: ValueId,
-        ds: &mut DataStore,
+        value_store: &mut ValueStore,
+        type_store: &mut TypeStore,
     ) -> InkwellResult<BasicValueEnum<'ctx>> {
         if let Some(&ptr) = self.merge_pair_map.get(&id) {
             let name = ptr.get_name().to_str().unwrap();
             trace!(name, "Fetching variable {id:?}");
-            let [ty_id] = ds.analyzer.value_types([id]).unwrap();
-            let val_type = cg.get_type(ds.type_store, ty_id);
+            let [ty_id] = value_store.value_types([id]).unwrap();
+            let val_type = cg.get_type(type_store, ty_id);
             cg.builder.build_load(val_type, ptr, name)
         } else {
             trace!("Fetching live value {id:?}");
@@ -333,16 +322,11 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_function_prototypes(
-        &mut self,
-        item_store: &ItemStore,
-        string_store: &mut StringStore,
-        type_store: &mut TypeStore,
-    ) {
+    fn build_function_prototypes(&mut self, ds: &mut Stores) {
         let _span = debug_span!(stringify!(CodeGen::build_function_prototypes)).entered();
 
         let proto_span = debug_span!("building prototypes").entered();
-        for item in item_store.get_all_items() {
+        for item in ds.items.get_all_items() {
             if !matches!(
                 item.kind,
                 ItemKind::Function { .. } | ItemKind::FunctionDecl
@@ -350,15 +334,15 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let item_sig = item_store.trir().get_item_signature(item.id);
+            let item_sig = ds.items.trir().get_item_signature(item.id);
 
-            let name = string_store.get_mangled_name(item.id);
+            let name = ds.strings.get_mangled_name(item.id);
             trace!(name, "Building prototype");
 
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
                 .entry
                 .iter()
-                .map(|t| self.get_type(type_store, *t).into())
+                .map(|t| self.get_type(&mut ds.types, *t).into())
                 .collect();
 
             let function_type = if item_sig.exit.is_empty() {
@@ -367,7 +351,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let exit_stack: Vec<_> = item_sig
                     .exit
                     .iter()
-                    .map(|t| self.get_type(type_store, *t))
+                    .map(|t| self.get_type(&mut ds.types, *t))
                     .collect();
                 self.ctx
                     .struct_type(&exit_stack, false)
@@ -408,21 +392,21 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_global_variables(&mut self, item_store: &ItemStore, stores: &mut Stores) {
+    fn build_global_variables(&mut self, stores: &mut Stores) {
         let _span = debug_span!(stringify!(CodeGen::build_global_variables)).entered();
-        for item in item_store.get_all_items() {
+        for item in stores.items.get_all_items() {
             if item.kind != ItemKind::Variable {
                 continue;
             }
             let parent_id = item.parent.unwrap();
-            if item_store.get_item_header(parent_id).kind != ItemKind::Module {
+            if stores.items.get_item_header(parent_id).kind != ItemKind::Module {
                 continue;
             }
 
             let name = stores.strings.get_mangled_name(item.id);
             trace!(name, "Building global");
 
-            let variable_store_type = item_store.trir().get_variable_type(item.id);
+            let variable_store_type = stores.items.trir().get_variable_type(item.id);
             let llvm_type = self.get_type(&mut stores.types, variable_store_type);
             let global = self
                 .module
@@ -525,15 +509,15 @@ impl<'ctx> CodeGen<'ctx> {
     }
     fn compile_block(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         id: ItemId,
         block_id: BlockId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        let block = ds.block_store.get_block(block_id);
-        for &op_id in &block.ops {
-            let op_code = ds.op_store.get_type_resolved(op_id);
+        let block = ds.blocks.get_block(block_id).clone();
+        for op_id in block.ops {
+            let op_code = ds.ops.get_type_resolved(op_id).clone();
             match op_code {
                 OpCode::Basic(Basic::Stack(Stack::Swap { count })) => {
                     trace!(?id, count.inner, "Swap")
@@ -566,22 +550,22 @@ impl<'ctx> CodeGen<'ctx> {
             match op_code {
                 OpCode::Basic(Basic::Arithmetic(arith_op)) => match arith_op {
                     Arithmetic::Add | Arithmetic::Subtract => {
-                        self.build_add_sub(ds, value_store, op_id, op_code)?
+                        self.build_add_sub(ds, value_store, op_id, &op_code)?
                     }
                     Arithmetic::BitAnd
                     | Arithmetic::BitOr
                     | Arithmetic::BitXor
                     | Arithmetic::Multiply => {
-                        self.build_multiply_and_or_xor(ds, value_store, op_id, op_code)?
+                        self.build_multiply_and_or_xor(ds, value_store, op_id, &op_code)?
                     }
 
                     Arithmetic::BitNot => self.build_bit_not(ds, value_store, op_id)?,
 
                     Arithmetic::Div | Arithmetic::Rem => {
-                        self.build_div_rem(ds, value_store, op_id, op_code)?
+                        self.build_div_rem(ds, value_store, op_id, &op_code)?
                     }
                     Arithmetic::ShiftLeft | Arithmetic::ShiftRight => {
-                        self.build_shift_left_right(ds, value_store, op_id, op_code)?
+                        self.build_shift_left_right(ds, value_store, op_id, &op_code)?
                     }
                 },
 
@@ -591,7 +575,7 @@ impl<'ctx> CodeGen<'ctx> {
                     | Compare::LessEqual
                     | Compare::Greater
                     | Compare::GreaterEqual
-                    | Compare::NotEq => self.build_compare(ds, value_store, op_id, op_code)?,
+                    | Compare::NotEq => self.build_compare(ds, value_store, op_id, &op_code)?,
 
                     Compare::IsNull => self.build_is_null(ds, value_store, op_id)?,
                 },
@@ -607,44 +591,40 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                     Control::Prologue => self.build_prologue(ds, value_store, op_id, function)?,
                     Control::SysCall { arg_count } => {
-                        self.build_syscall(ds, value_store, op_id, *arg_count)?
+                        self.build_syscall(ds, value_store, op_id, arg_count)?
                     }
                     Control::If(if_op) => {
-                        self.build_if(ds, value_store, function, id, op_id, if_op)?;
-                        if ds.block_store.is_terminal(if_op.else_block)
-                            && ds.block_store.is_terminal(if_op.then_block)
+                        self.build_if(ds, value_store, function, id, op_id, &if_op)?;
+                        if ds.blocks.is_terminal(if_op.else_block)
+                            && ds.blocks.is_terminal(if_op.then_block)
                         {
                             // Nothing else to codegen here.
                             break;
                         }
                     }
                     Control::While(while_op) => {
-                        self.build_while(ds, value_store, function, id, op_id, while_op)?
+                        self.build_while(ds, value_store, function, id, op_id, &while_op)?
                     }
                 },
 
                 OpCode::Basic(Basic::Memory(mem_op)) => match mem_op {
                     Memory::ExtractArray { emit_array } => {
-                        self.build_extract_array(ds, value_store, function, op_id, *emit_array)?
+                        self.build_extract_array(ds, value_store, function, op_id, emit_array)?
                     }
                     Memory::ExtractStruct {
                         emit_struct,
                         field_name,
-                    } => self.build_extract_struct(
-                        ds,
-                        value_store,
-                        op_id,
-                        *field_name,
-                        *emit_struct,
-                    )?,
+                    } => {
+                        self.build_extract_struct(ds, value_store, op_id, field_name, emit_struct)?
+                    }
                     Memory::InsertArray { emit_array } => {
-                        self.build_insert_array(ds, value_store, function, op_id, *emit_array)?
+                        self.build_insert_array(ds, value_store, function, op_id, emit_array)?
                     }
                     Memory::InsertStruct {
                         emit_struct,
                         field_name,
                     } => {
-                        self.build_insert_struct(ds, value_store, op_id, *field_name, *emit_struct)?
+                        self.build_insert_struct(ds, value_store, op_id, field_name, emit_struct)?
                     }
                     Memory::Load => self.build_load(ds, value_store, op_id)?,
                     Memory::PackArray { .. } => self.build_pack(ds, value_store, op_id)?,
@@ -668,32 +648,30 @@ impl<'ctx> CodeGen<'ctx> {
                 },
 
                 OpCode::Basic(Basic::PushBool(val)) => {
-                    self.build_push_bool(ds, value_store, op_id, *val)?
+                    self.build_push_bool(ds, value_store, op_id, val)?
                 }
                 OpCode::Basic(Basic::PushInt { width, value }) => {
-                    self.build_push_int(ds, value_store, op_id, *width, *value)?
+                    self.build_push_int(ds, value_store, op_id, width, value)?
                 }
                 OpCode::Basic(Basic::PushFloat { width, value }) => {
-                    self.build_push_float(ds, value_store, op_id, *width, *value)?
+                    self.build_push_float(ds, value_store, op_id, width, value)?
                 }
                 OpCode::Basic(Basic::PushStr { id }) => {
-                    self.build_push_str(ds, value_store, op_id, *id)?
+                    self.build_push_str(ds, value_store, op_id, id)?
                 }
 
                 OpCode::Complex(cmp_op) => match cmp_op {
-                    TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, *id)?,
+                    TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, id)?,
                     TypeResolvedOp::CallFunction { id: callee_id, .. } => {
-                        self.build_function_call(ds, value_store, op_id, *callee_id)?
+                        self.build_function_call(ds, value_store, op_id, callee_id)?
                     }
-                    TypeResolvedOp::Const { id } => {
-                        self.build_const(ds, value_store, op_id, *id)?
-                    }
+                    TypeResolvedOp::Const { id } => self.build_const(ds, value_store, op_id, id)?,
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
                     TypeResolvedOp::Variable { id, is_global } => {
-                        self.build_variable(ds, value_store, op_id, *id, *is_global)?
+                        self.build_variable(ds, value_store, op_id, id, is_global)?
                     }
                     TypeResolvedOp::SizeOf { id: kind } => {
-                        let size_info = ds.type_store.get_size_info(*kind);
+                        let size_info = ds.types.get_size_info(kind);
                         self.build_push_int(
                             ds,
                             value_store,
@@ -711,12 +689,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_merge_variables(
         &mut self,
-        ds: &mut DataStore,
+        ds: &mut Stores,
         block_id: BlockId,
         merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
     ) -> InkwellResult {
         fn make_variable<'ctx>(
-            ds: &mut DataStore,
+            ds: &mut Stores,
             value_id: ValueId,
             cg: &mut CodeGen<'ctx>,
             merge_pair_map: &mut HashMap<ValueId, PointerValue<'ctx>>,
@@ -725,8 +703,8 @@ impl<'ctx> CodeGen<'ctx> {
                 trace!("        Variable already exists for `{value_id:?}`");
                 return Ok(());
             }
-            let type_id = ds.analyzer.value_types([value_id]).unwrap()[0];
-            let typ = cg.get_type(ds.type_store, type_id);
+            let type_id = ds.values.value_types([value_id]).unwrap()[0];
+            let typ = cg.get_type(&mut ds.types, type_id);
             let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
 
@@ -736,11 +714,11 @@ impl<'ctx> CodeGen<'ctx> {
             Ok(())
         }
 
-        let block = ds.block_store.get_block(block_id);
-        for &op_id in &block.ops {
-            match ds.op_store.get_type_resolved(op_id) {
+        let block = ds.blocks.get_block(block_id).clone();
+        for op_id in block.ops {
+            match ds.ops.get_type_resolved(op_id).clone() {
                 OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                    let Some(op_merges) = ds.analyzer.get_if_merges(op_id) else {
+                    let Some(op_merges) = ds.values.get_if_merges(op_id).cloned() else {
                         panic!("ICE: If block doesn't have merge info");
                     };
                     for merge in op_merges {
@@ -751,7 +729,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
                 }
                 OpCode::Basic(Basic::Control(Control::While(while_op))) => {
-                    let Some(op_merges) = ds.analyzer.get_while_merges(op_id) else {
+                    let Some(op_merges) = ds.values.get_while_merges(op_id).cloned() else {
                         panic!("ICE: While block doesn't have merge info");
                     };
                     for merge in &op_merges.condition {
@@ -775,7 +753,6 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_procedure(
         &mut self,
-        item_store: &ItemStore,
         id: ItemId,
         function: FunctionValue<'ctx>,
         stores: &mut Stores,
@@ -789,15 +766,15 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let scope = item_store.nrir().get_scope(id);
+        let scope = stores.items.nrir().get_scope(id);
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
-            let item_header = item_store.get_item_header(item_id);
+            let item_header = stores.items.get_item_header(item_id);
             if item_header.kind != ItemKind::Variable {
                 continue;
             }
 
-            let alloc_type_id = item_store.trir().get_variable_type(item_id);
+            let alloc_type_id = stores.items.trir().get_variable_type(item_id);
             let (store_type_id, alloc_size, is_array) =
                 match stores.types.get_type_info(alloc_type_id).kind {
                     TypeKind::Array { type_id, length } => {
@@ -834,32 +811,13 @@ impl<'ctx> CodeGen<'ctx> {
             value_store.variable_map.insert(item_id, variable);
         }
 
-        let mut data_store = DataStore {
-            item_store,
-            analyzer: &stores.values,
-            strings_store: &mut stores.strings,
-            type_store: &mut stores.types,
-            source_store: &stores.source,
-            op_store: &mut stores.ops,
-            block_store: &stores.blocks,
-        };
-
         trace!("Defining merge variables");
-        self.build_merge_variables(
-            &mut data_store,
-            item_store.get_item_body(id),
-            &mut value_store.merge_pair_map,
-        )?;
+        let block_id = stores.items.get_item_body(id);
+        self.build_merge_variables(stores, block_id, &mut value_store.merge_pair_map)?;
 
         {
             let _span = trace_span!("compile_block").entered();
-            self.compile_block(
-                &mut data_store,
-                &mut value_store,
-                id,
-                item_store.get_item_body(id),
-                function,
-            )?;
+            self.compile_block(stores, &mut value_store, id, block_id, function)?;
 
             self.builder
                 .position_at_end(value_store.alloca_prelude_block);
@@ -877,11 +835,11 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn build(&mut self, item_store: &ItemStore, stores: &mut Stores) -> InkwellResult {
+    fn build(&mut self, stores: &mut Stores) -> InkwellResult {
         let _span = debug_span!(stringify!(CodeGen::build)).entered();
         while let Some(item_id) = self.function_queue.pop() {
             let function = self.item_function_map[&item_id];
-            self.compile_procedure(item_store, item_id, function, stores)?;
+            self.compile_procedure(item_id, function, stores)?;
         }
 
         self.pass_manager.run_on(&self.module);
@@ -889,20 +847,18 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn build_entry(
-        &mut self,
-        item_store: &ItemStore,
-        string_store: &mut StringStore,
-        type_store: &mut TypeStore,
-        entry_id: ItemId,
-    ) -> InkwellResult {
-        let u64_type_id = type_store.get_builtin(BuiltinTypes::U64).id;
-        let argc_type = self.get_type(type_store, u64_type_id);
+    fn build_entry(&mut self, stores: &mut Stores, entry_id: ItemId) -> InkwellResult {
+        let u64_type_id = stores.types.get_builtin(BuiltinTypes::U64).id;
+        let argc_type = self.get_type(&mut stores.types, u64_type_id);
 
-        let u8_type_id = type_store.get_builtin(BuiltinTypes::U8);
-        let u8_ptr_type_id = type_store.get_multi_pointer(string_store, u8_type_id.id);
-        let u8_ptr_ptr_type_id = type_store.get_multi_pointer(string_store, u8_ptr_type_id.id);
-        let argv_type = self.get_type(type_store, u8_ptr_ptr_type_id.id);
+        let u8_type_id = stores.types.get_builtin(BuiltinTypes::U8);
+        let u8_ptr_type_id = stores
+            .types
+            .get_multi_pointer(&mut stores.strings, u8_type_id.id);
+        let u8_ptr_ptr_type_id = stores
+            .types
+            .get_multi_pointer(&mut stores.strings, u8_ptr_type_id.id);
+        let argv_type = self.get_type(&mut stores.types, u8_ptr_ptr_type_id.id);
 
         let function_type = self
             .ctx
@@ -917,7 +873,7 @@ impl<'ctx> CodeGen<'ctx> {
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
 
-        let entry_sig = item_store.trir().get_item_signature(entry_id);
+        let entry_sig = stores.items.trir().get_item_signature(entry_id);
         let args = if entry_sig.entry.is_empty() {
             Vec::new()
         } else {
@@ -940,7 +896,6 @@ impl<'ctx> CodeGen<'ctx> {
 }
 
 pub(crate) fn compile(
-    item_store: &ItemStore,
     stores: &mut Stores,
     top_level_items: &[ItemId],
     args: &Args,
@@ -1001,15 +956,10 @@ pub(crate) fn compile(
     top_level_items
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
-    codegen.build_function_prototypes(item_store, &mut stores.strings, &mut stores.types);
-    codegen.build_global_variables(item_store, stores);
+    codegen.build_function_prototypes(stores);
+    codegen.build_global_variables(stores);
     if !args.is_library {
-        codegen.build_entry(
-            item_store,
-            &mut stores.strings,
-            &mut stores.types,
-            top_level_items[0],
-        )?;
+        codegen.build_entry(stores, top_level_items[0])?;
     } else {
         // Top level items clearly need to be external symbols if we're a library.
         // Pretty naff library if they're not.
@@ -1017,7 +967,7 @@ pub(crate) fn compile(
             .iter()
             .for_each(|id| codegen.item_function_map[id].set_linkage(Linkage::External));
     }
-    codegen.build(item_store, stores)?;
+    codegen.build(stores)?;
 
     {
         let _span = trace_span!("Writing object file").entered();

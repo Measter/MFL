@@ -9,7 +9,6 @@ use tracing::{debug_span, trace};
 use crate::{
     diagnostics,
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
-    item_store::{ItemId, LangItem},
     stores::{
         self,
         source::{SourceLocation, Spanned, WithSpan},
@@ -17,6 +16,8 @@ use crate::{
     },
     Stores,
 };
+
+use super::item::{ItemId, LangItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);

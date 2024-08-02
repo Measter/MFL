@@ -7,7 +7,6 @@ use utils::TokenIter;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    item_store::ItemStore,
     lexer::{BracketKind, TokenKind, TokenTree},
     program::ModuleQueueType,
     stores::{
@@ -27,7 +26,6 @@ mod ops;
 mod utils;
 
 pub fn parse_item_body_contents(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     tokens: &[TokenTree],
     parent_id: ItemId,
@@ -54,21 +52,15 @@ pub fn parse_item_body_contents(
                         parse_extract_insert_array(*token)
                     }
                     TokenKind::While => {
-                        let Ok(code) = ops::parse_while(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            parent_id,
-                        ) else {
+                        let Ok(code) = ops::parse_while(stores, &mut token_iter, *token, parent_id)
+                        else {
                             had_error.set();
                             continue;
                         };
                         code
                     }
                     TokenKind::If => {
-                        let Ok(code) =
-                            ops::parse_if(item_store, stores, &mut token_iter, *token, parent_id)
+                        let Ok(code) = ops::parse_if(stores, &mut token_iter, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -77,14 +69,7 @@ pub fn parse_item_body_contents(
                     }
 
                     TokenKind::Assert => {
-                        if items::parse_assert(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            parent_id,
-                        )
-                        .is_err()
+                        if items::parse_assert(stores, &mut token_iter, *token, parent_id).is_err()
                         {
                             had_error.set();
                         }
@@ -92,28 +77,14 @@ pub fn parse_item_body_contents(
                         continue;
                     }
                     TokenKind::Const => {
-                        if items::parse_const(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            parent_id,
-                        )
-                        .is_err()
-                        {
+                        if items::parse_const(stores, &mut token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
                         continue;
                     }
                     TokenKind::Variable => {
-                        if items::parse_variable(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            parent_id,
-                        )
-                        .is_err()
+                        if items::parse_variable(stores, &mut token_iter, *token, parent_id)
+                            .is_err()
                         {
                             had_error.set();
                         }
@@ -189,7 +160,6 @@ pub fn parse_item_body_contents(
 }
 
 pub(super) fn parse_file(
-    item_store: &mut ItemStore,
     stores: &mut Stores,
     module_id: ItemId,
     tokens: &[TokenTree],
@@ -205,56 +175,29 @@ pub(super) fn parse_file(
             TokenTree::Single(token) => {
                 match token.inner.kind {
                     TokenKind::Assert => {
-                        if items::parse_assert(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            module_id,
-                        )
-                        .is_err()
+                        if items::parse_assert(stores, &mut token_iter, *token, module_id).is_err()
                         {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Const => {
-                        if items::parse_const(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            module_id,
-                        )
-                        .is_err()
-                        {
+                        if items::parse_const(stores, &mut token_iter, *token, module_id).is_err() {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Proc => {
-                        if items::parse_function(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            module_id,
-                        )
-                        .is_err()
+                        if items::parse_function(stores, &mut token_iter, *token, module_id)
+                            .is_err()
                         {
                             had_error.set();
                         }
                     }
 
                     TokenKind::Variable => {
-                        if items::parse_variable(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            *token,
-                            module_id,
-                        )
-                        .is_err()
+                        if items::parse_variable(stores, &mut token_iter, *token, module_id)
+                            .is_err()
                         {
                             had_error.set();
                         }
@@ -262,7 +205,6 @@ pub(super) fn parse_file(
 
                     TokenKind::Import => {
                         let res = items::parse_import(
-                            item_store,
                             stores,
                             &mut had_error,
                             &mut token_iter,
@@ -291,14 +233,8 @@ pub(super) fn parse_file(
                     }
 
                     TokenKind::Struct | TokenKind::Union => {
-                        if items::parse_struct_or_union(
-                            item_store,
-                            stores,
-                            &mut token_iter,
-                            module_id,
-                            *token,
-                        )
-                        .is_err()
+                        if items::parse_struct_or_union(stores, &mut token_iter, module_id, *token)
+                            .is_err()
                         {
                             had_error.set();
                         }
