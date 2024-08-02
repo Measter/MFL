@@ -646,7 +646,7 @@ pub fn parse_ident(
     let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
         let Ok(delim) = token_iter
             .expect_group(stores, BracketKind::Paren, token)
-            .with_kinds(stores, Matcher("ident", valid_type_token))
+            .with_kinds(stores, Matcher("type", valid_type_token))
         else {
             had_error.set();
             return Err(());
@@ -654,25 +654,12 @@ pub fn parse_ident(
 
         token.location = token.location.merge(delim.span());
 
-        let span = delim.span();
         let Ok(unresolved_types) =
             parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)
         else {
             had_error.set();
             return Err(());
         };
-
-        if unresolved_types.is_empty() {
-            diagnostics::emit_error(
-                stores,
-                span,
-                "expected at least type, found 0",
-                [Label::new(span).with_color(Color::Red)],
-                None,
-            );
-            had_error.set();
-            return Err(());
-        }
 
         import_span = import_span.merge(delim.span());
         last_token = delim.last_token();
