@@ -12,11 +12,33 @@ use crate::{
     pass_manager::PassManager,
     stores::{
         block::BlockId,
-        source::{FileId, Spanned, WithSpan},
+        source::{FileId, SourceLocation, Spanned, WithSpan},
         types::BuiltinTypes,
     },
     Stores,
 };
+
+fn invalid_generic_count_diag(
+    stores: &mut Stores,
+    error_span: SourceLocation,
+    expected: usize,
+    actual: usize,
+    extra_labels: &[(SourceLocation, &str)],
+) {
+    let mut labels: Vec<_> = extra_labels
+        .iter()
+        .map(|(loc, msg)| Label::new(*loc).with_color(Color::Cyan).with_message(msg))
+        .collect();
+    labels.push(Label::new(error_span).with_color(Color::Red));
+
+    diagnostics::emit_error(
+        stores,
+        error_span,
+        format!("expected {expected} generic parameters, found {actual}",),
+        labels,
+        None,
+    );
+}
 
 fn resolved_single_ident(
     item_store: &ItemStore,
@@ -215,6 +237,68 @@ fn resolve_idents_in_type(
     Ok(res)
 }
 
+fn check_generic_param_length(
+    item_store: &ItemStore,
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    kind: &NameResolvedType,
+    kind_span: SourceLocation,
+    can_infer: bool,
+) {
+    match kind {
+        NameResolvedType::SimpleCustom { id, .. } => {
+            let struct_def = item_store.urir().get_struct(*id);
+            let kind_str = if struct_def.is_union {
+                "union"
+            } else {
+                "struct"
+            };
+            if !struct_def.generic_params.is_empty() && !can_infer {
+                invalid_generic_count_diag(
+                    stores,
+                    kind_span,
+                    struct_def.generic_params.len(),
+                    0,
+                    &[(
+                        struct_def.name.location,
+                        &format!("{kind_str} defined here"),
+                    )],
+                );
+                had_error.set();
+            }
+        }
+        NameResolvedType::GenericInstance { id, params, .. } => {
+            let struct_def = item_store.urir().get_struct(*id);
+            let kind_str = if struct_def.is_union {
+                "union"
+            } else {
+                "struct"
+            };
+            if struct_def.generic_params.len() != params.len() {
+                invalid_generic_count_diag(
+                    stores,
+                    kind_span,
+                    struct_def.generic_params.len(),
+                    params.len(),
+                    &[(
+                        struct_def.name.location,
+                        &format!("{kind_str} defined here"),
+                    )],
+                );
+                had_error.set();
+            }
+        }
+        NameResolvedType::Array(inner, _)
+        | NameResolvedType::MultiPointer(inner)
+        | NameResolvedType::SinglePointer(inner) => {
+            check_generic_param_length(item_store, stores, had_error, inner, kind_span, can_infer)
+        }
+
+        // Nothing to do here.
+        NameResolvedType::SimpleGenericParam(_) | NameResolvedType::SimpleBuiltin(_) => {}
+    }
+}
+
 fn resolve_idents_in_struct_def(
     item_store: &ItemStore,
     stores: &mut Stores,
@@ -235,16 +319,25 @@ fn resolve_idents_in_struct_def(
             stores,
             had_error,
             cur_id,
-            &field.kind,
+            &field.kind.inner,
             &def.generic_params,
         ) else {
             had_error.set();
             continue;
         };
 
+        check_generic_param_length(
+            item_store,
+            stores,
+            had_error,
+            &new_kind,
+            field.kind.location,
+            false,
+        );
+
         resolved.fields.push(StructDefField {
             name: field.name,
-            kind: new_kind,
+            kind: new_kind.with_span(field.kind.location),
         });
     }
 
@@ -260,6 +353,17 @@ fn resolve_idents_in_module_imports(
     let unresolved_imports = item_store.urir().get_scope(cur_id).imports().to_owned();
 
     for import in unresolved_imports {
+        if !import.generic_params.is_empty() {
+            diagnostics::emit_error(
+                stores,
+                import.span,
+                "import cannot have generic parameters",
+                [Label::new(import.span).with_color(Color::Red)],
+                None,
+            );
+            had_error.set();
+        }
+
         let Ok(resolved_item_id) =
             resolved_single_ident(item_store, stores, had_error, cur_id, &import)
         else {
@@ -343,6 +447,15 @@ pub fn resolve_signature(
                 return;
             };
 
+            check_generic_param_length(
+                item_store,
+                stores,
+                had_error,
+                &new_kind,
+                unresolved_variable_type.location,
+                false,
+            );
+
             item_store.nrir_mut().set_variable_type(cur_id, new_kind);
         }
         ItemKind::Module => {
@@ -386,6 +499,15 @@ pub fn resolve_signature(
                             continue;
                         };
 
+                        check_generic_param_length(
+                            item_store,
+                            stores,
+                            had_error,
+                            &new_kind,
+                            kind.location,
+                            false,
+                        );
+
                         resolved.push(new_kind);
                     }
                 };
@@ -417,6 +539,7 @@ fn resolve_idents_in_block(
     for op_id in block.ops {
         // TODO: Try to avoid this clone.
         let old_code = stores.ops.get_unresolved(op_id).clone();
+        let op_token = stores.ops.get_token(op_id);
         let new_code = match old_code {
             // These don't get resolved, so just copy it onward.
             OpCode::Basic(bo) => {
@@ -485,6 +608,15 @@ fn resolve_idents_in_block(
                         continue;
                     };
 
+                    check_generic_param_length(
+                        item_store,
+                        stores,
+                        had_error,
+                        &new_ty,
+                        op_token.location,
+                        false,
+                    );
+
                     OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
                 }
                 UnresolvedOp::PackStruct { id } => {
@@ -499,6 +631,15 @@ fn resolve_idents_in_block(
                         had_error.set();
                         continue;
                     };
+
+                    check_generic_param_length(
+                        item_store,
+                        stores,
+                        had_error,
+                        &new_ty,
+                        op_token.location,
+                        true,
+                    );
 
                     OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty })
                 }
@@ -515,6 +656,15 @@ fn resolve_idents_in_block(
                         continue;
                     };
 
+                    check_generic_param_length(
+                        item_store,
+                        stores,
+                        had_error,
+                        &new_ty,
+                        op_token.location,
+                        false,
+                    );
+
                     OpCode::Complex(NameResolvedOp::SizeOf { id: new_ty })
                 }
 
@@ -529,26 +679,68 @@ fn resolve_idents_in_block(
                         .generic_params
                         .iter()
                         .filter_map(|param| {
-                            resolve_idents_in_type(
+                            let Ok(new_kind) = resolve_idents_in_type(
                                 item_store,
                                 stores,
                                 had_error,
                                 cur_id,
                                 param,
                                 generic_params,
-                            )
-                            .ok()
+                            ) else {
+                                return None;
+                            };
+
+                            check_generic_param_length(
+                                item_store,
+                                stores,
+                                had_error,
+                                &new_kind,
+                                op_token.location,
+                                true,
+                            );
+
+                            Some(new_kind)
                         })
                         .collect();
 
                     let found_item_header = item_store.get_item_header(resolved_ident);
                     let new_code = match found_item_header.kind {
                         ItemKind::Const => NameResolvedOp::Const { id: resolved_ident },
-                        ItemKind::Function { .. }
-                        | ItemKind::FunctionDecl
-                        | ItemKind::GenericFunction => {
-                            // Generic functions can't get type resolved, only their instantiations.
-                            // This means we'll need to abort type resolving our body on a generic call.
+                        ItemKind::Function { .. } | ItemKind::FunctionDecl => {
+                            if !ident.generic_params.is_empty() {
+                                invalid_generic_count_diag(
+                                    stores,
+                                    op_token.location,
+                                    0,
+                                    ident.generic_params.len(),
+                                    &[(found_item_header.name.location, "function defined here")],
+                                );
+                                had_error.set();
+                            }
+                            NameResolvedOp::CallFunction {
+                                id: resolved_ident,
+                                generic_params: resolved_generic_params,
+                            }
+                        }
+                        ItemKind::GenericFunction => {
+                            // if resolved_generic_params.len() != found_item_header
+                            let expected_params_len = item_store
+                                .get_function_template_paramaters(resolved_ident)
+                                .len();
+
+                            if ident.generic_params.len() != expected_params_len
+                                && !ident.generic_params.is_empty()
+                            {
+                                invalid_generic_count_diag(
+                                    stores,
+                                    op_token.location,
+                                    expected_params_len,
+                                    ident.generic_params.len(),
+                                    &[(found_item_header.name.location, "function defined here")],
+                                );
+                                had_error.set();
+                            }
+
                             NameResolvedOp::CallFunction {
                                 id: resolved_ident,
                                 generic_params: resolved_generic_params,
@@ -557,6 +749,17 @@ fn resolve_idents_in_block(
                         ItemKind::Variable => {
                             let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
                             let parent_header = item_store.get_item_header(parent_id);
+
+                            if !ident.generic_params.is_empty() {
+                                invalid_generic_count_diag(
+                                    stores,
+                                    op_token.location,
+                                    0,
+                                    ident.generic_params.len(),
+                                    &[(found_item_header.name.location, "function defined here")],
+                                );
+                                had_error.set();
+                            }
 
                             NameResolvedOp::Variable {
                                 id: resolved_ident,
@@ -578,6 +781,10 @@ fn resolve_idents_in_block(
                                 had_error.set();
                                 continue;
                             };
+
+                            check_generic_param_length(
+                                item_store, stores, had_error, &new_ty, ident.span, true,
+                            );
 
                             NameResolvedOp::PackStruct { id: new_ty }
                         }

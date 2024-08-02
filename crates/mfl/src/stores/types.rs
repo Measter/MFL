@@ -12,7 +12,7 @@ use crate::{
     item_store::{ItemId, LangItem},
     stores::{
         self,
-        source::{SourceLocation, Spanned},
+        source::{SourceLocation, Spanned, WithSpan},
         strings::StringStore,
     },
     Stores,
@@ -648,12 +648,12 @@ impl TypeStore {
 
         for field in &def.fields {
             let field_kind = self
-                .partially_resolve_generic_type(string_store, &field.kind)
+                .partially_resolve_generic_type(string_store, &field.kind.inner)
                 .unwrap();
 
             resolved_fields.push(StructDefField {
                 name: field.name,
-                kind: field_kind,
+                kind: field_kind.with_span(field.kind.location),
             });
         }
 
@@ -669,6 +669,7 @@ impl TypeStore {
         self.generic_struct_id_map.insert(type_id, generic_base);
     }
 
+    // FIXME: This sholud return Option.
     pub fn resolve_generic_type(
         &mut self,
         string_store: &mut StringStore,
@@ -740,10 +741,11 @@ impl TypeStore {
         let mut resolved_fields = Vec::new();
 
         for field in &base_def.fields {
-            let new_kind = self.resolve_generic_type(string_store, &field.kind, &param_lookup);
+            let new_kind =
+                self.resolve_generic_type(string_store, &field.kind.inner, &param_lookup);
             resolved_fields.push(StructDefField {
                 name: field.name,
-                kind: new_kind,
+                kind: new_kind.with_span(field.kind.location),
             });
         }
 
@@ -865,13 +867,13 @@ impl TypeStore {
                 if struct_info.is_union {
                     // We just take the biggest size and biggest alignment here.
                     for field in &struct_info.fields {
-                        let field_size = self.get_size_info(field.kind);
+                        let field_size = self.get_size_info(field.kind.inner);
                         size_info.alignement = size_info.alignement.max(field_size.alignement);
                         size_info.byte_width = size_info.byte_width.max(field_size.byte_width);
                     }
                 } else {
                     for field in &struct_info.fields {
-                        let field_size = self.get_size_info(field.kind);
+                        let field_size = self.get_size_info(field.kind.inner);
                         size_info.alignement = size_info.alignement.max(field_size.alignement);
                         size_info.byte_width =
                             next_multiple_of(size_info.byte_width, field_size.alignement)
@@ -904,12 +906,12 @@ impl TypeStore {
 
         for field in &def.fields {
             let kind = self
-                .resolve_type(string_store, &field.kind)
+                .resolve_type(string_store, &field.kind.inner)
                 .map_err(|_| field.name)?
                 .id;
             resolved_fields.push(StructDefField {
                 name: field.name,
-                kind,
+                kind: kind.with_span(field.kind.location),
             });
         }
 

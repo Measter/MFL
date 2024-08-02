@@ -1,0 +1,63 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+proc generic_function(T) [T] to [T] {}
+struct GenericStruct(T) {
+    a T,
+}
+
+proc non_generic_function [] to [] {}
+struct NonGenericStruct {
+    a s32,
+}
+
+struct BadParamInField {
+    a GenericStruct(u8 u32), // Too many
+    b GenericStruct(u8),  // Exactly enough
+    c GenericStruct,      // Not enough
+
+    d NonGenericStruct(u32), // Too many
+    e NonGenericStruct(), // Exactly right
+}
+
+var GenericStructTooMany { GenericStruct(u8 u32) }
+var GenericStructExactlyRight { GenericStruct(u8) }
+var GenericStructNotEnough { GenericStruct }
+var NonGenericStructTooMany { NonGenericStruct(u8) }
+var NonGenericStructExactlyRight { NonGenericStruct }
+
+proc call_generic_function [] to [] {
+    5 generic_function(u8 u32) drop // Too many
+    5 generic_function(u8) drop // Exactly enough
+    5 generic_function() drop // Should infer
+}
+
+proc pack_GenericStruct [] to [] {
+    5 GenericStruct(u8 u32) drop // Too many
+    5 GenericStruct(u8) drop // Exactly enough
+    5 GenericStruct drop // Should infer
+}
+
+proc call_non_generic_function [] to [] {
+    non_generic_function(u8) // Too many
+    non_generic_function() // exactly enough
+}
+
+
+proc pack_NonGenericStruct [] to [] {
+    32 NonGenericStruct(u8) drop // Too many
+    32 NonGenericStruct drop // Exactly enough
+}
+
+proc back_params_in_sig [
+    GenericStruct(u8 u32) // Too Many
+    GenericStruct(u8) // Exactly enough
+    GenericStruct     // Not enough
+    NonGenericStruct(u8) // Too many
+    NonGenericStruct // Exactly enough
+] to [] {
+     drop(5)
+} 

@@ -505,7 +505,7 @@ impl<'ctx> CodeGen<'ctx> {
                         .clone()
                         .fields
                         .iter()
-                        .map(|f| self.get_type(type_store, f.kind))
+                        .map(|f| self.get_type(type_store, f.kind.inner))
                         .collect();
 
                     self.ctx.struct_type(&fields, false).into()

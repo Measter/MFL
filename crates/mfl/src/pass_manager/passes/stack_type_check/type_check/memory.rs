@@ -30,7 +30,7 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
     let struct_def = stores.types.get_struct_def(struct_info.id);
 
     for field in &struct_def.fields {
-        let field_kind = stores.types.get_type_info(field.kind).kind;
+        let field_kind = stores.types.get_type_info(field.kind.inner).kind;
 
         match field_kind {
             TypeKind::Integer(IntKind::U64) if field.name.inner == length_spur => {
@@ -302,7 +302,7 @@ pub(crate) fn extract_struct(
 
     stores
         .values
-        .set_value_type(output_data_id, field_info.kind);
+        .set_value_type(output_data_id, field_info.kind.inner);
 }
 
 pub(crate) fn insert_array(
@@ -587,9 +587,9 @@ pub(crate) fn insert_struct(
         return;
     };
 
-    let field_type_info = stores.types.get_type_info(field_info.kind);
+    let field_type_info = stores.types.get_type_info(field_info.kind.inner);
 
-    if data_type_id != field_info.kind
+    if data_type_id != field_info.kind.inner
         && !matches!(
             (field_type_info.kind, data_type_info.kind),
             (
@@ -833,7 +833,9 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
             // The stack check already ensured definition.
             let struct_info = stores.types.get_struct_def(aggr_type_id);
             for (output_id, field_info) in outputs.iter().zip(&struct_info.fields) {
-                stores.values.set_value_type(*output_id, field_info.kind);
+                stores
+                    .values
+                    .set_value_type(*output_id, field_info.kind.inner);
             }
         }
         TypeKind::Integer(_)
@@ -899,7 +901,7 @@ pub(crate) fn pack_struct(
 
         let mut found_field = false;
         for field_def in &struct_type_info.fields {
-            if input_type_id == field_def.kind {
+            if input_type_id == field_def.kind.inner {
                 found_field = true;
                 break;
             }
@@ -935,10 +937,10 @@ pub(crate) fn pack_struct(
             let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
                 continue;
             };
-            let field_type_info = stores.types.get_type_info(field_def.kind);
+            let field_type_info = stores.types.get_type_info(field_def.kind.inner);
             let input_type_info = stores.types.get_type_info(input_type_id);
 
-            if input_type_id != field_def.kind
+            if input_type_id != field_def.kind.inner
                 && !matches!(
                     (field_type_info.kind, input_type_info.kind),
                     (TypeKind::Integer(to), TypeKind::Integer(from))
@@ -1023,7 +1025,7 @@ fn pack_struct_infer_generic(
         // If we're a generic union, we won't be able to infer the generic paramater if our input is one of the
         // non-generic fields.
         for field in &generic_def.fields {
-            let PartiallyResolvedType::Fixed(field_type_id) = field.kind else {
+            let PartiallyResolvedType::Fixed(field_type_id) = field.kind.inner else {
                 continue;
             };
             // We've found a fixed field, so we can't infer the generic parameter.
@@ -1075,6 +1077,7 @@ fn pack_struct_infer_generic(
                 let Some(inferred_type_id) =
                     field
                         .kind
+                        .inner
                         .match_generic_type(stores, param.inner, input_type_info)
                 else {
                     // Not an inferrable pattern.

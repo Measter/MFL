@@ -515,7 +515,7 @@ pub fn parse_struct_or_union(
 
         fields.push(StructDefField {
             name: name_token.map(|t| t.lexeme),
-            kind: unresolved_store_type.pop().unwrap().inner,
+            kind: unresolved_store_type.pop().unwrap(),
         });
         prev_token = delim.close;
     }

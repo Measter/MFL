@@ -65,7 +65,7 @@ fn check_invalid_cycles_structs(
                 root_id,
                 name_location,
                 field.name.location,
-                &field.kind,
+                &field.kind.inner,
                 &mut check_queue,
                 &mut checked_items,
             );

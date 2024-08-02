@@ -69,7 +69,7 @@ impl<'ctx> CodeGen<'ctx> {
                 TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                     let struct_info = ds.type_store.get_struct_def(output_type_id);
                     let field_kind = struct_info.fields[idx].kind;
-                    ds.type_store.get_type_info(field_kind)
+                    ds.type_store.get_type_info(field_kind.inner)
                 }
                 _ => unreachable!(),
             };
@@ -276,7 +276,7 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
 
         let (TypeKind::MultiPointer(store_type) | TypeKind::SinglePointer(store_type)) =
-            ds.type_store.get_type_info(ptr_field_info.kind).kind
+            ds.type_store.get_type_info(ptr_field_info.kind.inner).kind
         else {
             unreachable!()
         };
@@ -660,7 +660,7 @@ impl<'ctx> CodeGen<'ctx> {
             .position(|fi| fi.name.inner == field_name.inner)
             .unwrap();
         let field_info = &struct_def.fields[field_idx];
-        let field_type_info = ds.type_store.get_type_info(field_info.kind);
+        let field_type_info = ds.type_store.get_type_info(field_info.kind.inner);
 
         let data_val = if let (TypeKind::Integer(to_int), TypeKind::Integer(from_int)) =
             (field_type_info.kind, data_type_info.kind)

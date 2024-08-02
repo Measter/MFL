@@ -87,7 +87,13 @@ pub fn define_struct(
     let def = item_store.nrir().get_struct(cur_id).clone();
     for field in &def.fields {
         // Failure here can be handled by the type resolver.
-        ensure_structs_declared_in_type(item_store, stores, pass_manager, had_error, &field.kind);
+        ensure_structs_declared_in_type(
+            item_store,
+            stores,
+            pass_manager,
+            had_error,
+            &field.kind.inner,
+        );
     }
 
     if !def.generic_params.is_empty() {

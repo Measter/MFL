@@ -46,7 +46,7 @@ pub struct StructDef<Kind: FieldKind> {
 #[derive(Debug, Clone)]
 pub struct StructDefField<Kind> {
     pub name: Spanned<Spur>,
-    pub kind: Kind,
+    pub kind: Spanned<Kind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
