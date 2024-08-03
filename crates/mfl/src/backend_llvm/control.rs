@@ -30,8 +30,7 @@ impl<'ctx> CodeGen<'ctx> {
             .iter()
             .zip(&ds.items.trir().get_item_signature(callee_id).entry)
             .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
-                let value =
-                    value_store.load_value(self, value_id, &mut ds.values, &mut ds.types)?;
+                let value = value_store.load_value(self, value_id, ds.values, ds.types)?;
                 let [input_type_id] = ds.values.value_types([value_id]).unwrap();
 
                 let v = match (
@@ -111,8 +110,7 @@ impl<'ctx> CodeGen<'ctx> {
             .iter()
             .zip(&sig.exit)
             .map(|(value_id, expected_type_id)| -> InkwellResult<_> {
-                let value =
-                    value_store.load_value(self, *value_id, &mut ds.values, &mut ds.types)?;
+                let value = value_store.load_value(self, *value_id, ds.values, ds.types)?;
                 let [value_type_id] = ds.values.value_types([*value_id]).unwrap();
 
                 let value_type_info = ds.types.get_type_info(value_type_id);
@@ -182,7 +180,7 @@ impl<'ctx> CodeGen<'ctx> {
             .inputs()
             .iter()
             .map(|id| -> InkwellResult<_> {
-                match value_store.load_value(self, *id, &mut ds.values, &mut ds.types)? {
+                match value_store.load_value(self, *id, ds.values, ds.types)? {
                     BasicValueEnum::PointerValue(v) => {
                         Ok(self
                             .builder
@@ -259,7 +257,7 @@ impl<'ctx> CodeGen<'ctx> {
         // Make conditional jump.
         let op_io = ds.ops.get_op_io(op_id);
         let bool_value = value_store
-            .load_value(self, op_io.inputs()[0], &mut ds.values, &mut ds.types)?
+            .load_value(self, op_io.inputs()[0], ds.values, ds.types)?
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, then_basic_block, else_basic_block)?;
@@ -281,12 +279,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.then_value,
-                    &mut ds.values,
-                    &mut ds.types,
-                )?;
+                let data = value_store.load_value(self, merge.then_value, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(then_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -324,12 +317,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.else_value,
-                    &mut ds.values,
-                    &mut ds.types,
-                )?;
+                let data = value_store.load_value(self, merge.else_value, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(else_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -397,12 +385,8 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.condition_value,
-                    &mut ds.values,
-                    &mut ds.types,
-                )?;
+                let data =
+                    value_store.load_value(self, merge.condition_value, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
                     type_info_kinds
@@ -424,7 +408,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.ops.get_op_io(op_id);
 
         let bool_value = value_store
-            .load_value(self, op_io.inputs()[0], &mut ds.values, &mut ds.types)?
+            .load_value(self, op_io.inputs()[0], ds.values, ds.types)?
             .into_int_value();
         self.builder
             .build_conditional_branch(bool_value, body_block, post_block)?;
@@ -446,12 +430,8 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(
-                    self,
-                    merge.condition_value,
-                    &mut ds.values,
-                    &mut ds.types,
-                )?;
+                let data =
+                    value_store.load_value(self, merge.condition_value, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
                     type_info_kinds

@@ -104,7 +104,7 @@ pub fn emit<Labels>(
         diag = diag.with_label(label);
     }
 
-    diag.finish().eprint(&mut &stores.source).unwrap();
+    diag.finish().eprint(&mut &*stores.source).unwrap();
 }
 
 pub struct NameCollision {

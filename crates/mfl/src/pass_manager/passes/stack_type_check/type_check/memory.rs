@@ -726,11 +726,10 @@ pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id
         }
     }
 
-    let array_type = stores.types.get_array(
-        &mut stores.strings,
-        expected_store_type.id,
-        count.to_usize(),
-    );
+    let array_type =
+        stores
+            .types
+            .get_array(stores.strings, expected_store_type.id, count.to_usize());
     let output_id = op_data.outputs[0];
     stores.values.set_value_type(output_id, array_type.id);
 }
@@ -1102,7 +1101,7 @@ fn pack_struct_infer_generic(
     }
 
     let instance_type_info = stores.types.instantiate_generic_struct(
-        &mut stores.strings,
+        stores.strings,
         struct_item_id,
         struct_type_id,
         param_types,

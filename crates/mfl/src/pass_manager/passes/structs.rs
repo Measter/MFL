@@ -18,7 +18,7 @@ pub fn declare_struct(
     let def = stores.items.nrir().get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
-        &mut stores.strings,
+        stores.strings,
         &NameResolvedType::SimpleCustom {
             id: cur_id,
             token: def.name,
@@ -90,11 +90,11 @@ pub fn define_struct(
     if !def.generic_params.is_empty() {
         stores
             .types
-            .partially_resolve_generic_struct(&mut stores.strings, cur_id, &def);
+            .partially_resolve_generic_struct(stores.strings, cur_id, &def);
     } else if let Err(missing_token) =
         stores
             .types
-            .define_fixed_struct(&mut stores.strings, cur_id, &def)
+            .define_fixed_struct(stores.strings, cur_id, &def)
     {
         // The type that failed to resolve is us.
         diagnostics::emit_error(

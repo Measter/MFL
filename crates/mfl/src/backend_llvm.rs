@@ -342,7 +342,7 @@ impl<'ctx> CodeGen<'ctx> {
             let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
                 .entry
                 .iter()
-                .map(|t| self.get_type(&mut ds.types, *t).into())
+                .map(|t| self.get_type(ds.types, *t).into())
                 .collect();
 
             let function_type = if item_sig.exit.is_empty() {
@@ -351,7 +351,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let exit_stack: Vec<_> = item_sig
                     .exit
                     .iter()
-                    .map(|t| self.get_type(&mut ds.types, *t))
+                    .map(|t| self.get_type(ds.types, *t))
                     .collect();
                 self.ctx
                     .struct_type(&exit_stack, false)
@@ -407,7 +407,7 @@ impl<'ctx> CodeGen<'ctx> {
             trace!(name, "Building global");
 
             let variable_store_type = stores.items.trir().get_variable_type(item.id);
-            let llvm_type = self.get_type(&mut stores.types, variable_store_type);
+            let llvm_type = self.get_type(stores.types, variable_store_type);
             let global = self
                 .module
                 .add_global(llvm_type, Some(AddressSpace::default()), name);
@@ -704,7 +704,7 @@ impl<'ctx> CodeGen<'ctx> {
                 return Ok(());
             }
             let type_id = ds.values.value_types([value_id]).unwrap()[0];
-            let typ = cg.get_type(&mut ds.types, type_id);
+            let typ = cg.get_type(ds.types, type_id);
             let name = format!("{value_id}_var");
             trace!("        Defining variable `{name}`");
 
@@ -790,7 +790,7 @@ impl<'ctx> CodeGen<'ctx> {
                     | TypeKind::GenericStructInstance(_) => (alloc_type_id, 1, false),
                 };
 
-            let mem_type = self.get_type(&mut stores.types, store_type_id);
+            let mem_type = self.get_type(stores.types, store_type_id);
             let array_type = mem_type.array_type(alloc_size);
             let name = stores.strings.get_mangled_name(item_id).to_owned() + "_";
             let variable = self.builder.build_alloca(array_type, &name)?;
@@ -849,16 +849,16 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn build_entry(&mut self, stores: &mut Stores, entry_id: ItemId) -> InkwellResult {
         let u64_type_id = stores.types.get_builtin(BuiltinTypes::U64).id;
-        let argc_type = self.get_type(&mut stores.types, u64_type_id);
+        let argc_type = self.get_type(stores.types, u64_type_id);
 
         let u8_type_id = stores.types.get_builtin(BuiltinTypes::U8);
         let u8_ptr_type_id = stores
             .types
-            .get_multi_pointer(&mut stores.strings, u8_type_id.id);
+            .get_multi_pointer(stores.strings, u8_type_id.id);
         let u8_ptr_ptr_type_id = stores
             .types
-            .get_multi_pointer(&mut stores.strings, u8_ptr_type_id.id);
-        let argv_type = self.get_type(&mut stores.types, u8_ptr_ptr_type_id.id);
+            .get_multi_pointer(stores.strings, u8_ptr_type_id.id);
+        let argv_type = self.get_type(stores.types, u8_ptr_ptr_type_id.id);
 
         let function_type = self
             .ctx

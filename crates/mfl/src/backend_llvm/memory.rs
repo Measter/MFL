@@ -76,7 +76,7 @@ impl<'ctx> CodeGen<'ctx> {
                 _ => unreachable!(),
             };
 
-            let value = value_store.load_value(self, *value_id, &mut ds.values, &mut ds.types)?;
+            let value = value_store.load_value(self, *value_id, ds.values, ds.types)?;
             let value = if let (TypeKind::Integer(to_int), TypeKind::Integer(from_int)) =
                 (field_store_type_info.kind, input_type_info.kind)
             {
@@ -111,17 +111,15 @@ impl<'ctx> CodeGen<'ctx> {
         let input_id = op_io.inputs()[0];
         let [output_type_id] = ds.values.value_types([output_id]).unwrap();
 
-        let union_type = self
-            .get_type(&mut ds.types, output_type_id)
-            .into_array_type();
+        let union_type = self.get_type(ds.types, output_type_id).into_array_type();
         // We need to alloca the union, then cast its pointer.
         let data_ptr_type = self.ctx.ptr_type(AddressSpace::default());
 
-        let union_alloc = value_store.new_alloca(self, &mut ds.types, output_type_id)?;
+        let union_alloc = value_store.new_alloca(self, ds.types, output_type_id)?;
         let value_ptr = self
             .builder
             .build_pointer_cast(union_alloc, data_ptr_type, "")?;
-        let input_value = value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
+        let input_value = value_store.load_value(self, input_id, ds.values, ds.types)?;
         self.builder.build_store(value_ptr, input_value)?;
 
         let union_value = self.builder.build_load(union_type, union_alloc, "")?;
@@ -141,7 +139,7 @@ impl<'ctx> CodeGen<'ctx> {
         let [output_type_id] = ds.values.value_types([output_id]).unwrap();
         let output_type_info = ds.types.get_type_info(output_type_id);
 
-        let aggr_llvm_type = self.get_type(&mut ds.types, output_type_id);
+        let aggr_llvm_type = self.get_type(ds.types, output_type_id);
         let aggr_value = aggr_llvm_type.const_zero();
         match output_type_info.kind {
             TypeKind::Array { .. } => {
@@ -174,7 +172,7 @@ impl<'ctx> CodeGen<'ctx> {
         let [input_type_id] = ds.values.value_types([input_value_id]).unwrap();
         let input_type_info = ds.types.get_type_info(input_type_id);
 
-        let aggr = value_store.load_value(self, input_value_id, &mut ds.values, &mut ds.types)?;
+        let aggr = value_store.load_value(self, input_value_id, ds.values, ds.types)?;
 
         let aggr = match input_type_info.kind {
             TypeKind::Array { .. } => aggr.into_array_value().as_aggregate_value_enum(),
@@ -222,7 +220,7 @@ impl<'ctx> CodeGen<'ctx> {
         // Crash and burn
         let op_loc = ds.ops.get_token(op_id).location;
         let file_name = ds.source.name(op_loc.file_id);
-        let (_, line, column) = (&ds.source)
+        let (_, line, column) = (&*ds.source)
             .fetch(&op_loc.file_id)
             .unwrap()
             .get_offset_line(op_loc.source_start.to_usize())
@@ -236,7 +234,7 @@ impl<'ctx> CodeGen<'ctx> {
             .const_cast(self.ctx.ptr_type(AddressSpace::default()));
 
         let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
-        let str_type = self.get_type(&mut ds.types, type_id).into_struct_type();
+        let str_type = self.get_type(ds.types, type_id).into_struct_type();
         let str_value = str_type.const_named_struct(&[
             self.ctx
                 .i64_type()
@@ -315,9 +313,8 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id).clone();
         let [array_value_id, idx_value_id] = *op_io.inputs().as_arr();
-        let array_val =
-            value_store.load_value(self, array_value_id, &mut ds.values, &mut ds.types)?;
-        let idx_val = value_store.load_value(self, idx_value_id, &mut ds.values, &mut ds.types)?;
+        let array_val = value_store.load_value(self, array_value_id, ds.values, ds.types)?;
+        let idx_val = value_store.load_value(self, idx_value_id, ds.values, ds.types)?;
 
         let [array_type_id] = ds.values.value_types([array_value_id]).unwrap();
         let array_type_info = ds.types.get_type_info(array_type_id);
@@ -328,7 +325,7 @@ impl<'ctx> CodeGen<'ctx> {
                 type_id: stored_ptee_type,
             } => {
                 // Ugh, this sucks!
-                let store_location = value_store.new_alloca(self, &mut ds.types, array_type_id)?;
+                let store_location = value_store.new_alloca(self, ds.types, array_type_id)?;
                 self.builder.build_store(store_location, array_val)?;
 
                 let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
@@ -359,7 +356,7 @@ impl<'ctx> CodeGen<'ctx> {
                         )
                     }
                     TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                        let ptee_type = self.get_type(&mut ds.types, sub_type_id);
+                        let ptee_type = self.get_type(ds.types, sub_type_id);
                         let struct_val = self.builder.build_load(
                             ptee_type,
                             array_val.into_pointer_value(),
@@ -367,8 +364,8 @@ impl<'ctx> CodeGen<'ctx> {
                         )?;
                         let (ptr_field, store_type_info, length) = self
                             .get_slice_like_struct_fields(
-                                &mut ds.types,
-                                &mut ds.strings,
+                                ds.types,
+                                ds.strings,
                                 array_value_id,
                                 sub_type_id,
                                 struct_val.into_struct_value(),
@@ -386,8 +383,8 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let (ptr_field, store_type_info, length) = self.get_slice_like_struct_fields(
-                    &mut ds.types,
-                    &mut ds.strings,
+                    ds.types,
+                    ds.strings,
                     array_value_id,
                     array_type_id,
                     array_val.into_struct_value(),
@@ -419,7 +416,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let offset_ptr = unsafe {
-            let ptee_type = self.get_type(&mut ds.types, arr_ptee_kind);
+            let ptee_type = self.get_type(ds.types, arr_ptee_kind);
             self.builder
                 .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")?
         };
@@ -433,7 +430,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let output_value_name = format!("{output_value_id}");
-        let ptee_type = self.get_type(&mut ds.types, stored_kind);
+        let ptee_type = self.get_type(ds.types, stored_kind);
         let loaded_value = self
             .builder
             .build_load(ptee_type, offset_ptr, &output_value_name)?;
@@ -452,11 +449,9 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id).clone();
         let [data_value_id, array_value_id, idx_value_id] = *op_io.inputs().as_arr();
-        let data_val =
-            value_store.load_value(self, data_value_id, &mut ds.values, &mut ds.types)?;
-        let array_val =
-            value_store.load_value(self, array_value_id, &mut ds.values, &mut ds.types)?;
-        let idx_val = value_store.load_value(self, idx_value_id, &mut ds.values, &mut ds.types)?;
+        let data_val = value_store.load_value(self, data_value_id, ds.values, ds.types)?;
+        let array_val = value_store.load_value(self, array_value_id, ds.values, ds.types)?;
+        let idx_val = value_store.load_value(self, idx_value_id, ds.values, ds.types)?;
 
         let [data_type_id, array_type_id] = ds
             .values
@@ -468,7 +463,7 @@ impl<'ctx> CodeGen<'ctx> {
         let (arr_ptr, store_type_info, length, ptr_kind, ptee_kind) = match array_type_info.kind {
             TypeKind::Array { type_id, length } => {
                 // Ugh, this sucks!
-                let store_location = value_store.new_alloca(self, &mut ds.types, array_type_id)?;
+                let store_location = value_store.new_alloca(self, ds.types, array_type_id)?;
                 self.builder.build_store(store_location, array_val)?;
                 let store_type_info = ds.types.get_type_info(type_id);
 
@@ -501,7 +496,7 @@ impl<'ctx> CodeGen<'ctx> {
                         )
                     }
                     TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                        let ptee_type = self.get_type(&mut ds.types, sub_type_id);
+                        let ptee_type = self.get_type(ds.types, sub_type_id);
                         let struct_val = self.builder.build_load(
                             ptee_type,
                             array_val.into_pointer_value(),
@@ -509,8 +504,8 @@ impl<'ctx> CodeGen<'ctx> {
                         )?;
                         let (ptr_field, store_type_info, length) = self
                             .get_slice_like_struct_fields(
-                                &mut ds.types,
-                                &mut ds.strings,
+                                ds.types,
+                                ds.strings,
                                 array_value_id,
                                 sub_type_id,
                                 struct_val.into_struct_value(),
@@ -528,8 +523,8 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let (ptr_field, store_type_info, length) = self.get_slice_like_struct_fields(
-                    &mut ds.types,
-                    &mut ds.strings,
+                    ds.types,
+                    ds.strings,
                     array_value_id,
                     array_type_id,
                     array_val.into_struct_value(),
@@ -561,7 +556,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let offset_ptr = unsafe {
-            let ptee_type = self.get_type(&mut ds.types, ptee_kind);
+            let ptee_type = self.get_type(ds.types, ptee_kind);
             self.builder
                 .build_in_bounds_gep(ptee_type, arr_ptr, offset_idxs, "")?
         };
@@ -583,7 +578,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         if emit_array {
             if let TypeKind::Array { .. } = array_type_info.kind {
-                let array_type = self.get_type(&mut ds.types, array_type_id);
+                let array_type = self.get_type(ds.types, array_type_id);
                 let cast_ptr = self.builder.build_pointer_cast(
                     arr_ptr,
                     self.ctx.ptr_type(AddressSpace::default()),
@@ -611,10 +606,9 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
         let [data_value_id, input_struct_value_id] = *op_io.inputs().as_arr();
-        let data_val =
-            value_store.load_value(self, data_value_id, &mut ds.values, &mut ds.types)?;
+        let data_val = value_store.load_value(self, data_value_id, ds.values, ds.types)?;
         let input_struct_val =
-            value_store.load_value(self, input_struct_value_id, &mut ds.values, &mut ds.types)?;
+            value_store.load_value(self, input_struct_value_id, ds.values, ds.types)?;
 
         let [data_type_id, input_struct_type_id] = ds
             .values
@@ -639,7 +633,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let struct_def = ds.types.get_struct_def(sub_type_id).clone();
-                let ptee_type = self.get_type(&mut ds.types, sub_type_id);
+                let ptee_type = self.get_type(ds.types, sub_type_id);
                 let aggr_value = if struct_def.is_union {
                     self.builder
                         .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
@@ -685,8 +679,8 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let new_struct_val = if struct_def.is_union {
-            let union_type = self.get_type(&mut ds.types, struct_def_type_id);
-            let union_alloc = value_store.new_alloca(self, &mut ds.types, struct_def_type_id)?;
+            let union_type = self.get_type(ds.types, struct_def_type_id);
+            let union_alloc = value_store.new_alloca(self, ds.types, struct_def_type_id)?;
             let union_value = struct_value.into_array_value();
             self.builder.build_store(union_alloc, union_value)?;
 
@@ -742,7 +736,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.ops.get_op_io(op_id);
         let [input_struct_value_id] = *op_io.inputs().as_arr();
         let input_struct_val =
-            value_store.load_value(self, input_struct_value_id, &mut ds.values, &mut ds.types)?;
+            value_store.load_value(self, input_struct_value_id, ds.values, ds.types)?;
 
         let [input_struct_type_id] = ds.values.value_types([input_struct_value_id]).unwrap();
         let input_struct_type_info = ds.types.get_type_info(input_struct_type_id);
@@ -763,7 +757,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
                 let struct_def = ds.types.get_struct_def(sub_type_id).clone();
-                let ptee_type = self.get_type(&mut ds.types, sub_type_id);
+                let ptee_type = self.get_type(ds.types, sub_type_id);
                 let aggr_value = if struct_def.is_union {
                     self.builder
                         .build_load(ptee_type, input_struct_val.into_pointer_value(), "")?
@@ -789,12 +783,12 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let data_value = if struct_def.is_union {
-            let union_alloc = value_store.new_alloca(self, &mut ds.types, struct_def_type_id)?;
+            let union_alloc = value_store.new_alloca(self, ds.types, struct_def_type_id)?;
 
             self.builder.build_store(union_alloc, struct_value)?;
 
             let [data_value_type] = ds.values.value_types([data_value_id]).unwrap();
-            let data_type = self.get_type(&mut ds.types, data_value_type);
+            let data_type = self.get_type(ds.types, data_value_type);
             let data_ptr_type = self.ctx.ptr_type(AddressSpace::default());
 
             let value_ptr = self
@@ -841,10 +835,10 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let ptr = value_store
-            .load_value(self, ptr_value_id, &mut ds.values, &mut ds.types)?
+            .load_value(self, ptr_value_id, ds.values, ds.types)?
             .into_pointer_value();
 
-        let ptee_type = self.get_type(&mut ds.types, ptee_id);
+        let ptee_type = self.get_type(ds.types, ptee_id);
         let value = self.builder.build_load(ptee_type, ptr, "load")?;
         value_store.store_value(self, op_io.outputs()[0], value)?;
 
@@ -870,7 +864,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
         let pointee_type_kind = ds.types.get_type_info(pointee_type_id).kind;
 
-        let data = value_store.load_value(self, data, &mut ds.values, &mut ds.types)?;
+        let data = value_store.load_value(self, data, ds.values, ds.types)?;
 
         let data = match [data_type_kind, pointee_type_kind] {
             [TypeKind::Integer(data_int), TypeKind::Integer(ptr_int)] => {
@@ -882,7 +876,7 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let ptr = value_store
-            .load_value(self, ptr, &mut ds.values, &mut ds.types)?
+            .load_value(self, ptr, ds.values, ds.types)?
             .into_pointer_value();
 
         self.builder.build_store(ptr, data)?;

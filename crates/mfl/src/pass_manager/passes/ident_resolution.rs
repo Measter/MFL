@@ -375,7 +375,7 @@ pub fn resolve_signature(
     let header = stores.items.get_item_header(cur_id);
     match header.kind {
         ItemKind::StructDef => {
-            let parent_module = get_parent_module(&stores.items, cur_id);
+            let parent_module = get_parent_module(stores.items, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
@@ -384,7 +384,7 @@ pub fn resolve_signature(
             stores.items.nrir_mut().set_struct(cur_id, resolved);
         }
         ItemKind::Variable => {
-            let parent_module = get_parent_module(&stores.items, cur_id);
+            let parent_module = get_parent_module(stores.items, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
@@ -437,7 +437,7 @@ pub fn resolve_signature(
         | ItemKind::Function { .. }
         | ItemKind::FunctionDecl
         | ItemKind::GenericFunction => {
-            let parent_module = get_parent_module(&stores.items, cur_id);
+            let parent_module = get_parent_module(stores.items, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
@@ -783,7 +783,7 @@ pub fn resolve_body(
         | ItemKind::Const
         | ItemKind::Function { .. }
         | ItemKind::GenericFunction => {
-            let parent_module = get_parent_module(&stores.items, cur_id);
+            let parent_module = get_parent_module(stores.items, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 

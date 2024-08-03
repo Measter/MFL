@@ -299,7 +299,7 @@ pub(crate) fn variable(
 
     let ptr_type_id = stores
         .types
-        .get_single_pointer(&mut stores.strings, variable_type_id);
+        .get_single_pointer(stores.strings, variable_type_id);
     stores
         .values
         .set_value_type(output_value_id, ptr_type_id.id);

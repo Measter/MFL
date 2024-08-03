@@ -31,8 +31,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.types.get_type_info(input_type_id);
 
-                let input_data =
-                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
+                let input_data = value_store.load_value(self, input_id, ds.values, ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(input_int) => {
@@ -82,8 +81,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.types.get_type_info(input_type_id);
 
-                let input_data =
-                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
+                let input_data = value_store.load_value(self, input_id, ds.values, ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(input_int) => {
@@ -121,8 +119,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let input_id = op_io.inputs()[0];
                 let input_type_id = ds.values.value_types([input_id]).unwrap()[0];
                 let input_type_info = ds.types.get_type_info(input_type_id);
-                let input_data =
-                    value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
+                let input_data = value_store.load_value(self, input_id, ds.values, ds.types)?;
 
                 let output = match input_type_info.kind {
                     TypeKind::Integer(IntKind::U64) => {
@@ -174,7 +171,7 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.ops.get_op_io(op_id);
 
         for (&input_id, &output_id) in op_io.inputs().iter().zip(op_io.outputs()) {
-            let value = value_store.load_value(self, input_id, &mut ds.values, &mut ds.types)?;
+            let value = value_store.load_value(self, input_id, ds.values, ds.types)?;
             value_store.store_value(self, output_id, value)?;
         }
 
@@ -249,14 +246,14 @@ impl<'ctx> CodeGen<'ctx> {
         str_id: Spur,
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
-        let str_ptr = value_store.get_string_literal(self, &mut ds.strings, str_id)?;
+        let str_ptr = value_store.get_string_literal(self, ds.strings, str_id)?;
 
         let string = ds.strings.resolve(str_id);
         let len = string.len() - 1; // It's null-terminated.
         let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
         let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
-        let struct_type = self.get_type(&mut ds.types, type_id);
+        let struct_type = self.get_type(ds.types, type_id);
 
         let store_value = struct_type
             .into_struct_type()

@@ -59,7 +59,7 @@ pub fn resolve_signature(
 
                         let partial_type = match stores
                             .types
-                            .partially_resolve_generic_type(&mut stores.strings, kind)
+                            .partially_resolve_generic_type(stores.strings, kind)
                         {
                             Ok(info) => info,
                             Err(tk) => {
@@ -113,7 +113,7 @@ pub fn resolve_signature(
                         }
                     }
 
-                    let info = match stores.types.resolve_type(&mut stores.strings, kind) {
+                    let info = match stores.types.resolve_type(stores.strings, kind) {
                         Ok(info) => info,
                         Err(tk) => {
                             local_had_error.set();
@@ -157,7 +157,7 @@ pub fn resolve_signature(
             if parent_header.kind == ItemKind::GenericFunction {
                 let partial_type = match stores
                     .types
-                    .partially_resolve_generic_type(&mut stores.strings, &variable_type_unresolved)
+                    .partially_resolve_generic_type(stores.strings, &variable_type_unresolved)
                 {
                     Ok(pt) => pt,
                     Err(tk) => {
@@ -174,7 +174,7 @@ pub fn resolve_signature(
             } else {
                 let info = match stores
                     .types
-                    .resolve_type(&mut stores.strings, &variable_type_unresolved)
+                    .resolve_type(stores.strings, &variable_type_unresolved)
                 {
                     Ok(info) => info,
                     Err(tk) => {
@@ -242,7 +242,7 @@ fn fully_resolve_block(
                             continue;
                         }
 
-                        let type_info = match stores.types.resolve_type(&mut stores.strings, ugp) {
+                        let type_info = match stores.types.resolve_type(stores.strings, ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
                                 emit_type_error_diag(stores, err_token);
@@ -290,7 +290,7 @@ fn fully_resolve_block(
                     continue;
                 }
 
-                let type_info = match stores.types.resolve_type(&mut stores.strings, id) {
+                let type_info = match stores.types.resolve_type(stores.strings, id) {
                     Ok(info) => info,
                     Err(err_token) => {
                         emit_type_error_diag(stores, err_token);
@@ -381,7 +381,7 @@ fn partially_resolve_block(
 
                         let type_info = match stores
                             .types
-                            .partially_resolve_generic_type(&mut stores.strings, ugp)
+                            .partially_resolve_generic_type(stores.strings, ugp)
                         {
                             Ok(info) => info,
                             Err(err_token) => {
@@ -427,7 +427,7 @@ fn partially_resolve_block(
 
                 let resolved_type = match stores
                     .types
-                    .partially_resolve_generic_type(&mut stores.strings, id)
+                    .partially_resolve_generic_type(stores.strings, id)
                 {
                     Ok(info) => info,
                     Err(err_token) => {

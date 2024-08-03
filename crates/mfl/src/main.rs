@@ -22,8 +22,13 @@ use item_store::TypeResolvedItemSignature;
 use tracing::{debug, debug_span, Level};
 
 use stores::{
-    item::{ItemAttribute, ItemId, ItemKind},
-    types::BuiltinTypes,
+    block::BlockStore,
+    item::{ItemAttribute, ItemId, ItemKind, ItemStore},
+    ops::OpStore,
+    source::SourceStore,
+    strings::StringStore,
+    types::{BuiltinTypes, TypeStore},
+    values::ValueStore,
     Stores,
 };
 
@@ -101,23 +106,20 @@ fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature
 
     let expected_argc_id = stores.types.get_builtin(BuiltinTypes::U64).id;
     let u8_type = stores.types.get_builtin(BuiltinTypes::U8);
-    let u8_ptr_type = stores
-        .types
-        .get_multi_pointer(&mut stores.strings, u8_type.id);
+    let u8_ptr_type = stores.types.get_multi_pointer(stores.strings, u8_type.id);
     let u8_ptr_ptr_type = stores
         .types
-        .get_multi_pointer(&mut stores.strings, u8_ptr_type.id);
+        .get_multi_pointer(stores.strings, u8_ptr_type.id);
 
     *argc_id == expected_argc_id && *argv_id == u8_ptr_ptr_type.id
 }
 
-fn load_program(args: &Args) -> Result<(Stores, Vec<ItemId>)> {
+fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
     let _span = debug_span!(stringify!(load_program)).entered();
-    let mut stores = Stores::new();
 
-    let entry_module_id = program::load_program(&mut stores, args)?;
+    let entry_module_id = program::load_program(stores, args)?;
 
-    pass_manager::run(&mut stores, args.print_analyzer_stats)?;
+    pass_manager::run(stores, args.print_analyzer_stats)?;
 
     let mut top_level_symbols = Vec::new();
 
@@ -146,7 +148,7 @@ fn load_program(args: &Args) -> Result<(Stores, Vec<ItemId>)> {
         if !matches!(entry_item.kind, ItemKind::Function { .. }) {
             let name = entry_item.name;
             diagnostics::emit_error(
-                &stores,
+                stores,
                 name.location,
                 "`entry` must be a function",
                 Some(
@@ -164,10 +166,10 @@ fn load_program(args: &Args) -> Result<(Stores, Vec<ItemId>)> {
             .trir()
             .get_item_signature(entry_function_id)
             .clone();
-        if !is_valid_entry_sig(&mut stores, &entry_sig) {
+        if !is_valid_entry_sig(stores, &entry_sig) {
             let name = entry_item.name;
             diagnostics::emit_error(
-                &stores,
+                stores,
                 name.location,
                 "`entry` must have the signature `[] to []` or `[u64 u8&&] to []`",
                 Some(Label::new(name.location).with_color(Color::Red)),
@@ -177,12 +179,30 @@ fn load_program(args: &Args) -> Result<(Stores, Vec<ItemId>)> {
         }
     }
 
-    Ok((stores, top_level_symbols))
+    Ok(top_level_symbols)
 }
 
 fn run_compile(args: &Args) -> Result<()> {
+    let mut source_storage = SourceStore::new();
+    let mut string_store = StringStore::new();
+    let mut type_store = TypeStore::new(&mut string_store);
+    let mut op_store = OpStore::new();
+    let mut block_store = BlockStore::new();
+    let mut value_store = ValueStore::new();
+    let mut item_store = ItemStore::new(&mut string_store);
+
+    let mut stores = Stores {
+        source: &mut source_storage,
+        strings: &mut string_store,
+        types: &mut type_store,
+        ops: &mut op_store,
+        blocks: &mut block_store,
+        values: &mut value_store,
+        items: &mut item_store,
+    };
+
     print!("   Compiling...");
-    let (mut stores, top_level_items) = match load_program(args) {
+    let top_level_items = match load_program(&mut stores, args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!();

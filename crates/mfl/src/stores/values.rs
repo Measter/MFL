@@ -75,7 +75,7 @@ pub struct ValueStore {
 }
 
 impl ValueStore {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             value_lifetime: HashMap::default(),
             value_types: HashMap::default(),

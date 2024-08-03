@@ -40,10 +40,10 @@ impl<'ctx> CodeGen<'ctx> {
                 };
 
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_int_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_int_value();
 
                 let target_type = to_int.width.get_int_type(self.ctx);
@@ -60,16 +60,16 @@ impl<'ctx> CodeGen<'ctx> {
                 ));
                 assert_eq!(int_type.signed, IntSignedness::Unsigned);
                 let offset = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_int_value();
 
                 let offset = self.cast_int(offset, self.ctx.i64_type(), IntSignedness::Unsigned)?;
                 let ptr = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_pointer_value();
 
                 unsafe {
-                    let ptee_type = self.get_type(&mut ds.types, ptee_type);
+                    let ptee_type = self.get_type(ds.types, ptee_type);
                     self.builder
                         .build_gep(ptee_type, ptr, &[offset], &output_name)?
                 }
@@ -78,12 +78,12 @@ impl<'ctx> CodeGen<'ctx> {
             [TypeKind::MultiPointer(ptee_type), TypeKind::Integer(int_type)] => {
                 assert_eq!(int_type.signed, IntSignedness::Unsigned);
                 let offset = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_int_value();
 
                 let offset = self.cast_int(offset, self.ctx.i64_type(), IntSignedness::Unsigned)?;
                 let ptr = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_pointer_value();
 
                 // If we're subtracting, then we need to negate the offset.
@@ -95,7 +95,7 @@ impl<'ctx> CodeGen<'ctx> {
                     };
 
                 unsafe {
-                    let ptee_type = self.get_type(&mut ds.types, ptee_type);
+                    let ptee_type = self.get_type(ds.types, ptee_type);
                     self.builder
                         .build_gep(ptee_type, ptr, &[offset], &output_name)?
                 }
@@ -108,12 +108,12 @@ impl<'ctx> CodeGen<'ctx> {
                 ));
 
                 let lhs = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_pointer_value();
                 let rhs = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_pointer_value();
-                let ptee_type = self.get_type(&mut ds.types, ptee_type);
+                let ptee_type = self.get_type(ds.types, ptee_type);
                 let diff = self
                     .builder
                     .build_ptr_diff(ptee_type, lhs, rhs, &output_name)?;
@@ -125,10 +125,10 @@ impl<'ctx> CodeGen<'ctx> {
                 let to_float = a_from.max(b_from);
 
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_float_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_float_value();
 
                 let target_type = to_float.get_float_type(self.ctx);
@@ -165,10 +165,10 @@ impl<'ctx> CodeGen<'ctx> {
         let output_value = match output_type_info.kind {
             TypeKind::Integer(output_int) => {
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_int_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_int_value();
 
                 let [TypeKind::Integer(a_int), TypeKind::Integer(b_int)] =
@@ -187,10 +187,10 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Bool => {
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_int_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_int_value();
 
                 let func = op_code.get_int_arith_fn();
@@ -199,10 +199,10 @@ impl<'ctx> CodeGen<'ctx> {
             }
             TypeKind::Float(output_float) => {
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_float_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_float_value();
 
                 let target_type = output_float.get_float_type(self.ctx);
@@ -246,10 +246,10 @@ impl<'ctx> CodeGen<'ctx> {
                 };
 
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_int_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_int_value();
 
                 let target_type = output_int.width.get_int_type(self.ctx);
@@ -265,10 +265,10 @@ impl<'ctx> CodeGen<'ctx> {
                 let output_float = a_float.max(b_float);
 
                 let a_val = value_store
-                    .load_value(self, a, &mut ds.values, &mut ds.types)?
+                    .load_value(self, a, ds.values, ds.types)?
                     .into_float_value();
                 let b_val = value_store
-                    .load_value(self, b, &mut ds.values, &mut ds.types)?
+                    .load_value(self, b, ds.values, ds.types)?
                     .into_float_value();
 
                 let target_type = output_float.get_float_type(self.ctx);
@@ -315,10 +315,10 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let a_val = value_store
-            .load_value(self, a, &mut ds.values, &mut ds.types)?
+            .load_value(self, a, ds.values, ds.types)?
             .into_int_value();
         let b_val = value_store
-            .load_value(self, b, &mut ds.values, &mut ds.types)?
+            .load_value(self, b, ds.values, ds.types)?
             .into_int_value();
 
         // Mask the shift value to be within the bit-size of the target type.
@@ -361,7 +361,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let a = op_io.inputs()[0];
         let a_val = value_store
-            .load_value(self, a, &mut ds.values, &mut ds.types)?
+            .load_value(self, a, ds.values, ds.types)?
             .into_int_value();
 
         let res = self.builder.build_not(a_val, &output_name)?;
@@ -383,8 +383,8 @@ impl<'ctx> CodeGen<'ctx> {
         let input_types = ds.values.value_types([a, b]).unwrap();
         let input_type_infos = input_types.map(|id| ds.types.get_type_info(id));
 
-        let a_val = value_store.load_value(self, a, &mut ds.values, &mut ds.types)?;
-        let b_val = value_store.load_value(self, b, &mut ds.values, &mut ds.types)?;
+        let a_val = value_store.load_value(self, a, ds.values, ds.types)?;
+        let b_val = value_store.load_value(self, b, ds.values, ds.types)?;
         let output_name = format!("{}", op_io.outputs()[0]);
 
         let comp_result = match input_type_infos.map(|ti| ti.kind) {
@@ -450,10 +450,10 @@ impl<'ctx> CodeGen<'ctx> {
         else {
             unreachable!()
         };
-        let ptee_type = self.get_type(&mut ds.types, ptee_id);
+        let ptee_type = self.get_type(ds.types, ptee_id);
 
         let ptr_val = value_store
-            .load_value(self, input_value_id, &mut ds.values, &mut ds.types)?
+            .load_value(self, input_value_id, ds.values, ds.types)?
             .into_pointer_value();
 
         let null_ptr = self.ctx.ptr_type(AddressSpace::default()).const_null();

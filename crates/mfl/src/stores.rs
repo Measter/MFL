@@ -42,37 +42,17 @@ pub const FRENDLY_ARRAY_CLOSE: &str = "]";
 pub const FRENDLY_PTR_MULTI: &str = "*";
 pub const FRENDLY_PTR_SINGLE: &str = "&";
 
-pub struct Stores {
-    pub source: SourceStore,
-    pub strings: StringStore,
-    pub types: TypeStore,
-    pub ops: OpStore,
-    pub blocks: BlockStore,
-    pub values: ValueStore,
-    pub items: ItemStore,
+pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items> {
+    pub source: &'source mut SourceStore,
+    pub strings: &'strings mut StringStore,
+    pub types: &'types mut TypeStore,
+    pub ops: &'ops mut OpStore,
+    pub blocks: &'blocks mut BlockStore,
+    pub values: &'values mut ValueStore,
+    pub items: &'items mut ItemStore,
 }
 
-impl Stores {
-    pub fn new() -> Stores {
-        let source_storage = SourceStore::new();
-        let mut string_store = StringStore::new();
-        let type_store = TypeStore::new(&mut string_store);
-        let op_store = OpStore::new();
-        let block_store = BlockStore::new();
-        let value_store = ValueStore::new();
-        let item_store = ItemStore::new(&mut string_store);
-
-        Stores {
-            source: source_storage,
-            strings: string_store,
-            types: type_store,
-            ops: op_store,
-            blocks: block_store,
-            values: value_store,
-            items: item_store,
-        }
-    }
-
+impl Stores<'_, '_, '_, '_, '_, '_, '_> {
     pub fn build_mangled_name(&mut self, pass_manager: &mut PassManager, item_id: ItemId) -> Spur {
         let item_header = self.items.get_item_header(item_id);
 
@@ -272,9 +252,7 @@ impl Stores {
                     ref op_code @ (PartiallyResolvedOp::Cast { ref id }
                     | PartiallyResolvedOp::PackStruct { ref id }
                     | PartiallyResolvedOp::SizeOf { ref id }) => {
-                        let new_id =
-                            self.types
-                                .resolve_generic_type(&mut self.strings, id, param_map);
+                        let new_id = self.types.resolve_generic_type(self.strings, id, param_map);
                         match op_code {
                             PartiallyResolvedOp::Cast { .. } => {
                                 OpCode::Complex(TypeResolvedOp::Cast { id: new_id })
@@ -304,10 +282,7 @@ impl Stores {
                     PartiallyResolvedOp::CallFunction { id, generic_params } => {
                         let new_params: Vec<_> = generic_params
                             .iter()
-                            .map(|gp| {
-                                self.types
-                                    .resolve_generic_type(&mut self.strings, gp, param_map)
-                            })
+                            .map(|gp| self.types.resolve_generic_type(self.strings, gp, param_map))
                             .collect();
 
                         let header = self.items.get_item_header(id);
@@ -413,14 +388,14 @@ impl Stores {
             // let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
             let new_id = self
                 .types
-                .resolve_generic_type(&mut self.strings, stack_item, &param_map);
+                .resolve_generic_type(self.strings, stack_item, &param_map);
             instantiated_sig.exit.push(new_id);
         }
 
         for stack_item in &partial_type_resolved_sig.entry {
             let new_id = self
                 .types
-                .resolve_generic_type(&mut self.strings, stack_item, &param_map);
+                .resolve_generic_type(self.strings, stack_item, &param_map);
             instantiated_sig.entry.push(new_id);
         }
 
@@ -475,7 +450,7 @@ impl Stores {
                 .get_partial_variable_type(child_item_header.id);
             let new_variable_sig =
                 self.types
-                    .resolve_generic_type(&mut self.strings, alloc_type, &param_map);
+                    .resolve_generic_type(self.strings, alloc_type, &param_map);
             self.items
                 .trir_mut()
                 .set_variable_type(new_alloc_id, new_variable_sig);
