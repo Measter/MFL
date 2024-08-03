@@ -243,6 +243,7 @@ pub fn parse_function(
 
     if !has_body {
         let (_, prev_def) = stores.items.new_function_decl(
+            stores.sigs,
             &mut had_error,
             name_token.map(|t| t.lexeme),
             parent_id,
@@ -254,6 +255,7 @@ pub fn parse_function(
     } else {
         let (item_id, prev_def) = if generic_params.tokens.is_empty() {
             stores.items.new_function(
+                stores.sigs,
                 &mut had_error,
                 name_token.map(|t| t.lexeme),
                 parent_id,
@@ -263,6 +265,7 @@ pub fn parse_function(
             )
         } else {
             stores.items.new_generic_function(
+                stores.sigs,
                 &mut had_error,
                 name_token.map(|t| t.lexeme),
                 parent_id,
@@ -307,10 +310,12 @@ pub fn parse_assert(
         .expect_single(stores, TokenKind::Ident, keyword.location)
         .recover(&mut had_error, keyword);
 
-    let (item_id, prev_def) =
-        stores
-            .items
-            .new_assert(&mut had_error, name_token.map(|t| t.lexeme), parent_id);
+    let (item_id, prev_def) = stores.items.new_assert(
+        stores.sigs,
+        &mut had_error,
+        name_token.map(|t| t.lexeme),
+        parent_id,
+    );
     diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
 
     let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
@@ -339,6 +344,7 @@ pub fn parse_const(
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
     let (item_id, prev_def) = stores.items.new_const(
+        stores.sigs,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
@@ -404,6 +410,7 @@ pub fn parse_variable(
     let variable_type = unresolved_store_type.pop().unwrap();
 
     let (_, prev_def) = stores.items.new_variable(
+        stores.sigs,
         &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
@@ -519,10 +526,13 @@ pub fn parse_struct_or_union(
         is_union: keyword.inner.kind == TokenKind::Union,
     };
 
-    let (item_id, prev_def) =
-        stores
-            .items
-            .new_struct(&mut had_error, module_id, struct_def, attributes.attributes);
+    let (item_id, prev_def) = stores.items.new_struct(
+        stores.sigs,
+        &mut had_error,
+        module_id,
+        struct_def,
+        attributes.attributes,
+    );
 
     diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
 
@@ -575,8 +585,8 @@ pub fn parse_import(
     };
 
     stores
-        .items
-        .urir_mut()
+        .sigs
+        .urir
         .get_scope_mut(module_id)
         .add_unresolved_import(path);
 

@@ -15,7 +15,7 @@ pub fn declare_struct(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = stores.items.nrir().get_struct(cur_id);
+    let def = stores.sigs.nrir.get_struct(cur_id);
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
         stores.strings,
@@ -81,7 +81,7 @@ pub fn define_struct(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = stores.items.nrir().get_struct(cur_id).clone();
+    let def = stores.sigs.nrir.get_struct(cur_id).clone();
     for field in &def.fields {
         // Failure here can be handled by the type resolver.
         ensure_structs_declared_in_type(stores, pass_manager, had_error, &field.kind.inner);

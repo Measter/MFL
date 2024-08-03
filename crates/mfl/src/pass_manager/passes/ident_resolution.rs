@@ -8,11 +8,11 @@ use crate::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField,
         UnresolvedIdent, UnresolvedOp, UnresolvedType,
     },
-    item_store::NameResolvedItemSignature,
     pass_manager::PassManager,
     stores::{
         block::BlockId,
         item::{ItemId, ItemKind, ItemStore},
+        signatures::NameResolvedItemSignature,
         source::{FileId, SourceLocation, Spanned, WithSpan},
         types::BuiltinTypes,
     },
@@ -67,7 +67,11 @@ fn resolved_single_ident(
         tlm
     } else {
         let header = stores.items.get_item_header(cur_id);
-        let Some(start_item) = stores.items.get_visible_symbol(header, first_ident.inner) else {
+        let Some(start_item) =
+            stores
+                .items
+                .get_visible_symbol(stores.sigs, header, first_ident.inner)
+        else {
             let item_name = stores.strings.resolve(first_ident.inner);
             diagnostics::emit_error(
                 stores,
@@ -103,7 +107,7 @@ fn resolved_single_ident(
             return Err(());
         }
 
-        let scope = stores.items.nrir().get_scope(current_item_header.id);
+        let scope = stores.sigs.nrir.get_scope(current_item_header.id);
         let Some(sub_item) = scope.get_symbol(sub_ident.inner) else {
             diagnostics::emit_error(
                 stores,
@@ -217,7 +221,7 @@ fn check_generic_param_length(
 ) {
     match kind {
         NameResolvedType::SimpleCustom { id, .. } => {
-            let struct_def = stores.items.urir().get_struct(*id);
+            let struct_def = stores.sigs.urir.get_struct(*id);
             let kind_str = if struct_def.is_union {
                 "union"
             } else {
@@ -238,7 +242,7 @@ fn check_generic_param_length(
             }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
-            let struct_def = stores.items.urir().get_struct(*id);
+            let struct_def = stores.sigs.urir.get_struct(*id);
             let kind_str = if struct_def.is_union {
                 "union"
             } else {
@@ -310,7 +314,7 @@ fn resolve_idents_in_module_imports(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let unresolved_imports = stores.items.urir().get_scope(cur_id).imports().to_owned();
+    let unresolved_imports = stores.sigs.urir.get_scope(cur_id).imports().to_owned();
 
     for import in unresolved_imports {
         if !import.generic_params.is_empty() {
@@ -330,7 +334,7 @@ fn resolve_idents_in_module_imports(
         };
 
         let item_name = stores.items.get_item_header(resolved_item_id).name;
-        let resolved_scope = stores.items.nrir_mut().get_scope_mut(cur_id);
+        let resolved_scope = stores.sigs.nrir.get_scope_mut(cur_id);
         match resolved_scope
             .add_visible_symbol(item_name.inner.with_span(import.span), resolved_item_id)
         {
@@ -379,9 +383,9 @@ pub fn resolve_signature(
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
-            let def = stores.items.urir().get_struct(cur_id).clone();
+            let def = stores.sigs.urir.get_struct(cur_id).clone();
             let resolved = resolve_idents_in_struct_def(stores, had_error, cur_id, &def);
-            stores.items.nrir_mut().set_struct(cur_id, resolved);
+            stores.sigs.nrir.set_struct(cur_id, resolved);
         }
         ItemKind::Variable => {
             let parent_module = get_parent_module(stores.items, cur_id);
@@ -402,8 +406,8 @@ pub fn resolve_signature(
             };
 
             let unresolved_variable_type = stores
-                .items
-                .urir()
+                .sigs
+                .urir
                 .get_variable_type(cur_id)
                 .map(|i| i.clone());
 
@@ -426,7 +430,7 @@ pub fn resolve_signature(
                 false,
             );
 
-            stores.items.nrir_mut().set_variable_type(cur_id, new_kind);
+            stores.sigs.nrir.set_variable_type(cur_id, new_kind);
         }
         ItemKind::Module => {
             resolve_idents_in_module_imports(stores, had_error, cur_id);
@@ -441,7 +445,7 @@ pub fn resolve_signature(
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
-            let unresolved_sig = stores.items.urir().get_item_signature(cur_id).clone();
+            let unresolved_sig = stores.sigs.urir.get_item_signature(cur_id).clone();
             let generic_params = stores
                 .items
                 .get_function_template_paramaters(cur_id)
@@ -491,10 +495,7 @@ pub fn resolve_signature(
                 return;
             }
 
-            stores
-                .items
-                .nrir_mut()
-                .set_item_signature(cur_id, resolved_sig);
+            stores.sigs.nrir.set_item_signature(cur_id, resolved_sig);
         }
     };
 }

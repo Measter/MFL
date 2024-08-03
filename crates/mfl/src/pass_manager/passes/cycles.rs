@@ -44,7 +44,7 @@ fn check_invalid_cycles_structs(
     had_error: &mut ErrorSignal,
     root_id: ItemId,
 ) {
-    let root_struct_def = stores.items.nrir().get_struct(root_id);
+    let root_struct_def = stores.sigs.nrir.get_struct(root_id);
     let name_location = root_struct_def.name.location;
     let mut check_queue = vec![root_id];
     let mut checked_items = HashSet::new();
@@ -58,7 +58,7 @@ fn check_invalid_cycles_structs(
             had_error.set();
         }
 
-        let struct_def = stores.items.nrir().get_struct(item);
+        let struct_def = stores.sigs.nrir.get_struct(item);
         for field in &struct_def.fields {
             check_invalid_cyclic_refs_in_field_kind(
                 stores,

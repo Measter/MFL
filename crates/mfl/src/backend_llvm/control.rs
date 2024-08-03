@@ -28,7 +28,7 @@ impl<'ctx> CodeGen<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
-            .zip(&ds.items.trir().get_item_signature(callee_id).entry)
+            .zip(&ds.sigs.trir.get_item_signature(callee_id).entry)
             .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
                 let value = value_store.load_value(self, value_id, ds.values, ds.types)?;
                 let [input_type_id] = ds.values.value_types([value_id]).unwrap();
@@ -103,7 +103,7 @@ impl<'ctx> CodeGen<'ctx> {
             return Ok(());
         }
 
-        let sig = ds.items.trir().get_item_signature(self_id);
+        let sig = ds.sigs.trir.get_item_signature(self_id);
 
         let return_values: Vec<BasicValueEnum> = op_io
             .inputs()

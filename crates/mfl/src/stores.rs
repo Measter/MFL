@@ -3,6 +3,7 @@ use hashbrown::HashMap;
 use item::{ItemAttribute, ItemId, ItemKind, ItemStore};
 use lasso::Spur;
 use ops::OpStore;
+use signatures::{SigStore, TypeResolvedItemSignature};
 use source::{SourceStore, WithSpan};
 use strings::StringStore;
 use tracing::{debug_span, trace};
@@ -12,13 +13,13 @@ use values::ValueStore;
 use crate::{
     error_signal::ErrorSignal,
     ir::{Basic, Control, If, OpCode, PartiallyResolvedOp, TypeResolvedOp, While},
-    item_store::TypeResolvedItemSignature,
     pass_manager::{PassManager, PassState},
 };
 
 pub mod block;
 pub mod item;
 pub mod ops;
+pub mod signatures;
 pub mod source;
 pub mod strings;
 pub mod types;
@@ -42,7 +43,7 @@ pub const FRENDLY_ARRAY_CLOSE: &str = "]";
 pub const FRENDLY_PTR_MULTI: &str = "*";
 pub const FRENDLY_PTR_SINGLE: &str = "&";
 
-pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items> {
+pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'sigs> {
     pub source: &'source mut SourceStore,
     pub strings: &'strings mut StringStore,
     pub types: &'types mut TypeStore,
@@ -50,9 +51,10 @@ pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items> {
     pub blocks: &'blocks mut BlockStore,
     pub values: &'values mut ValueStore,
     pub items: &'items mut ItemStore,
+    pub sigs: &'sigs mut SigStore,
 }
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
     pub fn build_mangled_name(&mut self, pass_manager: &mut PassManager, item_id: ItemId) -> Spur {
         let item_header = self.items.get_item_header(item_id);
 
@@ -83,7 +85,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
                 .ensure_type_resolved_signature(self, item_id)
                 .is_ok()
         {
-            let signature = self.items.trir().get_item_signature(item_id);
+            let signature = self.sigs.trir.get_item_signature(item_id);
             if let [first, rest @ ..] = signature.generic_params.as_slice() {
                 mangled_name.push_str(MANGLED_GENERIC_OPEN);
 
@@ -124,7 +126,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
                 .ensure_type_resolved_signature(self, item_id)
                 .is_ok()
         {
-            let signature = self.items.trir().get_item_signature(item_id);
+            let signature = self.sigs.trir.get_item_signature(item_id);
             if let [first, rest @ ..] = signature.generic_params.as_slice() {
                 friendly_name.push_str(FRENDLY_GENERIC_OPEN);
 
@@ -376,8 +378,8 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
             .collect();
 
         // Essentially we need to do what the parser does what in encounters a non-generic function.
-        let orig_unresolved_sig = self.items.urir().get_item_signature(base_fn_id).clone();
-        let partial_type_resolved_sig = self.items.trir().get_partial_item_signature(base_fn_id);
+        let orig_unresolved_sig = self.sigs.urir.get_item_signature(base_fn_id).clone();
+        let partial_type_resolved_sig = self.sigs.trir.get_partial_item_signature(base_fn_id);
         let mut instantiated_sig = TypeResolvedItemSignature {
             exit: Vec::new(),
             entry: Vec::new(),
@@ -400,6 +402,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
         }
 
         let new_proc_id = self.items.new_function_generic_instance(
+            self.sigs,
             base_header.name.inner.with_span(base_header.name.location),
             base_header.parent.unwrap(),
             base_header.attributes,
@@ -407,18 +410,18 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
             orig_unresolved_sig.exit,
         );
         trace!(?new_proc_id);
-        self.items
-            .trir_mut()
+        self.sigs
+            .trir
             .set_item_signature(new_proc_id, instantiated_sig);
 
         // Clone the variable items.
-        let base_scope = self.items.nrir().get_scope(base_fn_id).clone();
+        let base_scope = self.sigs.nrir.get_scope(base_fn_id).clone();
         let mut old_alloc_map = HashMap::new();
         for (&child_name, &child_item) in base_scope.get_child_items() {
             let child_item_header = self.items.get_item_header(child_item.inner);
             if child_item_header.kind != ItemKind::Variable {
                 // We just reuse the existing item, so we need to add it manually.
-                let new_scope = self.items.nrir_mut().get_scope_mut(new_proc_id);
+                let new_scope = self.sigs.nrir.get_scope_mut(new_proc_id);
                 new_scope
                     .add_child(child_name.with_span(child_item.location), child_item.inner)
                     .unwrap();
@@ -433,8 +436,9 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
                 continue;
             }
 
-            let alloc_type_unresolved = self.items.urir().get_variable_type(child_item_header.id);
+            let alloc_type_unresolved = self.sigs.urir.get_variable_type(child_item_header.id);
             let (new_alloc_id, redef_err_loc) = self.items.new_variable(
+                self.sigs,
                 had_error,
                 child_item_header.name,
                 new_proc_id,
@@ -445,14 +449,14 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_> {
             assert!(redef_err_loc.is_none());
 
             let alloc_type = self
-                .items
-                .trir()
+                .sigs
+                .trir
                 .get_partial_variable_type(child_item_header.id);
             let new_variable_sig =
                 self.types
                     .resolve_generic_type(self.strings, alloc_type, &param_map);
-            self.items
-                .trir_mut()
+            self.sigs
+                .trir
                 .set_variable_type(new_alloc_id, new_variable_sig);
             pass_manager.add_new_item(
                 new_alloc_id,

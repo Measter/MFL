@@ -334,7 +334,7 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let item_sig = ds.items.trir().get_item_signature(item.id);
+            let item_sig = ds.sigs.trir.get_item_signature(item.id);
 
             let name = ds.strings.get_mangled_name(item.id);
             trace!(name, "Building prototype");
@@ -406,7 +406,7 @@ impl<'ctx> CodeGen<'ctx> {
             let name = stores.strings.get_mangled_name(item.id);
             trace!(name, "Building global");
 
-            let variable_store_type = stores.items.trir().get_variable_type(item.id);
+            let variable_store_type = stores.sigs.trir.get_variable_type(item.id);
             let llvm_type = self.get_type(stores.types, variable_store_type);
             let global = self
                 .module
@@ -766,7 +766,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(entry_block);
 
         trace!("Defining local allocations");
-        let scope = stores.items.nrir().get_scope(id);
+        let scope = stores.sigs.nrir.get_scope(id);
         for &item_id in scope.get_child_items().values() {
             let item_id = item_id.inner;
             let item_header = stores.items.get_item_header(item_id);
@@ -774,7 +774,7 @@ impl<'ctx> CodeGen<'ctx> {
                 continue;
             }
 
-            let alloc_type_id = stores.items.trir().get_variable_type(item_id);
+            let alloc_type_id = stores.sigs.trir.get_variable_type(item_id);
             let (store_type_id, alloc_size, is_array) =
                 match stores.types.get_type_info(alloc_type_id).kind {
                     TypeKind::Array { type_id, length } => {
@@ -873,7 +873,7 @@ impl<'ctx> CodeGen<'ctx> {
         let block = self.ctx.append_basic_block(entry_func, "entry");
         self.builder.position_at_end(block);
 
-        let entry_sig = stores.items.trir().get_item_signature(entry_id);
+        let entry_sig = stores.sigs.trir.get_item_signature(entry_id);
         let args = if entry_sig.entry.is_empty() {
             Vec::new()
         } else {

@@ -6,11 +6,11 @@ use crate::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
         PartiallyResolvedType, TypeResolvedOp,
     },
-    item_store::{PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature},
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
         block::BlockId,
         item::{ItemId, ItemKind},
+        signatures::{PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature},
         types::{emit_type_error_diag, TypeId},
     },
     Stores,
@@ -32,7 +32,7 @@ pub fn resolve_signature(
         }
 
         ItemKind::GenericFunction => {
-            let unresolved_sig = stores.items.nrir().get_item_signature(cur_id).clone();
+            let unresolved_sig = stores.sigs.nrir.get_item_signature(cur_id).clone();
             let mut resolved_sig = PartiallyTypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
@@ -82,13 +82,13 @@ pub fn resolve_signature(
             }
 
             stores
-                .items
-                .trir_mut()
+                .sigs
+                .trir
                 .set_partial_item_signature(cur_id, resolved_sig);
         }
 
         ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } | ItemKind::FunctionDecl => {
-            let unresolved_sig = stores.items.nrir().get_item_signature(cur_id).clone();
+            let unresolved_sig = stores.sigs.nrir.get_item_signature(cur_id).clone();
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
                 entry: Vec::new(),
@@ -135,13 +135,10 @@ pub fn resolve_signature(
                 return;
             }
 
-            stores
-                .items
-                .trir_mut()
-                .set_item_signature(cur_id, resolved_sig);
+            stores.sigs.trir.set_item_signature(cur_id, resolved_sig);
         }
         ItemKind::Variable => {
-            let variable_type_unresolved = stores.items.nrir().get_variable_type(cur_id).clone();
+            let variable_type_unresolved = stores.sigs.nrir.get_variable_type(cur_id).clone();
             if let Some(type_item) = variable_type_unresolved.item_id() {
                 if pass_manager
                     .ensure_declare_structs(stores, type_item)
@@ -168,8 +165,8 @@ pub fn resolve_signature(
                 };
 
                 stores
-                    .items
-                    .trir_mut()
+                    .sigs
+                    .trir
                     .set_partial_variable_type(cur_id, partial_type);
             } else {
                 let info = match stores
@@ -184,7 +181,7 @@ pub fn resolve_signature(
                     }
                 };
 
-                stores.items.trir_mut().set_variable_type(cur_id, info.id);
+                stores.sigs.trir.set_variable_type(cur_id, info.id);
             }
         }
     }

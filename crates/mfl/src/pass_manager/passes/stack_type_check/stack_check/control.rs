@@ -30,7 +30,7 @@ pub(crate) fn epilogue_return(
     item_id: ItemId,
 ) {
     let item_header = stores.items.get_item_header(item_id);
-    let item_sig = stores.items.urir().get_item_signature(item_id);
+    let item_sig = stores.sigs.urir.get_item_signature(item_id);
 
     let exit_sig = &item_sig.exit.inner;
     if stack.len() != exit_sig.len() {
@@ -98,7 +98,7 @@ pub(crate) fn prologue(
     item_id: ItemId,
 ) {
     let mut outputs = SmallVec::<[_; 8]>::new();
-    let sig = stores.items.urir().get_item_signature(item_id);
+    let sig = stores.sigs.urir.get_item_signature(item_id);
 
     for arg in &sig.entry.inner {
         let new_id = stores.values.new_value(arg.location, None);
@@ -152,7 +152,7 @@ pub(crate) fn call_function_const(
     callee_id: ItemId,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    let callee_sig = stores.items.urir().get_item_signature(callee_id);
+    let callee_sig = stores.sigs.urir.get_item_signature(callee_id);
     let entry_arg_count = callee_sig.entry.inner.len();
 
     if stack.len() < entry_arg_count {

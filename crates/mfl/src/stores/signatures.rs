@@ -11,6 +11,22 @@ use crate::{
     },
 };
 
+pub struct SigStore {
+    pub urir: UnresolvedIr,
+    pub nrir: NameResolvedIr,
+    pub trir: TypeResolvedIr,
+}
+
+impl SigStore {
+    pub fn new() -> Self {
+        Self {
+            urir: UnresolvedIr::new(),
+            nrir: NameResolvedIr::new(),
+            trir: TypeResolvedIr::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UnresolvedItemSignature {
     pub exit: Spanned<Vec<Spanned<UnresolvedType>>>,
@@ -18,13 +34,21 @@ pub struct UnresolvedItemSignature {
 }
 
 pub struct UnresolvedIr {
-    pub item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
-    pub variable_type: HashMap<ItemId, Spanned<UnresolvedType>>,
-    pub structs: HashMap<ItemId, StructDef<UnresolvedType>>,
-    pub scopes: HashMap<ItemId, UnresolvedScope>,
+    item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
+    variable_type: HashMap<ItemId, Spanned<UnresolvedType>>,
+    structs: HashMap<ItemId, StructDef<UnresolvedType>>,
+    scopes: HashMap<ItemId, UnresolvedScope>,
 }
 
 impl UnresolvedIr {
+    #[inline]
+    #[track_caller]
+    pub fn set_item_signature(&mut self, id: ItemId, sig: UnresolvedItemSignature) {
+        self.item_signatures
+            .insert(id, sig)
+            .expect_none("ICE: Overwrote signature")
+    }
+
     #[inline]
     #[track_caller]
     pub fn get_item_signature(&self, id: ItemId) -> &UnresolvedItemSignature {
@@ -33,9 +57,25 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn set_variable_type(&mut self, id: ItemId, ty: Spanned<UnresolvedType>) {
+        self.variable_type
+            .insert(id, ty)
+            .expect_none("ICE: Overwrote variable type");
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn get_variable_type(&self, id: ItemId) -> Spanned<&UnresolvedType> {
         let v = &self.variable_type[&id];
         (&v.inner).with_span(v.location)
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn new_scope(&mut self, id: ItemId) {
+        self.scopes
+            .insert(id, UnresolvedScope::new())
+            .expect_none("ICE: Overwrite scope");
     }
 
     #[inline]
@@ -48,6 +88,14 @@ impl UnresolvedIr {
     #[track_caller]
     pub fn get_scope_mut(&mut self, id: ItemId) -> &mut UnresolvedScope {
         self.scopes.get_mut(&id).unwrap()
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_struct(&mut self, id: ItemId, def: StructDef<UnresolvedType>) {
+        self.structs
+            .insert(id, def)
+            .expect_none("ICE: Overwrote struct def")
     }
 
     #[inline]
@@ -78,10 +126,10 @@ pub struct NameResolvedItemSignature {
 }
 
 pub struct NameResolvedIr {
-    pub item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
-    pub variable_type: HashMap<ItemId, NameResolvedType>,
-    pub structs: HashMap<ItemId, StructDef<NameResolvedType>>,
-    pub scopes: HashMap<ItemId, NameResolvedScope>,
+    item_signatures: HashMap<ItemId, NameResolvedItemSignature>,
+    variable_type: HashMap<ItemId, NameResolvedType>,
+    structs: HashMap<ItemId, StructDef<NameResolvedType>>,
+    scopes: HashMap<ItemId, NameResolvedScope>,
 }
 
 impl NameResolvedIr {
@@ -111,6 +159,14 @@ impl NameResolvedIr {
         self.variable_type
             .insert(id, def)
             .expect_none("Redefined variable type");
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn new_scope(&mut self, id: ItemId) {
+        self.scopes
+            .insert(id, NameResolvedScope::new())
+            .expect_none("ICE: Overwrote scope");
     }
 
     #[inline]

@@ -31,8 +31,8 @@ pub(crate) fn epilogue_return(
     op_id: OpId,
     item_id: ItemId,
 ) {
-    let item_urir_sig = stores.items.urir().get_item_signature(item_id);
-    let item_trir_sig = stores.items.trir().get_item_signature(item_id);
+    let item_urir_sig = stores.sigs.urir.get_item_signature(item_id);
+    let item_trir_sig = stores.sigs.trir.get_item_signature(item_id);
     let op_data = stores.ops.get_op_io(op_id);
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
@@ -65,7 +65,7 @@ pub(crate) fn epilogue_return(
 
 pub(crate) fn prologue(stores: &mut Stores, op_id: OpId, item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
-    let sigs = stores.items.trir().get_item_signature(item_id);
+    let sigs = stores.sigs.trir.get_item_signature(item_id);
     let outputs = op_data.outputs.clone();
 
     for (output_id, &output_type) in outputs.into_iter().zip(&sigs.entry) {
@@ -159,8 +159,8 @@ pub(crate) fn call_function_const(
     }
 
     let op_data = stores.ops.get_op_io(op_id);
-    let callee_sig_urir = stores.items.urir().get_item_signature(callee_id);
-    let callee_sig_trir = stores.items.trir().get_item_signature(callee_id);
+    let callee_sig_urir = stores.sigs.urir.get_item_signature(callee_id);
+    let callee_sig_trir = stores.sigs.trir.get_item_signature(callee_id);
 
     for (&actual_value_id, &expected_type_id) in op_data.inputs.iter().zip(&callee_sig_trir.entry) {
         let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
@@ -212,7 +212,7 @@ fn call_generic_function_infer_params(
     callee_id: ItemId,
     op_id: OpId,
 ) -> ControlFlow<(), ItemId> {
-    let generic_sig = stores.items.trir().get_partial_item_signature(callee_id);
+    let generic_sig = stores.sigs.trir.get_partial_item_signature(callee_id);
     let op_data = stores.ops.get_op_io(op_id);
     let inputs = &op_data.inputs;
     let generic_params = stores.items.get_function_template_paramaters(callee_id);
@@ -295,7 +295,7 @@ pub(crate) fn variable(
     let op_data = stores.ops.get_op_io(op_id);
     let output_value_id = op_data.outputs[0];
 
-    let variable_type_id = stores.items.trir().get_variable_type(variable_item_id);
+    let variable_type_id = stores.sigs.trir.get_variable_type(variable_item_id);
 
     let ptr_type_id = stores
         .types

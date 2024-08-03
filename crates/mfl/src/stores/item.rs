@@ -8,16 +8,13 @@ use crate::{
     diagnostics::NameCollision,
     error_signal::ErrorSignal,
     ir::{StructDef, UnresolvedIdent, UnresolvedType},
-    item_store::{
-        NameResolvedIr, NameResolvedScope, TypeResolvedIr, UnresolvedIr, UnresolvedItemSignature,
-        UnresolvedScope,
-    },
     option::OptionExt,
     simulate::SimulatorValue,
 };
 
 use super::{
     block::BlockId,
+    signatures::{SigStore, UnresolvedItemSignature},
     source::{Spanned, WithSpan},
     strings::StringStore,
     types::TypeId,
@@ -107,12 +104,6 @@ pub struct ItemStore {
     const_vals: HashMap<ItemId, Vec<SimulatorValue>>,
     item_body: HashMap<ItemId, BlockId>,
 
-    // TODO: Separate out the IRs from the rest of the context so that we don't
-    // need to clone the bodies.
-    urir: UnresolvedIr,
-    nrir: NameResolvedIr,
-    trir: TypeResolvedIr,
-
     // Bit of a hacky workaround for how I've done the struct resolution.
     generic_structs: Vec<ItemId>,
     generic_function_cache: HashMap<(ItemId, SmallVec<[TypeId; 4]>), ItemId>,
@@ -133,46 +124,16 @@ impl ItemStore {
         self.core_module_id = Some(id);
     }
 
-    pub fn update_core_symbols(&mut self) {
+    pub fn update_core_symbols(&mut self, sigs: &mut SigStore) {
         let core_module_id = self.core_module_id.expect("ICE: Core module not set");
         // For now this is just String.
-        let core_scope = self.nrir.get_scope_mut(core_module_id);
+        let core_scope = sigs.nrir.get_scope_mut(core_module_id);
 
         let string_item_id = self.lang_items[&LangItem::String];
         let string_header = self.headers[string_item_id.0.to_usize()];
         core_scope
             .add_visible_symbol(string_header.name, string_item_id)
             .expect("ICE: Core already contains String");
-    }
-
-    #[inline]
-    pub fn urir(&self) -> &UnresolvedIr {
-        &self.urir
-    }
-
-    #[inline]
-    pub fn urir_mut(&mut self) -> &mut UnresolvedIr {
-        &mut self.urir
-    }
-
-    #[inline]
-    pub fn nrir(&self) -> &NameResolvedIr {
-        &self.nrir
-    }
-
-    #[inline]
-    pub fn nrir_mut(&mut self) -> &mut NameResolvedIr {
-        &mut self.nrir
-    }
-
-    #[inline]
-    pub fn trir(&self) -> &TypeResolvedIr {
-        &self.trir
-    }
-
-    #[inline]
-    pub fn trir_mut(&mut self) -> &mut TypeResolvedIr {
-        &mut self.trir
     }
 
     #[inline]
@@ -261,9 +222,6 @@ impl ItemStore {
             headers: Vec::new(),
             item_body: HashMap::new(),
             const_vals: HashMap::new(),
-            urir: UnresolvedIr::new(),
-            nrir: NameResolvedIr::new(),
-            trir: TypeResolvedIr::new(),
             generic_structs: Vec::new(),
             generic_function_cache: HashMap::new(),
             generic_template_parameters: HashMap::new(),
@@ -272,12 +230,13 @@ impl ItemStore {
 
     fn add_to_parent(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         parent_id: ItemId,
         child_name: Spanned<Spur>,
         child_id: ItemId,
     ) -> Result<(), NameCollision> {
-        let parent_scope = self.nrir.scopes.get_mut(&parent_id).unwrap();
+        let parent_scope = sigs.nrir.get_scope_mut(parent_id);
         if let Err(prev_loc) = parent_scope.add_child(child_name, child_id) {
             had_error.set();
             return Err(NameCollision {
@@ -290,6 +249,7 @@ impl ItemStore {
 
     fn new_header(
         &mut self,
+        sigs: &mut SigStore,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
         kind: ItemKind,
@@ -308,22 +268,23 @@ impl ItemStore {
         };
 
         self.headers.push(item_header);
-        self.urir.scopes.insert(new_id, UnresolvedScope::new());
-        self.nrir.scopes.insert(new_id, NameResolvedScope::new());
+        sigs.urir.new_scope(new_id);
+        sigs.nrir.new_scope(new_id);
         item_header
     }
 
     pub fn new_module(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: Option<ItemId>,
         is_top_level: bool,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, parent, ItemKind::Module, FlagSet::default());
+        let header = self.new_header(sigs, name, parent, ItemKind::Module, FlagSet::default());
 
         let prev_loc = if let Some(parent_id) = parent {
-            self.add_to_parent(had_error, parent_id, name, header.id)
+            self.add_to_parent(sigs, had_error, parent_id, name, header.id)
                 .err()
         } else {
             None
@@ -338,6 +299,7 @@ impl ItemStore {
 
     pub fn new_function(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -345,8 +307,8 @@ impl ItemStore {
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, Some(parent), ItemKind::Function, attributes);
-        self.urir.item_signatures.insert(
+        let header = self.new_header(sigs, name, Some(parent), ItemKind::Function, attributes);
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: exit_stack,
@@ -356,12 +318,14 @@ impl ItemStore {
 
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
     pub fn new_function_decl(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -370,12 +334,13 @@ impl ItemStore {
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> (ItemId, Option<NameCollision>) {
         let header = self.new_header(
+            sigs,
             name,
             Some(parent),
             ItemKind::FunctionDecl,
             attributes | ItemAttribute::Extern,
         );
-        self.urir.item_signatures.insert(
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: exit_stack,
@@ -385,7 +350,8 @@ impl ItemStore {
 
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
@@ -393,14 +359,15 @@ impl ItemStore {
     // Resolution should go through the generic form.
     pub fn new_function_generic_instance(
         &mut self,
+        sigs: &mut SigStore,
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
         entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
-        let header = self.new_header(name, Some(parent), ItemKind::Function, attributes);
-        self.urir.item_signatures.insert(
+        let header = self.new_header(sigs, name, Some(parent), ItemKind::Function, attributes);
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: exit_stack,
@@ -413,19 +380,27 @@ impl ItemStore {
 
     pub fn new_assert(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, Some(parent), ItemKind::Assert, FlagSet::default());
+        let header = self.new_header(
+            sigs,
+            name,
+            Some(parent),
+            ItemKind::Assert,
+            FlagSet::default(),
+        );
 
-        self.urir.item_signatures.insert(
+        let bool_spur = self.bool_spur;
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: vec![UnresolvedType::Simple(UnresolvedIdent {
                     span: name.location,
                     is_from_root: false,
-                    path: vec![self.bool_spur.with_span(name.location)],
+                    path: vec![bool_spur.with_span(name.location)],
                     generic_params: Vec::new(),
                 })
                 .with_span(name.location)]
@@ -436,20 +411,28 @@ impl ItemStore {
 
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
     pub fn new_const(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, Some(parent), ItemKind::Const, FlagSet::default());
+        let header = self.new_header(
+            sigs,
+            name,
+            Some(parent),
+            ItemKind::Const,
+            FlagSet::default(),
+        );
 
-        self.urir.item_signatures.insert(
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: exit_stack,
@@ -459,12 +442,14 @@ impl ItemStore {
 
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
     pub fn new_generic_function(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
@@ -473,9 +458,15 @@ impl ItemStore {
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, Some(parent), ItemKind::GenericFunction, attributes);
+        let header = self.new_header(
+            sigs,
+            name,
+            Some(parent),
+            ItemKind::GenericFunction,
+            attributes,
+        );
 
-        self.urir.item_signatures.insert(
+        sigs.urir.set_item_signature(
             header.id,
             UnresolvedItemSignature {
                 exit: exit_stack,
@@ -486,45 +477,50 @@ impl ItemStore {
         self.generic_template_parameters.insert(header.id, params);
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
     pub fn new_struct(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         module: ItemId,
         def: StructDef<UnresolvedType>,
         attributes: FlagSet<ItemAttribute>,
     ) -> (ItemId, Option<NameCollision>) {
         let name = def.name;
-        let header = self.new_header(name, Some(module), ItemKind::StructDef, attributes);
+        let header = self.new_header(sigs, name, Some(module), ItemKind::StructDef, attributes);
 
         if !def.generic_params.is_empty() {
             self.generic_structs.push(header.id);
         }
 
-        self.urir.structs.insert(header.id, def);
+        sigs.urir.set_struct(header.id, def);
         (
             header.id,
-            self.add_to_parent(had_error, module, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, module, name, header.id)
+                .err(),
         )
     }
 
     pub fn new_variable(
         &mut self,
+        sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
         variable_type: Spanned<UnresolvedType>,
     ) -> (ItemId, Option<NameCollision>) {
-        let header = self.new_header(name, Some(parent), ItemKind::Variable, attributes);
-        self.urir.variable_type.insert(header.id, variable_type);
+        let header = self.new_header(sigs, name, Some(parent), ItemKind::Variable, attributes);
+        sigs.urir.set_variable_type(header.id, variable_type);
 
         (
             header.id,
-            self.add_to_parent(had_error, parent, name, header.id).err(),
+            self.add_to_parent(sigs, had_error, parent, name, header.id)
+                .err(),
         )
     }
 
@@ -533,14 +529,19 @@ impl ItemStore {
         self.headers[item_id.0 as usize].lang_item = Some(lang_item);
     }
 
-    pub fn get_visible_symbol(&self, from: ItemHeader, symbol: Spur) -> Option<ItemId> {
+    pub fn get_visible_symbol(
+        &self,
+        sigs: &mut SigStore,
+        from: ItemHeader,
+        symbol: Spur,
+    ) -> Option<ItemId> {
         // 1. Check ourselves
         if from.name.inner == symbol {
             return Some(from.id);
         }
 
         // 2. Check our children
-        let own_scope = self.nrir.get_scope(from.id);
+        let own_scope = sigs.nrir.get_scope(from.id);
         if let Some(child) = own_scope.get_symbol(symbol) {
             return Some(child);
         }
@@ -549,7 +550,7 @@ impl ItemStore {
         if from.kind != ItemKind::Module {
             let mut parent = from.parent;
             while let Some(parent_id) = parent {
-                let parent_scope = self.nrir.get_scope(parent_id);
+                let parent_scope = sigs.nrir.get_scope(parent_id);
                 if let Some(child) = parent_scope.get_symbol(symbol) {
                     return Some(child);
                 }

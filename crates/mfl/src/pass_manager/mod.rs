@@ -319,7 +319,7 @@ impl PassManager {
         let mut had_error = ErrorSignal::new();
         // Non-generic structs require the generic structs to be defined, incase any of them depend on a generic struct.
         // TODO: Make this use the pass manager to avoid this bit.
-        let struct_def = stores.items.nrir().get_struct(cur_item);
+        let struct_def = stores.sigs.nrir.get_struct(cur_item);
         if struct_def.generic_params.is_empty() && !self.defined_generic_structs {
             let all_generic_structs = stores.items.get_generic_structs().to_owned();
             for gsi in all_generic_structs {
@@ -363,7 +363,7 @@ impl PassManager {
         let result = simulate_execute_program(stores, self, cur_item);
         match result {
             Ok(stack) => {
-                let type_sig = stores.items.trir().get_item_signature(cur_item);
+                let type_sig = stores.sigs.trir.get_item_signature(cur_item);
                 let const_vals = stack
                     .into_iter()
                     .zip(&type_sig.exit)

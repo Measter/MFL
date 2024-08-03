@@ -33,6 +33,7 @@ pub fn load_program(stores: &mut Stores, args: &Args) -> Result<ItemId> {
 
     let core_module_name = stores.strings.intern("core");
     let (core_module, prev_def_loc) = stores.items.new_module(
+        stores.sigs,
         &mut had_error,
         core_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
         None,
@@ -43,6 +44,7 @@ pub fn load_program(stores: &mut Stores, args: &Args) -> Result<ItemId> {
 
     let builtin_structs_module_name = stores.strings.intern("builtins");
     let (builtin_module, prev_def_loc) = stores.items.new_module(
+        stores.sigs,
         &mut had_error,
         builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
         None,
@@ -92,7 +94,7 @@ pub fn load_program(stores: &mut Stores, args: &Args) -> Result<ItemId> {
         return Err(eyre!("Error loading program"));
     }
 
-    stores.items.update_core_symbols();
+    stores.items.update_core_symbols(stores.sigs);
     stores.types.update_builtins(stores.items.get_lang_items());
 
     entry_module
@@ -164,6 +166,7 @@ fn load_library(
         };
 
         let (module_id, prev_def_loc) = stores.items.new_module(
+            stores.sigs,
             had_error,
             module_name,
             parent,

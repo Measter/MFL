@@ -18,13 +18,13 @@ use color_eyre::{
     eyre::{eyre, Context as _, Result},
     owo_colors::OwoColorize,
 };
-use item_store::TypeResolvedItemSignature;
 use tracing::{debug, debug_span, Level};
 
 use stores::{
     block::BlockStore,
     item::{ItemAttribute, ItemId, ItemKind, ItemStore},
     ops::OpStore,
+    signatures::{SigStore, TypeResolvedItemSignature},
     source::SourceStore,
     strings::StringStore,
     types::{BuiltinTypes, TypeStore},
@@ -36,7 +36,6 @@ mod backend_llvm;
 mod diagnostics;
 mod error_signal;
 mod ir;
-mod item_store;
 mod lexer;
 mod n_ops;
 mod option;
@@ -124,7 +123,7 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
     let mut top_level_symbols = Vec::new();
 
     if args.is_library {
-        let entry_scope = stores.items.nrir().get_scope(entry_module_id);
+        let entry_scope = stores.sigs.nrir.get_scope(entry_module_id);
         for &item_id in entry_scope.get_child_items().values() {
             let item_header = stores.items.get_item_header(item_id.inner);
             if item_header.kind == ItemKind::Function
@@ -135,7 +134,7 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
         }
     } else {
         let entry_symbol = stores.strings.intern("entry");
-        let entry_scope = stores.items.nrir().get_scope(entry_module_id);
+        let entry_scope = stores.sigs.nrir.get_scope(entry_module_id);
 
         let entry_function_id = entry_scope
             .get_symbol(entry_symbol)
@@ -162,8 +161,8 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
         }
 
         let entry_sig = stores
-            .items
-            .trir()
+            .sigs
+            .trir
             .get_item_signature(entry_function_id)
             .clone();
         if !is_valid_entry_sig(stores, &entry_sig) {
@@ -190,6 +189,7 @@ fn run_compile(args: &Args) -> Result<()> {
     let mut block_store = BlockStore::new();
     let mut value_store = ValueStore::new();
     let mut item_store = ItemStore::new(&mut string_store);
+    let mut sig_store = SigStore::new();
 
     let mut stores = Stores {
         source: &mut source_storage,
@@ -199,6 +199,7 @@ fn run_compile(args: &Args) -> Result<()> {
         blocks: &mut block_store,
         values: &mut value_store,
         items: &mut item_store,
+        sigs: &mut sig_store,
     };
 
     print!("   Compiling...");
