@@ -1,11 +1,18 @@
 use ariadne::{Color, Label, Report, ReportKind};
 use intcast::IntCast;
+use lasso::Spur;
 use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 
 use crate::{
     error_signal::ErrorSignal,
-    stores::{source::SourceLocation, values::ValueId},
+    ir::StructDef,
+    stores::{
+        ops::OpId,
+        source::{SourceLocation, Spanned},
+        types::{TypeId, TypeInfo},
+        values::ValueId,
+    },
     Stores,
 };
 
@@ -132,6 +139,66 @@ pub fn handle_symbol_redef_error(
                 .with_color(Color::Cyan)
                 .with_message("previously defined here"),
         ],
+        None,
+    );
+}
+
+pub fn not_struct_error(
+    stores: &mut Stores,
+    input_struct_type_info: TypeInfo,
+    input_struct_value_id: ValueId,
+    op_id: OpId,
+    error_str: &str,
+) {
+    let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
+    let mut labels = build_creator_label_chain(
+        stores,
+        [(input_struct_value_id, 1, value_type_name)],
+        Color::Yellow,
+        Color::Cyan,
+    );
+    let op_loc = stores.ops.get_token(op_id).location;
+    labels.push(Label::new(op_loc).with_color(Color::Red));
+
+    emit_error(
+        stores,
+        op_loc,
+        format!("cannot {error_str} field from a `{value_type_name}`"),
+        labels,
+        None,
+    );
+}
+
+pub fn field_not_found_error(
+    stores: &mut Stores,
+    field_name: Spanned<Spur>,
+    struct_def: &StructDef<TypeId>,
+    input_struct_type_info: TypeInfo,
+    input_struct_value_id: ValueId,
+) {
+    let unknown_field_name = stores.strings.resolve(field_name.inner);
+    let struct_name = stores.strings.resolve(struct_def.name.inner);
+
+    let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
+    let mut labels = build_creator_label_chain(
+        stores,
+        [(input_struct_value_id, 1, value_type_name)],
+        Color::Yellow,
+        Color::Cyan,
+    );
+
+    labels.extend([
+        Label::new(field_name.location).with_color(Color::Red),
+        Label::new(struct_def.name.location)
+            .with_color(Color::Cyan)
+            .with_message("struct defined here"),
+    ]);
+
+    emit_error(
+        stores,
+        field_name.location,
+        format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
+        labels,
         None,
     );
 }

@@ -369,6 +369,9 @@ pub enum Memory {
         emit_struct: bool,
         field_name: Spanned<Spur>,
     },
+    FieldAccess {
+        field_name: Spanned<Spur>,
+    },
     InsertArray {
         emit_array: bool,
     },

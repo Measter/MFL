@@ -1,0 +1,31 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+struct Foo {
+    bar Bar,
+}
+
+struct Bar {
+    a s32,
+}
+
+proc multi_pointer [Foo*] to [s32&] {
+    .bar.a
+}
+
+proc single_pointer [Foo&] to [s32&] {
+    .bar.a
+}
+
+proc entry [] to [] {
+    var the_foo { Foo }
+    23 Bar Foo the_foo!
+
+    the_foo.bar.a@ std::term::write_si_ln
+}

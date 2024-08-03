@@ -105,12 +105,19 @@ pub fn parse_item_body_contents(
                         had_error.set();
                         continue;
                     }
+                    TokenKind::Dot => {
+                        let Ok(op) = ops::parse_field_access(stores, &mut token_iter, *token)
+                        else {
+                            had_error.set();
+                            continue;
+                        };
+                        op
+                    }
 
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
                     TokenKind::GoesTo
                     | TokenKind::Import
-                    | TokenKind::Dot
                     | TokenKind::Elif
                     | TokenKind::Else
                     | TokenKind::BracketClose(_)
@@ -249,10 +256,15 @@ pub(super) fn parse_file(
                         continue;
                     }
 
+                    TokenKind::Dot => {
+                        if ops::parse_field_access(stores, &mut token_iter, *token).is_err() {
+                            had_error.set();
+                        }
+                    }
+
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
                     TokenKind::GoesTo
-                    | TokenKind::Dot
                     | TokenKind::Elif
                     | TokenKind::Else
                     | TokenKind::BracketOpen(_)

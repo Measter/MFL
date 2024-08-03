@@ -201,26 +201,6 @@ pub(crate) fn extract_struct(
         op_data.outputs[0]
     };
 
-    let not_struct_error = || {
-        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(input_struct_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        let op_loc = stores.ops.get_token(op_id).location;
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("cannot extract field from a `{value_type_name}`"),
-            labels,
-            None,
-        );
-    };
-
     let (actual_struct_type_id, actual_struct_item_id) = match input_struct_type_info.kind {
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             (input_struct_type_id, struct_item_id)
@@ -230,7 +210,13 @@ pub(crate) fn extract_struct(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                not_struct_error();
+                diagnostics::not_struct_error(
+                    stores,
+                    input_struct_type_info,
+                    input_struct_value_id,
+                    op_id,
+                    "extract from",
+                );
                 had_error.set();
                 return;
             };
@@ -242,7 +228,13 @@ pub(crate) fn extract_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            not_struct_error();
+            diagnostics::not_struct_error(
+                stores,
+                input_struct_type_info,
+                input_struct_value_id,
+                op_id,
+                "extract from",
+            );
             had_error.set();
             return;
         }
@@ -256,36 +248,18 @@ pub(crate) fn extract_struct(
         return;
     }
 
-    let struct_def = stores.types.get_struct_def(actual_struct_type_id);
+    let struct_def = stores.types.get_struct_def(actual_struct_type_id).clone();
     let Some(field_info) = struct_def
         .fields
         .iter()
         .find(|fi| fi.name.inner == field_name.inner)
     else {
-        let unknown_field_name = stores.strings.resolve(field_name.inner);
-        let struct_name = stores.strings.resolve(struct_def.name.inner);
-
-        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
+        diagnostics::field_not_found_error(
             stores,
-            [(input_struct_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-
-        labels.extend([
-            Label::new(field_name.location).with_color(Color::Red),
-            Label::new(struct_def.name.location)
-                .with_color(Color::Cyan)
-                .with_message("struct defined here"),
-        ]);
-
-        diagnostics::emit_error(
-            stores,
-            field_name.location,
-            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
-            labels,
-            None,
+            field_name,
+            &struct_def,
+            input_struct_type_info,
+            input_struct_value_id,
         );
 
         had_error.set();
@@ -295,6 +269,115 @@ pub(crate) fn extract_struct(
     stores
         .values
         .set_value_type(output_data_id, field_info.kind.inner);
+}
+
+pub(crate) fn field_access(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+    field_name: Spanned<Spur>,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let input_struct_value_id = op_data.inputs[0];
+    let Some([input_struct_type_id]) = stores.values.value_types([input_struct_value_id]) else {
+        return;
+    };
+    let input_struct_type_info = stores.types.get_type_info(input_struct_type_id);
+    let output_pointer_id = op_data.outputs[0];
+
+    let (actual_struct_type_id, actual_struct_item_id) = match input_struct_type_info.kind {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
+            let ptr_type_info = stores.types.get_type_info(sub_type);
+            let (TypeKind::Struct(struct_item_id)
+            | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
+            else {
+                diagnostics::not_struct_error(
+                    stores,
+                    input_struct_type_info,
+                    input_struct_value_id,
+                    op_id,
+                    "access",
+                );
+                had_error.set();
+                return;
+            };
+            (sub_type, struct_item_id)
+        }
+
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            let op_loc = stores.ops.get_token(op_id);
+
+            let struct_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
+            let mut labels = diagnostics::build_creator_label_chain(
+                stores,
+                [(input_struct_value_id, 1, struct_type_name)],
+                Color::Cyan,
+                Color::Green,
+            );
+            labels.push(Label::new(op_loc.location).with_color(Color::Red));
+
+            diagnostics::emit_error(
+                stores,
+                op_loc.location,
+                "field access not supported on struct value",
+                labels,
+                "Struct must be behind a point".to_owned(),
+            );
+            had_error.set();
+            return;
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
+            diagnostics::not_struct_error(
+                stores,
+                input_struct_type_info,
+                input_struct_value_id,
+                op_id,
+                "access",
+            );
+            had_error.set();
+            return;
+        }
+    };
+
+    if pass_manager
+        .ensure_define_structs(stores, actual_struct_item_id)
+        .is_err()
+    {
+        had_error.set();
+        return;
+    }
+
+    let struct_def = stores.types.get_struct_def(actual_struct_type_id).clone();
+    let Some(field_info) = struct_def
+        .fields
+        .iter()
+        .find(|fi| fi.name.inner == field_name.inner)
+    else {
+        diagnostics::field_not_found_error(
+            stores,
+            field_name,
+            &struct_def,
+            input_struct_type_info,
+            input_struct_value_id,
+        );
+
+        had_error.set();
+        return;
+    };
+
+    let output_type_info = stores
+        .types
+        .get_single_pointer(stores.strings, field_info.kind.inner);
+
+    stores
+        .values
+        .set_value_type(output_pointer_id, output_type_info.id);
 }
 
 pub(crate) fn insert_array(
@@ -488,25 +571,6 @@ pub(crate) fn insert_struct(
             .set_value_type(output_id, input_struct_type_id);
     }
 
-    let not_struct_error = || {
-        let value_type_name = stores.strings.resolve(input_struct_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(input_struct_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("cannot insert field into a `{value_type_name}`"),
-            labels,
-            None,
-        );
-    };
-
     let (actual_struct_type_id, actual_struct_item_id) = match input_struct_info.kind {
         TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
             (input_struct_type_id, struct_item_id)
@@ -516,7 +580,13 @@ pub(crate) fn insert_struct(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                not_struct_error();
+                diagnostics::not_struct_error(
+                    stores,
+                    input_struct_info,
+                    input_struct_value_id,
+                    op_id,
+                    "insert into",
+                );
                 had_error.set();
                 return;
             };
@@ -529,7 +599,13 @@ pub(crate) fn insert_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            not_struct_error();
+            diagnostics::not_struct_error(
+                stores,
+                input_struct_info,
+                input_struct_value_id,
+                op_id,
+                "insert into",
+            );
             had_error.set();
             return;
         }
@@ -543,35 +619,18 @@ pub(crate) fn insert_struct(
         return;
     }
 
-    let struct_type_info = stores.types.get_struct_def(actual_struct_type_id);
-    let Some(field_info) = struct_type_info
+    let struct_def = stores.types.get_struct_def(actual_struct_type_id).clone();
+    let Some(field_info) = struct_def
         .fields
         .iter()
         .find(|fi| fi.name.inner == field_name.inner)
     else {
-        let unknown_field_name = stores.strings.resolve(field_name.inner);
-        let struct_name = stores.strings.resolve(struct_type_info.name.inner);
-        let value_type_name = stores.strings.resolve(input_struct_info.friendly_name);
-
-        let mut labels = diagnostics::build_creator_label_chain(
+        diagnostics::field_not_found_error(
             stores,
-            [(input_struct_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.extend([
-            Label::new(field_name.location).with_color(Color::Red),
-            Label::new(struct_type_info.name.location)
-                .with_color(Color::Cyan)
-                .with_message("struct defined here"),
-        ]);
-
-        diagnostics::emit_error(
-            stores,
-            field_name.location,
-            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
-            labels,
-            None,
+            field_name,
+            &struct_def,
+            input_struct_info,
+            input_struct_value_id,
         );
 
         return;

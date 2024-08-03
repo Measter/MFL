@@ -817,6 +817,46 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
+    pub(super) fn build_field_access(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        field_name: Spanned<Spur>,
+    ) -> InkwellResult {
+        let op_io = ds.ops.get_op_io(op_id);
+        let [input_struct_value_id] = *op_io.inputs().as_arr();
+        let input_struct_ptr =
+            value_store.load_value(self, input_struct_value_id, ds.values, ds.types)?;
+
+        let [input_struct_type_id] = ds.values.value_types([input_struct_value_id]).unwrap();
+        let input_struct_type_info = ds.types.get_type_info(input_struct_type_id);
+
+        let (TypeKind::MultiPointer(ptee_struct_type_id)
+        | TypeKind::SinglePointer(ptee_struct_type_id)) = input_struct_type_info.kind
+        else {
+            unreachable!()
+        };
+        let ptee_llvm_type = self.get_type(ds.types, ptee_struct_type_id);
+        let struct_def = ds.types.get_struct_def(ptee_struct_type_id);
+        let field_index = struct_def
+            .fields
+            .iter()
+            .position(|f| f.name.inner == field_name.inner)
+            .unwrap();
+
+        let output_ptr = self.builder.build_struct_gep(
+            ptee_llvm_type,
+            input_struct_ptr.into_pointer_value(),
+            field_index.to_u32().unwrap(),
+            "",
+        )?;
+
+        value_store.store_value(self, op_io.outputs[0], output_ptr.into())?;
+
+        Ok(())
+    }
+
     pub(super) fn build_load(
         &mut self,
         ds: &mut Stores,

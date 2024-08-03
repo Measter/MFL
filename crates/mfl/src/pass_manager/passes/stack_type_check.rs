@@ -283,6 +283,21 @@ fn analyze_block(
 
                         had_error.merge_with(local_had_error);
                     }
+                    Memory::FieldAccess { field_name } => {
+                        let mut local_had_error = ErrorSignal::new();
+                        stack_check::eat_one_make_one(stores, &mut local_had_error, stack, op_id);
+                        if local_had_error.is_ok() {
+                            type_check::memory::field_access(
+                                stores,
+                                pass_manager,
+                                &mut local_had_error,
+                                op_id,
+                                field_name,
+                            );
+                        }
+
+                        had_error.merge_with(local_had_error);
+                    }
                     Memory::InsertArray { emit_array } => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::memory::insert_array(

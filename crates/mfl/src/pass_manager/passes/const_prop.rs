@@ -84,6 +84,7 @@ fn analyze_block(
                     // Nothing to do here.
                     Memory::ExtractStruct { .. }
                     | Memory::InsertStruct { .. }
+                    | Memory::FieldAccess { .. }
                     | Memory::Load
                     | Memory::PackArray { .. }
                     | Memory::Store

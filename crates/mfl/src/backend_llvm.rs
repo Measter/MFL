@@ -617,6 +617,9 @@ impl<'ctx> CodeGen<'ctx> {
                     } => {
                         self.build_extract_struct(ds, value_store, op_id, field_name, emit_struct)?
                     }
+                    Memory::FieldAccess { field_name } => {
+                        self.build_field_access(ds, value_store, op_id, field_name)?
+                    }
                     Memory::InsertArray { emit_array } => {
                         self.build_insert_array(ds, value_store, function, op_id, emit_array)?
                     }

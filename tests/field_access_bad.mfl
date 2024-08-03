@@ -1,0 +1,26 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+struct Foo {
+    bar Bar,
+}
+
+struct Bar {
+    a s32,
+}
+
+proc multi_pointer [Foo] to [s32&] {
+    .bar.a
+}
+
+proc single_pointer [Foo] to [s32&] {
+    .bar.a
+}
+
+proc bad_name [Foo&] to [s32&] {
+    .baz
+}
+
