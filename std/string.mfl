@@ -26,14 +26,14 @@ proc split_front [
     if over xtrd(length) 0= {
         drop
 
-        false swap dup pack(SplitResult)
+        false swap dup SplitResult
     } else {
         char!
         str!
 
         0(u64) while 
-            dup str xtrd(length) <
-            if dup { over str xtrd(pointer)+ @ char@ != and }
+            dup str.length@ <
+            if dup { over str swap xtrd char@ != and }
         {
             // [counter]
             1+
@@ -41,19 +41,19 @@ proc split_front [
         // We're either at the end of the string, or found our character.
 
         // [idx]
-        if dup str xtrd(length) = {
+        if dup str.length@ = {
             // Reached the end of the string
             drop
-            false str@ "" pack(SplitResult)
+            false str@ "" SplitResult
         } else {
             // We found the split character!
 
             // Construct the prefix
-            str xtrd(pointer)
+            str.pointer@
             // [idx, ptr]
             over
             // [idx, ptr, len]
-            swap pack(String) swap
+            swap String swap
 
             // [prefix, idx]
             // Construct the remander.
@@ -61,11 +61,11 @@ proc split_front [
             // [prefix, idx, len, ptr]
             over(2)+ 1+
             rev(3) - 1-
-            swap pack(String)
+            swap String
             
             swap true rot(3>1)
             // [flag, remainder, prefix]
-            pack(SplitResult)
+            SplitResult
         }
     }
 }
@@ -87,11 +87,11 @@ proc trim_start [String] to [String] {
     var str { String }
     str!
     
-    0 while dup str xtrd(length) < {
-        if str xtrd(pointer)@ is_whitespace {
+    0 while dup str.length@ < {
+        if str 0 xtrd is_whitespace {
             str@ unpack
-            1+ str insd(pointer)
-            1- str insd(length)
+            1+ str.pointer!
+            1- str.length!
         } else {
             // Can't break loops at the moment, so this will do.
             drop
@@ -108,11 +108,11 @@ proc trim_end [String] to [String] {
     var str { String }
     str!
 
-    if str xtrd(length) 0= { str@ return }
+    if str.length@ 0= { str@ return }
 
-    str xtrd(length) 1- while dup 0> {
-        if dup str xtrd(pointer) +@ is_whitespace {
-            str xtr(length) 1- swap insd(length)
+    str.length@ 1- while dup 0> {
+        if dup str swap xtrd is_whitespace {
+            str.length@ 1- str.length!
         } else {
             // Cant break loops at the moment.
             drop str@ return

@@ -2,9 +2,9 @@ import core::String
 import std::io
 
 // Standard stream descriptor IDs
-proc STDIN  [] to [io::FD] { 0x00 pack(io::FD) }
-proc STDOUT [] to [io::FD] { 0x01 pack(io::FD) }
-proc STDERR [] to [io::FD] { 0x02 pack(io::FD) }
+proc STDIN  [] to [io::FD] { 0x00 io::FD }
+proc STDOUT [] to [io::FD] { 0x01 io::FD }
+proc STDERR [] to [io::FD] { 0x02 io::FD }
 
 proc write [String] to [] {
     STDOUT swap io::write drop

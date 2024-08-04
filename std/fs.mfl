@@ -26,9 +26,9 @@ proc open [
     if over xtr(length) 1- xtrd 0 != {
         drop(2)
 
-        0 pack(FD)
+        0 FD
         0 1-
-        swap pack(Result(FD))
+        swap Result
         return
     }
 
@@ -41,12 +41,12 @@ proc open [
     // An error ocurred
     if dup cast(s64) 0< {
         cast(s64) 0 swap - cast(u64)
-        0 pack(FD)
+        0 FD
     } else {
-        pack(FD) 0 swap
+        FD 0 swap
     }
 
-    pack(Result(FD))
+    Result
 }
 
 // Opens a file in read-only mode.
@@ -82,7 +82,7 @@ proc create [
 
 proc close [FD] to [SimpleResult] {
     xtrd(fd) SYS_CLOSE swap syscall(2)
-    cast(s64) 0 swap - cast(u64) pack(SimpleResult)
+    cast(s64) 0 swap - cast(u64) SimpleResult
 }
 
 struct Timespec {
@@ -117,5 +117,5 @@ proc fstat [FD] to [Result(Stat)] {
     } else {
         drop buf@ 0 swap
     }
-    pack(Result(Stat))
+    Result
 }
