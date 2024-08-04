@@ -93,3 +93,18 @@ proc write_si_ln [FD s64] to [WriteResult] {
     if xtr(errno) 0= { drop "\n" write }
     else { swap drop }
 }
+
+proc write_bool [FD bool] to [WriteResult] {
+    if {
+        "true"
+    } else {
+        "false"
+    }
+    write
+}
+
+proc write_bool_ln [FD bool] to [WriteResult] {
+    over swap write_bool
+    if xtr(errno) 0= {drop "\n" write}
+    else {swap drop}
+}

@@ -43,6 +43,14 @@ proc write_ui_ln [u64] to [] {
     STDOUT swap io::write_ui_ln drop
 }
 
+proc write_bool [bool] to [] {
+    STDOUT swap io::write_bool drop
+}
+
+proc write_bool_ln [bool] to [] {
+    STDOUT swap io::write_bool_ln drop
+}
+
 proc ewrite [String] to [] {
     STDERR swap io::write drop
 }
@@ -66,4 +74,12 @@ proc ewrite_ui [u64] to [] {
 
 proc ewrite_ui_ln [u64] to [] {
     STDERR swap io::write_ui_ln drop
+}
+
+proc ewrite_bool [bool] to [] {
+    STDERR swap io::write_bool drop
+}
+
+proc ewrite_bool_ln [bool] to [] {
+    STDERR swap io::write_bool_ln drop
 }
