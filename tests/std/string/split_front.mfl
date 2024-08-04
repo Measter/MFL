@@ -1,0 +1,33 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+proc entry [] to [] {
+    "fooxbar" 'x' std::string::split_front
+
+    xtr(split) std::term::write_bool_ln
+    "'" std::term::write
+    xtr(prefix) std::term::write
+    "'" std::term::writeln
+
+    "'" std::term::write
+    xtrd(remainder) std::term::write
+    "'" std::term::writeln
+
+
+    "fooxbar" 'y' std::string::split_front
+
+    xtr(split) std::term::write_bool_ln
+    "'" std::term::write
+    xtr(prefix) std::term::write
+    "'" std::term::writeln
+
+    "'" std::term::write
+    xtrd(remainder) std::term::write
+    "'" std::term::writeln
+}

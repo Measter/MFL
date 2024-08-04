@@ -1,0 +1,14 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+proc entry [] to [] {
+    "'" std::term::write
+    "  foo  " std::string::trim_start std::term::write
+    "'" std::term::writeln
+}
