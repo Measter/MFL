@@ -230,14 +230,12 @@ pub fn parse_function(
     };
 
     let entry_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
-    let entry_stack = entry_stack.map(|st| st.into_iter().collect());
 
     token_iter
         .expect_single(stores, TokenKind::GoesTo, name_token.location)
         .recover(&mut had_error, name_token);
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
-    let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
