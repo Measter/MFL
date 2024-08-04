@@ -14,21 +14,47 @@ use crate::{
 
 pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
 
+#[derive(Debug, Clone, Copy)]
+pub enum IsMatch {
+    Yes,
+    No(SourceLocation),
+}
+
+impl IsMatch {
+    pub fn yes(self) -> bool {
+        match self {
+            IsMatch::Yes => true,
+            IsMatch::No(_) => false,
+        }
+    }
+
+    pub fn no(self) -> bool {
+        match self {
+            IsMatch::Yes => false,
+            IsMatch::No(_) => true,
+        }
+    }
+}
+
 pub(super) trait ExpectedTokenMatcher<T> {
     fn kind_str(&self) -> &'static str;
-    fn is_match(&self, tk: T) -> bool;
+    fn is_match(&self, tk: T) -> IsMatch;
     fn is_brace_group(&self) -> bool {
         false
     }
 }
 
-impl ExpectedTokenMatcher<TokenKind> for TokenKind {
+impl ExpectedTokenMatcher<Spanned<TokenKind>> for TokenKind {
     fn kind_str(&self) -> &'static str {
         TokenKind::kind_str(*self)
     }
 
-    fn is_match(&self, tk: TokenKind) -> bool {
-        tk == *self
+    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
+        if tk.inner == *self {
+            IsMatch::Yes
+        } else {
+            IsMatch::No(tk.location)
+        }
     }
 }
 
@@ -37,36 +63,36 @@ impl ExpectedTokenMatcher<&TokenTree> for TokenKind {
         TokenKind::kind_str(*self)
     }
 
-    fn is_match(&self, tk: &TokenTree) -> bool {
+    fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
-            TokenTree::Single(tk) => tk.inner.kind == *self,
-            TokenTree::Group(_) => false,
+            TokenTree::Single(tk) if tk.inner.kind == *self => IsMatch::Yes,
+            _ => IsMatch::No(tk.span()),
         }
     }
 }
 
 // Wrapper because Rust's inference is dumb.
-pub(super) struct Matcher<T>(pub &'static str, pub fn(T) -> bool);
+pub(super) struct Matcher<T>(pub &'static str, pub fn(T) -> IsMatch);
 
-impl ExpectedTokenMatcher<TokenKind> for Matcher<TokenKind> {
+impl ExpectedTokenMatcher<Spanned<TokenKind>> for Matcher<Spanned<TokenKind>> {
     fn kind_str(&self) -> &'static str {
         self.0
     }
 
-    fn is_match(&self, tk: TokenKind) -> bool {
+    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
         self.1(tk)
     }
 }
 
-impl ExpectedTokenMatcher<&TokenTree> for Matcher<TokenKind> {
+impl ExpectedTokenMatcher<&TokenTree> for Matcher<Spanned<TokenKind>> {
     fn kind_str(&self) -> &'static str {
         self.0
     }
 
-    fn is_match(&self, tk: &TokenTree) -> bool {
+    fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
-            TokenTree::Single(tk) => self.1(tk.inner.kind),
-            TokenTree::Group(_) => false,
+            TokenTree::Single(tk) => self.1(tk.map(|t| t.kind)),
+            TokenTree::Group(_) => IsMatch::No(tk.span()),
         }
     }
 }
@@ -76,7 +102,7 @@ impl<'a> ExpectedTokenMatcher<&'a TokenTree> for Matcher<&'a TokenTree> {
         self.0
     }
 
-    fn is_match(&self, tk: &'a TokenTree) -> bool {
+    fn is_match(&self, tk: &'a TokenTree) -> IsMatch {
         self.1(tk)
     }
 }
@@ -87,12 +113,24 @@ impl ExpectedTokenMatcher<&TokenTree> for ConditionMatch {
         "{"
     }
 
-    fn is_match(&self, tk: &TokenTree) -> bool {
-        matches!(tk, TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Brace)
+    fn is_match(&self, tk: &TokenTree) -> IsMatch {
+        if matches!(tk, TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Brace) {
+            IsMatch::Yes
+        } else {
+            IsMatch::No(tk.span())
+        }
     }
 
     fn is_brace_group(&self) -> bool {
         true
+    }
+}
+
+pub(super) fn integer_tokens(t: Spanned<TokenKind>) -> IsMatch {
+    if let TokenKind::Integer(_) = t.inner {
+        IsMatch::Yes
+    } else {
+        IsMatch::No(t.location)
     }
 }
 
@@ -112,27 +150,27 @@ impl<'a> TokenIter<'a> {
     pub(super) fn expect_single(
         &mut self,
         stores: &Stores,
-        filter: impl ExpectedTokenMatcher<TokenKind>,
+        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
         prev: SourceLocation,
     ) -> Result<Spanned<Token>, ()> {
         match self.peek() {
-            Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) => {
-                Ok(self.next().unwrap_single())
-            }
-            Some(TokenTree::Single(tk)) => {
-                diagnostics::emit_error(
-                    stores,
-                    tk.location,
-                    format!(
-                        "expected `{}`, found `{}`",
-                        filter.kind_str(),
-                        tk.inner.kind.kind_str()
-                    ),
-                    Some(Label::new(tk.location).with_color(Color::Red)),
-                    None,
-                );
-                Err(())
-            }
+            Some(TokenTree::Single(tk)) => match filter.is_match(tk.map(|t| t.kind)) {
+                IsMatch::Yes => Ok(self.next().unwrap_single()),
+                IsMatch::No(location) => {
+                    diagnostics::emit_error(
+                        stores,
+                        location,
+                        format!(
+                            "expected `{}`, found `{}`",
+                            filter.kind_str(),
+                            tk.inner.kind.kind_str()
+                        ),
+                        Some(Label::new(location).with_color(Color::Red)),
+                        None,
+                    );
+                    Err(())
+                }
+            },
             Some(TokenTree::Group(tg)) => {
                 diagnostics::emit_error(
                     stores,
@@ -211,23 +249,43 @@ impl<'a> TokenIter<'a> {
         matches!(self.peek(), Some(TokenTree::Group(tg)) if tg.bracket_kind == kind)
     }
 
-    pub(super) fn next_is_single(&self, filter: impl ExpectedTokenMatcher<TokenKind>) -> bool {
-        matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind))
+    pub(super) fn next_is_single(
+        &self,
+        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
+    ) -> bool {
+        let Some(TokenTree::Single(next)) = self.peek() else {
+            return false;
+        };
+
+        filter.is_match(next.map(|t| t.kind)).yes()
     }
 
     pub(super) fn next_is_single_and(
         &self,
-        filter: impl ExpectedTokenMatcher<TokenKind>,
+        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
         and: impl Fn(Spanned<Token>) -> bool,
     ) -> bool {
-        matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) && and(*tk))
+        // matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) && and(*tk))
+        let Some(TokenTree::Single(next)) = self.peek() else {
+            return false;
+        };
+
+        if filter.is_match(next.map(|t| t.kind)).no() {
+            return false;
+        }
+
+        and(*next)
     }
 
     pub(super) fn next_is<'tt>(&self, filter: impl ExpectedTokenMatcher<&'tt TokenTree>) -> bool
     where
         'a: 'tt,
     {
-        matches!(self.peek(), Some(tt) if filter.is_match(tt))
+        let Some(next) = self.peek() else {
+            return false;
+        };
+
+        filter.is_match(next).yes()
     }
 }
 
@@ -293,16 +351,16 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
 
         let mut had_error = ErrorSignal::new();
         for tt in &group.tokens {
-            if !filter.is_match(tt) {
+            if let IsMatch::No(loc) = filter.is_match(tt) {
                 diagnostics::emit_error(
                     stores,
-                    tt.span(),
+                    loc,
                     format!(
                         "expected `{}`, found `{}`",
                         filter.kind_str(),
                         tt.kind_str(),
                     ),
-                    Some(Label::new(tt.span()).with_color(Color::Red)),
+                    Some(Label::new(loc).with_color(Color::Red)),
                     None,
                 );
                 had_error.set();
@@ -369,20 +427,31 @@ impl TreeGroup {
     }
 }
 
-pub fn valid_type_token(tt: &TokenTree) -> bool {
+pub fn valid_type_token(tt: &TokenTree) -> IsMatch {
     match tt {
-        TokenTree::Single(tk) => matches!(
-            tk.inner.kind,
-            TokenKind::Ident
-                | TokenKind::Integer { .. }
-                | TokenKind::ColonColon
-                | TokenKind::Ampersand
-                | TokenKind::Star
-        ),
-        TokenTree::Group(tg) => {
-            (tg.bracket_kind == BracketKind::Paren || tg.bracket_kind == BracketKind::Square)
-                && tg.tokens.iter().all(valid_type_token)
+        TokenTree::Single(tk)
+            if matches!(
+                tk.inner.kind,
+                TokenKind::Ident
+                    | TokenKind::Integer { .. }
+                    | TokenKind::ColonColon
+                    | TokenKind::Ampersand
+                    | TokenKind::Star
+            ) =>
+        {
+            IsMatch::Yes
         }
+
+        TokenTree::Group(tg)
+            if tg.bracket_kind == BracketKind::Paren || tg.bracket_kind == BracketKind::Square =>
+        {
+            let Some(invalid) = tg.tokens.iter().map(valid_type_token).find(|im| im.no()) else {
+                return IsMatch::Yes;
+            };
+            invalid
+        }
+
+        _ => IsMatch::No(tt.span()),
     }
 }
 
@@ -426,7 +495,7 @@ pub fn get_terminated_tokens<'a>(
             additional_brace_groups += 1;
         }
 
-        if additional_brace_groups == 0 && close_matcher.is_match(next_token) {
+        if additional_brace_groups == 0 && close_matcher.is_match(next_token).yes() {
             break; // The end of the list, so break the loop.
         }
 
@@ -434,13 +503,13 @@ pub fn get_terminated_tokens<'a>(
             additional_brace_groups -= 1;
         }
 
-        let item_token = if inner_matcher.is_match(next_token) {
+        let item_token = if inner_matcher.is_match(next_token).yes() {
             token_iter.next().unwrap()
         } else {
             had_error.set();
 
             // If it's not the close token, we should consume it so we can continue.
-            if !close_matcher.is_match(next_token) {
+            if close_matcher.is_match(next_token).no() {
                 token_iter.next();
             }
 
@@ -515,8 +584,12 @@ pub fn parse_unresolved_type(
 ) -> Result<Spanned<UnresolvedType>, Option<SourceLocation>> {
     let Ok(ident) = token_iter.expect_single(
         stores,
-        Matcher("ident", |t| {
-            t == TokenKind::Ident || t == TokenKind::ColonColon
+        Matcher("ident", |t: Spanned<TokenKind>| {
+            if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
+                IsMatch::Yes
+            } else {
+                IsMatch::No(t.location)
+            }
         }),
         prev,
     ) else {
@@ -532,12 +605,15 @@ pub fn parse_unresolved_type(
 
     let mut type_span = ident.span;
     let mut parsed_type = UnresolvedType::Simple(ident);
-    fn pointer_or_array(tt: &TokenTree) -> bool {
+    fn pointer_or_array(tt: &TokenTree) -> IsMatch {
         match tt {
-            TokenTree::Single(tk) => {
-                matches!(tk.inner.kind, TokenKind::Ampersand | TokenKind::Star)
+            TokenTree::Single(tk)
+                if matches!(tk.inner.kind, TokenKind::Ampersand | TokenKind::Star) =>
+            {
+                IsMatch::Yes
             }
-            TokenTree::Group(tg) => tg.bracket_kind == BracketKind::Square,
+            TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Square => IsMatch::Yes,
+            _ => IsMatch::No(tt.span()),
         }
     }
     while token_iter.next_is(Matcher("[`, `*` or `&", pointer_or_array)) {
@@ -549,10 +625,7 @@ pub fn parse_unresolved_type(
             TokenTree::Group(_) => {
                 let Ok(delim) = token_iter
                     .expect_group(stores, BracketKind::Square, last_token)
-                    .with_kinds(
-                        stores,
-                        Matcher("integer", |t| matches!(t, TokenKind::Integer { .. })),
-                    )
+                    .with_kinds(stores, Matcher("integer", integer_tokens))
                     .with_length(stores, 1)
                 else {
                     had_error.set();
@@ -756,10 +829,7 @@ pub fn parse_integer_param(
 ) -> Result<(Spanned<u8>, SourceLocation), ()> {
     let delim = token_iter
         .expect_group(stores, BracketKind::Paren, token)
-        .with_kinds(
-            stores,
-            Matcher("integer", |t| matches!(t, TokenKind::Integer(_))),
-        )
+        .with_kinds(stores, Matcher("integer", integer_tokens))
         .with_length(stores, 1)?;
 
     let count_token = delim.tokens[0].unwrap_single();

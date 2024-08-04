@@ -21,7 +21,7 @@ use super::{
     parse_item_body_contents,
     utils::{
         get_terminated_tokens, parse_ident, parse_multiple_unresolved_types, parse_stack_def,
-        valid_type_token, Matcher, Terminated, TokenIter, TreeGroupResultExt,
+        valid_type_token, IsMatch, Matcher, Terminated, TokenIter, TreeGroupResultExt,
     },
     Recover,
 };
@@ -38,6 +38,21 @@ impl ParsedAttributes {
             lang_item: None,
             last_token: prev_token,
         }
+    }
+}
+
+fn attribute_tokens(tt: &TokenTree) -> IsMatch {
+    match tt {
+        TokenTree::Single(tk)
+            if matches!(
+                tk.inner.kind,
+                TokenKind::Extern | TokenKind::Ident | TokenKind::LangItem
+            ) =>
+        {
+            IsMatch::Yes
+        }
+        TokenTree::Group(g) if g.bracket_kind == BracketKind::Paren => IsMatch::Yes,
+        _ => IsMatch::No(tt.span()),
     }
 }
 
@@ -58,16 +73,7 @@ fn try_get_attributes(
     let fallback = TreeGroup::fallback(BracketKind::Paren, prev_token);
     let attribute_group = token_iter
         .expect_group(stores, BracketKind::Paren, prev_token)
-        .with_kinds(
-            stores,
-            Matcher("attribute", |t: &TokenTree| match t {
-                TokenTree::Single(tk) => matches!(
-                    tk.inner.kind,
-                    TokenKind::Extern | TokenKind::Ident | TokenKind::LangItem
-                ),
-                TokenTree::Group(g) => g.bracket_kind == BracketKind::Paren,
-            }),
-        )
+        .with_kinds(stores, Matcher("attribute", attribute_tokens))
         .recover(&mut had_error, &fallback);
 
     let mut attributes = FlagSet::default();
@@ -571,8 +577,12 @@ pub fn parse_import(
 ) -> Result<(), ()> {
     let root_name = token_iter.expect_single(
         stores,
-        Matcher("ident", |t| {
-            t == TokenKind::Ident || t == TokenKind::ColonColon
+        Matcher("ident", |t: Spanned<TokenKind>| {
+            if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
+                IsMatch::Yes
+            } else {
+                IsMatch::No(t.location)
+            }
         }),
         token.location,
     )?;

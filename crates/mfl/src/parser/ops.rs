@@ -23,9 +23,10 @@ use crate::{
 use super::{
     parse_item_body_contents,
     utils::{
-        get_terminated_tokens, parse_ident, parse_integer_lexeme, parse_integer_param,
-        parse_multiple_unresolved_types, valid_type_token, ConditionMatch, ExpectedTokenMatcher,
-        Matcher, ParseOpResult, TokenIter, TokenTreeOptionExt, TreeGroupResultExt,
+        get_terminated_tokens, integer_tokens, parse_ident, parse_integer_lexeme,
+        parse_integer_param, parse_multiple_unresolved_types, valid_type_token, ConditionMatch,
+        ExpectedTokenMatcher, IsMatch, Matcher, ParseOpResult, TokenIter, TokenTreeOptionExt,
+        TreeGroupResultExt,
     },
 };
 
@@ -60,8 +61,12 @@ pub fn parse_extract_insert_struct(
         .expect_group(stores, BracketKind::Paren, token)
         .with_kinds(
             stores,
-            Matcher("ident", |t: TokenKind| {
-                t == TokenKind::Ident || t == TokenKind::Dot
+            Matcher("ident", |t: Spanned<TokenKind>| {
+                if matches!(t.inner, TokenKind::Ident | TokenKind::Dot) {
+                    IsMatch::Yes
+                } else {
+                    IsMatch::No(t.location)
+                }
             }),
         )?;
 
@@ -268,10 +273,9 @@ fn parse_minus(
     token_iter: &mut TokenIter,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    if token_iter.next_is_single_and(
-        Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_))),
-        |t| t.location.neighbour_of(token.location),
-    ) {
+    if token_iter.next_is_single_and(Matcher("integer literal", integer_tokens), |t| {
+        t.location.neighbour_of(token.location)
+    }) {
         let mut int_token = token_iter.next().unwrap_single();
         int_token.location = int_token.location.merge(token.location);
         parse_integer_op(stores, token_iter, int_token, true)
@@ -293,7 +297,13 @@ fn parse_emit_stack(
             .expect_group(stores, BracketKind::Paren, token)
             .with_kinds(
                 stores,
-                Matcher("bool literal", |t| matches!(t, TokenKind::Boolean(_))),
+                Matcher("bool literal", |t: Spanned<TokenKind>| {
+                    if let TokenKind::Boolean(_) = t.inner {
+                        IsMatch::Yes
+                    } else {
+                        IsMatch::No(t.location)
+                    }
+                }),
             )
             .with_length(stores, 1)?;
 
@@ -364,8 +374,8 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
         unreachable!()
     };
 
-    let int_matcher = Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_)));
-    let item_count = if !int_matcher.is_match(item_count_token) {
+    let int_matcher = Matcher("integer literal", integer_tokens);
+    let item_count = if int_matcher.is_match(item_count_token).no() {
         diagnostics::emit_error(
             stores,
             item_count_token.span(),
@@ -382,7 +392,7 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
         parse_integer_lexeme(stores, item_count_token.unwrap_single())?
     };
 
-    let shift_count = if !int_matcher.is_match(shift_count_token) {
+    let shift_count = if int_matcher.is_match(shift_count_token).no() {
         diagnostics::emit_error(
             stores,
             shift_count_token.span(),
@@ -399,8 +409,8 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
         parse_integer_lexeme(stores, shift_count_token.unwrap_single())?
     };
 
-    let direction = if TokenKind::Less.is_match(direction_token)
-        | TokenKind::Greater.is_match(direction_token)
+    let direction = if TokenKind::Less.is_match(direction_token).yes()
+        | TokenKind::Greater.is_match(direction_token).yes()
     {
         match direction_token.unwrap_single().inner.kind {
             TokenKind::Less => Direction::Left,
@@ -719,9 +729,9 @@ pub fn parse_pack(
             Matcher("integer literal` or `type", valid_type_token),
         )?;
 
-    let int_matcher = Matcher("integer literal", |t| matches!(t, TokenKind::Integer(_)));
+    let int_matcher = Matcher("integer literal", integer_tokens);
 
-    if delim.tokens.len() == 1 && int_matcher.is_match(&delim.tokens[0]) {
+    if delim.tokens.len() == 1 && int_matcher.is_match(&delim.tokens[0]).yes() {
         let count_token = delim.tokens[0].unwrap_single();
         let count = parse_integer_lexeme(stores, count_token)?;
 
@@ -767,7 +777,7 @@ pub fn parse_if(
         token_iter,
         keyword,
         None,
-        Matcher("any", |_: &TokenTree| true),
+        Matcher("any", |_: &TokenTree| IsMatch::Yes),
         ConditionMatch,
         false,
     )?;
@@ -792,7 +802,7 @@ pub fn parse_if(
             token_iter,
             elif_token,
             None,
-            Matcher("any", |_: &TokenTree| true),
+            Matcher("any", |_: &TokenTree| IsMatch::Yes),
             ConditionMatch,
             false,
         )?;
@@ -877,7 +887,7 @@ pub fn parse_while(
         token_iter,
         keyword,
         None,
-        Matcher("any", |_: &TokenTree| true),
+        Matcher("any", |_: &TokenTree| IsMatch::Yes),
         ConditionMatch,
         false,
     )?;
