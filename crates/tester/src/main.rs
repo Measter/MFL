@@ -376,9 +376,9 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
 
                     PostFnResult::Missing => {
                         if verbose_result_mark {
-                            format!("{}: Previous output not found", "Error".red())
+                            format!("{}: Previous output not found", "Missing".magenta())
                         } else {
-                            "x".red().to_string()
+                            "m".magenta().to_string()
                         }
                     }
                     PostFnResult::Other(e) => {
