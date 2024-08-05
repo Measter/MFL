@@ -1,13 +1,9 @@
 module fs
 module io
 module mem
+module result
 module string
 module term
-
-struct Result(T) {
-    errno u64,
-    data T,
-}
 
 struct SimpleResult {
     errno u64,

@@ -18,7 +18,7 @@ proc entry [u64 u8**] to [] {
 
     1+@@ '0'- // This is our index
 
-    3 std::mem::alloc(u8) xtrd(data) // We'll just assume allocation succeeds
+    3 std::mem::alloc(u8) std::result::unwrap_ok // We'll just assume allocation succeeds
 
     swap 0 rot(3>1)
     insd

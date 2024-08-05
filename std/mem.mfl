@@ -1,4 +1,5 @@
-import std::Result
+import std::result
+import std::result::Result
 import std::SimpleResult
 
 const PROT_READ [u64] { 0x01 }
@@ -16,7 +17,7 @@ struct MMap(T) {
 
 proc(lang(alloc)) alloc(T) [
     u64 // Number of Ts to allocate for
-] to [Result(MMap(T))] {
+] to [Result(MMap(T) u64)] {
     dup
 
     sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
@@ -34,16 +35,14 @@ proc(lang(alloc)) alloc(T) [
         0 swap - cast(u64)
         // Drop the len and pointer
         rot(3>1) drop(2)
-        // Store a null pointer and 0 length.
-        0(u64) cast(T*) 0
-        MMap Result
+
+        result::Err(MMap(T) u64)
         return
     }
-    drop 0
-    // [len ptr errcode]
-    rev(3)
-    swap cast(T*) swap
-    MMap Result
+    drop
+    // [len ptr]
+    cast(T*) swap
+    MMap result::Ok(MMap(T) u64)
 }
 
 proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
@@ -96,17 +95,15 @@ proc copy(T) [
 proc mmap_file [
     std::io::FD
     u64 // Protection flags. Must match the FD.
-] to [Result(MMap(u8))] {
+] to [Result(MMap(u8) u64)] {
     over std::fs::fstat
-    if xtr(errno) 0!= {
+    if xtr(is_ok) not {
         rot(3>1) drop(2)
-        xtrd(errno)
-        0(u64) cast(u8*) // Null pointer
-        0                // length
-        MMap Result
+        result::unwrap_err
+        result::Err(MMap(u8) u64)
         return
     }
-    xtrd(data)
+    result::unwrap_ok
 
     xtrd(st_size) 0
     // [FD PROT length addr]
@@ -128,15 +125,9 @@ proc mmap_file [
         0 swap - cast(u64)
         // Drop the len and pointer
         rev(3) drop(2)
-        // Store a null pointer.
-        0(u64) cast(u8*)
-        // And a 0 length
-        0
-        MMap
+        result::Err(MMap(u8) u64)
     } else {
-        drop cast(u8*) swap MMap 0 swap
+        drop cast(u8*) swap MMap result::Ok(MMap(u8) u64)
     }
-
-    Result return
 }
 
