@@ -408,7 +408,7 @@ pub fn parse_multiple_unresolved_types(
     let mut token_iter = TokenIter::new(tokens.iter());
 
     while token_iter.peek().is_some() {
-        let Ok(unresolved_type) =
+        let Ok((unresolved_type, _)) =
             parse_unresolved_type(&mut token_iter, stores, prev, &mut had_error)
         else {
             continue;
@@ -428,7 +428,7 @@ pub fn parse_unresolved_type(
     stores: &mut Stores,
     prev: SourceLocation,
     had_error: &mut ErrorSignal,
-) -> Result<Spanned<UnresolvedType>, Option<SourceLocation>> {
+) -> Result<(Spanned<UnresolvedType>, Spanned<Token>), Option<SourceLocation>> {
     let Ok(ident) = token_iter.expect_single(
         stores,
         Matcher("ident", |t: Spanned<TokenKind>| {
@@ -445,7 +445,7 @@ pub fn parse_unresolved_type(
         return Err(Some(bad_token));
     };
 
-    let Ok((ident, last_token)) = parse_ident(stores, had_error, token_iter, ident) else {
+    let Ok((ident, mut last_token)) = parse_ident(stores, had_error, token_iter, ident) else {
         had_error.set();
         return Err(None);
     };
@@ -499,8 +499,10 @@ pub fn parse_unresolved_type(
                 }
             }
         }
+
+        last_token = next_token.last_token();
     }
-    Ok(parsed_type.with_span(type_span))
+    Ok((parsed_type.with_span(type_span), last_token))
 }
 
 pub fn parse_ident(

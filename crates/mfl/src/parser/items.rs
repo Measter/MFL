@@ -21,8 +21,8 @@ use super::{
     matcher::{attribute_tokens, valid_type_token, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
-        get_terminated_tokens, parse_ident, parse_multiple_unresolved_types, parse_stack_def,
-        Terminated, TokenIter, TreeGroupResultExt,
+        parse_ident, parse_multiple_unresolved_types, parse_stack_def, parse_unresolved_type,
+        TokenIter, TreeGroupResultExt,
     },
     Recover,
 };
@@ -456,58 +456,48 @@ pub fn parse_struct_or_union(
     let mut fields = Vec::new();
     let mut prev_token = struct_body.first_token();
 
-    while field_iter.next_is(TokenKind::Ident) {
+    loop {
         let name_token = field_iter
             .expect_single(stores, TokenKind::Ident, prev_token.location)
             .recover(&mut had_error, prev_token);
 
-        let delim = get_terminated_tokens(
-            stores,
-            &mut field_iter,
-            name_token,
-            None,
-            Matcher("type", valid_type_token),
-            TokenKind::Comma,
-            true,
-        )
-        .recover(
-            &mut had_error,
-            Terminated {
-                close: name_token,
-                list: Vec::new(),
-            },
-        );
+        let Ok((unresolved_store_type, last_token)) =
+            parse_unresolved_type(&mut field_iter, stores, name_token.location, &mut had_error)
+        else {
+            break;
+        };
 
-        let store_type_location = delim
-            .list
-            .first()
-            .zip(delim.list.last())
-            .map(|(f, l)| f.first_token().location.merge(l.last_token().location))
-            .unwrap_or(name_token.location);
+        fields.push(StructDefField {
+            name: name_token.map(|t| t.lexeme),
+            kind: unresolved_store_type,
+        });
+        prev_token = last_token;
 
-        let mut unresolved_store_type =
-            parse_multiple_unresolved_types(stores, name_token.location, &delim.list)
-                .recover(&mut had_error, Vec::new());
+        let requires_end = if field_iter.next_is_single(TokenKind::Comma) {
+            field_iter.next();
+            false
+        } else {
+            true
+        };
 
-        if unresolved_store_type.len() != 1 {
+        let next = field_iter.peek();
+
+        if requires_end && field_iter.peek().is_some() {
+            let next = next.unwrap();
             diagnostics::emit_error(
                 stores,
-                store_type_location,
-                "expected type",
-                [Label::new(store_type_location).with_color(Color::Red)],
+                next.span(),
+                format!("expected end of fields, found `{}`", next.kind_str()),
+                [Label::new(next.span()).with_color(Color::Red)],
                 None,
             );
             had_error.set();
         }
 
-        fields.push(StructDefField {
-            name: name_token.map(|t| t.lexeme),
-            kind: unresolved_store_type.pop().unwrap(),
-        });
-        prev_token = delim.close;
+        if next.is_none() {
+            break;
+        }
     }
-
-    // TODO: handle remaining tokens in field iter.
 
     let struct_def = StructDef {
         name: name_token.map(|t| t.lexeme),

@@ -1,0 +1,22 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+struct Foo {
+    a u32,
+    b u32[5],
+    c u32*,
+    d u32&,
+    e u32[5][2],
+    f u32[5]*,
+    g u32[5]&,
+    h u32[5]&*,
+    i u32[5]*&,
+    j Bar(u32)
+}
+
+struct Bar(T) {
+    t T
+}
