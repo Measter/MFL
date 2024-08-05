@@ -1,195 +1,195 @@
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `drop`
-   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:7:1[38;5;246m][0m
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:7:1[38;5;246m][0m
    [38;5;246m│[0m
  [38;5;246m7 │[0m [31md[0m[31mr[0m[31mo[0m[31mp[0m[31m([0m[31m3[0m[31m)[0m
 [38;5;246m───╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `drop`
-   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:8:1[38;5;246m][0m
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:8:1[38;5;246m][0m
    [38;5;246m│[0m
  [38;5;246m8 │[0m [31md[0m[31mr[0m[31mo[0m[31mp[0m
 [38;5;246m───╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `pack`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:10:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:10:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m10 │[0m [31mp[0m[31ma[0m[31mc[0m[31mk[0m[31m([0m[31m2[0m[31m)[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `pack`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:11:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:11:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m11 │[0m [31mp[0m[31ma[0m[31mc[0m[31mk[0m[31m([0m[31mF[0m[31mo[0m[31mo[0m[31m)[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `unpack`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:12:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:12:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m12 │[0m [31mu[0m[31mn[0m[31mp[0m[31ma[0m[31mc[0m[31mk[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `rot`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:13:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:13:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m13 │[0m [31mr[0m[31mo[0m[31mt[0m[31m([0m[31m3[0m[31m<[0m[31m2[0m[31m)[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `cast`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:14:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:14:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m14 │[0m [31mc[0m[31ma[0m[31ms[0m[31mt[0m[31m([0m[31mF[0m[31mo[0m[31mo[0m[31m&[0m[31m)[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `!`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:15:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:15:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m15 │[0m [31m![0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `@`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:16:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:16:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m16 │[0m [31m@[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `isnull`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:17:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:17:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m17 │[0m [31mi[0m[31ms[0m[31mn[0m[31mu[0m[31ml[0m[31ml[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `=`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:18:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:18:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m18 │[0m [31m=[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `>`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:19:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:19:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m19 │[0m [31m>[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `>=`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:20:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:20:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m20 │[0m [31m>[0m[31m=[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `<`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:21:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:21:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m21 │[0m [31m<[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `<=`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:22:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:22:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m22 │[0m [31m<[0m[31m=[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `!=`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:23:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:23:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m23 │[0m [31m![0m[31m=[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `boolean literal`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:24:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:24:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m24 │[0m [31mt[0m[31mr[0m[31mu[0m[31me[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `character literal`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:25:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:25:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m25 │[0m [31m'[0m[31mt[0m[31m'[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `Ident`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:26:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:26:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m26 │[0m [31mF[0m[31mo[0m[31mo[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `Ident`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:27:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:27:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m27 │[0m [31mF[0m[31mo[0m[31mo[0m[31m:[0m[31m:[0m[31mB[0m[31ma[0m[31mr[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `::'`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:28:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:28:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m28 │[0m [31m:[0m[31m:[0m[31mF[0m[31mo[0m[31mo[0m[31m:[0m[31m:[0m[31mB[0m[31ma[0m[31mr[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `integer literal`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:29:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:29:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m29 │[0m [31m1[0m[31m2[0m[31m3[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `string literal`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:30:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:30:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m30 │[0m [31m"[0m[31mH[0m[31me[0m[31ml[0m[31ml[0m[31mo[0m[31m"[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `here`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:31:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:31:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m31 │[0m [31mh[0m[31me[0m[31mr[0m[31me[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `emit`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:32:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:32:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m32 │[0m [31ms[0m[31mt[0m[31mk[0m[31mt[0m[31mr[0m[31mc[0m[31m([0m[31mt[0m[31mr[0m[31mu[0m[31me[0m[31m)[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `-`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:33:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:33:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m33 │[0m [31m-[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `-`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:34:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:34:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m34 │[0m [31m-[0m[31m1[0m[31m2[0m[31m3[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `+`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:35:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:35:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m35 │[0m [31m+[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `*`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:36:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:36:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m36 │[0m [31m*[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `/`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:37:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:37:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m37 │[0m [31m/[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `%`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:38:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:38:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m38 │[0m [31m%[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `and`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:39:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:39:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m39 │[0m [31ma[0m[31mn[0m[31md[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `not`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:40:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:40:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m40 │[0m [31mn[0m[31mo[0m[31mt[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `or`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:41:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:41:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m41 │[0m [31mo[0m[31mr[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `xor`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:42:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:42:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m42 │[0m [31mx[0m[31mo[0m[31mr[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `shl`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:43:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:43:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m43 │[0m [31ms[0m[31mh[0m[31ml[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `shr`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:44:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:44:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m44 │[0m [31ms[0m[31mh[0m[31mr[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `return`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:45:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:45:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m45 │[0m [31mr[0m[31me[0m[31mt[0m[31mu[0m[31mr[0m[31mn[0m
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `exit`
-    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parse_bad_top_level.mfl:46:1[38;5;246m][0m
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:46:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m46 │[0m [31me[0m[31mx[0m[31mi[0m[31mt[0m
 [38;5;246m────╯[0m
