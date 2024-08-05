@@ -1,2 +1,5 @@
-- Add floats.
 - When failing to pack a generic structure, provide explanation for type failure. Point to generic paramater.
+- Rewrite diagnostic interface.
+  - Should hide the implementation details of labels.
+  - Store them keyed by item ID then print when finished.
+- Make type resolution use the pass manager.

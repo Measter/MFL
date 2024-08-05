@@ -11,10 +11,17 @@ Integer types are:
 |`s32`|`u32`|
 |`s64`|`u64`|
 
+MFL supports binary (`0b101`, `0B101`), octal (`0o101`), decimal, and hex (`0x101`, `0X101`) literals.
+
 The language does have implicit integer widening. In integer of type `A` can widen into `B` if the following is true:
 
 * `B`s width is greater than `A`s width
 * (`B` is signed and `A` is unsigned) OR (`B` and `A` are the same signedness).
+
+## Floats
+
+The supported floating point types are `f32` and `f64`. Literals must have both integer and decimal parts (that is,
+they must be of the form `1.1`), and may have an optional exponent suffux (`1.1e23`).
 
 ## Booleans
 
@@ -343,6 +350,21 @@ Supported Types:
 |`T`|`T`|`F`|
 |`T&`|`T&`|`F`|
 |`T*`|`T*`|`F`|
+
+### `.Field` (Field access)
+
+Gets a pointer to the given field from a pointer to a struct.
+
+Stack: `a` to `b`
+
+Operation:
+
+* `b` = `&a.Field`
+
+Supported Types:
+|a|b|
+|`T*`|`F&`|
+|`T&`|`F&`|
 
 ## Stack Manipulation
 
