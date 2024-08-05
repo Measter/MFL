@@ -420,6 +420,8 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
         }
     }
 
+    stdout.flush()?;
+
     Ok(())
 
     // if force_print_full_streams {
