@@ -21,11 +21,13 @@ use crate::{
 };
 
 use super::{
+    matcher::{
+        integer_tokens, valid_type_token, ConditionMatch, ExpectedTokenMatcher, IsMatch, Matcher,
+    },
     parse_item_body_contents,
     utils::{
-        get_terminated_tokens, integer_tokens, parse_ident, parse_integer_lexeme,
-        parse_integer_param, parse_multiple_unresolved_types, valid_type_token, ConditionMatch,
-        ExpectedTokenMatcher, IsMatch, Matcher, ParseOpResult, TokenIter, TokenTreeOptionExt,
+        get_terminated_tokens, parse_ident, parse_integer_lexeme, parse_integer_param,
+        parse_multiple_unresolved_types, ParseOpResult, TokenIter, TokenTreeOptionExt,
         TreeGroupResultExt,
     },
 };

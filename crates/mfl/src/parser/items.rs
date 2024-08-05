@@ -18,10 +18,11 @@ use crate::{
 };
 
 use super::{
+    matcher::{attribute_tokens, valid_type_token, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
         get_terminated_tokens, parse_ident, parse_multiple_unresolved_types, parse_stack_def,
-        valid_type_token, IsMatch, Matcher, Terminated, TokenIter, TreeGroupResultExt,
+        Terminated, TokenIter, TreeGroupResultExt,
     },
     Recover,
 };
@@ -38,21 +39,6 @@ impl ParsedAttributes {
             lang_item: None,
             last_token: prev_token,
         }
-    }
-}
-
-fn attribute_tokens(tt: &TokenTree) -> IsMatch {
-    match tt {
-        TokenTree::Single(tk)
-            if matches!(
-                tk.inner.kind,
-                TokenKind::Extern | TokenKind::Ident | TokenKind::LangItem
-            ) =>
-        {
-            IsMatch::Yes
-        }
-        TokenTree::Group(g) if g.bracket_kind == BracketKind::Paren => IsMatch::Yes,
-        _ => IsMatch::No(tt.span()),
     }
 }
 
