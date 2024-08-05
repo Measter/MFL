@@ -4,9 +4,9 @@
 // args = ["--lib"]
 // END
 
-const LEN [u64] { 5 end
-proc foo [u8[LEN]] to [] is
-    var V { u8[LEN] end
+const LEN [u64] { 5 }
+proc foo [u8[LEN]] to [] {
+    var V { u8[LEN] }
     drop
-end
+}
 
