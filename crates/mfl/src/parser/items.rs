@@ -567,7 +567,7 @@ pub fn parse_import(
             if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
                 IsMatch::Yes
             } else {
-                IsMatch::No(t.location)
+                IsMatch::No(t.inner.kind_str(), t.location)
             }
         }),
         token.location,

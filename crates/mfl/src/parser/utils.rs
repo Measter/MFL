@@ -39,15 +39,11 @@ impl<'a> TokenIter<'a> {
         match self.peek() {
             Some(TokenTree::Single(tk)) => match filter.is_match(tk.map(|t| t.kind)) {
                 IsMatch::Yes => Ok(self.next().unwrap_single()),
-                IsMatch::No(location) => {
+                IsMatch::No(kind_str, location) => {
                     diagnostics::emit_error(
                         stores,
                         location,
-                        format!(
-                            "expected `{}`, found `{}`",
-                            filter.kind_str(),
-                            tk.inner.kind.kind_str()
-                        ),
+                        format!("expected `{}`, found `{kind_str}`", filter.kind_str()),
                         Some(Label::new(location).with_color(Color::Red)),
                         None,
                     );
@@ -234,15 +230,11 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
 
         let mut had_error = ErrorSignal::new();
         for tt in &group.tokens {
-            if let IsMatch::No(loc) = filter.is_match(tt) {
+            if let IsMatch::No(kind_str, loc) = filter.is_match(tt) {
                 diagnostics::emit_error(
                     stores,
                     loc,
-                    format!(
-                        "expected `{}`, found `{}`",
-                        filter.kind_str(),
-                        tt.kind_str(),
-                    ),
+                    format!("expected `{}`, found `{kind_str}`", filter.kind_str(),),
                     Some(Label::new(loc).with_color(Color::Red)),
                     None,
                 );
@@ -443,7 +435,7 @@ pub fn parse_unresolved_type(
             if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
                 IsMatch::Yes
             } else {
-                IsMatch::No(t.location)
+                IsMatch::No(t.inner.kind_str(), t.location)
             }
         }),
         prev,
@@ -468,7 +460,7 @@ pub fn parse_unresolved_type(
                 IsMatch::Yes
             }
             TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Square => IsMatch::Yes,
-            _ => IsMatch::No(tt.span()),
+            _ => IsMatch::No(tt.kind_str(), tt.span()),
         }
     }
     while token_iter.next_is(Matcher("[`, `*` or `&", pointer_or_array)) {

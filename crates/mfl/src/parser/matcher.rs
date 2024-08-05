@@ -6,21 +6,21 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub(super) enum IsMatch {
     Yes,
-    No(SourceLocation),
+    No(&'static str, SourceLocation),
 }
 
 impl IsMatch {
     pub(super) fn yes(self) -> bool {
         match self {
             IsMatch::Yes => true,
-            IsMatch::No(_) => false,
+            IsMatch::No(..) => false,
         }
     }
 
     pub(super) fn no(self) -> bool {
         match self {
             IsMatch::Yes => false,
-            IsMatch::No(_) => true,
+            IsMatch::No(..) => true,
         }
     }
 }
@@ -42,7 +42,7 @@ impl ExpectedTokenMatcher<Spanned<TokenKind>> for TokenKind {
         if tk.inner == *self {
             IsMatch::Yes
         } else {
-            IsMatch::No(tk.location)
+            IsMatch::No(tk.inner.kind_str(), tk.location)
         }
     }
 }
@@ -55,7 +55,7 @@ impl ExpectedTokenMatcher<&TokenTree> for TokenKind {
     fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
             TokenTree::Single(tk) if tk.inner.kind == *self => IsMatch::Yes,
-            _ => IsMatch::No(tk.span()),
+            _ => IsMatch::No(tk.kind_str(), tk.span()),
         }
     }
 }
@@ -81,7 +81,7 @@ impl ExpectedTokenMatcher<&TokenTree> for Matcher<Spanned<TokenKind>> {
     fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
             TokenTree::Single(tk) => self.1(tk.map(|t| t.kind)),
-            TokenTree::Group(_) => IsMatch::No(tk.span()),
+            TokenTree::Group(_) => IsMatch::No(tk.kind_str(), tk.span()),
         }
     }
 }
@@ -106,7 +106,7 @@ impl ExpectedTokenMatcher<&TokenTree> for ConditionMatch {
         if matches!(tk, TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Brace) {
             IsMatch::Yes
         } else {
-            IsMatch::No(tk.span())
+            IsMatch::No(tk.kind_str(), tk.span())
         }
     }
 
@@ -119,7 +119,7 @@ pub(super) fn integer_tokens(t: Spanned<TokenKind>) -> IsMatch {
     if let TokenKind::Integer(_) = t.inner {
         IsMatch::Yes
     } else {
-        IsMatch::No(t.location)
+        IsMatch::No(t.inner.kind_str(), t.location)
     }
 }
 
@@ -147,7 +147,7 @@ pub(super) fn valid_type_token(tt: &TokenTree) -> IsMatch {
             invalid
         }
 
-        _ => IsMatch::No(tt.span()),
+        _ => IsMatch::No(tt.kind_str(), tt.span()),
     }
 }
 
@@ -162,6 +162,6 @@ pub(super) fn attribute_tokens(tt: &TokenTree) -> IsMatch {
             IsMatch::Yes
         }
         TokenTree::Group(g) if g.bracket_kind == BracketKind::Paren => IsMatch::Yes,
-        _ => IsMatch::No(tt.span()),
+        _ => IsMatch::No(tt.kind_str(), tt.span()),
     }
 }

@@ -67,7 +67,7 @@ pub fn parse_extract_insert_struct(
                 if matches!(t.inner, TokenKind::Ident | TokenKind::Dot) {
                     IsMatch::Yes
                 } else {
-                    IsMatch::No(t.location)
+                    IsMatch::No(t.inner.kind_str(), t.location)
                 }
             }),
         )?;
@@ -303,7 +303,7 @@ fn parse_emit_stack(
                     if let TokenKind::Boolean(_) = t.inner {
                         IsMatch::Yes
                     } else {
-                        IsMatch::No(t.location)
+                        IsMatch::No(t.inner.kind_str(), t.location)
                     }
                 }),
             )
