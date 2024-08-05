@@ -482,7 +482,7 @@ fn run_single_test(
 
     let skip_run = command_result == RunStatus::Error
         || test_group.compile.cfg.expected_result == RunStatus::Error
-        || !matches!(post_fn_result, PostFnResult::Ok);
+        || !matches!(post_fn_result, PostFnResult::Ok | PostFnResult::Missing);
 
     test_results.push(TestRunResult::Run {
         command: test_command,
