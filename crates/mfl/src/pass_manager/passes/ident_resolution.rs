@@ -580,18 +580,6 @@ fn resolve_idents_in_block(
 
                     OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
                 }
-                UnresolvedOp::PackStruct { id } => {
-                    let Ok(new_ty) =
-                        resolve_idents_in_type(stores, had_error, cur_id, &id, generic_params)
-                    else {
-                        had_error.set();
-                        continue;
-                    };
-
-                    check_generic_param_length(stores, had_error, &new_ty, op_token.location, true);
-
-                    OpCode::Complex(NameResolvedOp::PackStruct { id: new_ty })
-                }
                 UnresolvedOp::SizeOf { id } => {
                     let Ok(new_ty) =
                         resolve_idents_in_type(stores, had_error, cur_id, &id, generic_params)

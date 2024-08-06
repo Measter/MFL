@@ -236,19 +236,6 @@ Supported Types:
 |---|---|
 |`T`|`T[N]`|
 
-### `pack(T)`
-
-Packs the top values on the stack into an instance of `Struct`. The number of values taken is
-the number of fields the struct has, in the same order.
-
-Stack: `[v0, v1, .. vN]` to `[c]`
-
-Supported Types:
-
-|vN|c|
-|---|---|
-|`F`|`T`|
-
 ### `unpack`
 
 Unpacks an array of length `N` into separate values on the stack.

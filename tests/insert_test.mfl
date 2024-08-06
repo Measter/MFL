@@ -33,7 +33,7 @@ proc insert_old [Foo] to [Foo] {
 }
 
 proc entry [] to [] {
-    0 pack(Quux) pack(Baz) pack(Bar) pack(Foo)
+    0 Quux Baz Bar Foo
     dup insert_old
     xtrd(a.b.c.d) std::term::write_ui_ln
 

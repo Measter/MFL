@@ -429,7 +429,6 @@ impl PartialEq for UnresolvedIdent {
 pub enum UnresolvedOp {
     Cast { id: UnresolvedType },
     Ident(UnresolvedIdent),
-    PackStruct { id: UnresolvedType },
     SizeOf { id: UnresolvedType },
 }
 

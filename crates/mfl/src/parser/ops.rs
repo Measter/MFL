@@ -726,46 +726,16 @@ pub fn parse_pack(
 ) -> ParseOpResult {
     let delim = token_iter
         .expect_group(stores, BracketKind::Paren, token)
-        .with_kinds(
-            stores,
-            Matcher("integer literal` or `type", valid_type_token),
-        )?;
+        .with_kinds(stores, Matcher("integer literal", integer_tokens))
+        .with_length(stores, 1)?;
 
-    let int_matcher = Matcher("integer literal", integer_tokens);
+    let count_token = delim.tokens[0].unwrap_single();
+    let count = parse_integer_lexeme(stores, count_token)?;
 
-    if delim.tokens.len() == 1 && int_matcher.is_match(&delim.tokens[0]).yes() {
-        let count_token = delim.tokens[0].unwrap_single();
-        let count = parse_integer_lexeme(stores, count_token)?;
-
-        Ok((
-            OpCode::Basic(Basic::Memory(Memory::PackArray { count })),
-            delim.last_token().location,
-        ))
-    } else {
-        let span = delim.span();
-
-        let mut unresolved_types =
-            parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)?;
-
-        if unresolved_types.len() != 1 {
-            diagnostics::emit_error(
-                stores,
-                span,
-                format!("expected 1 type, found {}", unresolved_types.len()),
-                [Label::new(span).with_color(Color::Red)],
-                None,
-            );
-            return Err(());
-        }
-
-        let unresolved_type = unresolved_types.pop().unwrap();
-        Ok((
-            OpCode::Complex(UnresolvedOp::PackStruct {
-                id: unresolved_type.inner,
-            }),
-            delim.last_token().location,
-        ))
-    }
+    Ok((
+        OpCode::Basic(Basic::Memory(Memory::PackArray { count })),
+        delim.last_token().location,
+    ))
 }
 
 pub fn parse_if(

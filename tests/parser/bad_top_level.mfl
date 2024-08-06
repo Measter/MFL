@@ -8,7 +8,6 @@ drop(3)
 drop
 
 pack(2)
-pack(Foo)
 unpack
 rot(3<2)
 cast(Foo&)
