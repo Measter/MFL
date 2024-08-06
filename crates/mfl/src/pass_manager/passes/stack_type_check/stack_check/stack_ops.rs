@@ -1,13 +1,14 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
+use stores::source::Spanned;
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::Direction,
     n_ops::SliceNOps,
-    stores::{ops::OpId, source::Spanned, values::ValueId},
+    stores::{ops::OpId, values::ValueId},
     Stores,
 };
 

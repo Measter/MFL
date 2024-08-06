@@ -3,13 +3,13 @@ use intcast::IntCast;
 use lasso::Spur;
 use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
+use stores::source::{SourceLocation, Spanned};
 
 use crate::{
     error_signal::ErrorSignal,
     ir::StructDef,
     stores::{
         ops::OpId,
-        source::{SourceLocation, Spanned},
         types::{TypeId, TypeInfo},
         values::ValueId,
     },

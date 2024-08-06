@@ -1,5 +1,6 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use stores::items::ItemId;
 use tracing::info;
 
 use crate::{
@@ -9,7 +10,6 @@ use crate::{
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{
         block::BlockId,
-        item::ItemId,
         ops::OpId,
         types::{IntWidth, Integer},
     },

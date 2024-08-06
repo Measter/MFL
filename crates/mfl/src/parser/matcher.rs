@@ -1,7 +1,7 @@
-use crate::{
-    lexer::{BracketKind, TokenKind, TokenTree},
-    stores::source::{SourceLocation, Spanned},
-};
+use lexer::{BracketKind, TokenKind};
+use stores::source::{SourceLocation, Spanned};
+
+use crate::lexer::TokenTree;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum IsMatch {

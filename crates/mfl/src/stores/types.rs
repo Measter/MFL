@@ -1,5 +1,10 @@
 use std::{hash::Hash, ops::RangeInclusive};
 
+use ::stores::{
+    items::ItemId,
+    source::{SourceLocation, Spanned, WithSpan},
+    strings::StringStore,
+};
 use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
@@ -9,15 +14,11 @@ use tracing::{debug_span, trace};
 use crate::{
     diagnostics,
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
-    stores::{
-        self,
-        source::{SourceLocation, Spanned, WithSpan},
-        strings::StringStore,
-    },
+    stores::{self},
     Stores,
 };
 
-use super::item::{ItemId, LangItem};
+use super::item::LangItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u16);

@@ -3,6 +3,11 @@ use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
+use stores::{
+    items::ItemId,
+    source::{Spanned, WithSpan},
+    strings::StringStore,
+};
 
 use crate::{
     diagnostics::NameCollision,
@@ -15,8 +20,6 @@ use crate::{
 use super::{
     block::BlockId,
     signatures::{SigStore, StackDefItemUnresolved, UnresolvedItemSignature},
-    source::{Spanned, WithSpan},
-    strings::StringStore,
     types::TypeId,
 };
 
@@ -81,9 +84,6 @@ flags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ItemId(u16);
-
 #[derive(Debug, Clone, Copy)]
 pub struct ItemHeader {
     pub name: Spanned<Spur>,
@@ -130,7 +130,7 @@ impl ItemStore {
         let core_scope = sigs.nrir.get_scope_mut(core_module_id);
 
         let string_item_id = self.lang_items[&LangItem::String];
-        let string_header = self.headers[string_item_id.0.to_usize()];
+        let string_header = self.headers[string_item_id.to_usize()];
         core_scope
             .add_visible_symbol(string_header.name, string_item_id)
             .expect("ICE: Core already contains String");
@@ -143,7 +143,7 @@ impl ItemStore {
 
     #[inline]
     pub fn get_item_header(&self, id: ItemId) -> ItemHeader {
-        self.headers[id.0.to_usize()]
+        self.headers[id.to_usize()]
     }
 
     #[inline]
@@ -256,7 +256,7 @@ impl ItemStore {
         attributes: FlagSet<ItemAttribute>,
     ) -> ItemHeader {
         let new_id = self.headers.len();
-        let new_id = ItemId(new_id.to_u16().unwrap());
+        let new_id = ItemId::new(new_id.to_u16().unwrap());
 
         let item_header = ItemHeader {
             name,
@@ -526,7 +526,7 @@ impl ItemStore {
 
     pub fn set_lang_item(&mut self, lang_item: LangItem, item_id: ItemId) {
         self.lang_items.insert(lang_item, item_id);
-        self.headers[item_id.0 as usize].lang_item = Some(lang_item);
+        self.headers[item_id.to_usize()].lang_item = Some(lang_item);
     }
 
     pub fn get_visible_symbol(

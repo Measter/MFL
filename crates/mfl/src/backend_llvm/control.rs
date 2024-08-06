@@ -1,16 +1,12 @@
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue};
 use intcast::IntCast;
+use stores::{items::ItemId, source::Spanned};
 use tracing::trace;
 
 use crate::{
     ir::{If, While},
     stores::{
-        item::{ItemId, ItemKind},
-        ops::OpId,
-        signatures::StackDefItemNameResolved,
-        source::Spanned,
-        types::TypeKind,
-        Stores,
+        item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, types::TypeKind, Stores,
     },
 };
 

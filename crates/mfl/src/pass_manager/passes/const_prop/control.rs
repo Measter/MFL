@@ -1,15 +1,12 @@
 use ariadne::{Color, Label};
+use stores::items::ItemId;
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     pass_manager::PassManager,
     simulate::SimulatorValue,
-    stores::{
-        item::{ItemId, ItemKind},
-        ops::OpId,
-        values::ConstVal,
-    },
+    stores::{item::ItemKind, ops::OpId, values::ConstVal},
     Stores,
 };
 

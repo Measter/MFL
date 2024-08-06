@@ -2,18 +2,19 @@ use std::collections::VecDeque;
 
 use ariadne::{Color, Label};
 use flagset::FlagSet;
+use lexer::{BracketKind, Token, TokenKind};
+use stores::{items::ItemId, source::Spanned};
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, OpCode, StructDef, StructDefField},
-    lexer::{BracketKind, Token, TokenKind, TokenTree, TreeGroup},
+    lexer::{TokenTree, TreeGroup},
     program::ModuleQueueType,
     stores::{
-        item::{ItemAttribute, ItemId, LangItem},
+        item::{ItemAttribute, LangItem},
         ops::OpId,
         signatures::StackDefItemUnresolved,
-        source::Spanned,
     },
     Stores,
 };

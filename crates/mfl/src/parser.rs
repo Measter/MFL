@@ -1,19 +1,14 @@
 use std::{collections::VecDeque, ops::Not};
 
 use ariadne::{Color, Label};
+use lexer::{BracketKind, TokenKind};
+use stores::source::{SourceLocation, WithSpan};
 use tracing::debug_span;
 use utils::TokenIter;
 
 use crate::{
-    diagnostics,
-    error_signal::ErrorSignal,
-    lexer::{BracketKind, TokenKind, TokenTree},
-    program::ModuleQueueType,
-    stores::{
-        ops::OpId,
-        source::{SourceLocation, WithSpan},
-    },
-    ItemId, Stores,
+    diagnostics, error_signal::ErrorSignal, lexer::TokenTree, program::ModuleQueueType,
+    stores::ops::OpId, ItemId, Stores,
 };
 
 use self::{

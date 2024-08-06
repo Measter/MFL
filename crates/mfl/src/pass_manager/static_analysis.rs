@@ -3,6 +3,7 @@ use std::fmt::Write;
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use prettytable::{row, Table};
+use stores::source::SourceLocation;
 
 use crate::{
     diagnostics::{self, TABLE_FORMAT},
@@ -10,7 +11,6 @@ use crate::{
     ir::NameResolvedType,
     stores::{
         ops::OpId,
-        source::SourceLocation,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},
         values::ValueId,
     },

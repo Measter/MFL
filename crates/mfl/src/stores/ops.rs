@@ -3,13 +3,14 @@ use std::{collections::HashMap, fmt::Display};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
+use stores::source::Spanned;
 
 use crate::{
     ir::{NameResolvedOp, OpCode, PartiallyResolvedOp, TypeResolvedOp, UnresolvedOp},
     option::OptionExt,
 };
 
-use super::{source::Spanned, values::ValueId};
+use super::values::ValueId;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct OpId(u32);

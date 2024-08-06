@@ -1,6 +1,11 @@
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind};
 use smallvec::SmallVec;
+use stores::{
+    items::ItemId,
+    source::{SourceLocation, Spanned, WithSpan},
+};
 
 use crate::{
     diagnostics,
@@ -9,12 +14,10 @@ use crate::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, Memory, OpCode, Stack,
         UnresolvedOp, While, WhileTokens,
     },
-    lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind, TokenTree},
+    lexer::TokenTree,
     parser::utils::parse_float_lexeme,
     stores::{
-        item::ItemId,
         ops::OpId,
-        source::{SourceLocation, Spanned, WithSpan},
         types::{Float, FloatWidth, IntSignedness, IntWidth, Integer},
     },
     Stores,

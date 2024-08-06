@@ -1,10 +1,8 @@
+use stores::items::ItemId;
+
 use crate::{
     ir::{Basic, Control, OpCode},
-    stores::{
-        block::BlockId,
-        item::{ItemId, ItemKind},
-        Stores,
-    },
+    stores::{block::BlockId, item::ItemKind, Stores},
 };
 
 pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {

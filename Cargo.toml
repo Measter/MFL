@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/mfl", "crates/intcast", "crates/tester"]
+members = [
+    "crates/mfl",
+    "crates/intcast",
+    "crates/tester",
+    "crates/lexer",
+    "crates/stores",
+]
 resolver = "2"
 
 [profile.release]

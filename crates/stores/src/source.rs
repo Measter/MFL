@@ -138,6 +138,13 @@ impl SourceStore {
     pub fn source(&self, id: FileId) -> &str {
         &self.files[id.0.to_usize()].contents
     }
+
+    #[inline]
+    pub fn get_str(&self, loc: SourceLocation) -> &str {
+        let source = self.source(loc.file_id);
+        let range = loc.start()..loc.end();
+        &source[range]
+    }
 }
 
 impl Cache<FileId> for &SourceStore {

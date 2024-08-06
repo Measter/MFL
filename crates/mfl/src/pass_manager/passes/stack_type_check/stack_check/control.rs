@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
+use stores::{items::ItemId, source::Spanned};
 use tracing::trace;
 
 use crate::{
@@ -12,10 +13,8 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
-        item::ItemId,
         ops::OpId,
         signatures::StackDefItemUnresolved,
-        source::Spanned,
         values::{IfMerge, ValueId, WhileMerge, WhileMerges},
     },
     Stores,

@@ -4,18 +4,13 @@ use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context as _, Result};
 use hashbrown::HashSet;
 use lasso::Spur;
+use stores::{
+    items::ItemId,
+    source::{FileId, SourceLocation, Spanned, WithSpan},
+};
 use tracing::debug_span;
 
-use crate::{
-    diagnostics,
-    error_signal::ErrorSignal,
-    lexer,
-    stores::{
-        item::ItemId,
-        source::{FileId, SourceLocation, Spanned, WithSpan},
-    },
-    Args, Stores,
-};
+use crate::{diagnostics, error_signal::ErrorSignal, lexer, Args, Stores};
 
 // mod passes;
 

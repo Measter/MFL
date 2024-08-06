@@ -8,14 +8,12 @@ use inkwell::{
 };
 use intcast::IntCast;
 use lasso::Spur;
+use stores::{items::ItemId, source::Spanned, strings::StringStore};
 
 use crate::{
     n_ops::SliceNOps,
     stores::{
-        item::ItemId,
         ops::OpId,
-        source::Spanned,
-        strings::StringStore,
         types::{BuiltinTypes, IntSignedness, TypeId, TypeInfo, TypeKind, TypeStore},
         values::ValueId,
         Stores,

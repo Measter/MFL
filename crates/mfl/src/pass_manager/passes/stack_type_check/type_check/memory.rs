@@ -4,6 +4,7 @@ use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
+use stores::{items::ItemId, source::Spanned};
 
 use crate::{
     diagnostics,
@@ -12,9 +13,7 @@ use crate::{
     n_ops::SliceNOps,
     pass_manager::{static_analysis::can_promote_int_unidirectional, PassManager},
     stores::{
-        item::ItemId,
         ops::OpId,
-        source::Spanned,
         types::{IntKind, TypeId, TypeInfo, TypeKind},
     },
     Stores,

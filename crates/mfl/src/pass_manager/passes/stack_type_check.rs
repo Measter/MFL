@@ -1,12 +1,13 @@
 use ariadne::{Color, Label};
 use stack_check::{eat_one_make_one, eat_two_make_one, make_one};
+use stores::items::ItemId;
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::{block::BlockId, item::ItemId, ops::OpId, types::IntKind, values::ValueId},
+    stores::{block::BlockId, ops::OpId, types::IntKind, values::ValueId},
     Stores,
 };
 

@@ -5,6 +5,7 @@ use color_eyre::{eyre::eyre, Result};
 use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
 use prettytable::{row, Table};
+use stores::items::ItemId;
 use tracing::{debug_span, trace};
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
     option::OptionExt,
     simulate::{simulate_execute_program, SimulatorValue},
     stores::{
-        item::{ItemHeader, ItemId, ItemKind, LangItem},
+        item::{ItemHeader, ItemKind, LangItem},
         types::TypeKind,
     },
     Stores,

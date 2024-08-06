@@ -1,4 +1,5 @@
 use smallvec::SmallVec;
+use stores::items::ItemId;
 
 use crate::{
     error_signal::ErrorSignal,
@@ -9,7 +10,7 @@ use crate::{
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
         block::BlockId,
-        item::{ItemId, ItemKind},
+        item::ItemKind,
         signatures::{
             PartiallyTypeResolvedItemSignature, StackDefItemNameResolved, TypeResolvedItemSignature,
         },

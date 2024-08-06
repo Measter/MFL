@@ -1,5 +1,6 @@
 use ariadne::{Color, Label};
 use hashbrown::HashSet;
+use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
     diagnostics,
@@ -8,8 +9,7 @@ use crate::{
     pass_manager::PassManager,
     stores::{
         block::BlockId,
-        item::{ItemHeader, ItemId, ItemKind},
-        source::SourceLocation,
+        item::{ItemHeader, ItemKind},
     },
     Stores,
 };

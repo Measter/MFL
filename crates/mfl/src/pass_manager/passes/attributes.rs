@@ -1,10 +1,11 @@
 use ariadne::{Color, Label};
+use stores::items::ItemId;
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     stores::{
-        item::{ItemAttribute, ItemHeader, ItemId, ItemKind, LangItem},
+        item::{ItemAttribute, ItemHeader, ItemKind, LangItem},
         Stores,
     },
 };

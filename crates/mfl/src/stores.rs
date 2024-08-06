@@ -1,13 +1,16 @@
 use block::{BlockId, BlockStore};
 use hashbrown::HashMap;
-use item::{ItemAttribute, ItemId, ItemKind, ItemStore};
+use item::{ItemAttribute, ItemKind, ItemStore};
 use lasso::Spur;
 use ops::OpStore;
 use signatures::{
     NameResolvedItemSignature, SigStore, StackDefItemNameResolved, TypeResolvedItemSignature,
 };
-use source::{SourceStore, WithSpan};
-use strings::StringStore;
+use stores::{
+    items::ItemId,
+    source::{SourceStore, WithSpan},
+    strings::StringStore,
+};
 use tracing::{debug_span, trace};
 use types::{TypeId, TypeStore};
 use values::ValueStore;
@@ -22,8 +25,6 @@ pub mod block;
 pub mod item;
 pub mod ops;
 pub mod signatures;
-pub mod source;
-pub mod strings;
 pub mod types;
 pub mod values;
 
@@ -153,9 +154,9 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
     #[inline]
     #[track_caller]
     pub fn get_symbol_name(&mut self, item_id: ItemId) -> &str {
-        if let Some(&name) = self.strings.friendly_names.get(&item_id) {
+        if let Some(name) = self.strings.try_get_friendly_name(item_id) {
             return self.strings.resolve(name);
-        } else if let Some(&name) = self.strings.fallback_symbol_names.get(&item_id) {
+        } else if let Some(name) = self.strings.try_get_fallback_name(item_id) {
             return self.strings.resolve(name);
         }
 
@@ -179,7 +180,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
         }
 
         let spur = self.strings.intern(&name);
-        self.strings.fallback_symbol_names.insert(item_id, spur);
+        self.strings.set_fallback_name(item_id, spur);
 
         self.strings.resolve(spur)
     }

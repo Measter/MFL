@@ -1,14 +1,14 @@
 use hashbrown::HashMap;
 use lasso::Spur;
+use stores::{
+    items::ItemId,
+    source::{SourceLocation, Spanned, WithSpan},
+};
 
 use crate::{
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, UnresolvedIdent, UnresolvedType},
     option::OptionExt,
-    stores::{
-        item::ItemId,
-        source::{SourceLocation, Spanned, WithSpan},
-        types::TypeId,
-    },
+    stores::types::TypeId,
 };
 
 pub struct SigStore {

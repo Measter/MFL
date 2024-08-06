@@ -3,13 +3,12 @@ use std::fmt::{Display, Write};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use smallvec::SmallVec;
+use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{n_ops::HashMapNOps, option::OptionExt};
 
 use super::{
-    item::ItemId,
     ops::OpId,
-    source::SourceLocation,
     types::{Float, Integer, TypeId},
 };
 

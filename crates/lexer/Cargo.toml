@@ -1,0 +1,11 @@
+[package]
+name = "lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+intcast = { path = "../intcast" }
+lasso = "0.7.2"
+logos = "0.14.1"
+stores = { path = "../stores" }
+tracing = "0.1.37"

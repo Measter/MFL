@@ -22,14 +22,14 @@ use inkwell::{
 };
 use intcast::IntCast;
 use lasso::Spur;
+use stores::{items::ItemId, strings::StringStore};
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     stores::{
         block::BlockId,
-        item::{ItemAttribute, ItemId, ItemKind},
-        strings::StringStore,
+        item::{ItemAttribute, ItemKind},
         types::{
             BuiltinTypes, FloatWidth, IntSignedness, IntWidth, Integer, TypeId, TypeKind, TypeStore,
         },

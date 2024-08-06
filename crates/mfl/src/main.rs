@@ -12,6 +12,7 @@ use std::{
     process::Command,
 };
 
+use ::stores::{items::ItemId, source::SourceStore, strings::StringStore};
 use ariadne::{Color, Label};
 use clap::Parser;
 use color_eyre::{
@@ -22,11 +23,9 @@ use tracing::{debug, debug_span, Level};
 
 use stores::{
     block::BlockStore,
-    item::{ItemAttribute, ItemId, ItemKind, ItemStore},
+    item::{ItemAttribute, ItemKind, ItemStore},
     ops::OpStore,
     signatures::{SigStore, TypeResolvedItemSignature},
-    source::SourceStore,
-    strings::StringStore,
     types::{BuiltinTypes, TypeStore},
     values::ValueStore,
     Stores,

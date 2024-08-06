@@ -2,18 +2,17 @@ use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use ariadne::{Color, Label};
 use lasso::Spur;
+use lexer::{BracketKind, IntegerBase, Token, TokenKind};
 use num_traits::{Float, PrimInt, Unsigned};
+use stores::source::{SourceLocation, Spanned, WithSpan};
 
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
-    lexer::{BracketKind, IntegerBase, Token, TokenKind, TokenTree, TreeGroup},
+    lexer::{TokenTree, TreeGroup},
     parser::matcher::{integer_tokens, Matcher},
-    stores::{
-        signatures::StackDefItemUnresolved,
-        source::{SourceLocation, Spanned, WithSpan},
-    },
+    stores::signatures::StackDefItemUnresolved,
     Stores,
 };
 

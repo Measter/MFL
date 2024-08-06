@@ -1,5 +1,9 @@
 use ariadne::{Color, Label};
 use lasso::Spur;
+use stores::{
+    items::ItemId,
+    source::{FileId, SourceLocation, Spanned, WithSpan},
+};
 
 use crate::{
     diagnostics::{self, NameCollision},
@@ -11,9 +15,8 @@ use crate::{
     pass_manager::PassManager,
     stores::{
         block::BlockId,
-        item::{ItemId, ItemKind, ItemStore},
+        item::{ItemKind, ItemStore},
         signatures::{NameResolvedItemSignature, StackDefItemNameResolved, StackDefItemUnresolved},
-        source::{FileId, SourceLocation, Spanned, WithSpan},
         types::BuiltinTypes,
     },
     Stores,

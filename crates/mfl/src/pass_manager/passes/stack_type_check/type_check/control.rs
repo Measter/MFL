@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 
 use ariadne::{Color, Label};
 use intcast::IntCast;
+use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
     diagnostics,
@@ -16,9 +17,8 @@ use crate::{
         PassManager,
     },
     stores::{
-        item::{ItemId, ItemKind},
+        item::ItemKind,
         ops::OpId,
-        source::SourceLocation,
         types::{BuiltinTypes, TypeId, TypeKind},
         values::ValueId,
     },

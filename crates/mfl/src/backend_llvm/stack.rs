@@ -1,9 +1,9 @@
 use inkwell::{values::BasicValue, AddressSpace};
 use intcast::IntCast;
 use lasso::Spur;
+use stores::items::ItemId;
 
 use crate::stores::{
-    item::ItemId,
     ops::OpId,
     types::{
         BuiltinTypes, Float, FloatWidth, IntKind, IntSignedness, IntWidth, Integer, TypeId,

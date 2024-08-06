@@ -1,8 +1,8 @@
 use lasso::Spur;
+use stores::source::{SourceLocation, Spanned};
 
 use crate::stores::{
     block::BlockId,
-    source::{SourceLocation, Spanned},
     types::{BuiltinTypes, Float, FloatWidth, IntWidth, Integer, TypeId, TypeInfo, TypeKind},
     Stores,
 };

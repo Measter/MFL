@@ -1,8 +1,10 @@
+use stores::items::ItemId;
+
 use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::{block::BlockId, item::ItemId},
+    stores::block::BlockId,
     Stores,
 };
 
