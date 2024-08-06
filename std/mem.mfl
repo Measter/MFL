@@ -55,14 +55,9 @@ proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
 }
 
 proc fill(T) [
-    MMap(T),
-    T
+    var store MMap(T),
+    var val T
 ] to [] {
-    var val { T }
-    var store { MMap(T) }
-    val!
-    store!
-
     0 while dup store.length@ < {
         val@ store over(2) insd
         1+
@@ -70,20 +65,16 @@ proc fill(T) [
 }
 
 proc copy(T) [
-    MMap(T), // Source
-    MMap(T), // Destination
+    var src MMap(T),
+    var dst MMap(T),
 ] to [] {
-    if xtr(length) over(2) xtrd(length) != {
+    if src.length@ dst.length@ != {
         "Mismatched length in copy - src: " std::term::ewrite
-        swap xtrd(length) std::term::ewrite_ui
+        src.length@ std::term::ewrite_ui
         " dst: " std::term::ewrite
-        xtrd(length) std::term::ewrite_ui_ln
+        dst.length@ std::term::ewrite_ui_ln
         exit
     }
-
-    var src { MMap(T) }
-    var dst { MMap(T) }
-    dst! src!
 
     0 while dup dst.length@ < {
         dup src swap xtrd

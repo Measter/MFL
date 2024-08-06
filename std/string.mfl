@@ -14,23 +14,14 @@ struct SplitResult {
 // Splits the given string at the first instance of the given
 // character. Remaining string does not include the split char.
 proc split_front [
-    String,
-    u8  // Char to split on
+    var str String,
+    var char u8  // Char to split on
 ] to [
     SplitResult
 ] {
-    var str { String }
-    var char { u8 }
-
-    // [string, char]
-    if over xtrd(length) 0= {
-        drop
-
-        false swap dup SplitResult
+    if str.length@ 0= {
+        false str@ str@ SplitResult
     } else {
-        char!
-        str!
-
         0(u64) while 
             dup str.length@ <
             if dup { over str swap xtrd char@ != and }
@@ -83,10 +74,7 @@ proc is_digit [u8] to [bool] {
     dup '0' >= swap '9' <= and
 }
 
-proc trim_start [String] to [String] {
-    var str { String }
-    str!
-    
+proc trim_start [var str String] to [String] {
     0 while dup str.length@ < {
         if str 0 xtrd is_whitespace {
             str@ unpack
@@ -104,10 +92,7 @@ proc trim_start [String] to [String] {
 }
 
 
-proc trim_end [String] to [String] {
-    var str { String }
-    str!
-
+proc trim_end [var str String] to [String] {
     if str.length@ 0= { str@ return }
 
     str.length@ 1- while dup 0> {
