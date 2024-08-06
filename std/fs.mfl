@@ -21,13 +21,13 @@ const FLAG_READWRITE [u64] { 0x2 }        // O_RDWR
 proc open [
     String,  // Null-terminated path to the file
     u64     // Flags for opening
-] to [Result(FD u64)] {
+] to [Result(FD, u64)] {
     // The syscall requires a null-terminated string.
     // Check for null termination
     if over xtr(length) 1- xtrd 0 != {
         drop(2)
 
-        0 1- result::Err(FD u64)
+        0 1- result::Err(FD, u64)
         return
     }
 
@@ -39,16 +39,16 @@ proc open [
 
     // An error ocurred
     if dup cast(s64) 0< {
-        cast(s64) 0 swap - cast(u64) result::Err(FD u64)
+        cast(s64) 0 swap - cast(u64) result::Err(FD, u64)
     } else {
-        FD result::Ok(FD u64)
+        FD result::Ok(FD, u64)
     }
 }
 
 // Opens a file in read-only mode.
 proc open_read [
     String // Null-terminated path
-] to [Result(FD u64)] {
+] to [Result(FD, u64)] {
     FLAG_READONLY open
 }
 
@@ -56,7 +56,7 @@ proc open_read [
 proc open_write [
     String,  // Null-terminated path
     bool    // Append if it already exists
-] to [Result(FD u64)] {
+] to [Result(FD, u64)] {
     FLAG_READWRITE FLAG_CREATE or swap
     if { FLAG_APPEND or }
     open
@@ -67,7 +67,7 @@ proc open_write [
 proc create [
     String, // Null-terminated path
     bool // Force new file.
-] to [Result(FD u64)] {
+] to [Result(FD, u64)] {
     FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
     if {
         FLAG_CREATE_NEW or
@@ -104,13 +104,13 @@ struct Stat {
     __reserved s64[3],
 }
 
-proc fstat [FD] to [Result(Stat u64)] {
+proc fstat [FD] to [Result(Stat, u64)] {
     var buf { Stat }
     xtrd(fd)
     SYS_FSTAT swap buf syscall(3) cast(s64)
     if dup 0< {
-        0 swap - cast(u64) result::Err(Stat u64)
+        0 swap - cast(u64) result::Err(Stat, u64)
     } else {
-        drop buf@ result::Ok(Stat u64)
+        drop buf@ result::Ok(Stat, u64)
     }
 }

@@ -133,6 +133,7 @@ pub(super) fn valid_type_token(tt: &TokenTree) -> IsMatch {
                     | TokenKind::ColonColon
                     | TokenKind::Ampersand
                     | TokenKind::Star
+                    | TokenKind::Comma
             ) =>
         {
             IsMatch::Yes

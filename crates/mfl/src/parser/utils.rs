@@ -417,6 +417,12 @@ pub fn parse_multiple_unresolved_types(
             continue;
         };
         types.push(unresolved_type);
+
+        if TrailingCommaResult::Break
+            == validate_trailing_comma(&mut token_iter, stores, &mut had_error, "paramaters")
+        {
+            break;
+        }
     }
 
     if had_error.into_bool() {
