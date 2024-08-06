@@ -28,9 +28,18 @@ impl SigStore {
 }
 
 #[derive(Debug, Clone)]
+pub enum StackDefItemUnresolved {
+    Var {
+        name: Spanned<Spur>,
+        kind: Spanned<UnresolvedType>,
+    },
+    Stack(Spanned<UnresolvedType>),
+}
+
+#[derive(Debug, Clone)]
 pub struct UnresolvedItemSignature {
     pub exit: Spanned<Vec<Spanned<UnresolvedType>>>,
-    pub entry: Spanned<Vec<Spanned<UnresolvedType>>>,
+    pub entry: Spanned<Vec<StackDefItemUnresolved>>,
 }
 
 pub struct UnresolvedIr {
@@ -116,10 +125,19 @@ impl UnresolvedIr {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
+pub enum StackDefItemNameResolved {
+    Var {
+        name: ItemId,
+        kind: NameResolvedType,
+    },
+    Stack(NameResolvedType),
+}
+
+#[derive(Debug, Clone)]
 pub struct NameResolvedItemSignature {
     pub exit: Vec<NameResolvedType>,
-    pub entry: Vec<NameResolvedType>,
+    pub entry: Vec<StackDefItemNameResolved>,
     // While it seems odd, this will only be populated when instantiating a generic function,
     // which has the resolved TypeIds of the parameters.
     pub generic_params: Vec<TypeId>,
@@ -205,7 +223,7 @@ impl NameResolvedIr {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeResolvedItemSignature {
     pub exit: Vec<TypeId>,
     pub entry: Vec<TypeId>,

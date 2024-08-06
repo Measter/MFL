@@ -589,7 +589,9 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_exit()?;
                         break;
                     }
-                    Control::Prologue => self.build_prologue(ds, value_store, op_id, function)?,
+                    Control::Prologue => {
+                        self.build_prologue(ds, value_store, id, op_id, function)?
+                    }
                     Control::SysCall { arg_count } => {
                         self.build_syscall(ds, value_store, op_id, arg_count)?
                     }

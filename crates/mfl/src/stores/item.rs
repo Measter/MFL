@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     block::BlockId,
-    signatures::{SigStore, UnresolvedItemSignature},
+    signatures::{SigStore, StackDefItemUnresolved, UnresolvedItemSignature},
     source::{Spanned, WithSpan},
     strings::StringStore,
     types::TypeId,
@@ -304,7 +304,7 @@ impl ItemStore {
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        entry_stack: Spanned<Vec<StackDefItemUnresolved>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> (ItemId, Option<NameCollision>) {
         let header = self.new_header(sigs, name, Some(parent), ItemKind::Function, attributes);
@@ -330,7 +330,7 @@ impl ItemStore {
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        entry_stack: Spanned<Vec<StackDefItemUnresolved>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> (ItemId, Option<NameCollision>) {
         let header = self.new_header(
@@ -363,7 +363,7 @@ impl ItemStore {
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        entry_stack: Spanned<Vec<StackDefItemUnresolved>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
     ) -> ItemId {
         let header = self.new_header(sigs, name, Some(parent), ItemKind::Function, attributes);
@@ -454,7 +454,7 @@ impl ItemStore {
         name: Spanned<Spur>,
         parent: ItemId,
         attributes: FlagSet<ItemAttribute>,
-        entry_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
+        entry_stack: Spanned<Vec<StackDefItemUnresolved>>,
         exit_stack: Spanned<Vec<Spanned<UnresolvedType>>>,
         params: Vec<Spanned<Spur>>,
     ) -> (ItemId, Option<NameCollision>) {

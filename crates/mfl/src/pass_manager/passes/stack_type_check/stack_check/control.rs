@@ -14,6 +14,7 @@ use crate::{
     stores::{
         item::ItemId,
         ops::OpId,
+        signatures::StackDefItemUnresolved,
         source::Spanned,
         values::{IfMerge, ValueId, WhileMerge, WhileMerges},
     },
@@ -101,9 +102,15 @@ pub(crate) fn prologue(
     let sig = stores.sigs.urir.get_item_signature(item_id);
 
     for arg in &sig.entry.inner {
-        let new_id = stores.values.new_value(arg.location, None);
+        let (StackDefItemUnresolved::Stack(kind) | StackDefItemUnresolved::Var { kind, .. }) = arg;
+
+        let new_id = stores.values.new_value(kind.location, None);
         outputs.push(new_id);
-        stack.push(new_id);
+
+        // We only push stack args to the stack. Vars get put into implicitly declared variables during codegen.
+        if let StackDefItemUnresolved::Stack(_) = arg {
+            stack.push(new_id);
+        }
     }
 
     stores.ops.set_op_io(op_id, &[], &outputs);

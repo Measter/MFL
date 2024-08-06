@@ -4,14 +4,16 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
-        PartiallyResolvedType, TypeResolvedOp,
+        TypeResolvedOp,
     },
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
         block::BlockId,
         item::{ItemId, ItemKind},
-        signatures::{PartiallyTypeResolvedItemSignature, TypeResolvedItemSignature},
-        types::{emit_type_error_diag, TypeId},
+        signatures::{
+            PartiallyTypeResolvedItemSignature, StackDefItemNameResolved, TypeResolvedItemSignature,
+        },
+        types::emit_type_error_diag,
     },
     Stores,
 };
@@ -40,41 +42,50 @@ pub fn resolve_signature(
 
             let mut local_had_error = ErrorSignal::new();
 
-            let mut process_sig =
-                |unresolved: &[NameResolvedType], resolved: &mut Vec<PartiallyResolvedType>| {
-                    for kind in unresolved {
-                        {
-                            let mut single_check_error = ErrorSignal::new();
-                            ensure_structs_declared_in_type(
-                                stores,
-                                pass_manager,
-                                &mut single_check_error,
-                                kind,
-                            );
-                            if single_check_error.into_bool() {
-                                local_had_error.set();
-                                continue;
-                            }
-                        }
+            let mut process_sig = |kind: &NameResolvedType| {
+                {
+                    let mut single_check_error = ErrorSignal::new();
+                    ensure_structs_declared_in_type(
+                        stores,
+                        pass_manager,
+                        &mut single_check_error,
+                        kind,
+                    );
+                    if single_check_error.into_bool() {
+                        local_had_error.set();
+                        return None;
+                    }
+                }
 
-                        let partial_type = match stores
-                            .types
-                            .partially_resolve_generic_type(stores.strings, kind)
-                        {
-                            Ok(info) => info,
-                            Err(tk) => {
-                                local_had_error.set();
-                                emit_type_error_diag(stores, tk);
-                                continue;
-                            }
-                        };
-
-                        resolved.push(partial_type);
+                let partial_type = match stores
+                    .types
+                    .partially_resolve_generic_type(stores.strings, kind)
+                {
+                    Ok(info) => info,
+                    Err(tk) => {
+                        local_had_error.set();
+                        emit_type_error_diag(stores, tk);
+                        return None;
                     }
                 };
 
-            process_sig(&unresolved_sig.entry, &mut resolved_sig.entry);
-            process_sig(&unresolved_sig.exit, &mut resolved_sig.exit);
+                Some(partial_type)
+            };
+
+            for kind in &unresolved_sig.entry {
+                let (StackDefItemNameResolved::Stack(kind)
+                | StackDefItemNameResolved::Var { kind, .. }) = kind;
+
+                if let Some(new_kind) = process_sig(kind) {
+                    resolved_sig.entry.push(new_kind);
+                }
+            }
+
+            for kind in &unresolved_sig.exit {
+                if let Some(new_kind) = process_sig(kind) {
+                    resolved_sig.exit.push(new_kind);
+                }
+            }
 
             if local_had_error.into_bool() {
                 had_error.set();
@@ -97,38 +108,47 @@ pub fn resolve_signature(
 
             let mut local_had_error = ErrorSignal::new();
 
-            let mut process_sig = |unresolved: &[NameResolvedType], resolved: &mut Vec<TypeId>| {
-                for kind in unresolved {
-                    {
-                        let mut single_check_error = ErrorSignal::new();
-                        ensure_structs_declared_in_type(
-                            stores,
-                            pass_manager,
-                            &mut single_check_error,
-                            kind,
-                        );
-                        if single_check_error.into_bool() {
-                            local_had_error.set();
-                            continue;
-                        }
+            let mut process_sig = |kind: &NameResolvedType| {
+                {
+                    let mut single_check_error = ErrorSignal::new();
+                    ensure_structs_declared_in_type(
+                        stores,
+                        pass_manager,
+                        &mut single_check_error,
+                        kind,
+                    );
+                    if single_check_error.into_bool() {
+                        local_had_error.set();
+                        return None;
                     }
-
-                    let info = match stores.types.resolve_type(stores.strings, kind) {
-                        Ok(info) => info,
-                        Err(tk) => {
-                            local_had_error.set();
-                            dbg!();
-                            emit_type_error_diag(stores, tk);
-                            continue;
-                        }
-                    };
-
-                    resolved.push(info.id);
                 }
+
+                let info = match stores.types.resolve_type(stores.strings, kind) {
+                    Ok(info) => info,
+                    Err(tk) => {
+                        local_had_error.set();
+                        emit_type_error_diag(stores, tk);
+                        return None;
+                    }
+                };
+
+                Some(info.id)
             };
 
-            process_sig(&unresolved_sig.entry, &mut resolved_sig.entry);
-            process_sig(&unresolved_sig.exit, &mut resolved_sig.exit);
+            for kind in &unresolved_sig.entry {
+                let (StackDefItemNameResolved::Stack(kind)
+                | StackDefItemNameResolved::Var { kind, .. }) = kind;
+
+                if let Some(new_kind) = process_sig(kind) {
+                    resolved_sig.entry.push(new_kind);
+                }
+            }
+
+            for kind in &unresolved_sig.exit {
+                if let Some(new_kind) = process_sig(kind) {
+                    resolved_sig.exit.push(new_kind);
+                }
+            }
 
             if local_had_error.into_bool() {
                 had_error.set();

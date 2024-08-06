@@ -55,7 +55,7 @@ proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
 }
 
 proc fill(T) [
-    MMap(T)
+    MMap(T),
     T
 ] to [] {
     var val { T }
@@ -70,8 +70,8 @@ proc fill(T) [
 }
 
 proc copy(T) [
-    MMap(T) // Source
-    MMap(T) // Destination
+    MMap(T), // Source
+    MMap(T), // Destination
 ] to [] {
     if xtr(length) over(2) xtrd(length) != {
         "Mismatched length in copy - src: " std::term::ewrite
@@ -93,7 +93,7 @@ proc copy(T) [
 }
 
 proc mmap_file [
-    std::io::FD
+    std::io::FD,
     u64 // Protection flags. Must match the FD.
 ] to [Result(MMap(u8) u64)] {
     over std::fs::fstat

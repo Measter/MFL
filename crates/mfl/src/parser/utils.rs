@@ -9,11 +9,14 @@ use crate::{
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{BracketKind, IntegerBase, Token, TokenKind, TokenTree, TreeGroup},
     parser::matcher::{integer_tokens, Matcher},
-    stores::source::{SourceLocation, Spanned, WithSpan},
+    stores::{
+        signatures::StackDefItemUnresolved,
+        source::{SourceLocation, Spanned, WithSpan},
+    },
     Stores,
 };
 
-use super::matcher::{valid_type_token, ExpectedTokenMatcher, IsMatch};
+use super::matcher::{stack_def_tokens, valid_type_token, ExpectedTokenMatcher, IsMatch};
 
 pub type ParseOpResult = Result<(OpCode<UnresolvedOp>, SourceLocation), ()>;
 
@@ -686,6 +689,63 @@ pub fn parse_integer_param(
     Ok((count.with_span(count_token.location), delim.span()))
 }
 
+pub fn parse_proc_entry_stack_def(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    token_iter: &mut TokenIter,
+    prev_token: Spanned<Token>,
+) -> Spanned<Vec<StackDefItemUnresolved>> {
+    let fallback = TreeGroup::fallback(BracketKind::Square, prev_token);
+    let stack = token_iter
+        .expect_group(stores, BracketKind::Square, prev_token)
+        .with_kinds(stores, Matcher("ident", stack_def_tokens))
+        .recover(had_error, &fallback);
+
+    let mut token_iter = TokenIter::new(stack.tokens.iter());
+    let mut entries = Vec::new();
+    let mut prev_token = stack.first_token();
+
+    if !stack.tokens.is_empty() {
+        loop {
+            let (name, prev) = if token_iter.next_is_single(TokenKind::Variable) {
+                token_iter.next(); // Consume the var token.
+
+                let name_token = token_iter
+                    .expect_single(stores, TokenKind::Ident, prev_token.location)
+                    .recover(had_error, prev_token);
+
+                (Some(name_token.map(|t| t.lexeme)), name_token)
+            } else {
+                (None, prev_token)
+            };
+
+            let Ok((unresolved_type, last_token)) =
+                parse_unresolved_type(&mut token_iter, stores, prev.location, had_error)
+            else {
+                continue;
+            };
+
+            if let Some(name) = name {
+                entries.push(StackDefItemUnresolved::Var {
+                    name,
+                    kind: unresolved_type,
+                });
+            } else {
+                entries.push(StackDefItemUnresolved::Stack(unresolved_type));
+            };
+            prev_token = last_token;
+
+            if TrailingCommaResult::Break
+                == validate_trailing_comma(&mut token_iter, stores, had_error, "paramaters")
+            {
+                break;
+            }
+        }
+    }
+
+    entries.with_span(stack.span())
+}
+
 pub fn parse_stack_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
@@ -704,4 +764,44 @@ pub fn parse_stack_def(
             .recover(had_error, Vec::new());
 
     unresolved_types.with_span(stack_location)
+}
+
+#[derive(PartialEq, Eq)]
+pub enum TrailingCommaResult {
+    Break,
+    Continue,
+}
+
+pub fn validate_trailing_comma(
+    token_iter: &mut TokenIter,
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    kind_str: &str,
+) -> TrailingCommaResult {
+    let requires_end = if token_iter.next_is_single(TokenKind::Comma) {
+        token_iter.next();
+        false
+    } else {
+        true
+    };
+
+    let next = token_iter.peek();
+
+    if requires_end && token_iter.peek().is_some() {
+        let next = next.unwrap();
+        diagnostics::emit_error(
+            stores,
+            next.span(),
+            format!("expected end of {kind_str}, found `{}`", next.kind_str()),
+            [Label::new(next.span()).with_color(Color::Red)],
+            "You may be missing a comma".to_owned(),
+        );
+        had_error.set();
+    }
+
+    if next.is_none() {
+        TrailingCommaResult::Break
+    } else {
+        TrailingCommaResult::Continue
+    }
 }

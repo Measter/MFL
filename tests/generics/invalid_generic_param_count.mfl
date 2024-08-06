@@ -53,11 +53,11 @@ proc pack_NonGenericStruct [] to [] {
 }
 
 proc back_params_in_sig [
-    GenericStruct(u8 u32) // Too Many
-    GenericStruct(u8) // Exactly enough
-    GenericStruct     // Not enough
-    NonGenericStruct(u8) // Too many
-    NonGenericStruct // Exactly enough
+    GenericStruct(u8 u32), // Too Many
+    GenericStruct(u8), // Exactly enough
+    GenericStruct,     // Not enough
+    NonGenericStruct(u8), // Too many
+    NonGenericStruct, // Exactly enough
 ] to [] {
      drop(5)
 } 

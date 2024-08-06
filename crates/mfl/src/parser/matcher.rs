@@ -165,3 +165,33 @@ pub(super) fn attribute_tokens(tt: &TokenTree) -> IsMatch {
         _ => IsMatch::No(tt.kind_str(), tt.span()),
     }
 }
+
+pub(super) fn stack_def_tokens(tt: &TokenTree) -> IsMatch {
+    match tt {
+        TokenTree::Single(tk)
+            if matches!(
+                tk.inner.kind,
+                TokenKind::Ident
+                    | TokenKind::Integer { .. }
+                    | TokenKind::ColonColon
+                    | TokenKind::Ampersand
+                    | TokenKind::Star
+                    | TokenKind::Comma
+                    | TokenKind::Variable
+            ) =>
+        {
+            IsMatch::Yes
+        }
+
+        TokenTree::Group(tg)
+            if tg.bracket_kind == BracketKind::Paren || tg.bracket_kind == BracketKind::Square =>
+        {
+            let Some(invalid) = tg.tokens.iter().map(valid_type_token).find(|im| im.no()) else {
+                return IsMatch::Yes;
+            };
+            invalid
+        }
+
+        _ => IsMatch::No(tt.kind_str(), tt.span()),
+    }
+}

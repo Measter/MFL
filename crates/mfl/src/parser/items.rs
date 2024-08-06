@@ -12,6 +12,7 @@ use crate::{
     stores::{
         item::{ItemAttribute, ItemId, LangItem},
         ops::OpId,
+        signatures::StackDefItemUnresolved,
         source::Spanned,
     },
     Stores,
@@ -21,8 +22,9 @@ use super::{
     matcher::{attribute_tokens, valid_type_token, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
-        parse_ident, parse_multiple_unresolved_types, parse_stack_def, parse_unresolved_type,
-        TokenIter, TreeGroupResultExt,
+        parse_ident, parse_multiple_unresolved_types, parse_proc_entry_stack_def, parse_stack_def,
+        parse_unresolved_type, validate_trailing_comma, TokenIter, TrailingCommaResult,
+        TreeGroupResultExt,
     },
     Recover,
 };
@@ -221,7 +223,7 @@ pub fn parse_function(
         &fallback
     };
 
-    let entry_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
+    let entry_stack = parse_proc_entry_stack_def(stores, &mut had_error, token_iter, name_token);
 
     token_iter
         .expect_single(stores, TokenKind::GoesTo, name_token.location)
@@ -250,7 +252,7 @@ pub fn parse_function(
                 name_token.map(|t| t.lexeme),
                 parent_id,
                 attributes.attributes,
-                entry_stack,
+                entry_stack.clone(),
                 exit_stack,
             )
         } else {
@@ -260,7 +262,7 @@ pub fn parse_function(
                 name_token.map(|t| t.lexeme),
                 parent_id,
                 attributes.attributes,
-                entry_stack,
+                entry_stack.clone(),
                 exit_stack,
                 generic_params
                     .tokens
@@ -271,6 +273,22 @@ pub fn parse_function(
         };
 
         diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
+
+        for stack_def in entry_stack.inner {
+            let StackDefItemUnresolved::Var { name, kind } = stack_def else {
+                continue;
+            };
+
+            let (_, prev_def) = stores.items.new_variable(
+                stores.sigs,
+                &mut had_error,
+                name,
+                item_id,
+                FlagSet::default(),
+                kind,
+            );
+            diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
+        }
 
         if let Some(lang_item_id) = attributes.lang_item {
             stores.items.set_lang_item(lang_item_id, item_id);
@@ -473,30 +491,36 @@ pub fn parse_struct_or_union(
         });
         prev_token = last_token;
 
-        let requires_end = if field_iter.next_is_single(TokenKind::Comma) {
-            field_iter.next();
-            false
-        } else {
-            true
-        };
-
-        let next = field_iter.peek();
-
-        if requires_end && field_iter.peek().is_some() {
-            let next = next.unwrap();
-            diagnostics::emit_error(
-                stores,
-                next.span(),
-                format!("expected end of fields, found `{}`", next.kind_str()),
-                [Label::new(next.span()).with_color(Color::Red)],
-                None,
-            );
-            had_error.set();
-        }
-
-        if next.is_none() {
+        if TrailingCommaResult::Break
+            == validate_trailing_comma(&mut field_iter, stores, &mut had_error, "fields")
+        {
             break;
         }
+
+        // let requires_end = if field_iter.next_is_single(TokenKind::Comma) {
+        //     field_iter.next();
+        //     false
+        // } else {
+        //     true
+        // };
+
+        // let next = field_iter.peek();
+
+        // if requires_end && field_iter.peek().is_some() {
+        //     let next = next.unwrap();
+        //     diagnostics::emit_error(
+        //         stores,
+        //         next.span(),
+        //         format!("expected end of fields, found `{}`", next.kind_str()),
+        //         [Label::new(next.span()).with_color(Color::Red)],
+        //         None,
+        //     );
+        //     had_error.set();
+        // }
+
+        // if next.is_none() {
+        //     break;
+        // }
     }
 
     let struct_def = StructDef {

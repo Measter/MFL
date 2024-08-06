@@ -3,7 +3,9 @@ use hashbrown::HashMap;
 use item::{ItemAttribute, ItemId, ItemKind, ItemStore};
 use lasso::Spur;
 use ops::OpStore;
-use signatures::{SigStore, TypeResolvedItemSignature};
+use signatures::{
+    NameResolvedItemSignature, SigStore, StackDefItemNameResolved, TypeResolvedItemSignature,
+};
 use source::{SourceStore, WithSpan};
 use strings::StringStore;
 use tracing::{debug_span, trace};
@@ -466,6 +468,29 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
 
             old_alloc_map.insert(child_item_header.id, new_alloc_id);
         }
+
+        // Need to update the named parameters so codegen knows where to put the params.
+        let orig_name_resolved_sig = self.sigs.nrir.get_item_signature(base_fn_id).clone();
+        let mut new_name_resolved_sig = NameResolvedItemSignature {
+            exit: orig_name_resolved_sig.exit.clone(),
+            entry: Vec::new(),
+            generic_params: orig_name_resolved_sig.generic_params.clone(),
+        };
+
+        for entry in orig_name_resolved_sig.entry {
+            let new_entry = match entry {
+                StackDefItemNameResolved::Var { name, kind } => StackDefItemNameResolved::Var {
+                    name: old_alloc_map[&name],
+                    kind,
+                },
+                StackDefItemNameResolved::Stack(kind) => StackDefItemNameResolved::Stack(kind),
+            };
+
+            new_name_resolved_sig.entry.push(new_entry);
+        }
+        self.sigs
+            .nrir
+            .set_item_signature(new_proc_id, new_name_resolved_sig);
 
         let body = self.items.get_item_body(base_fn_id);
         let new_body = self.expand_generic_params_in_block(

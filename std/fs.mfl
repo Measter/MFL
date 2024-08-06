@@ -19,7 +19,7 @@ const FLAG_WRITEONLY [u64] { 0x1 }        // O_WRONLY
 const FLAG_READWRITE [u64] { 0x2 }        // O_RDWR
 
 proc open [
-    String  // Null-terminated path to the file
+    String,  // Null-terminated path to the file
     u64     // Flags for opening
 ] to [Result(FD u64)] {
     // The syscall requires a null-terminated string.
@@ -54,7 +54,7 @@ proc open_read [
 
 // Opens a file in read-write mode, creating the file if it doesn't exist.
 proc open_write [
-    String  // Null-terminated path
+    String,  // Null-terminated path
     bool    // Append if it already exists
 ] to [Result(FD u64)] {
     FLAG_READWRITE FLAG_CREATE or swap
@@ -65,7 +65,7 @@ proc open_write [
 // Opens a file in read-write mode, creating the file if it doesn't exist,
 // and truncating the file.
 proc create [
-    String // Null-terminated path
+    String, // Null-terminated path
     bool // Force new file.
 ] to [Result(FD u64)] {
     FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap

@@ -7,6 +7,7 @@ use crate::{
     stores::{
         item::{ItemId, ItemKind},
         ops::OpId,
+        signatures::StackDefItemNameResolved,
         source::Spanned,
         types::TypeKind,
         Stores,
@@ -153,14 +154,24 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
+        item_id: ItemId,
         op_id: OpId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
+        let sig = ds.sigs.nrir.get_item_signature(item_id);
 
         let params = function.get_param_iter();
-        for (id, param) in op_io.outputs().iter().zip(params) {
-            value_store.store_value(self, *id, param)?;
+        for ((id, entry_def), param) in op_io.outputs().iter().zip(&sig.entry).zip(params) {
+            match entry_def {
+                StackDefItemNameResolved::Var { name, .. } => {
+                    let var_ptr = value_store.variable_map[name];
+                    self.builder.build_store(var_ptr, param)?;
+                }
+                StackDefItemNameResolved::Stack(_) => {
+                    value_store.store_value(self, *id, param)?;
+                }
+            }
         }
 
         Ok(())

@@ -39,31 +39,31 @@ proc promote_call_f64 [f64] to [s64] {
     cast_to_int_f64
 }
 
-proc promote_test_add [f32 f64] to [f64] {
+proc promote_test_add [f32, f64] to [f64] {
     +
 }
 
-proc promote_test_sub [f32 f64] to [f64] {
+proc promote_test_sub [f32, f64] to [f64] {
     -
 }
 
-proc promote_test_mul [f32 f64] to [f64] {
+proc promote_test_mul [f32, f64] to [f64] {
     *
 }
 
-proc promote_test_div [f32 f64] to [f64] {
+proc promote_test_div [f32, f64] to [f64] {
     /
 }
 
-proc promote_test_rem [f32 f64] to [f64] {
+proc promote_test_rem [f32, f64] to [f64] {
     %
 }
 
-proc promote_test_eq [f32 f64] to [bool] {
+proc promote_test_eq [f32, f64] to [bool] {
     =
 }
 
-proc promote_test_less [f32 f64] to [bool] {
+proc promote_test_less [f32, f64] to [bool] {
     <
 }
 

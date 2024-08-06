@@ -11,7 +11,7 @@ struct WriteResult {
     errno u64,
 }
 
-proc write [FD String] to [WriteResult] {
+proc write [FD, String] to [WriteResult] {
     // [fd string]
     WRITE
     // [fd string sysid]
@@ -29,13 +29,13 @@ proc write [FD String] to [WriteResult] {
     WriteResult
 }
 
-proc writeln [FD String] to [WriteResult] {
+proc writeln [FD, String] to [WriteResult] {
     over swap write
     if xtr(errno) 0= { drop "\n" write }
     else { swap drop }
 }
 
-proc write_ui [FD u64] to [WriteResult] {
+proc write_ui [FD, u64] to [WriteResult] {
     var buf { u8[30] }
 
     // [num]
@@ -67,13 +67,13 @@ proc write_ui [FD u64] to [WriteResult] {
     String write
 }
 
-proc write_ui_ln [FD u64] to [WriteResult] {
+proc write_ui_ln [FD, u64] to [WriteResult] {
     over swap write_ui
     if xtr(errno) 0= { drop "\n" write }
     else { swap drop }
 }
 
-proc write_si [FD s64] to [WriteResult] {
+proc write_si [FD, s64] to [WriteResult] {
     // TODO: Properly handle min value.
 
     // [num]
@@ -88,13 +88,13 @@ proc write_si [FD s64] to [WriteResult] {
     write_ui
 }
 
-proc write_si_ln [FD s64] to [WriteResult] {
+proc write_si_ln [FD, s64] to [WriteResult] {
     over swap write_si
     if xtr(errno) 0= { drop "\n" write }
     else { swap drop }
 }
 
-proc write_bool [FD bool] to [WriteResult] {
+proc write_bool [FD, bool] to [WriteResult] {
     if {
         "true"
     } else {
@@ -103,7 +103,7 @@ proc write_bool [FD bool] to [WriteResult] {
     write
 }
 
-proc write_bool_ln [FD bool] to [WriteResult] {
+proc write_bool_ln [FD, bool] to [WriteResult] {
     over swap write_bool
     if xtr(errno) 0= {drop "\n" write}
     else {swap drop}

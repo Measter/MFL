@@ -14,7 +14,7 @@ struct SplitResult {
 // Splits the given string at the first instance of the given
 // character. Remaining string does not include the split char.
 proc split_front [
-    String
+    String,
     u8  // Char to split on
 ] to [
     SplitResult
@@ -127,7 +127,7 @@ proc trim [String] to [String] {
     trim_start trim_end
 }
 
-proc remove_start[String u64] to [String] {
+proc remove_start[String, u64] to [String] {
     if over xtrd(length) over< {
         "Cannot trim " std::term::ewrite
         std::term::ewrite_ui

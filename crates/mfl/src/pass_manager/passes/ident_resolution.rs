@@ -12,7 +12,7 @@ use crate::{
     stores::{
         block::BlockId,
         item::{ItemId, ItemKind, ItemStore},
-        signatures::NameResolvedItemSignature,
+        signatures::{NameResolvedItemSignature, StackDefItemNameResolved, StackDefItemUnresolved},
         source::{FileId, SourceLocation, Spanned, WithSpan},
         types::BuiltinTypes,
     },
@@ -461,34 +461,53 @@ pub fn resolve_signature(
 
             let mut local_had_error = ErrorSignal::new();
 
-            let mut process_sig =
-                |unresolved: &[Spanned<UnresolvedType>], resolved: &mut Vec<NameResolvedType>| {
-                    for kind in unresolved {
-                        let Ok(new_kind) = resolve_idents_in_type(
-                            stores,
-                            had_error,
-                            cur_id,
-                            &kind.inner,
-                            &generic_params,
-                        ) else {
-                            local_had_error.set();
+            let mut process_sig_kind = |stores: &mut Stores,
+                                        kind: &Spanned<UnresolvedType>|
+             -> Option<NameResolvedType> {
+                let Ok(new_kind) =
+                    resolve_idents_in_type(stores, had_error, cur_id, &kind.inner, &generic_params)
+                else {
+                    local_had_error.set();
+                    return None;
+                };
+
+                check_generic_param_length(stores, had_error, &new_kind, kind.location, false);
+                Some(new_kind)
+            };
+
+            for kind in &unresolved_sig.entry.inner {
+                let new_kind = match kind {
+                    StackDefItemUnresolved::Var { name, kind } => {
+                        let scope = stores.sigs.nrir.get_scope(cur_id);
+                        let Some(var_id) = scope.get_symbol(name.inner) else {
+                            panic!("ICE: Failed to find name of parameter variable")
+                        };
+
+                        let Some(new_kind) = process_sig_kind(stores, kind) else {
                             continue;
                         };
 
-                        check_generic_param_length(
-                            stores,
-                            had_error,
-                            &new_kind,
-                            kind.location,
-                            false,
-                        );
-
-                        resolved.push(new_kind);
+                        StackDefItemNameResolved::Var {
+                            name: var_id,
+                            kind: new_kind,
+                        }
+                    }
+                    StackDefItemUnresolved::Stack(kind) => {
+                        let Some(new_kind) = process_sig_kind(stores, kind) else {
+                            continue;
+                        };
+                        StackDefItemNameResolved::Stack(new_kind)
                     }
                 };
 
-            process_sig(&unresolved_sig.entry.inner, &mut resolved_sig.entry);
-            process_sig(&unresolved_sig.exit.inner, &mut resolved_sig.exit);
+                resolved_sig.entry.push(new_kind);
+            }
+
+            for kind in &unresolved_sig.exit.inner {
+                if let Some(new_kind) = process_sig_kind(stores, kind) {
+                    resolved_sig.exit.push(new_kind);
+                }
+            }
 
             if local_had_error.into_bool() {
                 had_error.set();
