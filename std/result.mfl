@@ -1,22 +1,22 @@
-union ResultPayload(T E) {
+union ResultPayload(T, E) {
     t T,
     e E,
 }
 
-struct Result(T E) {
+struct Result(T, E) {
     is_ok bool,
     data ResultPayload(T, E)
 }
 
-proc Ok(T E) [T] to [Result(T, E)] {
+proc Ok(T, E) [T] to [Result(T, E)] {
     true swap ResultPayload(T, E) Result
 }
 
-proc Err(T E) [E] to [Result(T, E)] {
+proc Err(T, E) [E] to [Result(T, E)] {
     false swap ResultPayload(T, E) Result
 }
 
-proc unwrap_ok(T E) [Result(T, E)] to [T] {
+proc unwrap_ok(T, E) [Result(T, E)] to [T] {
     unpack swap
     if {
         xtrd(t)
@@ -27,7 +27,7 @@ proc unwrap_ok(T E) [Result(T, E)] to [T] {
     }
 }
 
-proc unwrap_err(T E) [Result(T, E)] to [E] {
+proc unwrap_err(T, E) [Result(T, E)] to [E] {
     unpack swap
     if not {
         xtrd(e)

@@ -23,8 +23,8 @@ use super::{
     parse_item_body_contents,
     utils::{
         parse_ident, parse_multiple_unresolved_types, parse_proc_entry_stack_def, parse_stack_def,
-        parse_unresolved_type, validate_trailing_comma, TokenIter, TrailingCommaResult,
-        TreeGroupResultExt,
+        parse_unresolved_type, try_parse_generic_pramas, validate_trailing_comma, TokenIter,
+        TrailingCommaResult, TreeGroupResultExt,
     },
     Recover,
 };
@@ -213,23 +213,17 @@ pub fn parse_function(
         .expect_single(stores, TokenKind::Ident, attributes.last_token.location)
         .recover(&mut had_error, attributes.last_token);
 
-    let fallback = TreeGroup::fallback(BracketKind::Paren, name_token);
-    let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
-        token_iter
-            .expect_group(stores, BracketKind::Paren, name_token)
-            .with_kinds(stores, TokenKind::Ident)
-            .recover(&mut had_error, &fallback)
-    } else {
-        &fallback
-    };
+    let (generic_params, last_token) =
+        try_parse_generic_pramas(stores, &mut had_error, token_iter, name_token)
+            .recover(&mut had_error, (Vec::new(), name_token));
 
-    let entry_stack = parse_proc_entry_stack_def(stores, &mut had_error, token_iter, name_token);
+    let entry_stack = parse_proc_entry_stack_def(stores, &mut had_error, token_iter, last_token);
 
-    token_iter
+    let to_token = token_iter
         .expect_single(stores, TokenKind::GoesTo, name_token.location)
         .recover(&mut had_error, name_token);
 
-    let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, name_token);
+    let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, to_token);
 
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
@@ -245,7 +239,7 @@ pub fn parse_function(
         );
         diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
     } else {
-        let (item_id, prev_def) = if generic_params.tokens.is_empty() {
+        let (item_id, prev_def) = if generic_params.is_empty() {
             stores.items.new_function(
                 stores.sigs,
                 &mut had_error,
@@ -264,11 +258,7 @@ pub fn parse_function(
                 attributes.attributes,
                 entry_stack.clone(),
                 exit_stack,
-                generic_params
-                    .tokens
-                    .iter()
-                    .map(|t| t.unwrap_single().map(|t| t.lexeme))
-                    .collect(),
+                generic_params,
             )
         };
 
@@ -449,25 +439,13 @@ pub fn parse_struct_or_union(
         .expect_single(stores, TokenKind::Ident, attributes.last_token.location)
         .recover(&mut had_error, attributes.last_token);
 
-    let fallback = TreeGroup::fallback(BracketKind::Paren, name_token);
-    let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
-        let generic_idents = token_iter
-            .expect_group(stores, BracketKind::Paren, name_token)
-            .with_kinds(stores, TokenKind::Ident)
-            .recover(&mut had_error, &fallback);
+    let (generic_params, last_token) =
+        try_parse_generic_pramas(stores, &mut had_error, token_iter, name_token)
+            .recover(&mut had_error, (Vec::new(), name_token));
 
-        generic_idents
-            .tokens
-            .iter()
-            .map(|st| st.unwrap_single().map(|t| t.lexeme))
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);
+    let fallback = TreeGroup::fallback(BracketKind::Brace, last_token);
     let struct_body = token_iter
-        .expect_group(stores, BracketKind::Brace, name_token)
+        .expect_group(stores, BracketKind::Brace, last_token)
         .recover(&mut had_error, &fallback);
 
     let mut field_iter = TokenIter::new(struct_body.tokens.iter());

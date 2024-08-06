@@ -1,6 +1,7 @@
 use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use ariadne::{Color, Label};
+use lasso::Spur;
 use num_traits::{Float, PrimInt, Unsigned};
 
 use crate::{
@@ -770,6 +771,51 @@ pub fn parse_stack_def(
             .recover(had_error, Vec::new());
 
     unresolved_types.with_span(stack_location)
+}
+
+pub fn try_parse_generic_pramas(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    token_iter: &mut TokenIter,
+    prev_token: Spanned<Token>,
+) -> Result<(Vec<Spanned<Spur>>, Spanned<Token>), ()> {
+    if token_iter.next_is_group(BracketKind::Paren) {
+        let group = token_iter
+            .expect_group(stores, BracketKind::Paren, prev_token)
+            .with_kinds(
+                stores,
+                Matcher("generic params", |tk: Spanned<TokenKind>| {
+                    if let TokenKind::Ident | TokenKind::Comma = tk.inner {
+                        IsMatch::Yes
+                    } else {
+                        IsMatch::No(tk.inner.kind_str(), tk.location)
+                    }
+                }),
+            )?;
+
+        let mut params = Vec::new();
+        let mut token_iter = TokenIter::new(group.tokens.iter());
+        let mut prev_token = prev_token;
+
+        while token_iter.peek().is_some() {
+            let next = token_iter
+                .expect_single(stores, TokenKind::Ident, prev_token.location)
+                .recover(had_error, prev_token);
+
+            params.push(next.map(|t| t.lexeme));
+            prev_token = next;
+
+            if TrailingCommaResult::Break
+                == validate_trailing_comma(&mut token_iter, stores, had_error, "paramaters")
+            {
+                break;
+            }
+        }
+
+        Ok((params, group.last_token()))
+    } else {
+        Ok((Vec::new(), prev_token))
+    }
 }
 
 #[derive(PartialEq, Eq)]
