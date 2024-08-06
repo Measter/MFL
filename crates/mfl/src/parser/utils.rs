@@ -706,7 +706,7 @@ pub fn parse_proc_entry_stack_def(
     let mut prev_token = stack.first_token();
 
     if !stack.tokens.is_empty() {
-        loop {
+        while token_iter.peek().is_some() {
             let (name, prev) = if token_iter.next_is_single(TokenKind::Variable) {
                 token_iter.next(); // Consume the var token.
 
