@@ -24,7 +24,7 @@ proc single_pointer [Foo&] to [s32&] {
 }
 
 proc entry [] to [] {
-    var the_foo { Foo }
+    var the_foo Foo
     23 Bar Foo the_foo!
 
     the_foo.bar.a@ std::term::write_si_ln

@@ -5,6 +5,6 @@
 // END
 
 proc foo(T) [T] to [] {
-    var f { T }
+    var f T
     drop
 }

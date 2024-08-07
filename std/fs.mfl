@@ -105,7 +105,7 @@ struct Stat {
 }
 
 proc fstat [FD] to [Result(Stat, u64)] {
-    var buf { Stat }
+    var buf Stat
     xtrd(fd)
     SYS_FSTAT swap buf syscall(3) cast(s64)
     if dup 0< {

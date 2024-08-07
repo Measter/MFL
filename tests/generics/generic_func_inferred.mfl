@@ -5,7 +5,7 @@
 
 proc foo(T) [T] to [T] {}
 proc bar(T) [T] to [T] {
-    var a {T}
+    var a T
 
     dup a!
 }

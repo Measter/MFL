@@ -20,12 +20,12 @@ use crate::{
 };
 
 use super::{
-    matcher::{attribute_tokens, valid_type_token, IsMatch, Matcher},
+    matcher::{attribute_tokens, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
-        parse_ident, parse_multiple_unresolved_types, parse_proc_entry_stack_def, parse_stack_def,
-        parse_unresolved_type, try_parse_generic_pramas, validate_trailing_comma, TokenIter,
-        TrailingCommaResult, TreeGroupResultExt,
+        parse_ident, parse_proc_entry_stack_def, parse_stack_def, parse_unresolved_type,
+        try_parse_generic_pramas, validate_trailing_comma, TokenIter, TrailingCommaResult,
+        TreeGroupResultExt,
     },
     Recover,
 };
@@ -377,36 +377,12 @@ pub fn parse_variable(
         .expect_single(stores, TokenKind::Ident, attributes.last_token.location)
         .recover(&mut had_error, attributes.last_token);
 
-    let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);
-    let store_type = token_iter
-        .expect_group(stores, BracketKind::Brace, name_token)
-        .with_kinds(stores, Matcher("type", valid_type_token))
-        .recover(&mut had_error, &fallback);
-
-    let store_type_location = if store_type.tokens.is_empty() {
-        store_type.span()
-    } else {
-        let first = store_type.tokens.first().unwrap();
-        let last = store_type.tokens.last().unwrap();
-        first.span().merge(last.span())
+    let Ok((variable_type, _)) =
+        parse_unresolved_type(token_iter, stores, name_token.location, &mut had_error)
+    else {
+        had_error.forget();
+        return Err(());
     };
-
-    let mut unresolved_store_type =
-        parse_multiple_unresolved_types(stores, store_type.open.location, &store_type.tokens)
-            .recover(&mut had_error, Vec::new());
-
-    if unresolved_store_type.len() != 1 {
-        diagnostics::emit_error(
-            stores,
-            store_type_location,
-            format!("expected 1 type, found {}", unresolved_store_type.len()),
-            [Label::new(store_type_location).with_color(Color::Red)],
-            None,
-        );
-        had_error.set();
-    }
-
-    let variable_type = unresolved_store_type.pop().unwrap();
 
     let (_, prev_def) = stores.items.new_variable(
         stores.sigs,

@@ -23,11 +23,11 @@ struct BadParamInField {
     e NonGenericStruct(), // Exactly right
 }
 
-var GenericStructTooMany { GenericStruct(u8, u32) }
-var GenericStructExactlyRight { GenericStruct(u8) }
-var GenericStructNotEnough { GenericStruct }
-var NonGenericStructTooMany { NonGenericStruct(u8) }
-var NonGenericStructExactlyRight { NonGenericStruct }
+var GenericStructTooMany GenericStruct(u8, u32)
+var GenericStructExactlyRight GenericStruct(u8)
+var GenericStructNotEnough GenericStruct
+var NonGenericStructTooMany NonGenericStruct(u8)
+var NonGenericStructExactlyRight NonGenericStruct
 
 proc call_generic_function [] to [] {
     5 generic_function(u8, u32) drop // Too many
