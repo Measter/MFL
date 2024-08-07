@@ -65,7 +65,6 @@ fn is_newline(lex: &mut Lexer<'_, TokenKind>) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
 #[logos(extras = Context)]
-#[logos(skip "//[^\n]*")]
 pub enum TokenKind {
     #[regex("[\t\n\r ]", is_newline)]
     // Never actually emitted, but we need it for the match logic.
@@ -112,6 +111,9 @@ pub enum TokenKind {
 
     #[token("::")]
     ColonColon,
+
+    #[regex("//[^\n]*")]
+    Comment,
 
     #[token("const")]
     Const,
@@ -297,6 +299,7 @@ impl TokenKind {
             TokenKind::Char(_) => "character literal",
             TokenKind::ColonColon => "::'",
             TokenKind::Const => "const",
+            TokenKind::Comment => "comment",
             TokenKind::Comma => ",",
             TokenKind::Div => "/",
             TokenKind::Dot => ".",

@@ -170,6 +170,7 @@ pub(crate) fn lex_file(
                     .unwrap_or(&mut token_tree_stream);
                 stream.push(tt_val);
             }
+            TokenKind::Comment => continue,
             _ => {
                 let stream = token_tree_group_stack
                     .last_mut()

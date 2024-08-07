@@ -211,7 +211,8 @@ impl Backend {
                 }
                 Ok(token) => {
                     let legend = match token.inner.kind {
-                        // Must add comments to TokenKind
+                        // Comment
+                        TokenKind::Comment => Legend::Comment,
 
                         // String
                         TokenKind::Char(_) | TokenKind::String(_) | TokenKind::Here(_) => {
