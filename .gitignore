@@ -3,6 +3,7 @@
 !/examples/*.mfl
 /vendor
 /obj
+/crates/lsp_client/node_modules
 
 Cargo.lock
 *.asm

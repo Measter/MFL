@@ -1,0 +1,11 @@
+[package]
+name = "mfl-lsp-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ariadne = { path = "../../../ariadne" }
+lexer = { path = "../lexer" }
+stores = { path = "../stores" }
+tokio = { version = "1.17.0", features = ["full"] }
+tower-lsp = "0.20.0"

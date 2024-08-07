@@ -5,6 +5,7 @@ members = [
     "crates/tester",
     "crates/lexer",
     "crates/stores",
+    "crates/lsp_server",
 ]
 resolver = "2"
 

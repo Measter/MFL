@@ -1,0 +1,67 @@
+{
+    "name": "mfl2",
+    "displayName": "MFL 2",
+    "publisher": "me",
+    "description": "",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "enabledApiProposals": [],
+    "main": "./target/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "mfl",
+                "aliases": [
+                    "MFL",
+                    "mfl"
+                ],
+                "extensions": [
+                    ".mfl"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "mfl-language-server",
+            "properties": {
+                "nrs-language-server.trace.server": {
+                    "type": "string",
+                    "scope": "window",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "enumDescriptions": [
+                        "No traces",
+                        "Error only",
+                        "Full log"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the language server."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "package": "vsce package --no-dependencies"
+    },
+    "devDependencies": {
+        "@types/node": "^17.0.18",
+        "@types/vscode": "1.85.0",
+        "vscode-test": "^1.3.0",
+        "@typescript-eslint/eslint-plugin": "^4.16.0",
+        "@typescript-eslint/parser": "^4.16.0",
+        "eslint": "^7.21.0",
+        "typescript": "^4.4.3"
+    },
+    "dependencies": {
+        "vscode-languageclient": "9.0.1"
+    }
+}

@@ -135,13 +135,13 @@ impl SourceStore {
     }
 
     #[inline]
-    pub fn source(&self, id: FileId) -> &str {
-        &self.files[id.0.to_usize()].contents
+    pub fn source(&self, id: FileId) -> &Source {
+        &self.files[id.0.to_usize()].source
     }
 
     #[inline]
     pub fn get_str(&self, loc: SourceLocation) -> &str {
-        let source = self.source(loc.file_id);
+        let source = &self.files[loc.file_id.0.to_usize()].contents;
         let range = loc.start()..loc.end();
         &source[range]
     }
