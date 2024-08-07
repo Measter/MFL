@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::Path};
 
 use ariadne::Span;
-use lexer::TokenKind;
+use lexer::{Token, TokenKind};
 use stores::{
-    source::{SourceLocation, SourceStore},
+    source::{SourceLocation, SourceStore, Spanned},
     strings::StringStore,
 };
 use tokio::sync::Mutex;
@@ -51,6 +51,13 @@ struct Stores {
     semantic_token_map: HashMap<String, Vec<IncompleteSemanticToken>>,
     source_store: SourceStore,
     string_store: StringStore,
+}
+
+fn is_primitive(string_store: &StringStore, token: Spanned<Token>) -> bool {
+    matches!(
+        string_store.resolve(token.inner.lexeme),
+        "u8" | "s8" | "u16" | "s16" | "u32" | "s32" | "u64" | "s64" | "f32" | "f64" | "bool"
+    )
 }
 
 struct Backend {
@@ -258,6 +265,7 @@ impl Backend {
                         | TokenKind::Star => Legend::Operator,
 
                         // Type
+                        TokenKind::Ident if is_primitive(string_store, token) => Legend::Type,
 
                         // Function
                         TokenKind::Drop
