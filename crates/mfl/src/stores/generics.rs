@@ -176,78 +176,14 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
         self.blocks.new_block(new_body)
     }
 
-    pub fn get_generic_function_instance(
+    fn instantiate_variables(
         &mut self,
+        base_fn_id: ItemId,
+        new_proc_id: ItemId,
         pass_manager: &mut PassManager,
         had_error: &mut ErrorSignal,
-        base_fn_id: ItemId,
-        resolved_generic_params: &[TypeId],
-    ) -> Result<ItemId, ()> {
-        if let Some(id) = self
-            .items
-            .get_cached_generic_function(base_fn_id, resolved_generic_params)
-        {
-            return Ok(id);
-        }
-
-        let _span = debug_span!(stringify!(get_generic_function_instance)).entered();
-        trace!(?base_fn_id, ?resolved_generic_params,);
-
-        // We need to make sure the generic function has been partially type-resolved before this step.
-        let resolve_res = pass_manager.ensure_partially_resolve_types(self, base_fn_id);
-        if resolve_res.is_err() {
-            had_error.set();
-            return Err(());
-        }
-
-        let base_fd_params = self.items.get_function_template_paramaters(base_fn_id);
-        let base_header = self.items.get_item_header(base_fn_id);
-        assert_eq!(resolved_generic_params.len(), base_fd_params.len());
-
-        let param_map: HashMap<_, _> = base_fd_params
-            .iter()
-            .zip(resolved_generic_params)
-            .map(|(name, ty)| (name.inner, *ty))
-            .collect();
-
-        // Essentially we need to do what the parser does what in encounters a non-generic function.
-        let orig_unresolved_sig = self.sigs.urir.get_item_signature(base_fn_id).clone();
-        let partial_type_resolved_sig = self.sigs.trir.get_partial_item_signature(base_fn_id);
-        let mut instantiated_sig = TypeResolvedItemSignature {
-            exit: Vec::new(),
-            entry: Vec::new(),
-            generic_params: resolved_generic_params.to_owned(),
-        };
-
-        for stack_item in &partial_type_resolved_sig.exit {
-            // let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
-            let new_id = self
-                .types
-                .resolve_generic_type(self.strings, stack_item, &param_map);
-            instantiated_sig.exit.push(new_id);
-        }
-
-        for stack_item in &partial_type_resolved_sig.entry {
-            let new_id = self
-                .types
-                .resolve_generic_type(self.strings, stack_item, &param_map);
-            instantiated_sig.entry.push(new_id);
-        }
-
-        let new_proc_id = self.items.new_function_generic_instance(
-            self.sigs,
-            base_header.name.inner.with_span(base_header.name.location),
-            base_header.parent.unwrap(),
-            base_header.attributes,
-            orig_unresolved_sig.entry,
-            orig_unresolved_sig.exit,
-        );
-        trace!(?new_proc_id);
-        self.sigs
-            .trir
-            .set_item_signature(new_proc_id, instantiated_sig);
-
-        // Clone the variable items.
+        param_map: &HashMap<Spur, TypeId>,
+    ) -> HashMap<ItemId, ItemId> {
         let base_scope = self.sigs.nrir.get_scope(base_fn_id).clone();
         let mut old_alloc_map = HashMap::new();
         for (&child_name, &child_item) in base_scope.get_child_items() {
@@ -287,7 +223,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
                 .get_partial_variable_type(child_item_header.id);
             let new_variable_sig =
                 self.types
-                    .resolve_generic_type(self.strings, alloc_type, &param_map);
+                    .resolve_generic_type(self.strings, alloc_type, param_map);
             self.sigs
                 .trir
                 .set_variable_type(new_alloc_id, new_variable_sig);
@@ -299,8 +235,44 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
 
             old_alloc_map.insert(child_item_header.id, new_alloc_id);
         }
+        old_alloc_map
+    }
 
-        // Need to update the named parameters so codegen knows where to put the params.
+    fn type_resolve_generic_signature(
+        &mut self,
+        base_fn_id: ItemId,
+        resolved_generic_params: &[TypeId],
+        param_map: &HashMap<Spur, TypeId>,
+    ) -> TypeResolvedItemSignature {
+        let partial_type_resolved_sig = self.sigs.trir.get_partial_item_signature(base_fn_id);
+        let mut instantiated_sig = TypeResolvedItemSignature {
+            exit: Vec::new(),
+            entry: Vec::new(),
+            generic_params: resolved_generic_params.to_owned(),
+        };
+
+        for stack_item in &partial_type_resolved_sig.exit {
+            // let new_id = self.expand_generic_params_in_type(stack_item, &param_map);
+            let new_id = self
+                .types
+                .resolve_generic_type(self.strings, stack_item, param_map);
+            instantiated_sig.exit.push(new_id);
+        }
+
+        for stack_item in &partial_type_resolved_sig.entry {
+            let new_id = self
+                .types
+                .resolve_generic_type(self.strings, stack_item, param_map);
+            instantiated_sig.entry.push(new_id);
+        }
+        instantiated_sig
+    }
+
+    fn create_name_resolved_signature(
+        &mut self,
+        base_fn_id: ItemId,
+        old_alloc_map: &HashMap<ItemId, ItemId>,
+    ) -> NameResolvedItemSignature {
         let orig_name_resolved_sig = self.sigs.nrir.get_item_signature(base_fn_id).clone();
         let mut new_name_resolved_sig = NameResolvedItemSignature {
             exit: orig_name_resolved_sig.exit.clone(),
@@ -319,6 +291,71 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
 
             new_name_resolved_sig.entry.push(new_entry);
         }
+        new_name_resolved_sig
+    }
+
+    pub fn get_generic_function_instance(
+        &mut self,
+        pass_manager: &mut PassManager,
+        had_error: &mut ErrorSignal,
+        base_fn_id: ItemId,
+        resolved_generic_params: &[TypeId],
+    ) -> Result<ItemId, ()> {
+        if let Some(id) = self
+            .items
+            .get_cached_generic_function(base_fn_id, resolved_generic_params)
+        {
+            return Ok(id);
+        }
+
+        let _span = debug_span!(stringify!(get_generic_function_instance)).entered();
+        trace!(?base_fn_id, ?resolved_generic_params,);
+
+        // We need to make sure the generic function has been partially type-resolved before this step.
+        let resolve_res = pass_manager.ensure_partially_resolve_types(self, base_fn_id);
+        if resolve_res.is_err() {
+            had_error.set();
+            return Err(());
+        }
+
+        let base_fd_params = self.items.get_function_template_paramaters(base_fn_id);
+        let base_header = self.items.get_item_header(base_fn_id);
+        assert_eq!(resolved_generic_params.len(), base_fd_params.len());
+
+        let param_map: HashMap<_, _> = base_fd_params
+            .iter()
+            .zip(resolved_generic_params)
+            .map(|(name, ty)| (name.inner, *ty))
+            .collect();
+
+        // Essentially we need to do what the parser does what in encounters a non-generic function.
+        let orig_unresolved_sig = self.sigs.urir.get_item_signature(base_fn_id).clone();
+        let instantiated_sig =
+            self.type_resolve_generic_signature(base_fn_id, resolved_generic_params, &param_map);
+
+        let new_proc_id = self.items.new_function_generic_instance(
+            self.sigs,
+            base_header.name.inner.with_span(base_header.name.location),
+            base_header.parent.unwrap(),
+            base_header.attributes,
+            orig_unresolved_sig.entry,
+            orig_unresolved_sig.exit,
+        );
+        trace!(?new_proc_id);
+        self.sigs
+            .trir
+            .set_item_signature(new_proc_id, instantiated_sig);
+
+        let old_alloc_map = self.instantiate_variables(
+            base_fn_id,
+            new_proc_id,
+            pass_manager,
+            had_error,
+            &param_map,
+        );
+
+        // Need to update the named parameters so codegen knows where to put the params.
+        let new_name_resolved_sig = self.create_name_resolved_signature(base_fn_id, &old_alloc_map);
         self.sigs
             .nrir
             .set_item_signature(new_proc_id, new_name_resolved_sig);
