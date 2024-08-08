@@ -326,15 +326,15 @@ pub(crate) fn analyze_if(
         );
     }
 
-    let Some(merges) = stores.values.get_if_merges(op_id).cloned() else {
+    let Some(merges) = stores.values.get_merge_values(op_id).cloned() else {
         panic!("ICE: Missing merges in If block")
     };
 
     for merge_pair in merges {
-        let [then_value_info] = stores.values.values([merge_pair.then_value]);
+        let [then_value_info] = stores.values.values([merge_pair.a_in]);
         let Some([then_type_id, else_type_id]) = stores
             .values
-            .value_types([merge_pair.then_value, merge_pair.else_value])
+            .value_types([merge_pair.a_in, merge_pair.b_in])
         else {
             continue;
         };
@@ -356,8 +356,8 @@ pub(crate) fn analyze_if(
                 let labels = diagnostics::build_creator_label_chain(
                     stores,
                     [
-                        (merge_pair.then_value, 0, then_type_name),
-                        (merge_pair.else_value, 1, else_type_name),
+                        (merge_pair.a_in, 0, then_type_name),
+                        (merge_pair.b_in, 1, else_type_name),
                     ],
                     Color::Yellow,
                     Color::Cyan,
@@ -377,9 +377,7 @@ pub(crate) fn analyze_if(
             _ => then_type_id,
         };
 
-        stores
-            .values
-            .set_value_type(merge_pair.output_value, final_type_id);
+        stores.values.set_value_type(merge_pair.out, final_type_id);
     }
 }
 
@@ -403,39 +401,39 @@ pub(crate) fn analyze_while(
         );
     }
 
-    let Some(merge_info) = stores.values.get_while_merges(op_id).cloned() else {
+    let Some(merge_values) = stores.values.get_merge_values(op_id).cloned() else {
         panic!("ICE: While block should have merge info");
     };
 
     // Unlike the If-block handling above, this is not setting the type, only checking that
     // they are compatible.
-    for merge_pair in merge_info.condition.iter().chain(&merge_info.body) {
-        let [condition_value_info] = stores.values.values([merge_pair.condition_value]);
-        let Some([pre_type_id, condition_type_id]) = stores
+    for merge_pair in merge_values {
+        let [b_in_value_info] = stores.values.values([merge_pair.b_in]);
+        let Some([a_in_type_id, b_in_type_id]) = stores
             .values
-            .value_types([merge_pair.pre_value, merge_pair.condition_value])
+            .value_types([merge_pair.a_in, merge_pair.b_in])
         else {
             continue;
         };
 
-        let pre_type_info = stores.types.get_type_info(pre_type_id);
-        let condition_type_info = stores.types.get_type_info(condition_type_id);
+        let a_in_type_info = stores.types.get_type_info(a_in_type_id);
+        let b_in_type_info = stores.types.get_type_info(b_in_type_id);
 
-        if pre_type_id != condition_type_id
+        if a_in_type_id != b_in_type_id
             && !matches!(
-                (pre_type_info.kind, condition_type_info.kind),
-                (TypeKind::Integer(pre_int), TypeKind::Integer(condition_int))
-                if can_promote_int_unidirectional(condition_int, pre_int)
+                (a_in_type_info.kind, b_in_type_info.kind),
+                (TypeKind::Integer(a_in_int), TypeKind::Integer(b_in_int))
+                if can_promote_int_unidirectional(b_in_int, a_in_int)
             )
         {
-            let pre_type_name = stores.strings.resolve(pre_type_info.friendly_name);
-            let condition_type_name = stores.strings.resolve(condition_type_info.friendly_name);
+            let a_in_type_name = stores.strings.resolve(a_in_type_info.friendly_name);
+            let b_in_type_name = stores.strings.resolve(b_in_type_info.friendly_name);
 
             let labels = diagnostics::build_creator_label_chain(
                 stores,
                 [
-                    (merge_pair.pre_value, 0, pre_type_name),
-                    (merge_pair.condition_value, 1, condition_type_name),
+                    (merge_pair.a_in, 0, a_in_type_name),
+                    (merge_pair.b_in, 1, b_in_type_name),
                 ],
                 Color::Yellow,
                 Color::Cyan,
@@ -443,14 +441,17 @@ pub(crate) fn analyze_while(
 
             diagnostics::emit_error(
                 stores,
-                condition_value_info.source_location,
-                "while loop condition or body may not change types on the stack",
+                b_in_value_info.source_location,
+                "while loop body may not change types on the stack",
                 labels,
                 None,
             );
 
             had_error.set();
         }
+
+        // Our output type is the same as a_in because the body can't change the existing type.
+        stores.values.set_value_type(merge_pair.out, a_in_type_id);
     }
 }
 

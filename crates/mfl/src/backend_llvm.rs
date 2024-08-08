@@ -723,26 +723,22 @@ impl<'ctx> CodeGen<'ctx> {
         for op_id in block.ops {
             match ds.ops.get_type_resolved(op_id).clone() {
                 OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                    let Some(op_merges) = ds.values.get_if_merges(op_id).cloned() else {
+                    let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
                         panic!("ICE: If block doesn't have merge info");
                     };
                     for merge in op_merges {
-                        make_variable(ds, merge.output_value, self, merge_pair_map)?;
+                        make_variable(ds, merge.out, self, merge_pair_map)?;
                     }
 
                     self.build_merge_variables(ds, if_op.then_block, merge_pair_map)?;
                     self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
                 }
                 OpCode::Basic(Basic::Control(Control::While(while_op))) => {
-                    let Some(op_merges) = ds.values.get_while_merges(op_id).cloned() else {
+                    let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
                         panic!("ICE: While block doesn't have merge info");
                     };
-                    for merge in &op_merges.condition {
-                        make_variable(ds, merge.pre_value, self, merge_pair_map)?;
-                    }
-
-                    for merge in &op_merges.body {
-                        make_variable(ds, merge.pre_value, self, merge_pair_map)?;
+                    for merge in &op_merges {
+                        make_variable(ds, merge.out, self, merge_pair_map)?;
                     }
 
                     self.build_merge_variables(ds, while_op.condition, merge_pair_map)?;

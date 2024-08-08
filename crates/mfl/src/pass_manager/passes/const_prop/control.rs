@@ -99,13 +99,3 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
         },
     );
 }
-
-pub(crate) fn analyze_while(stores: &mut Stores, op_id: OpId) {
-    // Because the while loop may overwrite pre-values, we need to clear their
-    // const values if they have any.
-
-    let merges = stores.values.get_while_merges(op_id).unwrap().clone();
-    for merge in merges.condition.into_iter().chain(merges.body) {
-        stores.values.clear_value_const(merge.pre_value);
-    }
-}

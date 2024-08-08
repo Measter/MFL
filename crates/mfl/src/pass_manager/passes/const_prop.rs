@@ -69,7 +69,10 @@ fn analyze_block(
                     }
 
                     // Nothing to do here.
-                    Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
+                    Control::Exit
+                    | Control::Prologue
+                    | Control::SysCall { .. }
+                    | Control::While(_) => {}
                     Control::If(if_op) => {
                         if stores.blocks.is_terminal(if_op.else_block)
                             && stores.blocks.is_terminal(if_op.then_block)
@@ -77,7 +80,6 @@ fn analyze_block(
                             break;
                         }
                     }
-                    Control::While(_) => control::analyze_while(stores, op_id),
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {

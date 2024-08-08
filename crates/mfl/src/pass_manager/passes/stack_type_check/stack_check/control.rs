@@ -9,13 +9,14 @@ use tracing::trace;
 use crate::{
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
-    ir::{If, While},
+    ir::{Basic, Control, If, OpCode, While},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
+        block::BlockId,
         ops::OpId,
         signatures::StackDefItemUnresolved,
-        values::{IfMerge, ValueId, WhileMerge, WhileMerges},
+        values::{MergeValue, ValueId},
     },
     Stores,
 };
@@ -318,17 +319,17 @@ pub(crate) fn analyze_if(
                 "defining merge for IF"
             );
 
-            body_merges.push(IfMerge {
-                then_value: then_value_id,
-                else_value: *else_value_id,
-                output_value: output_value_id,
+            body_merges.push(MergeValue {
+                a_in: then_value_id,
+                b_in: *else_value_id,
+                out: output_value_id,
             });
             *else_value_id = output_value_id;
         }
     }
 
     stores.ops.set_op_io(op_id, &condition_values, &[]);
-    stores.values.set_if_merges(op_id, body_merges);
+    stores.values.set_merge_values(op_id, body_merges);
 }
 
 pub(crate) fn analyze_while(
@@ -372,53 +373,7 @@ pub(crate) fn analyze_while(
         stack.push(stores.values.new_value(op_loc, None));
     }
     let condition_value = stack.pop().unwrap();
-
-    // The condition cannot be allowed to otherwise change the depth of the stack, as it could be
-    // executed an arbitrary number of times.
-    // TODO: Allow the condition to alter the stack, as long as the body restores it.
-    if stack.len() != pre_condition_stack.len() {
-        generate_stack_length_mismatch_diag(
-            stores,
-            op_loc,
-            while_op.tokens.do_token,
-            stack.len(),
-            pre_condition_stack.len(),
-            None,
-        );
-
-        had_error.set();
-
-        // Pad the stack out to the expected length so the rest of the logict makes sense.
-        for _ in 0..(pre_condition_stack.len()).saturating_sub(stack.len()) {
-            stack.push(stores.values.new_value(op_loc, None));
-        }
-    }
-
-    let mut condition_merges = SmallVec::new();
-
-    // Now we need to see which value IDs have been changed.
-    for (&pre_value_id, &condition_value_id) in pre_condition_stack
-        .iter()
-        .zip(&*stack)
-        .filter(|(a, b)| a != b)
-    {
-        {
-            trace!(
-                ?condition_value_id,
-                ?pre_value_id,
-                "defining merges for While condition"
-            );
-
-            condition_merges.push(WhileMerge {
-                pre_value: pre_value_id,
-                condition_value: condition_value_id,
-            });
-        }
-    }
-
-    // Because the condition cannot change the stack state, we'll just restore to the pre-condition stack for the body.
-    stack.clear();
-    stack.extend_from_slice(&pre_condition_stack);
+    let post_condition_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
 
     // Now do the same, but with the body.
     super::super::analyze_block(
@@ -431,7 +386,7 @@ pub(crate) fn analyze_while(
         max_stack_depth,
     );
 
-    // Again, the body cannot change the depth of the stack.
+    // The body must restore the stack to the length prior to the condition's execution.
     if stack.len() != pre_condition_stack.len() {
         generate_stack_length_mismatch_diag(
             stores,
@@ -450,35 +405,82 @@ pub(crate) fn analyze_while(
         }
     }
 
-    let mut body_merges = SmallVec::new();
-    for (&pre_value_id, &condition_value_id) in pre_condition_stack
+    // Now we look for how the values on the stack have changed relative to the condition's execution,
+    // and define merge values for the changes.
+    let mut while_merges = Vec::new();
+    for (&pre_condition_value_id, &post_body_value_id) in pre_condition_stack
         .iter()
         .zip(&*stack)
         .filter(|(a, b)| a != b)
     {
+        let merged_value_id = stores.values.new_value(op_loc, None);
         trace!(
-            ?condition_value_id,
-            ?pre_value_id,
-            "defining merge for While body"
+            ?pre_condition_value_id,
+            ?post_body_value_id,
+            ?merged_value_id,
+            "defining merge for While"
         );
 
-        body_merges.push(WhileMerge {
-            pre_value: pre_value_id,
-            condition_value: condition_value_id,
+        while_merges.push(MergeValue {
+            a_in: pre_condition_value_id,
+            b_in: post_body_value_id,
+            out: merged_value_id,
         });
     }
 
-    // Need to revert the stack to before the loop executed.
-    stack.clear();
-    stack.extend_from_slice(&pre_condition_stack);
+    // Now we need to fix up ops in both the condition and the body to refer to merge values instead of pre-condition
+    // values.
+    fixup_op_input_values(stores, while_op.condition, &while_merges);
+    fixup_op_input_values(stores, while_op.body_block, &while_merges);
 
-    stores.values.set_while_merges(
-        op_id,
-        WhileMerges {
-            condition: condition_merges,
-            body: body_merges,
-        },
-    );
+    // Need to revert the stack to after the condition executed, but fixup merge values.
+    stack.clear();
+    for value_id in post_condition_stack {
+        // Technically N^2, but the list should be small.
+        if let Some(output_id) = while_merges.iter().find(|m| m.a_in == value_id) {
+            stack.push(output_id.out);
+        } else {
+            stack.push(value_id);
+        }
+    }
+
+    stores.values.set_merge_values(op_id, while_merges);
     stores.ops.set_op_io(op_id, &[condition_value], &[]);
     stores.values.consume_value(condition_value, op_id);
+}
+
+fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[MergeValue]) {
+    let block = stores.blocks.get_block(block_id).clone();
+    for &op_id in &block.ops {
+        let op_io = stores.ops.get_op_io(op_id);
+        let mut new_op_inputs = SmallVec::<[ValueId; 8]>::new();
+        let mut changed = false;
+
+        for &input_value_id in &op_io.inputs {
+            // Technically N^2, but the list should be small.
+            if let Some(output_id) = merges.iter().find(|m| m.a_in == input_value_id) {
+                new_op_inputs.push(output_id.out);
+                changed = true;
+            } else {
+                new_op_inputs.push(input_value_id);
+            }
+        }
+
+        if changed {
+            stores.ops.update_op_inputs(op_id, &new_op_inputs);
+        }
+
+        match stores.ops.get_type_resolved(op_id).clone() {
+            OpCode::Basic(Basic::Control(Control::While(while_op))) => {
+                fixup_op_input_values(stores, while_op.condition, merges);
+                fixup_op_input_values(stores, while_op.body_block, merges);
+            }
+            OpCode::Basic(Basic::Control(Control::If(if_op))) => {
+                fixup_op_input_values(stores, if_op.condition, merges);
+                fixup_op_input_values(stores, if_op.then_block, merges);
+                fixup_op_input_values(stores, if_op.else_block, merges);
+            }
+            _ => {}
+        }
+    }
 }

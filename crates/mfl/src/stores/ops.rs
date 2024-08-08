@@ -147,4 +147,16 @@ impl OpStore {
     pub fn get_op_io(&self, op_idx: OpId) -> &OpIoValues {
         &self.op_io[&op_idx]
     }
+
+    #[inline]
+    #[track_caller]
+    pub fn update_op_inputs(&mut self, op_idx: OpId, inputs: &[ValueId]) {
+        let existing = self
+            .op_io
+            .get_mut(&op_idx)
+            .expect("ICE: Updated non-existant OP IO");
+
+        existing.inputs.clear();
+        existing.inputs.extend_from_slice(inputs);
+    }
 }

@@ -276,17 +276,14 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Transfering to merge vars for {:?}", op_id);
         if !ds.blocks.is_terminal(if_op.then_block) {
-            let Some(merges) = ds.values.get_if_merges(op_id).cloned() else {
+            let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
-                let type_ids = ds
-                    .values
-                    .value_types([merge.then_value, merge.output_value])
-                    .unwrap();
+                let type_ids = ds.values.value_types([merge.a_in, merge.out]).unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.then_value, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(then_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -299,7 +296,7 @@ impl<'ctx> CodeGen<'ctx> {
                     data
                 };
 
-                value_store.store_value(self, merge.output_value, data)?;
+                value_store.store_value(self, merge.out, data)?;
             }
 
             if let Some(post_block) = post_basic_block {
@@ -314,17 +311,14 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Transfering to merge vars for {:?}", op_id);
         if !ds.blocks.is_terminal(if_op.else_block) {
-            let Some(merges) = ds.values.get_if_merges(op_id).cloned() else {
+            let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
                 panic!("ICE: If block doesn't have merges");
             };
             for merge in merges {
-                let type_ids = ds
-                    .values
-                    .value_types([merge.else_value, merge.output_value])
-                    .unwrap();
+                let type_ids = ds.values.value_types([merge.b_in, merge.out]).unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.else_value, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
 
                 let data = if let [TypeKind::Integer(else_int), TypeKind::Integer(output_int)] =
                     type_info_kinds
@@ -337,7 +331,7 @@ impl<'ctx> CodeGen<'ctx> {
                     data
                 };
 
-                value_store.store_value(self, merge.output_value, data)?;
+                value_store.store_value(self, merge.out, data)?;
             }
 
             if let Some(post_block) = post_basic_block {
@@ -363,6 +357,7 @@ impl<'ctx> CodeGen<'ctx> {
         while_op: &While,
     ) -> InkwellResult {
         let current_block = self.builder.get_insert_block().unwrap();
+
         let condition_block = self
             .ctx
             .append_basic_block(function, &format!("while_{op_id}_condition"));
@@ -374,41 +369,39 @@ impl<'ctx> CodeGen<'ctx> {
             .append_basic_block(function, &format!("while_{op_id}_post"));
 
         self.builder.position_at_end(current_block);
-        self.builder.build_unconditional_branch(condition_block)?;
-
-        trace!("Compiling condition for {:?}", op_id);
-        self.builder.position_at_end(condition_block);
-        self.compile_block(ds, value_store, id, while_op.condition, function)?;
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.values.get_while_merges(op_id).cloned() else {
+            let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
                 panic!("ICE: While block doesn't have merges");
             };
-            for merge in &merges.condition {
-                let type_ids = ds
-                    .values
-                    .value_types([merge.condition_value, merge.pre_value])
-                    .unwrap();
+            for merge in &merges {
+                let type_ids = ds.values.value_types([merge.a_in, merge.out]).unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data =
-                    value_store.load_value(self, merge.condition_value, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
 
-                let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
+                // TODO: This should handle floats
+                let data = if let [TypeKind::Integer(a_in_int), TypeKind::Integer(out_int)] =
                     type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = pre_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_int.signed)?
+                    let target_type = out_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, a_in_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data
                 };
 
-                value_store.store_value(self, merge.pre_value, data)?;
+                value_store.store_value(self, merge.out, data)?;
             }
         }
+
+        self.builder.build_unconditional_branch(condition_block)?;
+
+        trace!("Compiling condition for {:?}", op_id);
+        self.builder.position_at_end(condition_block);
+        self.compile_block(ds, value_store, id, while_op.condition, function)?;
 
         trace!("Compiling jump for {:?}", op_id);
         // Make conditional jump.
@@ -427,31 +420,27 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Transfering to merge vars for {:?}", op_id);
         {
-            let Some(merges) = ds.values.get_while_merges(op_id).cloned() else {
+            let Some(merge_values) = ds.values.get_merge_values(op_id).cloned() else {
                 panic!("ICE: While block doesn't have merges");
             };
-            for merge in &merges.body {
-                let type_ids = ds
-                    .values
-                    .value_types([merge.condition_value, merge.pre_value])
-                    .unwrap();
+            for merge in &merge_values {
+                let type_ids = ds.values.value_types([merge.b_in, merge.out]).unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data =
-                    value_store.load_value(self, merge.condition_value, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
 
-                let data = if let [TypeKind::Integer(condition_int), TypeKind::Integer(pre_int)] =
+                let data = if let [TypeKind::Integer(b_in_int), TypeKind::Integer(out_int)] =
                     type_info_kinds
                 {
                     let int = data.into_int_value();
-                    let target_type = pre_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, condition_int.signed)?
+                    let target_type = out_int.width.get_int_type(self.ctx);
+                    self.cast_int(int, target_type, b_in_int.signed)?
                         .as_basic_value_enum()
                 } else {
                     data
                 };
 
-                value_store.store_value(self, merge.pre_value, data)?;
+                value_store.store_value(self, merge.out, data)?;
             }
         }
 

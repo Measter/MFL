@@ -45,22 +45,10 @@ pub enum ConstVal {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct IfMerge {
-    pub then_value: ValueId,
-    pub else_value: ValueId,
-    pub output_value: ValueId,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct WhileMerge {
-    pub pre_value: ValueId,
-    pub condition_value: ValueId,
-}
-
-#[derive(Debug, Clone)]
-pub struct WhileMerges {
-    pub condition: SmallVec<[WhileMerge; 4]>,
-    pub body: SmallVec<[WhileMerge; 4]>,
+pub struct MergeValue {
+    pub a_in: ValueId,
+    pub b_in: ValueId,
+    pub out: ValueId,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,8 +57,7 @@ pub struct ValueStore {
     value_types: HashMap<ValueId, TypeId>,
     value_consts: HashMap<ValueId, ConstVal>,
 
-    op_if_merges: HashMap<OpId, Vec<IfMerge>>,
-    op_while_merges: HashMap<OpId, WhileMerges>,
+    op_merges: HashMap<OpId, Vec<MergeValue>>,
 }
 
 impl ValueStore {
@@ -79,8 +66,7 @@ impl ValueStore {
             value_lifetime: HashMap::default(),
             value_types: HashMap::default(),
             value_consts: HashMap::default(),
-            op_if_merges: HashMap::default(),
-            op_while_merges: HashMap::default(),
+            op_merges: HashMap::default(),
         }
     }
 
@@ -148,24 +134,14 @@ impl ValueStore {
         self.value_consts.remove(&id);
     }
 
-    pub fn set_if_merges(&mut self, op_id: OpId, merges: Vec<IfMerge>) {
-        self.op_if_merges
+    pub fn set_merge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
+        self.op_merges
             .insert(op_id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
-    pub fn set_while_merges(&mut self, op_id: OpId, merges: WhileMerges) {
-        self.op_while_merges
-            .insert(op_id, merges)
-            .expect_none("ICE: Tried to overwrite merges");
-    }
-
-    pub fn get_if_merges(&self, op_id: OpId) -> Option<&Vec<IfMerge>> {
-        self.op_if_merges.get(&op_id)
-    }
-
-    pub fn get_while_merges(&self, op_id: OpId) -> Option<&WhileMerges> {
-        self.op_while_merges.get(&op_id)
+    pub fn get_merge_values(&self, op_id: OpId) -> Option<&Vec<MergeValue>> {
+        self.op_merges.get(&op_id)
     }
 
     /// Returns the creator token of a value, treating Dup and Over tokens as transparent.

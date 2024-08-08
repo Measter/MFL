@@ -157,6 +157,7 @@ pub(crate) fn reverse(
     ensure_stack_depth(stores, had_error, stack, op_id, count);
 
     stack.lastn_mut(count).unwrap().reverse();
+    stores.ops.set_op_io(op_id, &[], &[]);
 }
 
 pub(crate) fn rotate(
@@ -219,6 +220,8 @@ pub(crate) fn rotate(
         Direction::Left => items.rotate_left(shift_count),
         Direction::Right => items.rotate_right(shift_count),
     }
+
+    stores.ops.set_op_io(op_id, &[], &[]);
 }
 
 pub(crate) fn swap(
@@ -250,4 +253,6 @@ pub(crate) fn swap(
     let (_, b_slice) = rest.split_at_mut(rest.len() - count);
 
     a_slice.swap_with_slice(b_slice);
+
+    stores.ops.set_op_io(op_id, &[], &[]);
 }
