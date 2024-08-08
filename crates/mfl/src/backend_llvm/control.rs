@@ -285,15 +285,22 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
 
-                let data = if let [TypeKind::Integer(then_int), TypeKind::Integer(output_int)] =
-                    type_info_kinds
-                {
-                    let int = data.into_int_value();
-                    let target_type = output_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, then_int.signed)?
-                        .as_basic_value_enum()
-                } else {
-                    data
+                let data = match type_info_kinds {
+                    [TypeKind::Integer(a_int), TypeKind::Integer(out_int)] => {
+                        let int = data.into_int_value();
+                        let target_type = out_int.width.get_int_type(self.ctx);
+                        self.cast_int(int, target_type, a_int.signed)?
+                            .as_basic_value_enum()
+                    }
+                    [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                        let flt = data.into_float_value();
+                        let target_type = out_float.get_float_type(self.ctx);
+                        self.builder
+                            .build_float_cast(flt, target_type, "")?
+                            .as_basic_value_enum()
+                    }
+
+                    _ => data,
                 };
 
                 value_store.store_value(self, merge.out, data)?;
@@ -320,15 +327,22 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
 
-                let data = if let [TypeKind::Integer(else_int), TypeKind::Integer(output_int)] =
-                    type_info_kinds
-                {
-                    let int = data.into_int_value();
-                    let target_type = output_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, else_int.signed)?
-                        .as_basic_value_enum()
-                } else {
-                    data
+                let data = match type_info_kinds {
+                    [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
+                        let int = data.into_int_value();
+                        let target_type = out_int.width.get_int_type(self.ctx);
+                        self.cast_int(int, target_type, b_int.signed)?
+                            .as_basic_value_enum()
+                    }
+                    [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                        let flt = data.into_float_value();
+                        let target_type = out_float.get_float_type(self.ctx);
+                        self.builder
+                            .build_float_cast(flt, target_type, "")?
+                            .as_basic_value_enum()
+                    }
+
+                    _ => data,
                 };
 
                 value_store.store_value(self, merge.out, data)?;
@@ -381,16 +395,22 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
 
-                // TODO: This should handle floats
-                let data = if let [TypeKind::Integer(a_in_int), TypeKind::Integer(out_int)] =
-                    type_info_kinds
-                {
-                    let int = data.into_int_value();
-                    let target_type = out_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, a_in_int.signed)?
-                        .as_basic_value_enum()
-                } else {
-                    data
+                let data = match type_info_kinds {
+                    [TypeKind::Integer(a_int), TypeKind::Integer(out_int)] => {
+                        let int = data.into_int_value();
+                        let target_type = out_int.width.get_int_type(self.ctx);
+                        self.cast_int(int, target_type, a_int.signed)?
+                            .as_basic_value_enum()
+                    }
+                    [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                        let flt = data.into_float_value();
+                        let target_type = out_float.get_float_type(self.ctx);
+                        self.builder
+                            .build_float_cast(flt, target_type, "")?
+                            .as_basic_value_enum()
+                    }
+
+                    _ => data,
                 };
 
                 value_store.store_value(self, merge.out, data)?;
@@ -429,15 +449,22 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
 
-                let data = if let [TypeKind::Integer(b_in_int), TypeKind::Integer(out_int)] =
-                    type_info_kinds
-                {
-                    let int = data.into_int_value();
-                    let target_type = out_int.width.get_int_type(self.ctx);
-                    self.cast_int(int, target_type, b_in_int.signed)?
-                        .as_basic_value_enum()
-                } else {
-                    data
+                let data = match type_info_kinds {
+                    [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
+                        let int = data.into_int_value();
+                        let target_type = out_int.width.get_int_type(self.ctx);
+                        self.cast_int(int, target_type, b_int.signed)?
+                            .as_basic_value_enum()
+                    }
+                    [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                        let flt = data.into_float_value();
+                        let target_type = out_float.get_float_type(self.ctx);
+                        self.builder
+                            .build_float_cast(flt, target_type, "")?
+                            .as_basic_value_enum()
+                    }
+
+                    _ => data,
                 };
 
                 value_store.store_value(self, merge.out, data)?;
