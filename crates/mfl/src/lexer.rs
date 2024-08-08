@@ -72,15 +72,6 @@ impl TokenTree {
         }
     }
 
-    #[inline]
-    #[track_caller]
-    pub fn unwrap_group(&self) -> &TreeGroup {
-        match self {
-            TokenTree::Single(_) => panic!("ICE: Tried to unwrap_group a Single"),
-            TokenTree::Group(tg) => tg,
-        }
-    }
-
     pub fn expects_brace_group(&self) -> bool {
         matches!(self, TokenTree::Single(tk) if tk.inner.kind.expects_brace_group())
     }

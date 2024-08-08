@@ -147,10 +147,6 @@ impl PassManager {
             .expect_none("ICE: Re-added state for item");
     }
 
-    pub fn enqueue(&mut self, id: ItemId) {
-        self.queue.push_back(id);
-    }
-
     fn next_item(&mut self) -> Option<ItemId> {
         self.queue.pop_front()
     }

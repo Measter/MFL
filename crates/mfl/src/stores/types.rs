@@ -191,13 +191,6 @@ impl FloatWidth {
         }
     }
 
-    pub fn bit_width(self) -> u8 {
-        match self {
-            FloatWidth::F32 => 32,
-            FloatWidth::F64 => 64,
-        }
-    }
-
     pub fn byte_width(self) -> u64 {
         match self {
             FloatWidth::F32 => 4,

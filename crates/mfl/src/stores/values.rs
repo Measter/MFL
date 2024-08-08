@@ -130,10 +130,6 @@ impl ValueStore {
             .expect_none("ICE: Tried to overwrite const value");
     }
 
-    pub fn clear_value_const(&mut self, id: ValueId) {
-        self.value_consts.remove(&id);
-    }
-
     pub fn set_merge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
         self.op_merges
             .insert(op_id, merges)
