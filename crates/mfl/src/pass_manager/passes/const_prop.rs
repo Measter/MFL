@@ -69,16 +69,18 @@ fn analyze_block(
                     }
 
                     // Nothing to do here.
-                    Control::Exit
-                    | Control::Prologue
-                    | Control::SysCall { .. }
-                    | Control::While(_) => {}
+                    Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
                     Control::If(if_op) => {
+                        control::analyze_if(stores, pass_manager, had_error, if_op);
+
                         if stores.blocks.is_terminal(if_op.else_block)
                             && stores.blocks.is_terminal(if_op.then_block)
                         {
                             break;
                         }
+                    }
+                    Control::While(while_op) => {
+                        control::analyze_while(stores, pass_manager, had_error, while_op);
                     }
                 },
                 Basic::Memory(mo) => match mo {

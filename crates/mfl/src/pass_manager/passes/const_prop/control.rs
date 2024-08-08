@@ -4,6 +4,7 @@ use stores::items::ItemId;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
+    ir::{If, While},
     pass_manager::PassManager,
     simulate::SimulatorValue,
     stores::{item::ItemKind, ops::OpId, values::ConstVal},
@@ -98,4 +99,25 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
             source_variable: variable_item_id,
         },
     );
+}
+
+pub(crate) fn analyze_if(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    if_op: If,
+) {
+    super::analyze_block(stores, pass_manager, had_error, if_op.condition);
+    super::analyze_block(stores, pass_manager, had_error, if_op.then_block);
+    super::analyze_block(stores, pass_manager, had_error, if_op.else_block);
+}
+
+pub(crate) fn analyze_while(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    while_op: While,
+) {
+    super::analyze_block(stores, pass_manager, had_error, while_op.condition);
+    super::analyze_block(stores, pass_manager, had_error, while_op.body_block);
 }
