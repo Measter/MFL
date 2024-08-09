@@ -32,6 +32,8 @@ pub struct Value {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConstVal {
+    Uninitialized,
+    Unknown,
     Int(Integer),
     Float(Float),
     Bool(bool),
@@ -53,9 +55,9 @@ pub struct MergeValue {
 
 #[derive(Debug, Clone, Default)]
 pub struct ValueStore {
-    value_lifetime: HashMap<ValueId, Value>,
+    value_lifetime: Vec<Value>,
     value_types: HashMap<ValueId, TypeId>,
-    value_consts: HashMap<ValueId, ConstVal>,
+    value_consts: Vec<ConstVal>,
 
     op_merges: HashMap<OpId, Vec<MergeValue>>,
 }
@@ -63,9 +65,9 @@ pub struct ValueStore {
 impl ValueStore {
     pub fn new() -> Self {
         Self {
-            value_lifetime: HashMap::default(),
+            value_lifetime: Vec::new(),
             value_types: HashMap::default(),
-            value_consts: HashMap::default(),
+            value_consts: Vec::new(),
             op_merges: HashMap::default(),
         }
     }
@@ -78,21 +80,13 @@ impl ValueStore {
         let id = self.value_lifetime.len();
         let id = ValueId(id.to_u32().unwrap());
 
-        let value_exists = self
-            .value_lifetime
-            .insert(
-                id,
-                Value {
-                    source_location,
-                    parent_value,
-                    consumer: SmallVec::new(),
-                },
-            )
-            .is_some();
+        self.value_lifetime.push(Value {
+            source_location,
+            parent_value,
+            consumer: SmallVec::new(),
+        });
 
-        if value_exists {
-            panic!("ICE: Created value with duplicate ID: {id:?}");
-        };
+        self.value_consts.push(ConstVal::Unknown);
 
         id
     }
@@ -102,11 +96,11 @@ impl ValueStore {
     }
 
     pub fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
-        ids.map(|id| &self.value_lifetime[&id])
+        ids.map(|id| &self.value_lifetime[id.0.to_usize()])
     }
 
     pub fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
-        let val = self.value_lifetime.get_mut(&value).unwrap();
+        let val = &mut self.value_lifetime[value.0.to_usize()];
         val.consumer.push(consumer_id);
     }
 
@@ -120,14 +114,12 @@ impl ValueStore {
             .expect_none("ICE: Tried to set a value type twice");
     }
 
-    pub fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> Option<[ConstVal; N]> {
-        self.value_consts.get_n(ids)
+    pub fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> [ConstVal; N] {
+        ids.map(|i| self.value_consts[i.0.to_usize()])
     }
 
     pub fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {
-        self.value_consts
-            .insert(id, const_val)
-            .expect_none("ICE: Tried to overwrite const value");
+        self.value_consts[id.0.to_usize()] = const_val;
     }
 
     pub fn set_merge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
@@ -144,12 +136,12 @@ impl ValueStore {
     pub fn get_creator_token(&self, value_id: ValueId) -> SmallVec<[SourceLocation; 2]> {
         let mut creators = SmallVec::new();
 
-        let value_info = &self.value_lifetime[&value_id];
+        let value_info = &self.value_lifetime[value_id.0.to_usize()];
         let mut cur_creator = value_info.parent_value;
         creators.push(value_info.source_location);
 
         while let Some(parent) = cur_creator {
-            let value_info = &self.value_lifetime[&parent];
+            let value_info = &self.value_lifetime[parent.0.to_usize()];
             cur_creator = value_info.parent_value;
             creators.push(value_info.source_location);
         }

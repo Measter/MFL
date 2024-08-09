@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use num_traits::Zero;
 
 use crate::{
     diagnostics,
@@ -20,9 +21,7 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
         return;
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
-    let Some(input_const_values) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let input_const_values = stores.values.value_consts(input_value_ids);
 
     let new_const_val = match input_const_values {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
@@ -71,6 +70,9 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             source_variable: id,
             offset: Some(offset + v),
         },
+
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };
 
@@ -81,9 +83,8 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
 pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let input_const_vals = stores.values.value_consts(input_value_ids);
+
     let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
@@ -113,6 +114,9 @@ pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: 
         [ConstVal::Bool(a), ConstVal::Bool(b)] => {
             ConstVal::Bool(arith_code.get_bool_binary_op()(a, b))
         }
+
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };
 
@@ -125,9 +129,7 @@ pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: 
 pub(crate) fn bitnot(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
-        return;
-    };
+    let [input_const_val] = stores.values.value_consts([input_value_id]);
     let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
@@ -147,6 +149,8 @@ pub(crate) fn bitnot(stores: &mut Stores, op_id: OpId) {
             ConstVal::Int(Integer::Signed((!a) & output_int.width.mask() as i64))
         }
         ConstVal::Bool(b) => ConstVal::Bool(!b),
+        ConstVal::Uninitialized => ConstVal::Uninitialized,
+        ConstVal::Unknown => ConstVal::Unknown,
         _ => return,
     };
 
@@ -170,12 +174,13 @@ pub(crate) fn multiply_div_rem_shift(
     };
     let output_type_info = stores.types.get_type_info(output_type_id);
 
-    let Some([a_const_val, b_const_val]) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let [a_const_val, b_const_val] = stores.values.value_consts(input_value_ids);
 
+    // If we can, check the b-side for invalid or out-of-range values.
     match arith_code {
-        Arithmetic::ShiftLeft | Arithmetic::ShiftRight => {
+        Arithmetic::ShiftLeft | Arithmetic::ShiftRight
+            if matches!(b_const_val, ConstVal::Int(_)) =>
+        {
             let ConstVal::Int(b_const_val) = b_const_val else {
                 unreachable!()
             };
@@ -235,7 +240,6 @@ pub(crate) fn multiply_div_rem_shift(
                 diagnostics::emit_error(stores, op_loc, "division by 0", labels, None);
 
                 had_error.set();
-                return;
             }
         }
 
@@ -244,6 +248,10 @@ pub(crate) fn multiply_div_rem_shift(
 
     let output_value = match [a_const_val, b_const_val] {
         [ConstVal::Int(a_const_val), ConstVal::Int(b_const_val)] => {
+            if b_const_val.is_zero() {
+                return;
+            }
+
             let TypeKind::Integer(output_int) = output_type_info.kind else {
                 unreachable!()
             };
@@ -264,6 +272,10 @@ pub(crate) fn multiply_div_rem_shift(
             ConstVal::Int(new_kind)
         }
         [ConstVal::Float(a_const_val), ConstVal::Float(b_const_val)] => {
+            if b_const_val.0.is_zero() {
+                return;
+            }
+
             let TypeKind::Float(output_float) = output_type_info.kind else {
                 unreachable!()
             };
@@ -275,6 +287,9 @@ pub(crate) fn multiply_div_rem_shift(
             let new_kind = Float(new_kind).cast(output_float);
             ConstVal::Float(new_kind)
         }
+
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => unreachable!(),
     };
 
@@ -291,9 +306,7 @@ pub(crate) fn subtract(
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
-    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let input_const_vals = stores.values.value_consts(input_value_ids);
     let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
     };
@@ -423,6 +436,8 @@ pub(crate) fn subtract(
             offset: None,
         },
 
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => unreachable!(),
     };
 

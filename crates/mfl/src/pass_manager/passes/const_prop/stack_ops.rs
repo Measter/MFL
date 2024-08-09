@@ -12,9 +12,7 @@ pub(crate) fn dup_over(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id).clone();
 
     for (input_value_id, output_value_id) in op_data.inputs.into_iter().zip(op_data.outputs) {
-        let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
-            continue;
-        };
+        let [input_const_val] = stores.values.value_consts([input_value_id]);
 
         stores
             .values
@@ -62,9 +60,7 @@ fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
     let output_value_id = op_data.outputs[0];
-    let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
-        return;
-    };
+    let [input_const_val] = stores.values.value_consts([input_value_id]);
     let Some(type_ids @ [input_type_id, output_type_id]) =
         stores.values.value_types([input_value_id, output_value_id])
     else {
@@ -72,44 +68,46 @@ fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
     };
     let type_kinds = type_ids.map(|id| stores.types.get_type_info(id).kind);
 
-    match type_kinds {
-        [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)] => {
+    let new_output_const_val = match type_kinds {
+        [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)]
+            if matches!(input_const_val, ConstVal::MultiPtr { .. }) =>
+        {
             let ConstVal::MultiPtr {
                 source_variable, ..
             } = input_const_val
             else {
                 unreachable!()
             };
-            stores
-                .values
-                .set_value_const(output_value_id, ConstVal::SinglePtr { source_variable });
+            ConstVal::SinglePtr { source_variable }
         }
-        [TypeKind::SinglePointer(_), TypeKind::MultiPointer(_)] => {
+        [TypeKind::SinglePointer(_), TypeKind::MultiPointer(_)]
+            if matches!(input_const_val, ConstVal::SinglePtr { .. }) =>
+        {
             let ConstVal::SinglePtr { source_variable } = input_const_val else {
                 unreachable!()
             };
-            stores.values.set_value_const(
-                output_value_id,
-                ConstVal::MultiPtr {
-                    source_variable,
-                    offset: Some(0),
-                },
-            );
+            ConstVal::MultiPtr {
+                source_variable,
+                offset: Some(0),
+            }
         }
 
-        _ if input_type_id == output_type_id => stores
-            .values
-            .set_value_const(output_value_id, input_const_val),
-        _ => {}
-    }
+        // Just echo the previous const val
+        _ if input_type_id == output_type_id => input_const_val,
+
+        _ if input_const_val == ConstVal::Uninitialized => ConstVal::Uninitialized,
+        _ => ConstVal::Unknown,
+    };
+
+    stores
+        .values
+        .set_value_const(output_value_id, new_output_const_val);
 }
 
 fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
-        return;
-    };
+    let [input_const_val] = stores.values.value_consts([input_value_id]);
 
     let output_const_val = match input_const_val {
         ConstVal::Int(v) => ConstVal::Int(v.cast(int_kind)),
@@ -117,6 +115,7 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
         ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(b as _)),
         ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(b as _)),
         ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => unreachable!(),
+        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,
     };
 
     stores
@@ -127,9 +126,7 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
 fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    let Some([input_const_val]) = stores.values.value_consts([input_value_id]) else {
-        return;
-    };
+    let [input_const_val] = stores.values.value_consts([input_value_id]);
 
     let output_const_value = match input_const_val {
         ConstVal::Int(v) => {
@@ -159,6 +156,7 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
         ConstVal::Bool(_) | ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => {
             unreachable!()
         }
+        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,
     };
 
     stores

@@ -17,8 +17,8 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };
-    let Some([ConstVal::Int(Integer::Unsigned(idx))]) = stores.values.value_consts([idx_value_id])
-    else {
+    let [ConstVal::Int(Integer::Unsigned(idx))] = stores.values.value_consts([idx_value_id]) else {
+        // We're only doing bounds checking here, so nothing to do if we don't know the index.
         return;
     };
 

@@ -15,16 +15,14 @@ pub(crate) fn epilogue_return(stores: &mut Stores, had_error: &mut ErrorSignal, 
     let op_data = stores.ops.get_op_io(op_id);
 
     for &input_value_id in &op_data.inputs {
-        let Some(
-            [ConstVal::MultiPtr {
-                source_variable: variable_item_id,
-                ..
-            }
-            | ConstVal::SinglePtr {
-                source_variable: variable_item_id,
-                ..
-            }],
-        ) = stores.values.value_consts([input_value_id])
+        let [ConstVal::MultiPtr {
+            source_variable: variable_item_id,
+            ..
+        }
+        | ConstVal::SinglePtr {
+            source_variable: variable_item_id,
+            ..
+        }] = stores.values.value_consts([input_value_id])
         else {
             continue;
         };

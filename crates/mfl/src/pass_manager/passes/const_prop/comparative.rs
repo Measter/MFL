@@ -24,9 +24,7 @@ pub(crate) fn equal(
     let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
-    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let input_const_vals = stores.values.value_consts(input_value_ids);
 
     let output_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
@@ -40,7 +38,7 @@ pub(crate) fn equal(
             let biggest_input_int = promote_int_type_bidirectional(a_int, b_int).unwrap();
             let a_kind = a.cast(biggest_input_int);
             let b_kind = b.cast(biggest_input_int);
-            match (a_kind, b_kind) {
+            let res = match (a_kind, b_kind) {
                 (Integer::Signed(a), Integer::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
                 }
@@ -49,7 +47,8 @@ pub(crate) fn equal(
                 }
 
                 _ => unreachable!(),
-            }
+            };
+            ConstVal::Bool(res)
         }
 
         [ConstVal::Float(a), ConstVal::Float(b)] => {
@@ -62,10 +61,14 @@ pub(crate) fn equal(
             let biggest_input_float = a_float.max(b_float);
             let a_kind = a.cast(biggest_input_float);
             let b_kind = b.cast(biggest_input_float);
-            comp_code.get_float_binary_op()(a_kind.0, b_kind.0)
+            let res = comp_code.get_float_binary_op()(a_kind.0, b_kind.0);
+            ConstVal::Bool(res)
         }
 
-        [ConstVal::Bool(a), ConstVal::Bool(b)] => comp_code.get_bool_binary_op()(a, b),
+        [ConstVal::Bool(a), ConstVal::Bool(b)] => {
+            let res = comp_code.get_bool_binary_op()(a, b);
+            ConstVal::Bool(res)
+        }
 
         // Static pointers with different IDs.
         [ConstVal::MultiPtr {
@@ -102,7 +105,7 @@ pub(crate) fn equal(
             );
 
             had_error.set();
-            return;
+            ConstVal::Bool(false)
         }
 
         // Single-Pointers with same IDs
@@ -119,7 +122,8 @@ pub(crate) fn equal(
             labels.push(Label::new(op_loc).with_color(Color::Yellow));
             diagnostics::emit_error(stores, op_loc, "pointers always equal", labels, None);
 
-            comp_code.get_unsigned_binary_op()(1, 1) != 0
+            let res = comp_code.get_unsigned_binary_op()(1, 1) != 0;
+            ConstVal::Bool(res)
         }
 
         // Multi-Pointers with same IDs
@@ -148,16 +152,19 @@ pub(crate) fn equal(
             labels.push(Label::new(op_loc).with_color(Color::Yellow));
             diagnostics::emit_error(stores, op_loc, msg, labels, None);
 
-            comp_code.get_unsigned_binary_op()(offset1, offset2) != 0
+            let res = comp_code.get_unsigned_binary_op()(offset1, offset2) != 0;
+            ConstVal::Bool(res)
         }
 
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };
 
     let output_value_id = op_data.outputs[0];
     stores
         .values
-        .set_value_const(output_value_id, ConstVal::Bool(output_const_val));
+        .set_value_const(output_value_id, output_const_val);
 }
 
 pub(crate) fn compare(
@@ -169,9 +176,7 @@ pub(crate) fn compare(
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
-    let Some(input_const_vals) = stores.values.value_consts(input_value_ids) else {
-        return;
-    };
+    let input_const_vals = stores.values.value_consts(input_value_ids);
 
     let output_const_val = match input_const_vals {
         [ConstVal::Int(a), ConstVal::Int(b)] => {
@@ -186,7 +191,7 @@ pub(crate) fn compare(
             let a_kind = a.cast(biggest_input_int);
             let b_kind = b.cast(biggest_input_int);
 
-            match (a_kind, b_kind) {
+            let res = match (a_kind, b_kind) {
                 (Integer::Signed(a), Integer::Signed(b)) => {
                     comp_code.get_signed_binary_op()(a, b) != 0
                 }
@@ -195,7 +200,8 @@ pub(crate) fn compare(
                 }
 
                 _ => unreachable!(),
-            }
+            };
+            ConstVal::Bool(res)
         }
 
         [ConstVal::Float(a), ConstVal::Float(b)] => {
@@ -209,7 +215,8 @@ pub(crate) fn compare(
             let biggest_input_float = a_float.max(b_float);
             let a_kind = a.cast(biggest_input_float);
             let b_kind = b.cast(biggest_input_float);
-            comp_code.get_float_binary_op()(a_kind.0, b_kind.0)
+            let res = comp_code.get_float_binary_op()(a_kind.0, b_kind.0);
+            ConstVal::Bool(res)
         }
 
         // Static pointers with different IDs.
@@ -241,7 +248,7 @@ pub(crate) fn compare(
             );
 
             had_error.set();
-            return;
+            ConstVal::Bool(false)
         }
 
         // Pointers with same IDs, but different static offsets.
@@ -251,27 +258,39 @@ pub(crate) fn compare(
         }, ConstVal::MultiPtr {
             offset: Some(offset2),
             ..
-        }] => comp_code.get_unsigned_binary_op()(offset1, offset2) != 0,
+        }] => {
+            let res = comp_code.get_unsigned_binary_op()(offset1, offset2) != 0;
+            ConstVal::Bool(res)
+        }
 
+        [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+        [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };
 
     let output_value_value = op_data.outputs[0];
     stores
         .values
-        .set_value_const(output_value_value, ConstVal::Bool(output_const_val));
+        .set_value_const(output_value_value, output_const_val);
 }
 
 pub(crate) fn is_null(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_value_id = op_data.inputs[0];
-    if stores.values.value_consts([input_value_id]).is_none() {
-        return;
-    }
-
-    // We only have a const value from a statically known pointer, so it can't be null.
+    let [input_const_val] = stores.values.value_consts([input_value_id]);
     let output_value_id = op_data.outputs[0];
+
+    let new_output_const_val = match input_const_val {
+        ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => {
+            // We have a const value from a statically known pointer, so it can't be null.
+            ConstVal::Bool(false)
+        }
+        ConstVal::Uninitialized => ConstVal::Uninitialized,
+        ConstVal::Unknown => ConstVal::Unknown,
+        ConstVal::Int(_) | ConstVal::Float(_) | ConstVal::Bool(_) => unreachable!(),
+    };
+
     stores
         .values
-        .set_value_const(output_value_id, ConstVal::Bool(false));
+        .set_value_const(output_value_id, new_output_const_val);
 }

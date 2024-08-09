@@ -30,6 +30,10 @@ pub enum Integer {
 }
 
 impl Integer {
+    pub fn is_zero(self) -> bool {
+        matches!(self, Integer::Signed(0) | Integer::Unsigned(0))
+    }
+
     pub fn to_signedness(self) -> IntSignedness {
         match self {
             Integer::Signed(_) => IntSignedness::Signed,
