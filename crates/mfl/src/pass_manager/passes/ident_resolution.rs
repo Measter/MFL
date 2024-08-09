@@ -772,6 +772,83 @@ fn resolve_idents_in_block(
 
                     OpCode::Complex(new_code)
                 }
+                UnresolvedOp::AssumeInit(ident) => {
+                    let Ok(resolved_ident) =
+                        resolved_single_ident(stores, had_error, cur_id, &ident)
+                    else {
+                        continue;
+                    };
+
+                    ident.generic_params.iter().for_each(|param| {
+                        let Ok(new_kind) = resolve_idents_in_type(
+                            stores,
+                            had_error,
+                            cur_id,
+                            param,
+                            generic_params,
+                        ) else {
+                            return;
+                        };
+
+                        check_generic_param_length(
+                            stores,
+                            had_error,
+                            &new_kind,
+                            op_token.location,
+                            true,
+                        );
+                    });
+
+                    let found_item_header = stores.items.get_item_header(resolved_ident);
+                    match found_item_header.kind {
+                        ItemKind::Variable => {
+                            let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
+                            if parent_id != cur_id {
+                                diagnostics::emit_error(
+                                    stores,
+                                    op_token.location,
+                                    "`init` only supports local variables",
+                                    [
+                                        Label::new(op_token.location).with_color(Color::Red),
+                                        Label::new(found_item_header.name.location)
+                                            .with_color(Color::Cyan)
+                                            .with_message("variable is global"),
+                                    ],
+                                    None,
+                                );
+
+                                had_error.set();
+                                continue;
+                            }
+
+                            OpCode::Complex(NameResolvedOp::AssumeInit { id: resolved_ident })
+                        }
+                        ItemKind::Assert
+                        | ItemKind::Const
+                        | ItemKind::Function
+                        | ItemKind::FunctionDecl
+                        | ItemKind::GenericFunction
+                        | ItemKind::StructDef
+                        | ItemKind::Module => {
+                            diagnostics::emit_error(
+                                stores,
+                                op_token.location,
+                                "`init` only supports local variables",
+                                [
+                                    Label::new(op_token.location).with_color(Color::Red),
+                                    Label::new(found_item_header.name.location)
+                                        .with_color(Color::Cyan)
+                                        .with_message(format!(
+                                            "item is a {}",
+                                            found_item_header.kind.kind_str()
+                                        )),
+                                ],
+                                None,
+                            );
+                            continue;
+                        }
+                    }
+                }
             },
         };
 

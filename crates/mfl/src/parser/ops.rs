@@ -12,7 +12,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, Memory, OpCode, Stack,
-        UnresolvedOp, While, WhileTokens,
+        UnresolvedIdent, UnresolvedOp, While, WhileTokens,
     },
     lexer::TokenTree,
     parser::utils::parse_float_lexeme,
@@ -198,6 +198,7 @@ pub fn parse_simple_op(
 
         TokenKind::Load => OpCode::Basic(Basic::Memory(Memory::Load)),
         TokenKind::Store => OpCode::Basic(Basic::Memory(Memory::Store)),
+        TokenKind::AssumeInit => return parse_assumeinit(stores, token_iter, token),
 
         TokenKind::IsNull => OpCode::Basic(Basic::Compare(Compare::IsNull)),
         TokenKind::Equal => OpCode::Basic(Basic::Compare(Compare::Equal)),
@@ -248,6 +249,29 @@ pub fn parse_simple_op(
     };
 
     Ok((code, token.location))
+}
+
+fn parse_assumeinit(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    keyword: Spanned<Token>,
+) -> Result<(OpCode<UnresolvedOp>, SourceLocation), ()> {
+    let group = token_iter
+        .expect_group(stores, BracketKind::Paren, keyword)
+        .with_kinds(stores, TokenKind::Ident)
+        .with_length(stores, 1)?;
+
+    let ident_token = group.tokens[0].unwrap_single();
+    let ident = UnresolvedIdent {
+        span: ident_token.location,
+        is_from_root: false,
+        path: vec![ident_token.map(|t| t.lexeme)],
+        generic_params: Vec::new(),
+    };
+    Ok((
+        OpCode::Complex(UnresolvedOp::AssumeInit(ident)),
+        group.last_token().location,
+    ))
 }
 
 fn parse_ident_op(

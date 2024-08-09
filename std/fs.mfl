@@ -111,6 +111,7 @@ proc fstat [FD] to [Result(Stat, u64)] {
     if dup 0< {
         0 swap - cast(u64) result::Err(Stat, u64)
     } else {
+        assumeinit(buf)
         drop buf@ result::Ok(Stat, u64)
     }
 }

@@ -472,6 +472,8 @@ fn analyze_block(
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_int(stores, op_id, IntKind::U64);
                 }
+                // Only applies during const-prop
+                TypeResolvedOp::AssumeInit { .. } => {}
             },
         }
 

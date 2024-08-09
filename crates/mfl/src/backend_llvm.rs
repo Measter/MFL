@@ -685,6 +685,8 @@ impl<'ctx> CodeGen<'ctx> {
                             Integer::Unsigned(size_info.byte_width),
                         )?;
                     }
+                    // These do nothing in codegen
+                    TypeResolvedOp::AssumeInit { .. } => {}
                 },
             }
         }

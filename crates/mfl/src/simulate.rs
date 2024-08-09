@@ -299,6 +299,7 @@ fn simulate_execute_program_block(
                 };
                 value_stack.extend(vals.iter().copied());
             }
+            OpCode::Complex(TypeResolvedOp::AssumeInit { .. }) => {}
         }
 
         ip += 1;

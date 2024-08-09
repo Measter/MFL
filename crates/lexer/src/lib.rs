@@ -76,6 +76,9 @@ pub enum TokenKind {
     #[token("assert")]
     Assert,
 
+    #[token("assumeinit")]
+    AssumeInit,
+
     #[token("and")]
     BitAnd,
 
@@ -284,6 +287,7 @@ impl TokenKind {
             TokenKind::Whitespace => "Whitespace",
             TokenKind::Ampersand => "&",
             TokenKind::Assert => "assert",
+            TokenKind::AssumeInit => "init",
             TokenKind::BitAnd => "and",
             TokenKind::BitNot => "not",
             TokenKind::BitOr => "or",

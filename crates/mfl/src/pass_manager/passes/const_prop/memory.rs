@@ -141,3 +141,7 @@ pub(crate) fn store(
 
     *state = data_const_val;
 }
+
+pub(crate) fn init_local(variable_state: &mut HashMap<ItemId, ConstVal>, variable_id: ItemId) {
+    *variable_state.get_mut(&variable_id).unwrap() = ConstVal::Unknown;
+}

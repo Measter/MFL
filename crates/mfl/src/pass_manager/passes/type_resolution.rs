@@ -295,6 +295,9 @@ fn fully_resolve_block(
             OpCode::Complex(NameResolvedOp::Variable { id, is_global }) => {
                 OpCode::Complex(TypeResolvedOp::Variable { id, is_global })
             }
+            OpCode::Complex(NameResolvedOp::AssumeInit { id }) => {
+                OpCode::Complex(TypeResolvedOp::AssumeInit { id })
+            }
 
             OpCode::Complex(
                 NameResolvedOp::Cast { ref id }
@@ -430,7 +433,9 @@ fn partially_resolve_block(
             OpCode::Complex(NameResolvedOp::Variable { id, is_global }) => {
                 OpCode::Complex(PartiallyResolvedOp::Variable { id, is_global })
             }
-
+            OpCode::Complex(NameResolvedOp::AssumeInit { id }) => {
+                OpCode::Complex(PartiallyResolvedOp::AssumeInit { id })
+            }
             OpCode::Complex(
                 NameResolvedOp::Cast { ref id }
                 | NameResolvedOp::PackStruct { ref id }

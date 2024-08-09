@@ -142,6 +142,15 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
                             generic_params: new_params,
                         })
                     }
+
+                    PartiallyResolvedOp::AssumeInit { id } => {
+                        let id = if let Some(new_id) = old_alloc_map.get(&id) {
+                            *new_id
+                        } else {
+                            id
+                        };
+                        OpCode::Complex(TypeResolvedOp::AssumeInit { id })
+                    }
                 },
             };
 

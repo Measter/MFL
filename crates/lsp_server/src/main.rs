@@ -230,6 +230,7 @@ impl Backend {
                         | TokenKind::Extern
                         | TokenKind::GoesTo
                         | TokenKind::If
+                        | TokenKind::AssumeInit
                         | TokenKind::Import
                         | TokenKind::LangItem
                         | TokenKind::Module

@@ -133,6 +133,9 @@ fn analyze_block(
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(stores, pass_manager, op_id, id)
                 }
+                TypeResolvedOp::AssumeInit { id } => {
+                    memory::init_local(variable_state, id);
+                }
 
                 // Nothing to do here.
                 TypeResolvedOp::CallFunction { .. } | TypeResolvedOp::PackStruct { .. } => {}
