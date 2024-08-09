@@ -1,0 +1,68 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+proc bad_read [] to [u8] {
+    var yay u8
+    yay@
+}
+
+proc bad_read_after_if_then [] to [u8] {
+    var yay u8
+
+    if true {
+        2 yay!
+    }
+
+    yay@
+}
+
+proc bad_read_after_if_else [] to [u8] {
+    var yay u8
+
+    if true {} else {
+        3 yay!
+    }
+
+    yay@
+}
+
+proc bad_read_in_if_then [] to [] {
+    var yay u8
+
+    if true {
+        yay@ drop
+    } else {
+        4 yay!
+    }
+}
+
+proc bad_read_in_if_else [] to [] {
+    var yay u8
+
+    if true {
+        5 yay!
+    } else {
+        yay@ drop
+    }
+}
+
+proc bad_read_after_while_body [] to [u8] {
+    var yay u8
+
+    while false {
+        10 yay!
+    }
+
+    yay@
+}
+
+proc bad_read_in_while_body [] to [] {
+    var yay u8
+
+    while true {
+        yay@ drop
+    }
+}

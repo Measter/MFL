@@ -1,4 +1,5 @@
 use ariadne::{Color, Label};
+use hashbrown::HashMap;
 use stores::items::ItemId;
 
 use crate::{
@@ -7,7 +8,7 @@ use crate::{
     ir::{If, While},
     pass_manager::PassManager,
     simulate::SimulatorValue,
-    stores::{item::ItemKind, ops::OpId, values::ConstVal},
+    stores::{item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, values::ConstVal},
     Stores,
 };
 
@@ -60,6 +61,21 @@ pub(crate) fn epilogue_return(stores: &mut Stores, had_error: &mut ErrorSignal, 
     }
 }
 
+pub(crate) fn prologue(
+    stores: &mut Stores,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
+    item_id: ItemId,
+) {
+    let sig = stores.sigs.nrir.get_item_signature(item_id);
+    for param in &sig.entry {
+        let StackDefItemNameResolved::Var { name, .. } = param else {
+            continue;
+        };
+
+        *variable_state.get_mut(name).unwrap() = ConstVal::Unknown;
+    }
+}
+
 pub(crate) fn cp_const(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
@@ -102,20 +118,80 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
 pub(crate) fn analyze_if(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
+    proc_item_id: ItemId,
     if_op: If,
 ) {
-    super::analyze_block(stores, pass_manager, had_error, if_op.condition);
-    super::analyze_block(stores, pass_manager, had_error, if_op.then_block);
-    super::analyze_block(stores, pass_manager, had_error, if_op.else_block);
+    super::analyze_block(
+        stores,
+        pass_manager,
+        variable_state,
+        had_error,
+        proc_item_id,
+        if_op.condition,
+    );
+
+    let post_condition_var_state = variable_state.clone();
+    super::analyze_block(
+        stores,
+        pass_manager,
+        variable_state,
+        had_error,
+        proc_item_id,
+        if_op.then_block,
+    );
+
+    let post_then_var_state = variable_state.clone();
+    variable_state.clone_from(&post_condition_var_state);
+    super::analyze_block(
+        stores,
+        pass_manager,
+        variable_state,
+        had_error,
+        proc_item_id,
+        if_op.else_block,
+    );
+
+    for (var_id, else_state) in variable_state {
+        let then_state = post_then_var_state[var_id];
+
+        match (then_state, *else_state) {
+            (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
+                *else_state = ConstVal::Uninitialized
+            }
+            (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *else_state = ConstVal::Unknown,
+            _ if then_state == *else_state => {}
+            _ => *else_state = ConstVal::Unknown,
+        }
+    }
 }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
+    proc_item_id: ItemId,
     while_op: While,
 ) {
-    super::analyze_block(stores, pass_manager, had_error, while_op.condition);
-    super::analyze_block(stores, pass_manager, had_error, while_op.body_block);
+    super::analyze_block(
+        stores,
+        pass_manager,
+        variable_state,
+        had_error,
+        proc_item_id,
+        while_op.condition,
+    );
+
+    let post_condition_var_state = variable_state.clone();
+    super::analyze_block(
+        stores,
+        pass_manager,
+        variable_state,
+        had_error,
+        proc_item_id,
+        while_op.body_block,
+    );
+    variable_state.clone_from(&post_condition_var_state);
 }

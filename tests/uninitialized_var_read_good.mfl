@@ -1,0 +1,67 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+proc good_read [] to [u8] {
+    var yay u8
+    1 yay!
+    yay@
+}
+
+proc good_read_var_param [var yay u8] to [u8] {
+    yay@
+}
+
+proc good_read_var_param2 [var yay u8] to [u8] {
+    var bar u8
+    yay@ bar!
+    bar@
+}
+
+proc good_read_param [u8] to [u8] {
+    var yay u8
+    yay!
+    yay@
+}
+
+proc good_read_if_condition [] to [u8] {
+    var yay u8
+
+    if 6 yay! true {
+        yay@ drop
+    } else {
+        yay@ drop
+    }
+
+    yay@
+}
+
+proc good_read_if_body [] to [u8] {
+    var yay u8
+
+    if true {
+        7 yay!
+    } else {
+        8 yay!
+    }
+
+    yay@
+}
+
+proc good_read_while_condition [] to [u8] {
+    var yay u8
+
+    while 9 yay! true {}
+
+    yay@
+}
+
+proc good_read_in_while_body [] to [] {
+    var yay u8
+
+    while 11 yay! true {
+        yay@ drop
+    }
+}

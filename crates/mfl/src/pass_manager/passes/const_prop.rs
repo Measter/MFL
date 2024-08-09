@@ -1,10 +1,11 @@
+use hashbrown::HashMap;
 use stores::items::ItemId;
 
 use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::block::BlockId,
+    stores::{block::BlockId, item::ItemKind, values::ConstVal},
     Stores,
 };
 
@@ -17,7 +18,9 @@ mod stack_ops;
 fn analyze_block(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     block_id: BlockId,
 ) {
     let block = stores.blocks.get_block(block_id).clone();
@@ -68,10 +71,20 @@ fn analyze_block(
                         break;
                     }
 
+                    Control::Prologue => {
+                        control::prologue(stores, variable_state, item_id);
+                    }
                     // Nothing to do here.
-                    Control::Exit | Control::Prologue | Control::SysCall { .. } => {}
+                    Control::Exit | Control::SysCall { .. } => {}
                     Control::If(if_op) => {
-                        control::analyze_if(stores, pass_manager, had_error, if_op);
+                        control::analyze_if(
+                            stores,
+                            pass_manager,
+                            variable_state,
+                            had_error,
+                            item_id,
+                            if_op,
+                        );
 
                         if stores.blocks.is_terminal(if_op.else_block)
                             && stores.blocks.is_terminal(if_op.then_block)
@@ -80,20 +93,32 @@ fn analyze_block(
                         }
                     }
                     Control::While(while_op) => {
-                        control::analyze_while(stores, pass_manager, had_error, while_op);
+                        control::analyze_while(
+                            stores,
+                            pass_manager,
+                            variable_state,
+                            had_error,
+                            item_id,
+                            while_op,
+                        );
                     }
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
                         memory::insert_extract_array(stores, had_error, op_id)
                     }
+                    Memory::Load => {
+                        memory::load(stores, variable_state, had_error, op_id);
+                    }
+                    Memory::Store => {
+                        memory::store(stores, variable_state, op_id);
+                    }
+
                     // Nothing to do here.
                     Memory::ExtractStruct { .. }
                     | Memory::InsertStruct { .. }
                     | Memory::FieldAccess { .. }
-                    | Memory::Load
                     | Memory::PackArray { .. }
-                    | Memory::Store
                     | Memory::Unpack => {}
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
@@ -122,6 +147,21 @@ pub fn analyze_item(
     had_error: &mut ErrorSignal,
     item_id: ItemId,
 ) {
+    let mut variable_state = HashMap::new();
+    for (_, &child_id) in stores.sigs.nrir.get_scope(item_id).get_child_items() {
+        let child_header = stores.items.get_item_header(child_id.inner);
+        if child_header.kind == ItemKind::Variable {
+            variable_state.insert(child_id.inner, ConstVal::Uninitialized);
+        }
+    }
+
     let block_id = stores.items.get_item_body(item_id);
-    analyze_block(stores, pass_manager, had_error, block_id);
+    analyze_block(
+        stores,
+        pass_manager,
+        &mut variable_state,
+        had_error,
+        item_id,
+        block_id,
+    );
 }
