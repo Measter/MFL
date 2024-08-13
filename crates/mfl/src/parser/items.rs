@@ -451,31 +451,6 @@ pub fn parse_struct_or_union(
         {
             break;
         }
-
-        // let requires_end = if field_iter.next_is_single(TokenKind::Comma) {
-        //     field_iter.next();
-        //     false
-        // } else {
-        //     true
-        // };
-
-        // let next = field_iter.peek();
-
-        // if requires_end && field_iter.peek().is_some() {
-        //     let next = next.unwrap();
-        //     diagnostics::emit_error(
-        //         stores,
-        //         next.span(),
-        //         format!("expected end of fields, found `{}`", next.kind_str()),
-        //         [Label::new(next.span()).with_color(Color::Red)],
-        //         None,
-        //     );
-        //     had_error.set();
-        // }
-
-        // if next.is_none() {
-        //     break;
-        // }
     }
 
     let struct_def = StructDef {
