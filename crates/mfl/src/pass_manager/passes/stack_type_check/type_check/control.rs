@@ -389,24 +389,10 @@ pub(crate) fn analyze_while(
 ) {
     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
-    let op_data = stores.ops.get_op_io(op_id);
-    let condition_value_id = op_data.inputs[0];
-    if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
-        condition_type_check(
-            condition_type_id,
-            stores,
-            condition_value_id,
-            while_op.tokens.do_token,
-            had_error,
-        );
-    }
-
     let Some(merge_values) = stores.values.get_merge_values(op_id).cloned() else {
         panic!("ICE: While block should have merge info");
     };
 
-    // Unlike the If-block handling above, this is not setting the type, only checking that
-    // they are compatible.
     for merge_pair in merge_values {
         let [b_in_value_info] = stores.values.values([merge_pair.b_in]);
         let Some([a_in_type_id, b_in_type_id]) = stores
@@ -452,6 +438,19 @@ pub(crate) fn analyze_while(
 
         // Our output type is the same as a_in because the body can't change the existing type.
         stores.values.set_value_type(merge_pair.out, a_in_type_id);
+    }
+
+    // Check after the merge values have been done so that if the condition is a merge value it will have a type.
+    let op_data = stores.ops.get_op_io(op_id);
+    let condition_value_id = op_data.inputs[0];
+    if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
+        condition_type_check(
+            condition_type_id,
+            stores,
+            condition_value_id,
+            while_op.tokens.do_token,
+            had_error,
+        );
     }
 }
 
