@@ -444,6 +444,15 @@ pub(crate) fn analyze_while(
         }
     }
 
+    // Also need to see if we need to fixup the condition value.
+    let mut condition_value = condition_value;
+    for merge in &while_merges {
+        if merge.a_in == condition_value {
+            condition_value = merge.out;
+            break;
+        }
+    }
+
     stores.values.set_merge_values(op_id, while_merges);
     stores.ops.set_op_io(op_id, &[condition_value], &[]);
     stores.values.consume_value(condition_value, op_id);
