@@ -98,6 +98,7 @@ fn analyze_block(
                         stack_check::stack_ops::drop(stores, had_error, stack, op_id, count);
                     }
                     Stack::Emit { show_labels } => {
+                        stores.ops.set_op_io(op_id, &[], &[]);
                         type_check::stack_ops::emit_stack(stores, stack, op_id, show_labels);
                     }
                     Stack::Over { depth } => {
