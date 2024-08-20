@@ -481,15 +481,53 @@ fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[Merge
 
         match stores.ops.get_type_resolved(op_id).clone() {
             OpCode::Basic(Basic::Control(Control::While(while_op))) => {
+                fixup_merge_variables(stores, op_id, merges);
+
                 fixup_op_input_values(stores, while_op.condition, merges);
                 fixup_op_input_values(stores, while_op.body_block, merges);
             }
             OpCode::Basic(Basic::Control(Control::If(if_op))) => {
+                fixup_merge_variables(stores, op_id, merges);
+
                 fixup_op_input_values(stores, if_op.condition, merges);
                 fixup_op_input_values(stores, if_op.then_block, merges);
                 fixup_op_input_values(stores, if_op.else_block, merges);
             }
             _ => {}
         }
+    }
+}
+
+fn fixup_merge_variables(stores: &mut Stores, op_id: OpId, merges: &[MergeValue]) {
+    let old_merges = stores
+        .values
+        .get_merge_values(op_id)
+        .expect("ICE: Tried to fixup merge values on a non-branching op");
+
+    let mut new_merges = Vec::new();
+    let mut changed = false;
+
+    for mut old_merge in old_merges.iter().cloned() {
+        // Technically N^2, but the list should be small.
+        let mut this_changed = false;
+        for outer_merge in merges {
+            if outer_merge.a_in == old_merge.a_in {
+                old_merge.a_in = outer_merge.out;
+                this_changed = true;
+            }
+            if outer_merge.a_in == old_merge.b_in {
+                old_merge.b_in = outer_merge.out;
+                this_changed = true;
+            }
+        }
+
+        if this_changed {
+            changed = true;
+            new_merges.push(old_merge);
+        }
+    }
+
+    if changed {
+        stores.values.update_marge_values(op_id, new_merges);
     }
 }

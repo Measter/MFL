@@ -128,6 +128,10 @@ impl ValueStore {
             .expect_none("ICE: Tried to overwrite merges");
     }
 
+    pub fn update_marge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
+        self.op_merges.insert(op_id, merges);
+    }
+
     pub fn get_merge_values(&self, op_id: OpId) -> Option<&Vec<MergeValue>> {
         self.op_merges.get(&op_id)
     }
