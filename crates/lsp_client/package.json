@@ -26,6 +26,13 @@
                 "configuration": "./language-configuration.json"
             }
         ],
+        "grammars": [
+            {
+                "language": "mfl",
+                "scopeName": "source.mfl",
+                "path": "./syntaxes/mfl.tmLanguage.json"
+            }
+        ],
         "configuration": {
             "type": "object",
             "title": "mfl-language-server",

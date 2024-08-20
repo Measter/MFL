@@ -1,0 +1,92 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "MFL",
+	"patterns": [
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#chars"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#comments"
+		}
+	],
+	"repository": {
+		"strings": {
+			"name": "string.quoted.double.mfl",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.mfl",
+					"match": "\\\\."
+				}
+			]
+		},
+		"chars": {
+			"name": "string.quoted.single.mfl",
+			"begin": "'",
+			"end": "'",
+			"patterns": [
+				{
+					"name": "constant.character.escape.mfl",
+					"match": "\\\\."
+				}
+			]
+		},
+		"numbers": {
+			"name": "constant.numeric",
+			"patterns": [
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b0[bB][01][01_]*\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b0o[0-7][0-7_]*\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b[0-9][0-9_]*\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b0[xX][0-9A-Fa-f][0-9A-Fa-f_]*\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][-\\+]?[0-9][0-9_]*)?\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b(true|false)\\b"
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b(here)\\b"
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"name": "entity.name.type",
+					"match": "\\b(bool|u8|u16|u32|u64|s8|s16|s32|s64|f32|f64)\\b"
+				}
+			]
+		},
+		"comments": {
+			"name": "comment.line.double-slash.mfl",
+			"begin": "//",
+			"end": "\n"
+		}
+	},
+	"scopeName": "source.mfl"
+}
