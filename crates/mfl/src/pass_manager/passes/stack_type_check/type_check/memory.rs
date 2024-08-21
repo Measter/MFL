@@ -441,7 +441,7 @@ pub(crate) fn insert_array(
                         make_error_for_aggr(
                             stores,
                             Some(
-                                "Struct must be slice-like (must have a pointer and length field"
+                                "Struct must be slice-like (must have a pointer and length field)"
                                     .to_owned(),
                             ),
                         );
@@ -468,7 +468,7 @@ pub(crate) fn insert_array(
                 make_error_for_aggr(
                     stores,
                     Some(
-                        "Struct must be slice-like (must have a pointer and length field"
+                        "Struct must be slice-like (must have a pointer and length field)"
                             .to_owned(),
                     ),
                 );
