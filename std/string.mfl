@@ -24,7 +24,7 @@ proc split_front [
     } else {
         0(u64) while 
             dup str.length@ <
-            if dup { over str swap xtrd char@ != and }
+            if dup { over str#@ char@ != and }
         {
             // [counter]
             1+
@@ -76,7 +76,7 @@ proc is_digit [u8] to [bool] {
 
 proc trim_start [var str String] to [String] {
     0 while dup str.length@ < {
-        if str 0 xtrd is_whitespace {
+        if 0 str#@ is_whitespace {
             str@ unpack
             1+ str.pointer!
             1- str.length!
@@ -96,7 +96,7 @@ proc trim_end [var str String] to [String] {
     if str.length@ 0= { str@ return }
 
     str.length@ 1- while dup 0> {
-        if dup str swap xtrd is_whitespace {
+        if dup str#@ is_whitespace {
             str.length@ 1- str.length!
         } else {
             // Cant break loops at the moment.

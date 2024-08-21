@@ -52,7 +52,7 @@ proc write_ui [FD, u64] to [WriteResult] {
             dup 10/
             swap 10% '0'+ cast(u8)
             // [idx, num/10, char]
-            buf over(3) ins drop
+            over(2) buf#!
             swap
         }
 
