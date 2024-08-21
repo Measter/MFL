@@ -196,6 +196,7 @@ pub fn parse_simple_op(
 
         TokenKind::Cast | TokenKind::SizeOf => return parse_cast_sizeof(stores, token_iter, token),
 
+        TokenKind::Hash => OpCode::Basic(Basic::Memory(Memory::Index)),
         TokenKind::Load => OpCode::Basic(Basic::Memory(Memory::Load)),
         TokenKind::Store => OpCode::Basic(Basic::Memory(Memory::Store)),
         TokenKind::AssumeInit => return parse_assumeinit(stores, token_iter, token),

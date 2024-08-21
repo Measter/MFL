@@ -273,6 +273,7 @@ impl Backend {
                         TokenKind::Drop
                         | TokenKind::Dup
                         | TokenKind::Extract(_)
+                        | TokenKind::Hash
                         | TokenKind::Insert(_)
                         | TokenKind::Load
                         | TokenKind::Over

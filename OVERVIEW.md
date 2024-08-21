@@ -248,6 +248,23 @@ Supported Types:
 |---|---|
 |`T[N]`|`T`|
 
+### `#` (Index)
+
+Indexes into an array or slice-like struct (a struct with a `pointer` and `length` field) at the given index, and returns
+a pointer to that item.
+
+Stack: `[a b]` to `[c]`
+
+Operation:
+
+* `c = &b[a]`
+
+Supported Types:
+
+|a|b|c|
+|---|---|---|---|
+|`uN`|`T[N]&`|`T&`|
+
 ### `ins`, `insd` (Insert into Array)
 
 Stores a value into an array or slice-like struct (a struct with a `pointer` and `length` field) at the given runtime index.

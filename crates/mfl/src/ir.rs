@@ -372,6 +372,7 @@ pub enum Memory {
     FieldAccess {
         field_name: Spanned<Spur>,
     },
+    Index,
     InsertArray {
         emit_array: bool,
     },

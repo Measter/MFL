@@ -379,6 +379,115 @@ pub(crate) fn field_access(
         .set_value_type(output_pointer_id, output_type_info.id);
 }
 
+pub(crate) fn index(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
+    let inputs @ [idx_value_id, array_value_id] = *op_data.inputs.as_arr();
+    let output_value_id = op_data.outputs[0];
+    let Some(type_ids) = stores.values.value_types(inputs) else {
+        return;
+    };
+
+    let [idx_type_info, array_type_info] = type_ids.map(|id| stores.types.get_type_info(id));
+
+    if !idx_type_info.kind.is_unsigned_int() {
+        let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            stores,
+            [(idx_value_id, 2, idx_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op_loc).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op_loc,
+            format!("cannot index an array with `{idx_type_name}`"),
+            labels,
+            None,
+        );
+
+        had_error.set();
+    }
+
+    let mut make_error_for_aggr = |stores: &mut Stores, note| {
+        let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
+        let mut labels = diagnostics::build_creator_label_chain(
+            stores,
+            [(array_value_id, 1, value_type_name)],
+            Color::Yellow,
+            Color::Cyan,
+        );
+        labels.push(Label::new(op_loc).with_color(Color::Red));
+
+        diagnostics::emit_error(
+            stores,
+            op_loc,
+            format!("cannot index into a `{value_type_name}`"),
+            labels,
+            note,
+        );
+
+        had_error.set();
+    };
+
+    let store_type_id = match array_type_info.kind {
+        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
+            let ptr_type_info = stores.types.get_type_info(sub_type);
+            match ptr_type_info.kind {
+                TypeKind::Array { type_id, .. } => type_id,
+                TypeKind::Struct(struct_item_id)
+                | TypeKind::GenericStructInstance(struct_item_id) => {
+                    if pass_manager
+                        .ensure_define_structs(stores, struct_item_id)
+                        .is_err()
+                    {
+                        had_error.set();
+                        return;
+                    };
+                    let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
+                        make_error_for_aggr(
+                            stores,
+                            Some(
+                                "Struct must be slice-like (must have a pointer and length field)"
+                                    .to_owned(),
+                            ),
+                        );
+                        return;
+                    };
+                    store_type
+                }
+                _ => {
+                    make_error_for_aggr(stores, None);
+                    return;
+                }
+            }
+        }
+        TypeKind::Array { .. }
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => {
+            make_error_for_aggr(stores, None);
+            return;
+        }
+    };
+
+    let ptr_type = stores
+        .types
+        .get_single_pointer(stores.strings, store_type_id);
+
+    stores.values.set_value_type(output_value_id, ptr_type.id);
+}
+
 pub(crate) fn insert_array(
     stores: &mut Stores,
     pass_manager: &mut PassManager,

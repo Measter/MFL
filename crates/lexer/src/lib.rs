@@ -170,6 +170,9 @@ pub enum TokenKind {
     #[token(">=")]
     GreaterEqual,
 
+    #[token("#")]
+    Hash,
+
     #[token("here", |_| Spur::default())]
     Here(Spur),
 
@@ -321,6 +324,7 @@ impl TokenKind {
             TokenKind::GoesTo => "to",
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",
+            TokenKind::Hash => "#",
             TokenKind::Here(_) => "here",
             TokenKind::Ident => "Ident",
             TokenKind::If => "if",

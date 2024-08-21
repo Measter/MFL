@@ -104,6 +104,7 @@ fn analyze_block(
                     }
                 },
                 Basic::Memory(mo) => match mo {
+                    Memory::Index => memory::index(stores, had_error, op_id),
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
                         memory::insert_extract_array(stores, had_error, op_id)
                     }

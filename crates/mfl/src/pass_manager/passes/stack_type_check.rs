@@ -300,6 +300,19 @@ fn analyze_block(
 
                         had_error.merge_with(local_had_error);
                     }
+                    Memory::Index => {
+                        let mut local_had_error = ErrorSignal::new();
+                        eat_two_make_one(stores, &mut local_had_error, stack, op_id);
+                        if local_had_error.is_ok() {
+                            type_check::memory::index(
+                                stores,
+                                pass_manager,
+                                &mut local_had_error,
+                                op_id,
+                            );
+                        }
+                        had_error.merge_with(local_had_error);
+                    }
                     Memory::InsertArray { emit_array } => {
                         let mut local_had_error = ErrorSignal::new();
                         stack_check::memory::insert_array(

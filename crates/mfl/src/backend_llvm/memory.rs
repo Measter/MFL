@@ -437,6 +437,82 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
+    pub(super) fn build_index(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        function: FunctionValue<'ctx>,
+        op_id: OpId,
+    ) -> InkwellResult {
+        let op_io = ds.ops.get_op_io(op_id).clone();
+        let [idx_value_id, array_value_id] = *op_io.inputs().as_arr();
+        let output_value_id = op_io.outputs[0];
+        let idx_val = value_store.load_value(self, idx_value_id, ds.values, ds.types)?;
+        let array_val = value_store.load_value(self, array_value_id, ds.values, ds.types)?;
+
+        let [array_type_id] = ds.values.value_types([array_value_id]).unwrap();
+        let array_type_info = ds.types.get_type_info(array_type_id);
+
+        let (arr_ptr, length, ptr_kind, ptee_type_id) = match array_type_info.kind {
+            TypeKind::MultiPointer(sub_type_id) | TypeKind::SinglePointer(sub_type_id) => {
+                let sub_type_info = ds.types.get_type_info(sub_type_id);
+                match sub_type_info.kind {
+                    TypeKind::Array { length, .. } => {
+                        let length_value = self.ctx.i64_type().const_int(length.to_u64(), false);
+                        (
+                            array_val.into_pointer_value(),
+                            length_value,
+                            ArrayPtrKind::Indirect,
+                            sub_type_id,
+                        )
+                    }
+                    TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let ptee_type = self.get_type(ds.types, sub_type_id);
+                        let struct_val = self.builder.build_load(
+                            ptee_type,
+                            array_val.into_pointer_value(),
+                            "",
+                        )?;
+                        let (ptr_field, store_type_info, length) = self
+                            .get_slice_like_struct_fields(
+                                ds.types,
+                                ds.strings,
+                                array_value_id,
+                                sub_type_id,
+                                struct_val.into_struct_value(),
+                            )?;
+                        (ptr_field, length, ArrayPtrKind::Direct, store_type_info.id)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        let idx_val = self.cast_int(
+            idx_val.into_int_value(),
+            self.ctx.i64_type(),
+            IntSignedness::Unsigned,
+        )?;
+
+        self.build_bounds_check(ds, op_id, function, idx_val, length)?;
+
+        let idxs = [self.ctx.i64_type().const_zero(), idx_val];
+        let idxs: &[IntValue] = match ptr_kind {
+            ArrayPtrKind::Indirect => &idxs,
+            ArrayPtrKind::Direct => &idxs[1..],
+        };
+        let offset_ptr = unsafe {
+            let ptee_type = self.get_type(ds.types, ptee_type_id);
+            self.builder
+                .build_in_bounds_gep(ptee_type, arr_ptr, idxs, "")?
+        };
+
+        value_store.store_value(self, output_value_id, offset_ptr.into())?;
+
+        Ok(())
+    }
+
     pub(super) fn build_insert_array(
         &mut self,
         ds: &mut Stores,
