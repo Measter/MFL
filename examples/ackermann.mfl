@@ -2,10 +2,10 @@ proc entry [] to [] {
     3 8 ackermann std::term::write_si_ln
 }
 
-proc ackermann [s32 s32] to [s32] {
+proc ackermann [s32, s32] to [s32] {
     if over 0= {
         swap drop 1+
-    } elif dup 0= {
+    } else if dup 0= {
         drop 1- 1 ackermann
     } else {
         1- over swap ackermann

@@ -5,18 +5,18 @@ assert ValidBoardSize { N 3>= }
 assert UpdateArrayLengths { N 50 = }
 
 proc render [u8[50]&] to [] {
-    // var render_buf is u8[N] end
-    var render_buf { u8[50] }
+    // var render_buf u8[N]
+    var render_buf u8[50]
 
     0 while dup N< {
         if swap over xtr 1= { '*' } else { ' ' }
-        render_buf over(3) insd
+        over(2) render_buf#!
 
         swap
         1+
     } drop(2)
 
-    N render_buf cast(u8&) String
+    N render_buf cast(u8*) String
     std::term::writeln
 }
 
@@ -39,10 +39,10 @@ proc step [u8[50]&] to [] {
 }
 
 proc entry [] to [] {
-    // var buf is u8[N] end
-    var buf { u8[50] }
+    // var buf u8[N]
+    var buf u8[50]
 
-    1 buf N 2- insd
+    1 N 2- buf#!
 
     0 while dup N 2- < {
         buf render

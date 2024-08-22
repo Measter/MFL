@@ -22,13 +22,13 @@ proc fibonacci_iter [u64] to [u64] {
 proc ord [u8] to [String] {
     100%
     if dup 11= { "th" }
-    elif dup 12= { "th" }
-    elif dup 13= { "th" }
+    else if dup 12= { "th" }
+    else if dup 13= { "th" }
     else {
         10%
         if dup 1= { "st" }
-        elif dup 2= { "nd" }
-        elif dup 3= { "rd" }
+        else if dup 2= { "nd" }
+        else if dup 3= { "rd" }
         else { "th" }
     }
     swap drop

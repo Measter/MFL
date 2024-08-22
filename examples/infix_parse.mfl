@@ -1,7 +1,7 @@
 import core::String
 
 // Parse a matched character out of the input
-proc match [String u8] to [String] {
+proc match [String, u8] to [String] {
     swap
     // [expected, input]
     0 xtr rot(3<1)
@@ -27,17 +27,19 @@ proc expr [String] to [String] {
 }
 
 proc rest [String] to [String] {
-    if 0 xtr '+'= {
+    if xtr(length) 0= {
+        // Do nothing
+    } else if 0 xtr '+'= {
         '+' match
         term
         "+ " std::term::write
         rest
-    } elif 0 xtr '-'= {
+    } else if 0 xtr '-'= {
         '-' match
         term
         "- " std::term::write
         rest
-    } elif 0 xtr '\0' != {
+    } else if 0 xtr '\0' != {
         "" std::term::writeln
         "Error unexpected character `" std::term::write
         0 xtr std::term::write_char
@@ -67,7 +69,7 @@ proc term [String] to [String] {
     }
 }
 
-proc make_str [u8&] to [String] {
+proc make_str [u8*] to [String] {
     0 while dup(2) +@ 0 != {
         1+
     }
@@ -77,7 +79,7 @@ proc make_str [u8&] to [String] {
 
 // Takes a simple infix expression containing only + and - and single digits, and converts it to
 // postfix.
-proc entry [u64 u8&&] to [] {
+proc entry [u64, u8**] to [] {
     if swap 2= {
         1+@ make_str
         // [input_ptr]
