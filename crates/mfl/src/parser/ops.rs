@@ -787,82 +787,42 @@ pub fn parse_if(
 
     let then_block_tokens =
         token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
-    let mut close_token = then_block_tokens.last_token();
+    let mut close_token_location = then_block_tokens.last_token().location;
 
     let then_block = parse_item_body_contents(stores, &then_block_tokens.tokens, parent_id)?;
     let then_block = stores.blocks.new_block(then_block);
 
-    let else_token = close_token;
-    let mut elif_blocks = Vec::new();
+    let mut else_token_location = close_token_location;
 
-    while token_iter.next_is(TokenKind::Elif) {
-        let elif_token = token_iter.next().unwrap_single();
-        let elif_condition_tokens = get_terminated_tokens(
-            stores,
-            token_iter,
-            elif_token,
-            None,
-            Matcher("any", |_: &TokenTree| IsMatch::Yes),
-            ConditionMatch,
-            false,
-        )?;
-
-        let elif_condition =
-            parse_item_body_contents(stores, &elif_condition_tokens.list, parent_id)?;
-        let elif_condition = stores.blocks.new_block(elif_condition);
-
-        let elif_block_tokens =
-            token_iter.expect_group(stores, BracketKind::Brace, elif_condition_tokens.close)?;
-
-        let elif_block = parse_item_body_contents(stores, &elif_block_tokens.tokens, parent_id)?;
-        let elif_block = stores.blocks.new_block(elif_block);
-
-        elif_blocks.push((
-            close_token,
-            elif_condition,
-            elif_condition_tokens.close,
-            elif_block,
-            elif_block_tokens.last_token(),
-        ));
-        close_token = elif_block_tokens.last_token();
-    }
-
-    let else_block = if token_iter.next_is(TokenKind::Else) {
+    let else_block_ops = if token_iter.next_is(TokenKind::Else) {
         let else_token = token_iter.next().unwrap_single();
-        let else_block_tokens = token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
-        let else_block = parse_item_body_contents(stores, &else_block_tokens.tokens, parent_id)?;
-        close_token = else_block_tokens.last_token();
-        else_block
+        else_token_location = else_token.location;
+
+        if token_iter.next_is_single(TokenKind::If) {
+            let if_token = token_iter.next().unwrap_single();
+            let (if_ops, sub_if_close) = parse_if(stores, token_iter, if_token, parent_id)?;
+            close_token_location = sub_if_close;
+
+            let token = if_token
+                .inner
+                .lexeme
+                .with_span(if_token.location.merge(sub_if_close));
+            vec![stores.ops.new_op(if_ops, token)]
+        } else {
+            let else_block = token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
+            close_token_location = else_block.last_token().location;
+            parse_item_body_contents(stores, &else_block.tokens, parent_id)?
+        }
     } else {
         Vec::new()
     };
-    let mut else_block = stores.blocks.new_block(else_block);
 
-    // Normalize into an `if <cond> do <body> else <body> end` structure.
-    while let Some((open_token, condition, do_token, then_block, else_token)) = elif_blocks.pop() {
-        let if_tokens = IfTokens {
-            do_token: do_token.location,
-            else_token: else_token.location,
-            end_token: close_token.location,
-        };
-        let if_code = If {
-            tokens: if_tokens,
-            condition,
-            then_block,
-            else_block,
-        };
-        let if_op = stores.ops.new_op(
-            OpCode::Basic(Basic::Control(Control::If(if_code))),
-            open_token.map(|t| t.lexeme),
-        );
-
-        else_block = stores.blocks.new_block(vec![if_op]);
-    }
+    let else_block = stores.blocks.new_block(else_block_ops);
 
     let if_tokens = IfTokens {
         do_token: condition_tokens.close.location,
-        else_token: else_token.location,
-        end_token: close_token.location,
+        else_token: else_token_location,
+        end_token: close_token_location,
     };
     let if_code = If {
         tokens: if_tokens,
@@ -872,7 +832,7 @@ pub fn parse_if(
     };
     Ok((
         OpCode::Basic(Basic::Control(Control::If(if_code))),
-        close_token.location,
+        close_token_location,
     ))
 }
 

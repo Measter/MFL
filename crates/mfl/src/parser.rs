@@ -114,7 +114,6 @@ pub fn parse_item_body_contents(
                     // it's an error.
                     TokenKind::GoesTo
                     | TokenKind::Import
-                    | TokenKind::Elif
                     | TokenKind::Else
                     | TokenKind::BracketClose(_)
                     | TokenKind::BracketOpen(_) => {
@@ -261,7 +260,6 @@ pub(super) fn parse_file(
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
                     TokenKind::GoesTo
-                    | TokenKind::Elif
                     | TokenKind::Else
                     | TokenKind::BracketOpen(_)
                     | TokenKind::BracketClose(_) => {

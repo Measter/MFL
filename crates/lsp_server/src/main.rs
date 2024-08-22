@@ -223,7 +223,6 @@ impl Backend {
                         TokenKind::Assert
                         | TokenKind::Cast
                         | TokenKind::Const
-                        | TokenKind::Elif
                         | TokenKind::Else
                         | TokenKind::EmitStack
                         | TokenKind::Exit

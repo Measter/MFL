@@ -136,9 +136,6 @@ pub enum TokenKind {
     #[token("dup")]
     Dup,
 
-    #[token("elif")]
-    Elif,
-
     #[token("else")]
     Else,
 
@@ -312,7 +309,6 @@ impl TokenKind {
             TokenKind::Dot => ".",
             TokenKind::Drop => "drop",
             TokenKind::Dup => "dup",
-            TokenKind::Elif => "elif",
             TokenKind::Else => "else",
             TokenKind::Equal => "=",
             TokenKind::EmitStack => "emit",
@@ -365,10 +361,7 @@ impl TokenKind {
     }
 
     pub fn expects_brace_group(self) -> bool {
-        matches!(
-            self,
-            TokenKind::If | TokenKind::Elif | TokenKind::Else | TokenKind::While
-        )
+        matches!(self, TokenKind::If | TokenKind::Else | TokenKind::While)
     }
 }
 
