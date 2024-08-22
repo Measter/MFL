@@ -157,6 +157,8 @@ macro_rules! ensure_state_deps {
         let cur_item_state = $self.states[&$cur_item];
         if cur_item_state.passed.contains($this_state) {
             return Ok(());
+        } else if cur_item_state.errored.contains($this_state) {
+            return Err(());
         }
         let dep_list = $this_state.get_deps();
         let mut had_error = false;
