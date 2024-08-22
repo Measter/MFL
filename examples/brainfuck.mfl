@@ -1,0 +1,70 @@
+import core::String
+import std::term::write_char
+
+struct State {
+    ptr u64,
+    tape u8[512],
+    counter u64,
+}
+
+proc entry [] to [] {
+    var input String
+
+    "+[>[<-[]>+[>+++>[+++++++++++>][>]-[<]>-]]++++++++++<]>>>>>>----.<<+++.<-..+++.<-.>>>.<<.+++.------.>-.<<+.<."
+    input!
+
+    var memory State
+    1 memory.counter!
+
+    0(u64) while dup input.length@ < {
+        dup input#@
+
+        if dup '>' = {
+            drop
+            memory.ptr@ 1+ 512% memory.ptr!
+        } else if dup '<' = {
+            drop
+            memory.ptr@ 1- 512+ 512% memory.ptr!
+        } else if dup '.' = {
+            drop
+            memory.ptr@ memory.tape#@ write_char
+        } else if dup '+' = {
+            drop
+            memory.ptr@ memory.tape# dup @ 1+ swap !
+        } else if dup '-' = {
+            drop
+            memory.ptr@ memory.tape# dup @ 1- swap !
+        } else if dup '[' = {
+            drop
+            if memory.ptr@ memory.tape#@ 0= {
+                1 memory.counter!
+                while memory.counter@ 0> {
+                    1+
+                    input over xtrd 
+                    if dup '[' = {
+                        drop
+                        memory.counter@ 1+ memory.counter!
+                    } else if ']' = {
+                        memory.counter@ 1- memory.counter!
+                    }
+                }
+            }
+        } else if ']' = {
+            if memory.ptr@ memory.tape#@ 0!= {
+                1 memory.counter!
+                while memory.counter@ 0> {
+                    1-
+                    input over xtrd 
+                    if dup ']' = {
+                        drop
+                        memory.counter@ 1+ memory.counter!
+                    } else if '[' = {
+                        memory.counter@ 1- memory.counter!
+                    }
+                }
+            }
+        }
+
+        1+
+    } drop
+}
