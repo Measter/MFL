@@ -152,18 +152,34 @@ impl PassManager {
     }
 }
 
-macro_rules! ensure_state_deps {
-    ($self:expr, $stores:expr, $cur_item:expr, $this_state:expr) => {
-        let cur_item_state = $self.states[&$cur_item];
-        if cur_item_state.passed.contains($this_state) {
-            return Ok(());
-        } else if cur_item_state.errored.contains($this_state) {
+enum NeedsWork {
+    Yes,
+    No,
+}
+
+impl NeedsWork {
+    fn done(self) -> bool {
+        matches!(self, NeedsWork::No)
+    }
+}
+
+impl PassManager {
+    fn ensure_state_deps(
+        &mut self,
+        stores: &mut Stores,
+        cur_item: ItemId,
+        this_state: PassState,
+    ) -> Result<NeedsWork, ()> {
+        let cur_item_state = self.states[&cur_item];
+        if cur_item_state.passed.contains(this_state) {
+            return Ok(NeedsWork::No);
+        } else if cur_item_state.errored.contains(this_state) {
             return Err(());
         }
-        let dep_list = $this_state.get_deps();
+        let dep_list = this_state.get_deps();
         let mut had_error = false;
         for &dep in dep_list {
-            let cur_item_state = $self.states[&$cur_item];
+            let cur_item_state = self.states[&cur_item];
             if cur_item_state.passed.contains(dep) {
                 continue;
             }
@@ -172,19 +188,20 @@ macro_rules! ensure_state_deps {
                 continue;
             }
 
-            dep.get_function()($self, $stores, $cur_item)?;
+            had_error |= dep.get_function()(self, stores, cur_item).is_err();
         }
         if had_error {
-            $self.set_error($cur_item, $this_state);
+            self.set_error(cur_item, this_state);
             return Err(());
         }
-    };
-}
+        Ok(NeedsWork::Yes)
+    }
 
-impl PassManager {
     pub fn ensure_build_names(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::BuildNames;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("BuildNames").entered();
         trace!(
@@ -200,7 +217,9 @@ impl PassManager {
 
     fn ensure_check_asserts(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::CheckAsserts;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("CheckAsserts").entered();
         trace!(
@@ -235,7 +254,9 @@ impl PassManager {
 
     fn ensure_const_prop_body(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::ConstPropBody;
-        ensure_state_deps!(self, stores, cur_item, PassState::ConstPropBody);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("ConstProp").entered();
         trace!(
@@ -261,7 +282,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::CyclicRefCheckBody;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("CycleCheck").entered();
         trace!(
@@ -286,7 +309,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::DeclareStructs;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("DeclStruct").entered();
         trace!(
@@ -307,7 +332,9 @@ impl PassManager {
 
     fn ensure_define_structs(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::DefineStructs;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("DefStruct").entered();
         trace!(
@@ -351,7 +378,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::EvaluatedConstsAsserts;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("EvaluateConstAsserts").entered();
         trace!(
@@ -402,7 +431,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedBody;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("IdentBody").entered();
         trace!(
@@ -427,7 +458,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedSignature;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("IdentSig").entered();
         trace!(
@@ -452,7 +485,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::PartiallyTypeResolved;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("PartialType").entered();
         trace!(
@@ -478,7 +513,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::SelfContainingStruct;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("SelfContainingStruct").entered();
         trace!(
@@ -503,7 +540,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::StackAndTypeCheckedBody;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("StackTypeCheck").entered();
         trace!(
@@ -534,7 +573,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TerminalBlockCheckBody;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("TerminalCheck").entered();
         trace!(
@@ -553,7 +594,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedBody;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("TypeBody").entered();
         trace!(
@@ -578,7 +621,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedSignature;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("TypeSig").entered();
         trace!(
@@ -603,7 +648,9 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::ValidAttributes;
-        ensure_state_deps!(self, stores, cur_item, STATE);
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
 
         let _span = debug_span!("ValidAttrib").entered();
         trace!(
