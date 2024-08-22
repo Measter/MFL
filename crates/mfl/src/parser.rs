@@ -148,7 +148,11 @@ pub fn parse_item_body_contents(
                     stores,
                     tg.span(),
                     "unexpected bracket group in input",
-                    Some(Label::new(tg.span()).with_color(Color::Red)),
+                    Some(
+                        Label::new(tg.span())
+                            .with_color(Color::Red)
+                            .with_message("here"),
+                    ),
                     None,
                 );
 
@@ -299,7 +303,11 @@ pub(super) fn parse_file(
                     stores,
                     tg.span(),
                     "unexpected bracket group in input",
-                    Some(Label::new(tg.span()).with_color(Color::Red)),
+                    Some(
+                        Label::new(tg.span())
+                            .with_color(Color::Red)
+                            .with_message("here"),
+                    ),
                     None,
                 );
 
