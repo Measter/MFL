@@ -76,21 +76,24 @@ fn analyze_block(
                     }
                     // Nothing to do here.
                     Control::Exit | Control::SysCall { .. } => {}
-                    Control::If(if_op) => {
-                        control::analyze_if(
-                            stores,
-                            pass_manager,
-                            variable_state,
-                            had_error,
-                            item_id,
-                            if_op,
-                        );
+                    // Control::If(if_op) => {
+                    //     control::analyze_if(
+                    //         stores,
+                    //         pass_manager,
+                    //         variable_state,
+                    //         had_error,
+                    //         item_id,
+                    //         if_op,
+                    //     );
 
-                        if stores.blocks.is_terminal(if_op.else_block)
-                            && stores.blocks.is_terminal(if_op.then_block)
-                        {
-                            break;
-                        }
+                    //     if stores.blocks.is_terminal(if_op.else_block)
+                    //         && stores.blocks.is_terminal(if_op.then_block)
+                    //     {
+                    //         break;
+                    //     }
+                    // }
+                    Control::Cond(_) => {
+                        todo!();
                     }
                     Control::While(while_op) => {
                         control::analyze_while(

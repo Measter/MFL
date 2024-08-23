@@ -174,30 +174,8 @@ fn simulate_execute_program_block(
                     emit_unsupported_diag(stores, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
-                Control::If(if_op) => {
-                    simulate_execute_program_block(
-                        stores,
-                        pass_manager,
-                        if_op.condition,
-                        value_stack,
-                    )?;
-
-                    let a = value_stack.pop().unwrap();
-                    if a == SimulatorValue::Bool(true) {
-                        simulate_execute_program_block(
-                            stores,
-                            pass_manager,
-                            if_op.then_block,
-                            value_stack,
-                        )?;
-                    } else {
-                        simulate_execute_program_block(
-                            stores,
-                            pass_manager,
-                            if_op.else_block,
-                            value_stack,
-                        )?;
-                    }
+                Control::Cond(_) => {
+                    todo!();
                 }
                 Control::While(while_op) => loop {
                     simulate_execute_program_block(

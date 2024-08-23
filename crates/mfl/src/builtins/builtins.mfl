@@ -12,34 +12,37 @@ proc oob_handler [core::String, u64, u64] to [] {
     swap
 
     1 2 "\nIndex: " unpack swap syscall(4) drop
-    if dup 0= {
-        drop "0" unpack
-    } else {
-        0 while over 0> {
-            swap
+    cond {
+        0= { "0" unpack }
+        else {
+            0 while over 0> {
+                swap
 
-            dup 10 % '0'+ cast(u8) BUF
-            over(3) 19 swap- insd
+                dup 10 % '0'+ cast(u8) BUF
+                over(3) 19 swap- insd
 
-            10 / swap 1+
-        } swap drop
-        BUF cast(u8*) over 20 swap -+
+                10 / swap 1+
+            } swap drop
+            BUF cast(u8*) over 20 swap -+
+        }
     }
+
     swap 1 2 rot(4>2) syscall(4) drop
 
     1 2 "\nArray Length: " unpack swap syscall(4) drop
-    if dup 0= {
-        drop "0" unpack
-    } else {
-        0 while over 0> {
-            swap
+    cond {
+        0= { "0" unpack }
+        else {
+            0 while over 0> {
+                swap
 
-            dup 10 % '0'+ cast(u8) BUF
-            over(3) 19 swap- insd
+                dup 10 % '0'+ cast(u8) BUF
+                over(3) 19 swap- insd
 
-            10 / swap 1+
-        } swap drop
-        BUF cast(u8*) over 20 swap -+
+                10 / swap 1+
+            } swap drop
+            BUF cast(u8*) over 20 swap -+
+        }
     }
     swap 1 2 rot(4>2) syscall(4) drop
     1 2 "\n" unpack swap syscall(4) drop

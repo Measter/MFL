@@ -222,13 +222,13 @@ impl Backend {
                         // Keyword
                         TokenKind::Assert
                         | TokenKind::Cast
+                        | TokenKind::Cond
                         | TokenKind::Const
                         | TokenKind::Else
                         | TokenKind::EmitStack
                         | TokenKind::Exit
                         | TokenKind::Extern
                         | TokenKind::GoesTo
-                        | TokenKind::If
                         | TokenKind::AssumeInit
                         | TokenKind::Import
                         | TokenKind::LangItem

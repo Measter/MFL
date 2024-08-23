@@ -192,34 +192,37 @@ fn check_invalid_cyclic_refs_in_block(
     for op_id in block.ops {
         let op_code = stores.ops.get_name_resolved(op_id).clone();
         match op_code {
-            OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                check_invalid_cyclic_refs_in_block(
-                    stores,
-                    had_error,
-                    root_header,
-                    if_op.condition,
-                    cur_header,
-                    checked_items,
-                    check_queue,
-                );
-                check_invalid_cyclic_refs_in_block(
-                    stores,
-                    had_error,
-                    root_header,
-                    if_op.then_block,
-                    cur_header,
-                    checked_items,
-                    check_queue,
-                );
-                check_invalid_cyclic_refs_in_block(
-                    stores,
-                    had_error,
-                    root_header,
-                    if_op.else_block,
-                    cur_header,
-                    checked_items,
-                    check_queue,
-                );
+            // OpCode::Basic(Basic::Control(Control::If(if_op))) => {
+            //     check_invalid_cyclic_refs_in_block(
+            //         stores,
+            //         had_error,
+            //         root_header,
+            //         if_op.condition,
+            //         cur_header,
+            //         checked_items,
+            //         check_queue,
+            //     );
+            //     check_invalid_cyclic_refs_in_block(
+            //         stores,
+            //         had_error,
+            //         root_header,
+            //         if_op.then_block,
+            //         cur_header,
+            //         checked_items,
+            //         check_queue,
+            //     );
+            //     check_invalid_cyclic_refs_in_block(
+            //         stores,
+            //         had_error,
+            //         root_header,
+            //         if_op.else_block,
+            //         cur_header,
+            //         checked_items,
+            //         check_queue,
+            //     );
+            // }
+            OpCode::Basic(Basic::Control(Control::Cond(_))) => {
+                todo!();
             }
             OpCode::Basic(Basic::Control(Control::While(while_op))) => {
                 check_invalid_cyclic_refs_in_block(

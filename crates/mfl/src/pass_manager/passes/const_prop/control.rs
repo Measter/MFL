@@ -5,7 +5,7 @@ use stores::items::ItemId;
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, While},
+    ir::While,
     pass_manager::PassManager,
     simulate::SimulatorValue,
     stores::{item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, values::ConstVal},
@@ -115,57 +115,57 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
     );
 }
 
-pub(crate) fn analyze_if(
-    stores: &mut Stores,
-    pass_manager: &mut PassManager,
-    variable_state: &mut HashMap<ItemId, ConstVal>,
-    had_error: &mut ErrorSignal,
-    proc_item_id: ItemId,
-    if_op: If,
-) {
-    super::analyze_block(
-        stores,
-        pass_manager,
-        variable_state,
-        had_error,
-        proc_item_id,
-        if_op.condition,
-    );
+// pub(crate) fn analyze_if(
+//     stores: &mut Stores,
+//     pass_manager: &mut PassManager,
+//     variable_state: &mut HashMap<ItemId, ConstVal>,
+//     had_error: &mut ErrorSignal,
+//     proc_item_id: ItemId,
+//     if_op: If,
+// ) {
+//     super::analyze_block(
+//         stores,
+//         pass_manager,
+//         variable_state,
+//         had_error,
+//         proc_item_id,
+//         if_op.condition,
+//     );
 
-    let post_condition_var_state = variable_state.clone();
-    super::analyze_block(
-        stores,
-        pass_manager,
-        variable_state,
-        had_error,
-        proc_item_id,
-        if_op.then_block,
-    );
+//     let post_condition_var_state = variable_state.clone();
+//     super::analyze_block(
+//         stores,
+//         pass_manager,
+//         variable_state,
+//         had_error,
+//         proc_item_id,
+//         if_op.then_block,
+//     );
 
-    let post_then_var_state = variable_state.clone();
-    variable_state.clone_from(&post_condition_var_state);
-    super::analyze_block(
-        stores,
-        pass_manager,
-        variable_state,
-        had_error,
-        proc_item_id,
-        if_op.else_block,
-    );
+//     let post_then_var_state = variable_state.clone();
+//     variable_state.clone_from(&post_condition_var_state);
+//     super::analyze_block(
+//         stores,
+//         pass_manager,
+//         variable_state,
+//         had_error,
+//         proc_item_id,
+//         if_op.else_block,
+//     );
 
-    for (var_id, else_state) in variable_state {
-        let then_state = post_then_var_state[var_id];
+//     for (var_id, else_state) in variable_state {
+//         let then_state = post_then_var_state[var_id];
 
-        match (then_state, *else_state) {
-            (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
-                *else_state = ConstVal::Uninitialized
-            }
-            (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *else_state = ConstVal::Unknown,
-            _ if then_state == *else_state => {}
-            _ => *else_state = ConstVal::Unknown,
-        }
-    }
-}
+//         match (then_state, *else_state) {
+//             (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
+//                 *else_state = ConstVal::Uninitialized
+//             }
+//             (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *else_state = ConstVal::Unknown,
+//             _ if then_state == *else_state => {}
+//             _ => *else_state = ConstVal::Unknown,
+//         }
+//     }
+// }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,

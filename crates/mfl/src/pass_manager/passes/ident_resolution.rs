@@ -538,28 +538,31 @@ fn resolve_idents_in_block(
             // These don't get resolved, so just copy it onward.
             OpCode::Basic(bo) => {
                 match bo {
-                    Basic::Control(Control::If(if_op)) => {
-                        resolve_idents_in_block(
-                            stores,
-                            had_error,
-                            cur_id,
-                            if_op.condition,
-                            generic_params,
-                        );
-                        resolve_idents_in_block(
-                            stores,
-                            had_error,
-                            cur_id,
-                            if_op.then_block,
-                            generic_params,
-                        );
-                        resolve_idents_in_block(
-                            stores,
-                            had_error,
-                            cur_id,
-                            if_op.else_block,
-                            generic_params,
-                        );
+                    // Basic::Control(Control::If(if_op)) => {
+                    //     resolve_idents_in_block(
+                    //         stores,
+                    //         had_error,
+                    //         cur_id,
+                    //         if_op.condition,
+                    //         generic_params,
+                    //     );
+                    //     resolve_idents_in_block(
+                    //         stores,
+                    //         had_error,
+                    //         cur_id,
+                    //         if_op.then_block,
+                    //         generic_params,
+                    //     );
+                    //     resolve_idents_in_block(
+                    //         stores,
+                    //         had_error,
+                    //         cur_id,
+                    //         if_op.else_block,
+                    //         generic_params,
+                    //     );
+                    // }
+                    Basic::Control(Control::Cond(_)) => {
+                        todo!();
                     }
                     Basic::Control(Control::While(while_op)) => {
                         resolve_idents_in_block(

@@ -160,18 +160,18 @@ pub struct While {
     pub body_block: BlockId,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct IfTokens {
-    pub do_token: SourceLocation,
-    pub else_token: SourceLocation,
-    pub end_token: SourceLocation,
+#[derive(Debug, Clone)]
+pub struct CondArm {
+    pub condition: BlockId,
+    pub open: SourceLocation,
+    pub block: BlockId,
+    pub close: SourceLocation,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct If {
-    pub tokens: IfTokens,
-    pub condition: BlockId,
-    pub then_block: BlockId,
+#[derive(Debug, Clone)]
+pub struct Cond {
+    pub token: SourceLocation,
+    pub arms: Vec<CondArm>,
     pub else_block: BlockId,
 }
 
@@ -349,14 +349,14 @@ pub enum Stack {
     },
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum Control {
+    Cond(Cond),
     Epilogue,
     Exit,
     Prologue,
     Return,
     SysCall { arg_count: Spanned<u8> },
-    If(If),
     While(While),
 }
 
@@ -388,7 +388,7 @@ pub enum Memory {
     Unpack,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum Basic {
     Arithmetic(Arithmetic),
     Compare(Compare),

@@ -539,7 +539,7 @@ impl<'ctx> CodeGen<'ctx> {
                     direction,
                     shift_count,
                 })) => trace!(item_count.inner, ?direction, shift_count.inner, "Rot"),
-                OpCode::Basic(Basic::Control(Control::If(_))) => trace!(?id, "If"),
+                OpCode::Basic(Basic::Control(Control::Cond(_))) => trace!(?id, "Cond"),
                 OpCode::Basic(Basic::Control(Control::While(_))) => trace!(?id, "While"),
                 OpCode::Complex(TypeResolvedOp::Variable { id, is_global }) => {
                     trace!(?id, ?id, is_global, "Variable")
@@ -595,14 +595,17 @@ impl<'ctx> CodeGen<'ctx> {
                     Control::SysCall { arg_count } => {
                         self.build_syscall(ds, value_store, op_id, arg_count)?
                     }
-                    Control::If(if_op) => {
-                        self.build_if(ds, value_store, function, id, op_id, &if_op)?;
-                        if ds.blocks.is_terminal(if_op.else_block)
-                            && ds.blocks.is_terminal(if_op.then_block)
-                        {
-                            // Nothing else to codegen here.
-                            break;
-                        }
+                    // Control::If(if_op) => {
+                    //     self.build_if(ds, value_store, function, id, op_id, &if_op)?;
+                    //     if ds.blocks.is_terminal(if_op.else_block)
+                    //         && ds.blocks.is_terminal(if_op.then_block)
+                    //     {
+                    //         // Nothing else to codegen here.
+                    //         break;
+                    //     }
+                    // }
+                    Control::Cond(_) => {
+                        todo!();
                     }
                     Control::While(while_op) => {
                         self.build_while(ds, value_store, function, id, op_id, &while_op)?
@@ -725,16 +728,19 @@ impl<'ctx> CodeGen<'ctx> {
         let block = ds.blocks.get_block(block_id).clone();
         for op_id in block.ops {
             match ds.ops.get_type_resolved(op_id).clone() {
-                OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                    let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
-                        panic!("ICE: If block doesn't have merge info");
-                    };
-                    for merge in op_merges {
-                        make_variable(ds, merge.out, self, merge_pair_map)?;
-                    }
+                // OpCode::Basic(Basic::Control(Control::If(if_op))) => {
+                //     let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
+                //         panic!("ICE: If block doesn't have merge info");
+                //     };
+                //     for merge in op_merges {
+                //         make_variable(ds, merge.out, self, merge_pair_map)?;
+                //     }
 
-                    self.build_merge_variables(ds, if_op.then_block, merge_pair_map)?;
-                    self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
+                //     self.build_merge_variables(ds, if_op.then_block, merge_pair_map)?;
+                //     self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
+                // }
+                OpCode::Basic(Basic::Control(Control::Cond(_))) => {
+                    todo!();
                 }
                 OpCode::Basic(Basic::Control(Control::While(while_op))) => {
                     let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {

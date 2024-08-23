@@ -55,8 +55,8 @@ pub fn parse_item_body_contents(
                         };
                         code
                     }
-                    TokenKind::If => {
-                        let Ok(code) = ops::parse_if(stores, &mut token_iter, *token, parent_id)
+                    TokenKind::Cond => {
+                        let Ok(code) = ops::parse_cond(stores, &mut token_iter, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -248,7 +248,7 @@ pub(super) fn parse_file(
 
                     TokenKind::Extract { .. }
                     | TokenKind::Insert { .. }
-                    | TokenKind::If
+                    | TokenKind::Cond
                     | TokenKind::While => {
                         emit_top_level_op_error(stores, token.location, token.inner.kind);
                         had_error.set();

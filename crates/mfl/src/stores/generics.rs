@@ -5,7 +5,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     error_signal::ErrorSignal,
-    ir::{Basic, Control, If, OpCode, PartiallyResolvedOp, TypeResolvedOp, While},
+    ir::{Basic, Control, OpCode, PartiallyResolvedOp, TypeResolvedOp, While},
     pass_manager::{PassManager, PassState},
     stores::signatures::{
         NameResolvedItemSignature, StackDefItemNameResolved, TypeResolvedItemSignature,
@@ -30,35 +30,38 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
             let op_code = self.ops.get_partially_type_resolved(op_id).clone();
             let new_code = match op_code {
                 OpCode::Basic(bo) => match bo {
-                    Basic::Control(Control::If(if_op)) => {
-                        let resolved_condition = self.expand_generic_params_in_block(
-                            pass_manager,
-                            had_error,
-                            if_op.condition,
-                            param_map,
-                            old_alloc_map,
-                        );
-                        let resolved_then = self.expand_generic_params_in_block(
-                            pass_manager,
-                            had_error,
-                            if_op.then_block,
-                            param_map,
-                            old_alloc_map,
-                        );
-                        let resolved_else = self.expand_generic_params_in_block(
-                            pass_manager,
-                            had_error,
-                            if_op.else_block,
-                            param_map,
-                            old_alloc_map,
-                        );
-                        OpCode::Basic(Basic::Control(Control::If(If {
-                            tokens: if_op.tokens,
-                            condition: resolved_condition,
-                            then_block: resolved_then,
-                            else_block: resolved_else,
-                        })))
+                    Basic::Control(Control::Cond(_)) => {
+                        todo!();
                     }
+                    // Basic::Control(Control::If(if_op)) => {
+                    //     let resolved_condition = self.expand_generic_params_in_block(
+                    //         pass_manager,
+                    //         had_error,
+                    //         if_op.condition,
+                    //         param_map,
+                    //         old_alloc_map,
+                    //     );
+                    //     let resolved_then = self.expand_generic_params_in_block(
+                    //         pass_manager,
+                    //         had_error,
+                    //         if_op.then_block,
+                    //         param_map,
+                    //         old_alloc_map,
+                    //     );
+                    //     let resolved_else = self.expand_generic_params_in_block(
+                    //         pass_manager,
+                    //         had_error,
+                    //         if_op.else_block,
+                    //         param_map,
+                    //         old_alloc_map,
+                    //     );
+                    //     OpCode::Basic(Basic::Control(Control::If(If {
+                    //         tokens: if_op.tokens,
+                    //         condition: resolved_condition,
+                    //         then_block: resolved_then,
+                    //         else_block: resolved_else,
+                    //     })))
+                    // }
                     Basic::Control(Control::While(while_op)) => {
                         let resolved_condition = self.expand_generic_params_in_block(
                             pass_manager,
@@ -158,13 +161,19 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
             let mut old_unresolved = self.ops.get_unresolved(op_id).clone();
             // Need to patch up the old unresolved opcode so that the If and While codes point to the new blocks.
             match (&mut old_unresolved, &new_code) {
+                // (
+                //     OpCode::Basic(Basic::Control(Control::If(old_if))),
+                //     OpCode::Basic(Basic::Control(Control::If(new_if))),
+                // ) => {
+                //     old_if.condition = new_if.condition;
+                //     old_if.then_block = new_if.then_block;
+                //     old_if.else_block = new_if.else_block;
+                // }
                 (
-                    OpCode::Basic(Basic::Control(Control::If(old_if))),
-                    OpCode::Basic(Basic::Control(Control::If(new_if))),
+                    OpCode::Basic(Basic::Control(Control::Cond(_))),
+                    OpCode::Basic(Basic::Control(Control::Cond(_))),
                 ) => {
-                    old_if.condition = new_if.condition;
-                    old_if.then_block = new_if.then_block;
-                    old_if.else_block = new_if.else_block;
+                    todo!();
                 }
                 (
                     OpCode::Basic(Basic::Control(Control::While(old_while))),

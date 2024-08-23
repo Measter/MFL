@@ -118,6 +118,9 @@ pub enum TokenKind {
     #[regex("//[^\n]*")]
     Comment,
 
+    #[token("cond")]
+    Cond,
+
     #[token("const")]
     Const,
 
@@ -175,9 +178,6 @@ pub enum TokenKind {
 
     #[regex("[_a-zA-Z][_a-zA-Z0-9]*")]
     Ident,
-
-    #[token("if")]
-    If,
 
     #[token("ins", |_| Insert{emit_struct: true})]
     #[token("insd", |_| Insert{emit_struct: false})]
@@ -302,6 +302,7 @@ impl TokenKind {
             TokenKind::Cast => "cast",
             TokenKind::Char(_) => "character literal",
             TokenKind::ColonColon => "::'",
+            TokenKind::Cond => "cond",
             TokenKind::Const => "const",
             TokenKind::Comment => "comment",
             TokenKind::Comma => ",",
@@ -323,7 +324,6 @@ impl TokenKind {
             TokenKind::Hash => "#",
             TokenKind::Here(_) => "here",
             TokenKind::Ident => "Ident",
-            TokenKind::If => "if",
             TokenKind::Insert(Insert { emit_struct: true }) => "ins",
             TokenKind::Insert(Insert { emit_struct: false }) => "insd",
             TokenKind::Integer(_) => "integer literal",
@@ -361,7 +361,7 @@ impl TokenKind {
     }
 
     pub fn expects_brace_group(self) -> bool {
-        matches!(self, TokenKind::If | TokenKind::Else | TokenKind::While)
+        matches!(self, TokenKind::Cond | TokenKind::While)
     }
 }
 

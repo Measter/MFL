@@ -184,34 +184,37 @@ fn analyze_block(
 
                         had_error.merge_with(local_had_error);
                     }
-                    Control::If(if_op) => {
-                        let mut local_had_error = ErrorSignal::new();
-                        stack_check::control::analyze_if(
-                            stores,
-                            pass_manager,
-                            &mut local_had_error,
-                            item_id,
-                            stack,
-                            max_stack_depth,
-                            op_id,
-                            &if_op,
-                        );
-                        if local_had_error.is_ok() {
-                            type_check::control::analyze_if(
-                                stores,
-                                &mut local_had_error,
-                                op_id,
-                                &if_op,
-                            );
-                        }
+                    // Control::If(if_op) => {
+                    //     let mut local_had_error = ErrorSignal::new();
+                    //     stack_check::control::analyze_if(
+                    //         stores,
+                    //         pass_manager,
+                    //         &mut local_had_error,
+                    //         item_id,
+                    //         stack,
+                    //         max_stack_depth,
+                    //         op_id,
+                    //         &if_op,
+                    //     );
+                    //     if local_had_error.is_ok() {
+                    //         type_check::control::analyze_if(
+                    //             stores,
+                    //             &mut local_had_error,
+                    //             op_id,
+                    //             &if_op,
+                    //         );
+                    //     }
 
-                        had_error.merge_with(local_had_error);
+                    //     had_error.merge_with(local_had_error);
 
-                        if stores.blocks.is_terminal(if_op.else_block)
-                            && stores.blocks.is_terminal(if_op.then_block)
-                        {
-                            break;
-                        }
+                    //     if stores.blocks.is_terminal(if_op.else_block)
+                    //         && stores.blocks.is_terminal(if_op.then_block)
+                    //     {
+                    //         break;
+                    //     }
+                    // }
+                    Control::Cond(_) => {
+                        todo!();
                     }
                     Control::While(while_op) => {
                         let mut local_had_error = ErrorSignal::new();

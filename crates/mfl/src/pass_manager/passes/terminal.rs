@@ -34,19 +34,22 @@ fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) ->
                 stores.blocks.set_terminal(block_id);
                 return true;
             }
-            Control::If(if_op) => {
-                let condition_id = if_op.condition;
-                let then_id = if_op.then_block;
-                let else_id = if_op.else_block;
+            // Control::If(if_op) => {
+            //     let condition_id = if_op.condition;
+            //     let then_id = if_op.then_block;
+            //     let else_id = if_op.else_block;
 
-                let condition_terminal = determine_terminal_blocks_in_block(stores, condition_id);
-                let else_terminal = determine_terminal_blocks_in_block(stores, else_id);
-                let then_terminal = determine_terminal_blocks_in_block(stores, then_id);
+            //     let condition_terminal = determine_terminal_blocks_in_block(stores, condition_id);
+            //     let else_terminal = determine_terminal_blocks_in_block(stores, else_id);
+            //     let then_terminal = determine_terminal_blocks_in_block(stores, then_id);
 
-                if condition_terminal || (then_terminal && else_terminal) {
-                    stores.blocks.set_terminal(block_id);
-                    return true;
-                }
+            //     if condition_terminal || (then_terminal && else_terminal) {
+            //         stores.blocks.set_terminal(block_id);
+            //         return true;
+            //     }
+            // }
+            Control::Cond(_) => {
+                todo!();
             }
             Control::While(while_op) => {
                 let condition_id = while_op.condition;

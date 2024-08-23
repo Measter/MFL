@@ -9,7 +9,7 @@ use tracing::trace;
 use crate::{
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
-    ir::{Basic, Control, If, OpCode, While},
+    ir::{Basic, Control, OpCode, While},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
@@ -202,135 +202,135 @@ pub(crate) fn call_function_const(
     stores.ops.set_op_io(op_id, &inputs, &outputs);
 }
 
-pub(crate) fn analyze_if(
-    stores: &mut Stores,
-    pass_manager: &mut PassManager,
-    had_error: &mut ErrorSignal,
-    item_id: ItemId,
-    stack: &mut Vec<ValueId>,
-    max_stack_depth: &mut usize,
-    op_id: OpId,
-    if_op: &If,
-) {
-    let op_loc = stores.ops.get_token(op_id).location;
-    let mut condition_values = SmallVec::<[_; 1]>::new();
+// pub(crate) fn analyze_if(
+//     stores: &mut Stores,
+//     pass_manager: &mut PassManager,
+//     had_error: &mut ErrorSignal,
+//     item_id: ItemId,
+//     stack: &mut Vec<ValueId>,
+//     max_stack_depth: &mut usize,
+//     op_id: OpId,
+//     if_op: &If,
+// ) {
+//     let op_loc = stores.ops.get_token(op_id).location;
+//     let mut condition_values = SmallVec::<[_; 1]>::new();
 
-    // Evaluate condition.
-    super::super::analyze_block(
-        stores,
-        pass_manager,
-        had_error,
-        item_id,
-        if_op.condition,
-        stack,
-        max_stack_depth,
-    );
+//     // Evaluate condition.
+//     super::super::analyze_block(
+//         stores,
+//         pass_manager,
+//         had_error,
+//         item_id,
+//         if_op.condition,
+//         stack,
+//         max_stack_depth,
+//     );
 
-    // We expect there to be a boolean value on teh top of the stack afterwards.
-    if stack.is_empty() {
-        generate_stack_length_mismatch_diag(
-            stores,
-            if_op.tokens.do_token,
-            if_op.tokens.do_token,
-            stack.len(),
-            1,
-            None,
-        );
+//     // We expect there to be a boolean value on teh top of the stack afterwards.
+//     if stack.is_empty() {
+//         generate_stack_length_mismatch_diag(
+//             stores,
+//             if_op.tokens.do_token,
+//             if_op.tokens.do_token,
+//             stack.len(),
+//             1,
+//             None,
+//         );
 
-        had_error.set();
+//         had_error.set();
 
-        // Pad the stack out to the expected length so the rest of the logic makes sense.
-        stack.push(stores.values.new_value(op_loc, None));
-    }
-    condition_values.push(stack.pop().unwrap());
-    let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+//         // Pad the stack out to the expected length so the rest of the logic makes sense.
+//         stack.push(stores.values.new_value(op_loc, None));
+//     }
+//     condition_values.push(stack.pop().unwrap());
+//     let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
 
-    // Now we can do the then-block
-    super::super::analyze_block(
-        stores,
-        pass_manager,
-        had_error,
-        item_id,
-        if_op.then_block,
-        stack,
-        max_stack_depth,
-    );
+//     // Now we can do the then-block
+//     super::super::analyze_block(
+//         stores,
+//         pass_manager,
+//         had_error,
+//         item_id,
+//         if_op.then_block,
+//         stack,
+//         max_stack_depth,
+//     );
 
-    // We always have an else block, so save our current stack state for comparison.
-    let then_block_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
-    let then_block_sample_location = if_op.tokens.else_token;
+//     // We always have an else block, so save our current stack state for comparison.
+//     let then_block_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+//     let then_block_sample_location = if_op.tokens.else_token;
 
-    // Restore our stack back to after the condition.
-    stack.clear();
-    stack.extend_from_slice(&initial_stack);
+//     // Restore our stack back to after the condition.
+//     stack.clear();
+//     stack.extend_from_slice(&initial_stack);
 
-    // Now analyze the else block.
-    super::super::analyze_block(
-        stores,
-        pass_manager,
-        had_error,
-        item_id,
-        if_op.else_block,
-        stack,
-        max_stack_depth,
-    );
+//     // Now analyze the else block.
+//     super::super::analyze_block(
+//         stores,
+//         pass_manager,
+//         had_error,
+//         item_id,
+//         if_op.else_block,
+//         stack,
+//         max_stack_depth,
+//     );
 
-    let mut body_merges = Vec::new();
+//     let mut body_merges = Vec::new();
 
-    let else_terminal = stores.blocks.is_terminal(if_op.else_block);
-    let then_terminal = stores.blocks.is_terminal(if_op.then_block);
-    if else_terminal && then_terminal {
-        // Both are terminal, so we don't need to do any checking.
-        trace!("both branches terminate");
-    } else if then_terminal {
-        // We only need to "merge" for the else block, so we can just take the result of the else block as
-        // the stack state.
-        trace!("then-branch terminates, leaving stack as else-branch resulted");
-    } else if else_terminal {
-        // Same logic as the previous branch, except for the then-block.
-        stack.clear();
-        stack.extend_from_slice(&then_block_stack);
-        trace!("else-branch terminates, leaving stack as then-branch resulted");
-    } else {
-        // Neither diverge, so we need to check that they both left the stack the same length,
-        // and create merge values for values that differ.
-        if stack.len() != then_block_stack.len() {
-            generate_stack_length_mismatch_diag(
-                stores,
-                then_block_sample_location,
-                if_op.tokens.end_token,
-                stack.len(),
-                then_block_stack.len(),
-                None,
-            );
-            had_error.set();
-        }
+//     let else_terminal = stores.blocks.is_terminal(if_op.else_block);
+//     let then_terminal = stores.blocks.is_terminal(if_op.then_block);
+//     if else_terminal && then_terminal {
+//         // Both are terminal, so we don't need to do any checking.
+//         trace!("both branches terminate");
+//     } else if then_terminal {
+//         // We only need to "merge" for the else block, so we can just take the result of the else block as
+//         // the stack state.
+//         trace!("then-branch terminates, leaving stack as else-branch resulted");
+//     } else if else_terminal {
+//         // Same logic as the previous branch, except for the then-block.
+//         stack.clear();
+//         stack.extend_from_slice(&then_block_stack);
+//         trace!("else-branch terminates, leaving stack as then-branch resulted");
+//     } else {
+//         // Neither diverge, so we need to check that they both left the stack the same length,
+//         // and create merge values for values that differ.
+//         if stack.len() != then_block_stack.len() {
+//             generate_stack_length_mismatch_diag(
+//                 stores,
+//                 then_block_sample_location,
+//                 if_op.tokens.end_token,
+//                 stack.len(),
+//                 then_block_stack.len(),
+//                 None,
+//             );
+//             had_error.set();
+//         }
 
-        for (then_value_id, else_value_id) in then_block_stack
-            .into_iter()
-            .zip(stack)
-            .filter(|(a, b)| &a != b)
-        {
-            let output_value_id = stores.values.new_value(op_loc, None);
-            trace!(
-                ?then_value_id,
-                ?else_value_id,
-                ?output_value_id,
-                "defining merge for IF"
-            );
+//         for (then_value_id, else_value_id) in then_block_stack
+//             .into_iter()
+//             .zip(stack)
+//             .filter(|(a, b)| &a != b)
+//         {
+//             let output_value_id = stores.values.new_value(op_loc, None);
+//             trace!(
+//                 ?then_value_id,
+//                 ?else_value_id,
+//                 ?output_value_id,
+//                 "defining merge for IF"
+//             );
 
-            body_merges.push(MergeValue {
-                a_in: then_value_id,
-                b_in: *else_value_id,
-                out: output_value_id,
-            });
-            *else_value_id = output_value_id;
-        }
-    }
+//             body_merges.push(MergeValue {
+//                 a_in: then_value_id,
+//                 b_in: *else_value_id,
+//                 out: output_value_id,
+//             });
+//             *else_value_id = output_value_id;
+//         }
+//     }
 
-    stores.ops.set_op_io(op_id, &condition_values, &[]);
-    stores.values.set_merge_values(op_id, body_merges);
-}
+//     stores.ops.set_op_io(op_id, &condition_values, &[]);
+//     stores.values.set_merge_values(op_id, body_merges);
+// }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,
@@ -486,12 +486,15 @@ fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[Merge
                 fixup_op_input_values(stores, while_op.condition, merges);
                 fixup_op_input_values(stores, while_op.body_block, merges);
             }
-            OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                fixup_merge_variables(stores, op_id, merges);
+            // OpCode::Basic(Basic::Control(Control::If(if_op))) => {
+            //     fixup_merge_variables(stores, op_id, merges);
 
-                fixup_op_input_values(stores, if_op.condition, merges);
-                fixup_op_input_values(stores, if_op.then_block, merges);
-                fixup_op_input_values(stores, if_op.else_block, merges);
+            //     fixup_op_input_values(stores, if_op.condition, merges);
+            //     fixup_op_input_values(stores, if_op.then_block, merges);
+            //     fixup_op_input_values(stores, if_op.else_block, merges);
+            // }
+            OpCode::Basic(Basic::Control(Control::Cond(_))) => {
+                todo!();
             }
             _ => {}
         }

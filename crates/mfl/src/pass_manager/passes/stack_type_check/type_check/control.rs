@@ -7,7 +7,7 @@ use stores::{items::ItemId, source::SourceLocation};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{If, OpCode, TypeResolvedOp, While},
+    ir::{OpCode, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
             can_promote_float_unidirectional, can_promote_int_bidirectional,
@@ -305,81 +305,81 @@ pub(crate) fn variable(
         .set_value_type(output_value_id, ptr_type_id.id);
 }
 
-pub(crate) fn analyze_if(
-    stores: &mut Stores,
-    had_error: &mut ErrorSignal,
-    op_id: OpId,
-    if_op: &If,
-) {
-    // The stack check has already done the full check on each block, so we don't have to repeat it here.
+// pub(crate) fn analyze_if(
+//     stores: &mut Stores,
+//     had_error: &mut ErrorSignal,
+//     op_id: OpId,
+//     if_op: &If,
+// ) {
+//     // The stack check has already done the full check on each block, so we don't have to repeat it here.
 
-    // All conditions are stored in the op inputs.
-    let op_data = stores.ops.get_op_io(op_id);
-    let condition_value_id = op_data.inputs[0];
-    if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
-        condition_type_check(
-            condition_type_id,
-            stores,
-            condition_value_id,
-            if_op.tokens.do_token,
-            had_error,
-        );
-    }
+//     // All conditions are stored in the op inputs.
+//     let op_data = stores.ops.get_op_io(op_id);
+//     let condition_value_id = op_data.inputs[0];
+//     if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
+//         condition_type_check(
+//             condition_type_id,
+//             stores,
+//             condition_value_id,
+//             if_op.tokens.do_token,
+//             had_error,
+//         );
+//     }
 
-    let Some(merges) = stores.values.get_merge_values(op_id).cloned() else {
-        panic!("ICE: Missing merges in If block")
-    };
+//     let Some(merges) = stores.values.get_merge_values(op_id).cloned() else {
+//         panic!("ICE: Missing merges in If block")
+//     };
 
-    for merge_pair in merges {
-        let [then_value_info] = stores.values.values([merge_pair.a_in]);
-        let Some([then_type_id, else_type_id]) = stores
-            .values
-            .value_types([merge_pair.a_in, merge_pair.b_in])
-        else {
-            continue;
-        };
+//     for merge_pair in merges {
+//         let [then_value_info] = stores.values.values([merge_pair.a_in]);
+//         let Some([then_type_id, else_type_id]) = stores
+//             .values
+//             .value_types([merge_pair.a_in, merge_pair.b_in])
+//         else {
+//             continue;
+//         };
 
-        let then_type_info = stores.types.get_type_info(then_type_id);
-        let else_type_info = stores.types.get_type_info(else_type_id);
+//         let then_type_info = stores.types.get_type_info(then_type_id);
+//         let else_type_info = stores.types.get_type_info(else_type_id);
 
-        let final_type_id = match (then_type_info.kind, else_type_info.kind) {
-            (TypeKind::Integer(then_int), TypeKind::Integer(else_int))
-                if can_promote_int_bidirectional(then_int, else_int) =>
-            {
-                let kind = promote_int_type_bidirectional(then_int, else_int).unwrap();
-                stores.types.get_builtin(kind.into()).id
-            }
-            _ if then_type_id != else_type_id => {
-                let then_type_name = stores.strings.resolve(then_type_info.friendly_name);
-                let else_type_name = stores.strings.resolve(else_type_info.friendly_name);
+//         let final_type_id = match (then_type_info.kind, else_type_info.kind) {
+//             (TypeKind::Integer(then_int), TypeKind::Integer(else_int))
+//                 if can_promote_int_bidirectional(then_int, else_int) =>
+//             {
+//                 let kind = promote_int_type_bidirectional(then_int, else_int).unwrap();
+//                 stores.types.get_builtin(kind.into()).id
+//             }
+//             _ if then_type_id != else_type_id => {
+//                 let then_type_name = stores.strings.resolve(then_type_info.friendly_name);
+//                 let else_type_name = stores.strings.resolve(else_type_info.friendly_name);
 
-                let labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [
-                        (merge_pair.a_in, 0, then_type_name),
-                        (merge_pair.b_in, 1, else_type_name),
-                    ],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
+//                 let labels = diagnostics::build_creator_label_chain(
+//                     stores,
+//                     [
+//                         (merge_pair.a_in, 0, then_type_name),
+//                         (merge_pair.b_in, 1, else_type_name),
+//                     ],
+//                     Color::Yellow,
+//                     Color::Cyan,
+//                 );
 
-                diagnostics::emit_error(
-                    stores,
-                    then_value_info.source_location,
-                    "conditional body cannot change types on the stack",
-                    labels,
-                    None,
-                );
+//                 diagnostics::emit_error(
+//                     stores,
+//                     then_value_info.source_location,
+//                     "conditional body cannot change types on the stack",
+//                     labels,
+//                     None,
+//                 );
 
-                had_error.set();
-                then_type_id
-            }
-            _ => then_type_id,
-        };
+//                 had_error.set();
+//                 then_type_id
+//             }
+//             _ => then_type_id,
+//         };
 
-        stores.values.set_value_type(merge_pair.out, final_type_id);
-    }
-}
+//         stores.values.set_value_type(merge_pair.out, final_type_id);
+//     }
+// }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,

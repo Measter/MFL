@@ -11,7 +11,7 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::{
-        Arithmetic, Basic, Compare, Control, Direction, If, IfTokens, Memory, OpCode, Stack,
+        Arithmetic, Basic, Compare, Cond, CondArm, Control, Direction, Memory, OpCode, Stack,
         UnresolvedIdent, UnresolvedOp, While, WhileTokens,
     },
     lexer::TokenTree,
@@ -766,73 +766,90 @@ pub fn parse_pack(
     ))
 }
 
-pub fn parse_if(
+pub fn parse_cond(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
-    let condition_tokens = get_terminated_tokens(
-        stores,
-        token_iter,
-        keyword,
-        None,
-        Matcher("any", |_: &TokenTree| IsMatch::Yes),
-        ConditionMatch,
-        false,
-    )?;
+    let arm_tokens = token_iter.expect_group(stores, BracketKind::Brace, keyword)?;
 
-    let condition = parse_item_body_contents(stores, &condition_tokens.list, parent_id)?;
-    let condition = stores.blocks.new_block(condition);
+    let mut arm_token_iter = TokenIter::new(arm_tokens.tokens.iter());
+    let mut close_token = arm_tokens.first_token();
+    let mut arms = Vec::new();
+    let mut else_block_ops = Vec::new();
+    let mut had_else_block = false;
 
-    let then_block_tokens =
-        token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
-    let mut close_token_location = then_block_tokens.last_token().location;
+    while arm_token_iter.peek().is_some() {
+        if arm_token_iter.next_is(TokenKind::Else) {
+            let else_token = arm_token_iter.next().unwrap_single();
+            let else_block = arm_token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
+            close_token = else_block.last_token();
+            else_block_ops = parse_item_body_contents(stores, &else_block.tokens, parent_id)?;
+            had_else_block = true;
 
-    let then_block = parse_item_body_contents(stores, &then_block_tokens.tokens, parent_id)?;
-    let then_block = stores.blocks.new_block(then_block);
-
-    let mut else_token_location = close_token_location;
-
-    let else_block_ops = if token_iter.next_is(TokenKind::Else) {
-        let else_token = token_iter.next().unwrap_single();
-        else_token_location = else_token.location;
-
-        if token_iter.next_is_single(TokenKind::If) {
-            let if_token = token_iter.next().unwrap_single();
-            let (if_ops, sub_if_close) = parse_if(stores, token_iter, if_token, parent_id)?;
-            close_token_location = sub_if_close;
-
-            let token = if_token
-                .inner
-                .lexeme
-                .with_span(if_token.location.merge(sub_if_close));
-            vec![stores.ops.new_op(if_ops, token)]
-        } else {
-            let else_block = token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
-            close_token_location = else_block.last_token().location;
-            parse_item_body_contents(stores, &else_block.tokens, parent_id)?
+            break;
         }
-    } else {
-        Vec::new()
-    };
+
+        let condition_tokens = get_terminated_tokens(
+            stores,
+            &mut arm_token_iter,
+            close_token,
+            None,
+            Matcher("any", |_: &TokenTree| IsMatch::Yes),
+            ConditionMatch,
+            false,
+        )?;
+        let condition = parse_item_body_contents(stores, &condition_tokens.list, parent_id)?;
+        let condition = stores.blocks.new_block(condition);
+
+        let then_block_tokens =
+            arm_token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
+        close_token = then_block_tokens.last_token();
+
+        let then_block = parse_item_body_contents(stores, &then_block_tokens.tokens, parent_id)?;
+        let then_block = stores.blocks.new_block(then_block);
+
+        arms.push(CondArm {
+            condition,
+            open: then_block_tokens.open.location,
+            block: then_block,
+            close: then_block_tokens.last_token().location,
+        })
+    }
+
+    if had_else_block && arm_token_iter.peek().is_some() {
+        let first_loc = arm_token_iter.next().unwrap().first_token();
+        let mut last_loc = first_loc;
+        while let Some(next) = arm_token_iter.next() {
+            last_loc = next.last_token();
+        }
+
+        let location = first_loc.location.merge(last_loc.location);
+
+        diagnostics::emit_error(
+            stores,
+            location,
+            "`else` must be the last arm in a cond",
+            [Label::new(location)
+                .with_color(Color::Red)
+                .with_message("here")],
+            None,
+        );
+        return Err(());
+    }
 
     let else_block = stores.blocks.new_block(else_block_ops);
 
-    let if_tokens = IfTokens {
-        do_token: condition_tokens.close.location,
-        else_token: else_token_location,
-        end_token: close_token_location,
-    };
-    let if_code = If {
-        tokens: if_tokens,
-        condition,
-        then_block,
+    let cond_code = Cond {
+        token: keyword.location,
+        arms,
         else_block,
     };
+
     Ok((
-        OpCode::Basic(Basic::Control(Control::If(if_code))),
-        close_token_location,
+        OpCode::Basic(Basic::Control(Control::Cond(cond_code))),
+        close_token.location,
     ))
 }
 
