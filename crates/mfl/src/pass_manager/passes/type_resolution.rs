@@ -52,7 +52,7 @@ pub fn resolve_signature(
                         &mut single_check_error,
                         kind,
                     );
-                    if single_check_error.into_bool() {
+                    if single_check_error.into_err() {
                         local_had_error.set();
                         return None;
                     }
@@ -88,7 +88,7 @@ pub fn resolve_signature(
                 }
             }
 
-            if local_had_error.into_bool() {
+            if local_had_error.into_err() {
                 had_error.set();
                 return;
             }
@@ -118,7 +118,7 @@ pub fn resolve_signature(
                         &mut single_check_error,
                         kind,
                     );
-                    if single_check_error.into_bool() {
+                    if single_check_error.into_err() {
                         local_had_error.set();
                         return None;
                     }
@@ -151,7 +151,7 @@ pub fn resolve_signature(
                 }
             }
 
-            if local_had_error.into_bool() {
+            if local_had_error.into_err() {
                 had_error.set();
                 return;
             }
@@ -255,7 +255,7 @@ fn fully_resolve_block(
                             &mut local_had_error,
                             ugp,
                         );
-                        if local_had_error.into_bool() {
+                        if local_had_error.into_err() {
                             had_error.set();
                             continue;
                         }
@@ -306,7 +306,7 @@ fn fully_resolve_block(
             ) => {
                 let mut local_had_error = ErrorSignal::new();
                 ensure_structs_declared_in_type(stores, pass_manager, &mut local_had_error, id);
-                if local_had_error.into_bool() {
+                if local_had_error.into_err() {
                     had_error.set();
                     continue;
                 }
@@ -395,7 +395,7 @@ fn partially_resolve_block(
                             &mut local_had_error,
                             ugp,
                         );
-                        if local_had_error.into_bool() {
+                        if local_had_error.into_err() {
                             had_error.set();
                             continue;
                         }
@@ -443,7 +443,7 @@ fn partially_resolve_block(
             ) => {
                 let mut local_had_error = ErrorSignal::new();
                 ensure_structs_declared_in_type(stores, pass_manager, &mut local_had_error, id);
-                if local_had_error.into_bool() {
+                if local_had_error.into_err() {
                     had_error.set();
                     continue;
                 }

@@ -157,7 +157,7 @@ fn try_get_attributes(
         Some(lang_item)
     });
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(ParsedAttributes {
@@ -290,7 +290,7 @@ pub fn parse_function(
         stores.items.set_item_body(item_id, body_block_id);
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(())
@@ -321,7 +321,7 @@ pub fn parse_assert(
     let body_block_id = stores.blocks.new_block(body);
     stores.items.set_item_body(item_id, body_block_id);
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(())
@@ -355,7 +355,7 @@ pub fn parse_const(
     let body_block_id = stores.blocks.new_block(body);
     stores.items.set_item_body(item_id, body_block_id);
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(())
@@ -394,7 +394,7 @@ pub fn parse_variable(
     );
     diagnostics::handle_symbol_redef_error(stores, &mut had_error, prev_def);
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(())
@@ -474,7 +474,7 @@ pub fn parse_struct_or_union(
         stores.items.set_lang_item(lang_item_id, item_id);
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(())

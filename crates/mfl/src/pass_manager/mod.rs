@@ -267,7 +267,7 @@ impl PassManager {
         let mut had_error = ErrorSignal::new();
         passes::const_prop::analyze_item(stores, self, &mut had_error, cur_item);
 
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -294,7 +294,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::cycles::check_invalid_cycles(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -321,7 +321,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::structs::declare_struct(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -356,14 +356,14 @@ impl PassManager {
             self.defined_generic_structs = true;
         }
 
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             return Err(());
         }
 
         let mut had_error = ErrorSignal::new();
         passes::structs::define_struct(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -443,7 +443,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::ident_resolution::resolve_body(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -470,7 +470,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::ident_resolution::resolve_signature(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -498,7 +498,7 @@ impl PassManager {
         let mut had_error = ErrorSignal::new();
         passes::type_resolution::resolve_signature(stores, self, &mut had_error, cur_item);
         passes::type_resolution::resolve_body(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -525,7 +525,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::cycles::check_invalid_cycles(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -558,7 +558,7 @@ impl PassManager {
             stats.max_stack_depth,
             stats.unique_item_count
         ]);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -606,7 +606,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::type_resolution::resolve_body(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -633,7 +633,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::type_resolution::resolve_signature(stores, self, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -660,7 +660,7 @@ impl PassManager {
 
         let mut had_error = ErrorSignal::new();
         passes::attributes::validate_attributes(stores, &mut had_error, cur_item);
-        if had_error.into_bool() {
+        if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
         } else {
@@ -744,7 +744,7 @@ pub fn run(stores: &mut Stores, print_stack_stats: bool) -> Result<()> {
         println!("\n{}", pass_manager.stack_stats_table);
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(eyre!("Error during static analysis"))
     } else {
         Ok(())

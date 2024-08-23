@@ -97,7 +97,7 @@ pub fn parse_extract_insert_struct(
         break;
     }
 
-    if local_had_error.into_bool() {
+    if local_had_error.into_err() {
         return Err(());
     }
 
@@ -288,7 +288,7 @@ fn parse_ident_op(
         return Err(());
     };
 
-    if local_had_error.into_bool() {
+    if local_had_error.into_err() {
         return Err(());
     }
 
@@ -462,7 +462,7 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
         Direction::Left
     };
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         return Err(());
     }
 
@@ -622,7 +622,7 @@ fn parse_integer_op(
     };
 
     // Return down here so that we consume any given parameters.
-    if had_error.into_bool() {
+    if had_error.into_err() {
         return Err(());
     }
 
@@ -704,7 +704,7 @@ fn parse_float_op(
     }
 
     // Return down here so that we consume any given parameters.
-    if had_error.into_bool() {
+    if had_error.into_err() {
         return Err(());
     }
 

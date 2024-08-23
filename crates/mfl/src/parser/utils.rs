@@ -245,7 +245,7 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
             }
         }
 
-        if had_error.into_bool() {
+        if had_error.into_err() {
             Err(())
         } else {
             Ok(group)
@@ -391,7 +391,7 @@ pub fn get_terminated_tokens<'a>(
         }
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(Terminated {
@@ -425,7 +425,7 @@ pub fn parse_multiple_unresolved_types(
         }
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(types)

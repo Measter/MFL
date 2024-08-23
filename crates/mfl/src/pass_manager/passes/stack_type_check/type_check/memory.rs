@@ -1261,7 +1261,7 @@ fn pack_struct_infer_generic(
             }
         }
 
-        if local_had_error.into_bool() {
+        if local_had_error.into_err() {
             had_error.set();
             return ControlFlow::Break(());
         }

@@ -162,7 +162,7 @@ pub fn parse_item_body_contents(
         };
     }
 
-    had_error.into_bool().not().then_some(ops).ok_or(())
+    had_error.into_err().not().then_some(ops).ok_or(())
 }
 
 pub(super) fn parse_file(
@@ -317,7 +317,7 @@ pub(super) fn parse_file(
         }
     }
 
-    had_error.into_bool().not().then_some(()).ok_or(())
+    had_error.into_err().not().then_some(()).ok_or(())
 }
 
 fn emit_top_level_op_error(stores: &Stores, location: SourceLocation, kind: TokenKind) {

@@ -262,7 +262,7 @@ fn call_generic_function_infer_params(
         }
     }
 
-    if local_had_error.into_bool() {
+    if local_had_error.into_err() {
         had_error.set();
         return ControlFlow::Break(());
     }

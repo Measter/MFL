@@ -189,7 +189,7 @@ pub(crate) fn lex_file(
         stream.push(TokenTree::Group(cur_group));
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         Err(())
     } else {
         Ok(token_tree_stream)

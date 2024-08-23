@@ -14,7 +14,7 @@ impl ErrorSignal {
         std::mem::forget(rhs);
     }
 
-    pub fn into_bool(self) -> bool {
+    pub fn into_err(self) -> bool {
         let b = self.0;
         std::mem::forget(self);
         b

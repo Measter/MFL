@@ -85,7 +85,7 @@ pub fn load_program(stores: &mut Stores, args: &Args) -> Result<ItemId> {
         }
     }
 
-    if had_error.into_bool() {
+    if had_error.into_err() {
         return Err(eyre!("Error loading program"));
     }
 
