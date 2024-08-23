@@ -220,13 +220,12 @@ fn fully_resolve_block(
         let new_code = match old_code {
             OpCode::Basic(bo) => {
                 match bo {
-                    // Basic::Control(Control::If(if_op)) => {
-                    //     fully_resolve_block(stores, pass_manager, had_error, if_op.condition);
-                    //     fully_resolve_block(stores, pass_manager, had_error, if_op.then_block);
-                    //     fully_resolve_block(stores, pass_manager, had_error, if_op.else_block);
-                    // }
-                    Basic::Control(Control::Cond(_)) => {
-                        todo!()
+                    Basic::Control(Control::Cond(ref cond_op)) => {
+                        for arm in &cond_op.arms {
+                            fully_resolve_block(stores, pass_manager, had_error, arm.condition);
+                            fully_resolve_block(stores, pass_manager, had_error, arm.block);
+                        }
+                        fully_resolve_block(stores, pass_manager, had_error, cond_op.else_block);
                     }
                     Basic::Control(Control::While(while_op)) => {
                         fully_resolve_block(stores, pass_manager, had_error, while_op.condition);
@@ -355,13 +354,18 @@ fn partially_resolve_block(
         let new_code = match old_code {
             OpCode::Basic(bo) => {
                 match bo {
-                    // Basic::Control(Control::If(if_op)) => {
-                    //     partially_resolve_block(stores, pass_manager, had_error, if_op.condition);
-                    //     partially_resolve_block(stores, pass_manager, had_error, if_op.then_block);
-                    //     partially_resolve_block(stores, pass_manager, had_error, if_op.else_block);
-                    // }
-                    Basic::Control(Control::Cond(_)) => {
-                        todo!()
+                    Basic::Control(Control::Cond(ref cond_op)) => {
+                        for arm in &cond_op.arms {
+                            partially_resolve_block(stores, pass_manager, had_error, arm.condition);
+                            partially_resolve_block(stores, pass_manager, had_error, arm.block);
+                        }
+
+                        partially_resolve_block(
+                            stores,
+                            pass_manager,
+                            had_error,
+                            cond_op.else_block,
+                        );
                     }
                     Basic::Control(Control::While(while_op)) => {
                         partially_resolve_block(

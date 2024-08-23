@@ -7,7 +7,7 @@ use stores::{items::ItemId, source::SourceLocation};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{OpCode, TypeResolvedOp, While},
+    ir::{Cond, OpCode, TypeResolvedOp, While},
     pass_manager::{
         static_analysis::{
             can_promote_float_unidirectional, can_promote_int_bidirectional,
@@ -303,6 +303,15 @@ pub(crate) fn variable(
     stores
         .values
         .set_value_type(output_value_id, ptr_type_id.id);
+}
+
+pub(crate) fn analyze_cond(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+    cond_op: &Cond,
+) {
+    todo!()
 }
 
 // pub(crate) fn analyze_if(

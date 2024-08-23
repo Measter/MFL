@@ -34,22 +34,22 @@ fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) ->
                 stores.blocks.set_terminal(block_id);
                 return true;
             }
-            // Control::If(if_op) => {
-            //     let condition_id = if_op.condition;
-            //     let then_id = if_op.then_block;
-            //     let else_id = if_op.else_block;
+            Control::Cond(cond_op) => {
+                let else_block = cond_op.else_block;
+                let arms = cond_op.arms.clone();
 
-            //     let condition_terminal = determine_terminal_blocks_in_block(stores, condition_id);
-            //     let else_terminal = determine_terminal_blocks_in_block(stores, else_id);
-            //     let then_terminal = determine_terminal_blocks_in_block(stores, then_id);
+                let mut all_arms_terminal = determine_terminal_blocks_in_block(stores, else_block);
+                for arm in arms {
+                    let condition_terminal =
+                        determine_terminal_blocks_in_block(stores, arm.condition);
+                    let block_terminal = determine_terminal_blocks_in_block(stores, arm.block);
+                    all_arms_terminal &= condition_terminal | block_terminal;
+                }
 
-            //     if condition_terminal || (then_terminal && else_terminal) {
-            //         stores.blocks.set_terminal(block_id);
-            //         return true;
-            //     }
-            // }
-            Control::Cond(_) => {
-                todo!();
+                if all_arms_terminal {
+                    stores.blocks.set_terminal(block_id);
+                    return true;
+                }
             }
             Control::While(while_op) => {
                 let condition_id = while_op.condition;

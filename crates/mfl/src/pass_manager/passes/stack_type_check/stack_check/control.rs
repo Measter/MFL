@@ -9,7 +9,7 @@ use tracing::trace;
 use crate::{
     diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
-    ir::{Basic, Control, OpCode, While},
+    ir::{Basic, Cond, Control, OpCode, While},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
@@ -200,6 +200,19 @@ pub(crate) fn call_function_const(
     }
 
     stores.ops.set_op_io(op_id, &inputs, &outputs);
+}
+
+pub(crate) fn analyze_cond(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    stack: &mut Vec<ValueId>,
+    max_stack_depth: &mut usize,
+    op_id: OpId,
+    cond_op: &Cond,
+) {
+    todo!()
 }
 
 // pub(crate) fn analyze_if(
