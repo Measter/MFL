@@ -254,7 +254,7 @@ pub(crate) fn analyze_cond(
         let condition_terminal = stores.blocks.is_terminal(arm.condition);
         let block_terminal = stores.blocks.is_terminal(arm.block);
         if !(condition_terminal | block_terminal) {
-            arm_stacks.push((arm.close, stack.clone()));
+            arm_stacks.push((arm.close, arm.block, stack.clone()));
         } else {
             trace!(?arm.condition, ?arm.block, "cond arm terminates");
         }
@@ -276,108 +276,100 @@ pub(crate) fn analyze_cond(
     );
 
     if !stores.blocks.is_terminal(cond_op.else_block) {
-        arm_stacks.push((cond_op.else_close, stack.clone()));
+        arm_stacks.push((cond_op.else_close, cond_op.else_block, stack.clone()));
     } else {
         trace!(?cond_op.else_block, "cond else terminates");
     }
 
-    if let [(_, stk)] = &*arm_stacks {
-        // Only one arm didn't terminate, so that's our stack.
-        stack.clear();
-        stack.extend_from_slice(stk);
-    } else {
-        // Points to where the expected stack shape is determined.
-        // If the user didn't provide an else block, then the final stack shape is the same
-        // as before the cond, otherwise it's the first arm.
-        let expected_stack_loc = if cond_op.implicit_else {
-            cond_op.token
-        } else {
-            cond_op
-                .arms
-                .first()
-                .map(|a| a.close)
-                .unwrap_or(cond_op.token)
-        };
+    let mut merge_values = Vec::new();
+    match &*arm_stacks {
+        [] => {} // All arms terminated.
+        [(_, _, stk)] => {
+            // Only one arm didn't terminate, so that's our stack.
+            stack.clear();
+            stack.extend_from_slice(stk);
+        }
+        [(first_arm_loc, first_arm_block_id, first_arm_stack), rest @ ..] => {
+            let (expected_stack_loc, expected_block, expected_stack, stacks_to_check) =
+                if cond_op.implicit_else {
+                    let [rest @ .., else_stack] = &*arm_stacks else {
+                        unreachable!()
+                    };
 
-        todo!()
+                    (cond_op.token, else_stack.1, &*else_stack.2, rest)
+                } else {
+                    (
+                        *first_arm_loc,
+                        *first_arm_block_id,
+                        &**first_arm_stack,
+                        rest,
+                    )
+                };
+
+            // Length check
+            for (arm_loc, _, arm_stack) in stacks_to_check {
+                if arm_stack.len() != expected_stack.len() {
+                    generate_stack_length_mismatch_diag(
+                        stores,
+                        expected_stack_loc,
+                        *arm_loc,
+                        arm_stack.len(),
+                        expected_stack.len(),
+                        None,
+                    );
+                    had_error.set();
+                }
+            }
+
+            stack.clear();
+            let expected_stack_iter = expected_stack.iter().copied();
+            let mut to_check_iters = stacks_to_check
+                .iter()
+                .map(|(_, id, s)| (id, s.iter().copied()))
+                .collect::<Vec<_>>();
+
+            for orig_value_id in expected_stack_iter {
+                let mut needs_merge = false;
+                let mut merge_value = MergeValue {
+                    inputs: Vec::new(),
+                    output: orig_value_id,
+                };
+
+                for (block_id, arm_values) in &mut to_check_iters {
+                    let to_check_value = arm_values.next().unwrap(); // We know they're the same length.
+                    if orig_value_id != to_check_value {
+                        // If we found our first merge, create a new merge value and insert the expected input
+                        // as an input.
+                        if !needs_merge {
+                            needs_merge = true;
+                            merge_value.output = stores.values.new_value(cond_op.token, None);
+                            merge_value.inputs.push((expected_block, orig_value_id));
+                        }
+
+                        merge_value.inputs.push((**block_id, to_check_value));
+                    }
+                }
+
+                if needs_merge {
+                    stack.push(merge_value.output);
+                    merge_values.push(merge_value);
+                } else {
+                    stack.push(orig_value_id);
+                }
+            }
+        }
     }
 
     stores.ops.set_op_io(op_id, &condition_values, &[]);
+    stores.values.set_merge_values(op_id, merge_values);
 }
-
-// pub(crate) fn analyze_if(
-//     stores: &mut Stores,
-//     pass_manager: &mut PassManager,
-//     had_error: &mut ErrorSignal,
-//     item_id: ItemId,
-//     stack: &mut Vec<ValueId>,
-//     max_stack_depth: &mut usize,
-//     op_id: OpId,
-//     if_op: &If,
-// ) {
-
-//     let mut body_merges = Vec::new();
-
-//     let else_terminal = stores.blocks.is_terminal(if_op.else_block);
-//     let then_terminal = stores.blocks.is_terminal(if_op.then_block);
-//     if else_terminal && then_terminal {
-//         // Both are terminal, so we don't need to do any checking.
-//         trace!("both branches terminate");
-//     } else if then_terminal {
-//         // We only need to "merge" for the else block, so we can just take the result of the else block as
-//         // the stack state.
-//         trace!("then-branch terminates, leaving stack as else-branch resulted");
-//     } else if else_terminal {
-//         // Same logic as the previous branch, except for the then-block.
-//         stack.clear();
-//         stack.extend_from_slice(&then_block_stack);
-//         trace!("else-branch terminates, leaving stack as then-branch resulted");
-//     } else {
-//         // Neither diverge, so we need to check that they both left the stack the same length,
-//         // and create merge values for values that differ.
-//         if stack.len() != then_block_stack.len() {
-//             generate_stack_length_mismatch_diag(
-//                 stores,
-//                 then_block_sample_location,
-//                 if_op.tokens.end_token,
-//                 stack.len(),
-//                 then_block_stack.len(),
-//                 None,
-//             );
-//             had_error.set();
-//         }
-
-//         for (then_value_id, else_value_id) in then_block_stack
-//             .into_iter()
-//             .zip(stack)
-//             .filter(|(a, b)| &a != b)
-//         {
-//             let output_value_id = stores.values.new_value(op_loc, None);
-//             trace!(
-//                 ?then_value_id,
-//                 ?else_value_id,
-//                 ?output_value_id,
-//                 "defining merge for IF"
-//             );
-
-//             body_merges.push(MergeValue {
-//                 a_in: then_value_id,
-//                 b_in: *else_value_id,
-//                 out: output_value_id,
-//             });
-//             *else_value_id = output_value_id;
-//         }
-//     }
-
-//     stores.ops.set_op_io(op_id, &condition_values, &[]);
-//     stores.values.set_merge_values(op_id, body_merges);
-// }
 
 pub(crate) fn analyze_while(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
+    block_id: BlockId,
     stack: &mut Vec<ValueId>,
     max_stack_depth: &mut usize,
     op_id: OpId,
@@ -463,23 +455,28 @@ pub(crate) fn analyze_while(
         );
 
         while_merges.push(MergeValue {
-            a_in: pre_condition_value_id,
-            b_in: post_body_value_id,
-            out: merged_value_id,
+            inputs: vec![
+                (block_id, pre_condition_value_id),
+                (while_op.body_block, post_body_value_id),
+            ],
+            output: merged_value_id,
         });
     }
 
     // Now we need to fix up ops in both the condition and the body to refer to merge values instead of pre-condition
     // values.
-    fixup_op_input_values(stores, while_op.condition, &while_merges);
-    fixup_op_input_values(stores, while_op.body_block, &while_merges);
+    fixup_op_input_values(stores, block_id, while_op.condition, &while_merges);
+    fixup_op_input_values(stores, block_id, while_op.body_block, &while_merges);
 
     // Need to revert the stack to after the condition executed, but fixup merge values.
     stack.clear();
     for value_id in post_condition_stack {
         // Technically N^2, but the list should be small.
-        if let Some(output_id) = while_merges.iter().find(|m| m.a_in == value_id) {
-            stack.push(output_id.out);
+        if let Some(output_id) = while_merges
+            .iter()
+            .find(|m| m.block_input(block_id) == Some(value_id))
+        {
+            stack.push(output_id.output);
         } else {
             stack.push(value_id);
         }
@@ -488,8 +485,8 @@ pub(crate) fn analyze_while(
     // Also need to see if we need to fixup the condition value.
     let mut condition_value = condition_value;
     for merge in &while_merges {
-        if merge.a_in == condition_value {
-            condition_value = merge.out;
+        if merge.block_input(block_id) == Some(condition_value) {
+            condition_value = merge.output;
             break;
         }
     }
@@ -499,8 +496,13 @@ pub(crate) fn analyze_while(
     stores.values.consume_value(condition_value, op_id);
 }
 
-fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[MergeValue]) {
-    let block = stores.blocks.get_block(block_id).clone();
+fn fixup_op_input_values(
+    stores: &mut Stores,
+    pre_cond_block_id: BlockId,
+    fixup_block_id: BlockId,
+    merges: &[MergeValue],
+) {
+    let block = stores.blocks.get_block(fixup_block_id).clone();
     for &op_id in &block.ops {
         let op_io = stores.ops.get_op_io(op_id);
         let mut new_op_inputs = SmallVec::<[ValueId; 8]>::new();
@@ -508,8 +510,11 @@ fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[Merge
 
         for &input_value_id in &op_io.inputs {
             // Technically N^2, but the list should be small.
-            if let Some(output_id) = merges.iter().find(|m| m.a_in == input_value_id) {
-                new_op_inputs.push(output_id.out);
+            if let Some(output_id) = merges
+                .iter()
+                .find(|m| m.block_input(pre_cond_block_id) == Some(input_value_id))
+            {
+                new_op_inputs.push(output_id.output);
                 changed = true;
             } else {
                 new_op_inputs.push(input_value_id);
@@ -522,27 +527,30 @@ fn fixup_op_input_values(stores: &mut Stores, block_id: BlockId, merges: &[Merge
 
         match stores.ops.get_type_resolved(op_id).clone() {
             OpCode::Basic(Basic::Control(Control::While(while_op))) => {
-                fixup_merge_variables(stores, op_id, merges);
+                fixup_merge_variables(stores, pre_cond_block_id, op_id, merges);
 
-                fixup_op_input_values(stores, while_op.condition, merges);
-                fixup_op_input_values(stores, while_op.body_block, merges);
+                fixup_op_input_values(stores, pre_cond_block_id, while_op.condition, merges);
+                fixup_op_input_values(stores, pre_cond_block_id, while_op.body_block, merges);
             }
-            // OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-            //     fixup_merge_variables(stores, op_id, merges);
-
-            //     fixup_op_input_values(stores, if_op.condition, merges);
-            //     fixup_op_input_values(stores, if_op.then_block, merges);
-            //     fixup_op_input_values(stores, if_op.else_block, merges);
-            // }
-            OpCode::Basic(Basic::Control(Control::Cond(_))) => {
-                todo!();
+            OpCode::Basic(Basic::Control(Control::Cond(cond_op))) => {
+                fixup_merge_variables(stores, pre_cond_block_id, op_id, merges);
+                for arm in &cond_op.arms {
+                    fixup_op_input_values(stores, pre_cond_block_id, arm.condition, merges);
+                    fixup_op_input_values(stores, pre_cond_block_id, arm.block, merges);
+                }
+                fixup_op_input_values(stores, pre_cond_block_id, cond_op.else_block, merges);
             }
             _ => {}
         }
     }
 }
 
-fn fixup_merge_variables(stores: &mut Stores, op_id: OpId, merges: &[MergeValue]) {
+fn fixup_merge_variables(
+    stores: &mut Stores,
+    pre_cond_block_id: BlockId,
+    op_id: OpId,
+    merges: &[MergeValue],
+) {
     let old_merges = stores
         .values
         .get_merge_values(op_id)
@@ -555,20 +563,21 @@ fn fixup_merge_variables(stores: &mut Stores, op_id: OpId, merges: &[MergeValue]
         // Technically N^2, but the list should be small.
         let mut this_changed = false;
         for outer_merge in merges {
-            if outer_merge.a_in == old_merge.a_in {
-                old_merge.a_in = outer_merge.out;
-                this_changed = true;
-            }
-            if outer_merge.a_in == old_merge.b_in {
-                old_merge.b_in = outer_merge.out;
-                this_changed = true;
+            let Some(outer_id) = outer_merge.block_input(pre_cond_block_id) else {
+                continue;
+            };
+            for (_, old_merge_id) in &mut old_merge.inputs {
+                if outer_id == *old_merge_id {
+                    this_changed = true;
+                    *old_merge_id = outer_merge.output;
+                }
             }
         }
 
         if this_changed {
             changed = true;
-            new_merges.push(old_merge);
         }
+        new_merges.push(old_merge);
     }
 
     if changed {

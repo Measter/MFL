@@ -8,6 +8,7 @@ use stores::{items::ItemId, source::SourceLocation};
 use crate::{n_ops::HashMapNOps, option::OptionExt};
 
 use super::{
+    block::BlockId,
     ops::OpId,
     types::{Float, Integer, TypeId},
 };
@@ -46,11 +47,20 @@ pub enum ConstVal {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MergeValue {
-    pub a_in: ValueId,
-    pub b_in: ValueId,
-    pub out: ValueId,
+    // BlockId = Arm which produced the value.
+    pub inputs: Vec<(BlockId, ValueId)>,
+    pub output: ValueId,
+}
+
+impl MergeValue {
+    pub fn block_input(&self, block_id: BlockId) -> Option<ValueId> {
+        self.inputs
+            .iter()
+            .find(|(blk, _l)| *blk == block_id)
+            .map(|(_, v)| *v)
+    }
 }
 
 #[derive(Debug, Clone, Default)]

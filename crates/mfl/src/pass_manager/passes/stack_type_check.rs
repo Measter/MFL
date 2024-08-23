@@ -225,6 +225,7 @@ fn analyze_block(
                             pass_manager,
                             &mut local_had_error,
                             item_id,
+                            block_id,
                             stack,
                             max_stack_depth,
                             op_id,
