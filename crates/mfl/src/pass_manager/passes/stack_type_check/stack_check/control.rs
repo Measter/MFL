@@ -212,7 +212,97 @@ pub(crate) fn analyze_cond(
     op_id: OpId,
     cond_op: &Cond,
 ) {
-    todo!()
+    let op_loc = stores.ops.get_token(op_id).location;
+    let pre_cond_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
+    let mut condition_values = SmallVec::<[_; 8]>::new();
+
+    let mut arm_stacks = Vec::new();
+    for arm in &cond_op.arms {
+        // Evaluate condition.
+        super::super::analyze_block(
+            stores,
+            pass_manager,
+            had_error,
+            item_id,
+            arm.condition,
+            stack,
+            max_stack_depth,
+        );
+
+        // We expect there to be a boolean value on teh top of the stack afterwards.
+        if stack.is_empty() {
+            generate_stack_length_mismatch_diag(stores, arm.open, arm.open, stack.len(), 1, None);
+
+            had_error.set();
+
+            // Pad the stack out to the expected length so the rest of the logic makes sense.
+            stack.push(stores.values.new_value(op_loc, None));
+        }
+        condition_values.push(stack.pop().unwrap());
+
+        // Now we can do the then-block
+        super::super::analyze_block(
+            stores,
+            pass_manager,
+            had_error,
+            item_id,
+            arm.block,
+            stack,
+            max_stack_depth,
+        );
+
+        let condition_terminal = stores.blocks.is_terminal(arm.condition);
+        let block_terminal = stores.blocks.is_terminal(arm.block);
+        if !(condition_terminal | block_terminal) {
+            arm_stacks.push((arm.close, stack.clone()));
+        } else {
+            trace!(?arm.condition, ?arm.block, "cond arm terminates");
+        }
+
+        // Restore our stack back to before the cond
+        stack.clear();
+        stack.extend_from_slice(&pre_cond_stack);
+    }
+
+    // Now we can do the else-block
+    super::super::analyze_block(
+        stores,
+        pass_manager,
+        had_error,
+        item_id,
+        cond_op.else_block,
+        stack,
+        max_stack_depth,
+    );
+
+    if !stores.blocks.is_terminal(cond_op.else_block) {
+        arm_stacks.push((cond_op.else_close, stack.clone()));
+    } else {
+        trace!(?cond_op.else_block, "cond else terminates");
+    }
+
+    if let [(_, stk)] = &*arm_stacks {
+        // Only one arm didn't terminate, so that's our stack.
+        stack.clear();
+        stack.extend_from_slice(stk);
+    } else {
+        // Points to where the expected stack shape is determined.
+        // If the user didn't provide an else block, then the final stack shape is the same
+        // as before the cond, otherwise it's the first arm.
+        let expected_stack_loc = if cond_op.implicit_else {
+            cond_op.token
+        } else {
+            cond_op
+                .arms
+                .first()
+                .map(|a| a.close)
+                .unwrap_or(cond_op.token)
+        };
+
+        todo!()
+    }
+
+    stores.ops.set_op_io(op_id, &condition_values, &[]);
 }
 
 // pub(crate) fn analyze_if(
@@ -225,68 +315,6 @@ pub(crate) fn analyze_cond(
 //     op_id: OpId,
 //     if_op: &If,
 // ) {
-//     let op_loc = stores.ops.get_token(op_id).location;
-//     let mut condition_values = SmallVec::<[_; 1]>::new();
-
-//     // Evaluate condition.
-//     super::super::analyze_block(
-//         stores,
-//         pass_manager,
-//         had_error,
-//         item_id,
-//         if_op.condition,
-//         stack,
-//         max_stack_depth,
-//     );
-
-//     // We expect there to be a boolean value on teh top of the stack afterwards.
-//     if stack.is_empty() {
-//         generate_stack_length_mismatch_diag(
-//             stores,
-//             if_op.tokens.do_token,
-//             if_op.tokens.do_token,
-//             stack.len(),
-//             1,
-//             None,
-//         );
-
-//         had_error.set();
-
-//         // Pad the stack out to the expected length so the rest of the logic makes sense.
-//         stack.push(stores.values.new_value(op_loc, None));
-//     }
-//     condition_values.push(stack.pop().unwrap());
-//     let initial_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
-
-//     // Now we can do the then-block
-//     super::super::analyze_block(
-//         stores,
-//         pass_manager,
-//         had_error,
-//         item_id,
-//         if_op.then_block,
-//         stack,
-//         max_stack_depth,
-//     );
-
-//     // We always have an else block, so save our current stack state for comparison.
-//     let then_block_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
-//     let then_block_sample_location = if_op.tokens.else_token;
-
-//     // Restore our stack back to after the condition.
-//     stack.clear();
-//     stack.extend_from_slice(&initial_stack);
-
-//     // Now analyze the else block.
-//     super::super::analyze_block(
-//         stores,
-//         pass_manager,
-//         had_error,
-//         item_id,
-//         if_op.else_block,
-//         stack,
-//         max_stack_depth,
-//     );
 
 //     let mut body_merges = Vec::new();
 

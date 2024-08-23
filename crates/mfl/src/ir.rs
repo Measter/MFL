@@ -172,7 +172,11 @@ pub struct CondArm {
 pub struct Cond {
     pub token: SourceLocation,
     pub arms: Vec<CondArm>,
+    // Tracks whether the user provided the else block, or whether it's impliticely added.
+    // Used to determining the expecte stack for diagnostics.
+    pub implicit_else: bool,
     pub else_block: BlockId,
+    pub else_close: SourceLocation,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -778,6 +778,7 @@ pub fn parse_cond(
     let mut close_token = arm_tokens.first_token();
     let mut arms = Vec::new();
     let mut else_block_ops = Vec::new();
+    let mut else_close = close_token.location;
     let mut had_else_block = false;
 
     while arm_token_iter.peek().is_some() {
@@ -786,6 +787,7 @@ pub fn parse_cond(
             let else_block = arm_token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
             close_token = else_block.last_token();
             else_block_ops = parse_item_body_contents(stores, &else_block.tokens, parent_id)?;
+            else_close = else_block.last_token().location;
             had_else_block = true;
 
             break;
@@ -844,7 +846,9 @@ pub fn parse_cond(
     let cond_code = Cond {
         token: keyword.location,
         arms,
+        implicit_else: !had_else_block,
         else_block,
+        else_close,
     };
 
     Ok((
