@@ -352,6 +352,11 @@ pub(crate) fn analyze_cond(
 
                 if needs_merge {
                     stack.push(merge_value.output);
+
+                    // Sort the merge value inputs by block ID, so we know where the else block is
+                    // for type checking.
+                    merge_value.inputs.sort_by_key(|i| i.0);
+
                     merge_values.push(merge_value);
                 } else {
                     stack.push(orig_value_id);

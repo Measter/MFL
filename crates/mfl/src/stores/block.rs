@@ -4,7 +4,7 @@ use intcast::IntCast;
 
 use super::ops::OpId;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockId(u32);
 
 impl Display for BlockId {

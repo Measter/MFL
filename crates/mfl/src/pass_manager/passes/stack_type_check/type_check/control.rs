@@ -311,33 +311,105 @@ pub(crate) fn analyze_cond(
     op_id: OpId,
     cond_op: &Cond,
 ) {
-    todo!()
+    // The stack check has already done the full check on each block, so we don't have to repeat it here.
+
+    // All conditions are stored in the op inputs.
+    let op_data = stores.ops.get_op_io(op_id);
+    for (arm, condition_value_id) in cond_op.arms.iter().zip(op_data.inputs.clone()) {
+        if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
+            condition_type_check(
+                condition_type_id,
+                stores,
+                condition_value_id,
+                arm.open,
+                had_error,
+            );
+        }
+    }
+
+    let Some(merges) = stores.values.get_merge_values(op_id).cloned() else {
+        panic!("ICE: Missing merges in Cond block")
+    };
+
+    for merge in merges {
+        // If we have an implicit-else, and one of the merges is from the implicit-else
+        // then that value came from before the cond, and this is what we point to for errors,
+        // and is also our start point for our expected type.
+        // Otherwise our expected type comes from the first arm.
+        let (expected_value_id, other_inputs) =
+            if cond_op.implicit_else && merge.block_input(cond_op.else_block).is_some() {
+                // The else-block is always last
+                (
+                    merge.block_input(cond_op.else_block).unwrap(),
+                    &merge.inputs[..merge.inputs.len() - 1],
+                )
+            } else {
+                (merge.inputs[0].1, &merge.inputs[1..])
+            };
+
+        let Some([mut expected_type_id]) = stores.values.value_types([expected_value_id]) else {
+            // We don't know our expected output type.
+            // We'll just bail for now. Maybe see if there's a better way?
+            continue;
+        };
+
+        let mut expected_type_info = stores.types.get_type_info(expected_type_id);
+
+        for &(_, other_input_value_id) in other_inputs {
+            let Some([input_type_id]) = stores.values.value_types([other_input_value_id]) else {
+                continue;
+            };
+
+            let input_type_info = stores.types.get_type_info(input_type_id);
+            match (expected_type_info.kind, input_type_info.kind) {
+                (TypeKind::Integer(expected_int), TypeKind::Integer(other_int))
+                    if can_promote_int_bidirectional(expected_int, other_int) =>
+                {
+                    let kind = promote_int_type_bidirectional(expected_int, other_int).unwrap();
+                    expected_type_id = stores.types.get_builtin(kind.into()).id;
+                    expected_type_info = stores.types.get_type_info(expected_type_id);
+                }
+                (TypeKind::Float(expected_flt), TypeKind::Float(other_flt)) => {
+                    // Take the widest type
+                    if other_flt > expected_flt {
+                        expected_type_id = input_type_id;
+                        expected_type_info = input_type_info;
+                    }
+                }
+                _ if expected_type_id != input_type_id => {
+                    let expected_type_name =
+                        stores.strings.resolve(expected_type_info.friendly_name);
+                    let other_input_type_name =
+                        stores.strings.resolve(input_type_info.friendly_name);
+
+                    let labels = diagnostics::build_creator_label_chain(
+                        stores,
+                        [
+                            (expected_value_id, 0, expected_type_name),
+                            (other_input_value_id, 1, other_input_type_name),
+                        ],
+                        Color::Yellow,
+                        Color::Cyan,
+                    );
+
+                    let [other_input_value_info] = stores.values.values([other_input_value_id]);
+                    diagnostics::emit_error(
+                        stores,
+                        other_input_value_info.source_location,
+                        "conditional body cannot change types on the stack",
+                        labels,
+                        None,
+                    );
+
+                    had_error.set();
+                }
+                _ => (),
+            }
+        }
+
+        stores.values.set_value_type(merge.output, expected_type_id);
+    }
 }
-
-// pub(crate) fn analyze_if(
-//     stores: &mut Stores,
-//     had_error: &mut ErrorSignal,
-//     op_id: OpId,
-//     if_op: &If,
-// ) {
-//     // The stack check has already done the full check on each block, so we don't have to repeat it here.
-
-//     // All conditions are stored in the op inputs.
-//     let op_data = stores.ops.get_op_io(op_id);
-//     let condition_value_id = op_data.inputs[0];
-//     if let Some([condition_type_id]) = stores.values.value_types([condition_value_id]) {
-//         condition_type_check(
-//             condition_type_id,
-//             stores,
-//             condition_value_id,
-//             if_op.tokens.do_token,
-//             had_error,
-//         );
-//     }
-
-//     let Some(merges) = stores.values.get_merge_values(op_id).cloned() else {
-//         panic!("ICE: Missing merges in If block")
-//     };
 
 //     for merge_pair in merges {
 //         let [then_value_info] = stores.values.values([merge_pair.a_in]);
@@ -416,11 +488,15 @@ pub(crate) fn analyze_while(
         let b_in_type_info = stores.types.get_type_info(b_in_type_id);
 
         if a_in_type_id != b_in_type_id
-            && !matches!(
+            && (!matches!(
                 (a_in_type_info.kind, b_in_type_info.kind),
                 (TypeKind::Integer(a_in_int), TypeKind::Integer(b_in_int))
                 if can_promote_int_unidirectional(b_in_int, a_in_int)
-            )
+            ) || !matches!(
+                (a_in_type_info.kind, b_in_type_info.kind),
+                (TypeKind::Float(a_in_flt), TypeKind::Float(b_in_flt))
+                if a_in_flt >= b_in_flt
+            ))
         {
             let a_in_type_name = stores.strings.resolve(a_in_type_info.friendly_name);
             let b_in_type_name = stores.strings.resolve(b_in_type_info.friendly_name);
