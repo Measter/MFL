@@ -595,17 +595,13 @@ impl<'ctx> CodeGen<'ctx> {
                     Control::SysCall { arg_count } => {
                         self.build_syscall(ds, value_store, op_id, arg_count)?
                     }
-                    // Control::If(if_op) => {
-                    //     self.build_if(ds, value_store, function, id, op_id, &if_op)?;
-                    //     if ds.blocks.is_terminal(if_op.else_block)
-                    //         && ds.blocks.is_terminal(if_op.then_block)
-                    //     {
-                    //         // Nothing else to codegen here.
-                    //         break;
-                    //     }
-                    // }
-                    Control::Cond(_) => {
-                        todo!();
+
+                    Control::Cond(cond_op) => {
+                        self.build_cond(ds, value_store, function, id, op_id, &cond_op)?;
+                        if cond_op.is_all_terminal(ds) {
+                            // Nothing else to codegen here.
+                            break;
+                        }
                     }
                     Control::While(while_op) => {
                         self.build_while(ds, value_store, function, id, op_id, &while_op)?
@@ -728,19 +724,20 @@ impl<'ctx> CodeGen<'ctx> {
         let block = ds.blocks.get_block(block_id).clone();
         for op_id in block.ops {
             match ds.ops.get_type_resolved(op_id).clone() {
-                // OpCode::Basic(Basic::Control(Control::If(if_op))) => {
-                //     let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
-                //         panic!("ICE: If block doesn't have merge info");
-                //     };
-                //     for merge in op_merges {
-                //         make_variable(ds, merge.out, self, merge_pair_map)?;
-                //     }
+                OpCode::Basic(Basic::Control(Control::Cond(cond_op))) => {
+                    let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {
+                        panic!("ICE: Cond block doesn't have merge info");
+                    };
 
-                //     self.build_merge_variables(ds, if_op.then_block, merge_pair_map)?;
-                //     self.build_merge_variables(ds, if_op.else_block, merge_pair_map)?;
-                // }
-                OpCode::Basic(Basic::Control(Control::Cond(_))) => {
-                    todo!();
+                    for merge in op_merges {
+                        make_variable(ds, merge.output, self, merge_pair_map)?;
+                    }
+
+                    for arm in cond_op.arms {
+                        self.build_merge_variables(ds, arm.condition, merge_pair_map)?;
+                        self.build_merge_variables(ds, arm.block, merge_pair_map)?;
+                    }
+                    self.build_merge_variables(ds, cond_op.else_block, merge_pair_map)?;
                 }
                 OpCode::Basic(Basic::Control(Control::While(while_op))) => {
                     let Some(op_merges) = ds.values.get_merge_values(op_id).cloned() else {

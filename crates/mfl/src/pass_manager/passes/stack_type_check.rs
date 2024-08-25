@@ -207,14 +207,7 @@ fn analyze_block(
 
                         had_error.merge_with(local_had_error);
 
-                        let else_is_terminal = stores.blocks.is_terminal(cond_op.else_block);
-                        let all_arms_terminal =
-                            cond_op.arms.iter().fold(else_is_terminal, |acc, arm| {
-                                acc & (stores.blocks.is_terminal(arm.condition)
-                                    | stores.blocks.is_terminal(arm.block))
-                            });
-
-                        if all_arms_terminal {
+                        if cond_op.is_all_terminal(stores) {
                             break;
                         }
                     }

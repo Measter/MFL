@@ -4,7 +4,8 @@ use stores::{items::ItemId, source::Spanned};
 use tracing::trace;
 
 use crate::{
-    ir::While,
+    ir::{Cond, While},
+    n_ops::SliceNOps,
     stores::{
         item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, types::TypeKind, Stores,
     },
@@ -222,144 +223,180 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    // pub(super) fn build_if(
-    //     &mut self,
-    //     ds: &mut Stores,
-    //     value_store: &mut SsaMap<'ctx>,
-    //     function: FunctionValue<'ctx>,
-    //     id: ItemId,
-    //     op_id: OpId,
-    //     if_op: &If,
-    // ) -> InkwellResult {
-    //     let current_block = self.builder.get_insert_block().unwrap();
+    pub(super) fn build_cond(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        function: FunctionValue<'ctx>,
+        id: ItemId,
+        op_id: OpId,
+        cond_op: &Cond,
+    ) -> InkwellResult {
+        let current_block = self.builder.get_insert_block().unwrap();
 
-    //     // Generate new blocks for Then, Else, and Post.
-    //     let then_basic_block = self
-    //         .ctx
-    //         .append_basic_block(function, &format!("if_{op_id}_then"));
-    //     let else_basic_block = self
-    //         .ctx
-    //         .append_basic_block(function, &format!("if_{op_id}_else"));
+        // Generate new blocks for Then, Else, and Post.
+        let else_basic_block = self
+            .ctx
+            .append_basic_block(function, &format!("cond_{op_id}_else"));
 
-    //     let post_basic_block =
-    //         if ds.blocks.is_terminal(if_op.then_block) && ds.blocks.is_terminal(if_op.else_block) {
-    //             None
-    //         } else {
-    //             Some(
-    //                 self.ctx
-    //                     .append_basic_block(function, &format!("if_{op_id}_post")),
-    //             )
-    //         };
+        let post_basic_block = if cond_op.is_all_terminal(ds) {
+            None
+        } else {
+            Some(
+                self.ctx
+                    .append_basic_block(function, &format!("cond_{op_id}_post")),
+            )
+        };
 
-    //     self.builder.position_at_end(current_block);
-    //     // Compile condition
-    //     trace!("Compiling condition for {:?}", op_id);
-    //     self.compile_block(ds, value_store, id, if_op.condition, function)?;
+        // At least one conditional arm.
+        let mut arm_condition_blocks = Vec::new();
+        for arm in &cond_op.arms {
+            arm_condition_blocks.push(self.ctx.append_basic_block(
+                function,
+                &format!("cond_{op_id}_arm_{}_condition", arm.condition),
+            ));
+        }
+        // Considering it a condition block simplifies things.
+        arm_condition_blocks.push(else_basic_block);
+        self.builder.position_at_end(current_block);
+        self.builder
+            .build_unconditional_branch(arm_condition_blocks[0])?;
 
-    //     if ds.blocks.is_terminal(if_op.condition) {
-    //         return Ok(());
-    //     }
+        let op_io = ds.ops.get_op_io(op_id).clone();
 
-    //     trace!("Compiling jump for {:?}", op_id);
-    //     // Make conditional jump.
-    //     let op_io = ds.ops.get_op_io(op_id);
-    //     let bool_value = value_store
-    //         .load_value(self, op_io.inputs()[0], ds.values, ds.types)?
-    //         .into_int_value();
-    //     self.builder
-    //         .build_conditional_branch(bool_value, then_basic_block, else_basic_block)?;
+        for ((pair, arm), &cond_value_id) in arm_condition_blocks
+            .windows(2)
+            .zip(&cond_op.arms)
+            .zip(&op_io.inputs)
+        {
+            let [this_condition, next_condition] = *pair.as_arr();
+            self.builder.position_at_end(this_condition);
 
-    //     // Compile Then
-    //     self.builder.position_at_end(then_basic_block);
-    //     trace!("Compiling then-block for {:?}", op_id);
-    //     self.compile_block(ds, value_store, id, if_op.then_block, function)?;
+            let then_block = self
+                .ctx
+                .append_basic_block(function, &format!("cond_{op_id}_arm_{}_block", arm.block));
 
-    //     trace!("Transfering to merge vars for {:?}", op_id);
-    //     if !ds.blocks.is_terminal(if_op.then_block) {
-    //         let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
-    //             panic!("ICE: If block doesn't have merges");
-    //         };
-    //         for merge in merges {
-    //             let type_ids = ds.values.value_types([merge.a_in, merge.out]).unwrap();
-    //             let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
+            trace!(
+                "Compiling arm condition for {:?} {:?}",
+                op_id,
+                arm.condition
+            );
+            self.compile_block(ds, value_store, id, arm.condition, function)?;
 
-    //             let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
+            trace!("Compiling jump for arm {:?} {:?}", op_id, arm.condition);
+            // Make conditional jump.
+            let bool_value = value_store
+                .load_value(self, cond_value_id, ds.values, ds.types)?
+                .into_int_value();
+            self.builder
+                .build_conditional_branch(bool_value, then_block, next_condition)?;
 
-    //             let data = match type_info_kinds {
-    //                 [TypeKind::Integer(a_int), TypeKind::Integer(out_int)] => {
-    //                     let int = data.into_int_value();
-    //                     let target_type = out_int.width.get_int_type(self.ctx);
-    //                     self.cast_int(int, target_type, a_int.signed)?
-    //                         .as_basic_value_enum()
-    //                 }
-    //                 [TypeKind::Float(_), TypeKind::Float(out_float)] => {
-    //                     let flt = data.into_float_value();
-    //                     let target_type = out_float.get_float_type(self.ctx);
-    //                     self.builder
-    //                         .build_float_cast(flt, target_type, "")?
-    //                         .as_basic_value_enum()
-    //                 }
+            trace!("Compiling then_block for arm {:?} {:?}", op_id, arm.block);
+            self.builder.position_at_end(then_block);
+            self.compile_block(ds, value_store, id, arm.block, function)?;
 
-    //                 _ => data,
-    //             };
+            trace!("Transfering to merge vars for {:?} {:?}", op_id, arm.block);
+            if !ds.blocks.is_terminal(arm.block) && !ds.blocks.is_terminal(arm.condition) {
+                let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
+                    panic!("ICE: Cond block doesn't have merges");
+                };
+                for merge in merges {
+                    let Some(block_merge_value_id) = merge.block_input(arm.block) else {
+                        continue;
+                    };
 
-    //             value_store.store_value(self, merge.out, data)?;
-    //         }
+                    let type_ids = ds
+                        .values
+                        .value_types([block_merge_value_id, merge.output])
+                        .unwrap();
+                    let type_info_kinds = type_ids.map(|tid| ds.types.get_type_info(tid).kind);
 
-    //         if let Some(post_block) = post_basic_block {
-    //             self.builder.build_unconditional_branch(post_block)?;
-    //         }
-    //     }
+                    let data =
+                        value_store.load_value(self, block_merge_value_id, ds.values, ds.types)?;
 
-    //     // Compile Else
-    //     self.builder.position_at_end(else_basic_block);
-    //     trace!("Compiling else-block for {:?}", op_id);
-    //     self.compile_block(ds, value_store, id, if_op.else_block, function)?;
+                    let data = match type_info_kinds {
+                        [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
+                            let int = data.into_int_value();
+                            let target_type = out_int.width.get_int_type(self.ctx);
+                            self.cast_int(int, target_type, b_int.signed)?
+                                .as_basic_value_enum()
+                        }
+                        [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                            let flt = data.into_float_value();
+                            let target_type = out_float.get_float_type(self.ctx);
+                            self.builder
+                                .build_float_cast(flt, target_type, "")?
+                                .as_basic_value_enum()
+                        }
 
-    //     trace!("Transfering to merge vars for {:?}", op_id);
-    //     if !ds.blocks.is_terminal(if_op.else_block) {
-    //         let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
-    //             panic!("ICE: If block doesn't have merges");
-    //         };
-    //         for merge in merges {
-    //             let type_ids = ds.values.value_types([merge.b_in, merge.out]).unwrap();
-    //             let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
+                        _ => data,
+                    };
 
-    //             let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
+                    value_store.store_value(self, merge.output, data)?;
+                }
 
-    //             let data = match type_info_kinds {
-    //                 [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
-    //                     let int = data.into_int_value();
-    //                     let target_type = out_int.width.get_int_type(self.ctx);
-    //                     self.cast_int(int, target_type, b_int.signed)?
-    //                         .as_basic_value_enum()
-    //                 }
-    //                 [TypeKind::Float(_), TypeKind::Float(out_float)] => {
-    //                     let flt = data.into_float_value();
-    //                     let target_type = out_float.get_float_type(self.ctx);
-    //                     self.builder
-    //                         .build_float_cast(flt, target_type, "")?
-    //                         .as_basic_value_enum()
-    //                 }
+                if let Some(post_block) = post_basic_block {
+                    self.builder.build_unconditional_branch(post_block)?;
+                }
+            }
+        }
 
-    //                 _ => data,
-    //             };
+        // Compile Else
+        self.builder.position_at_end(else_basic_block);
+        trace!("Compiling else-block for {:?}", op_id);
+        self.compile_block(ds, value_store, id, cond_op.else_block, function)?;
 
-    //             value_store.store_value(self, merge.out, data)?;
-    //         }
+        trace!("Transfering to merge vars for {:?}", op_id);
+        if !ds.blocks.is_terminal(cond_op.else_block) {
+            let Some(merges) = ds.values.get_merge_values(op_id).cloned() else {
+                panic!("ICE: Cond block doesn't have merges");
+            };
+            for merge in merges {
+                let Some(else_merge_value_id) = merge.block_input(cond_op.else_block) else {
+                    continue;
+                };
 
-    //         if let Some(post_block) = post_basic_block {
-    //             self.builder.build_unconditional_branch(post_block)?;
-    //         }
-    //     }
+                let type_ids = ds
+                    .values
+                    .value_types([else_merge_value_id, merge.output])
+                    .unwrap();
+                let type_info_kinds = type_ids.map(|tid| ds.types.get_type_info(tid).kind);
 
-    //     // Build our jumps
-    //     if let Some(post_block) = post_basic_block {
-    //         self.builder.position_at_end(post_block);
-    //     }
+                let data =
+                    value_store.load_value(self, else_merge_value_id, ds.values, ds.types)?;
 
-    //     Ok(())
-    // }
+                let data = match type_info_kinds {
+                    [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
+                        let int = data.into_int_value();
+                        let target_type = out_int.width.get_int_type(self.ctx);
+                        self.cast_int(int, target_type, b_int.signed)?
+                            .as_basic_value_enum()
+                    }
+                    [TypeKind::Float(_), TypeKind::Float(out_float)] => {
+                        let flt = data.into_float_value();
+                        let target_type = out_float.get_float_type(self.ctx);
+                        self.builder
+                            .build_float_cast(flt, target_type, "")?
+                            .as_basic_value_enum()
+                    }
+
+                    _ => data,
+                };
+
+                value_store.store_value(self, merge.output, data)?;
+            }
+
+            if let Some(post_block) = post_basic_block {
+                self.builder.build_unconditional_branch(post_block)?;
+            }
+        }
+
+        // Build our jumps
+        if let Some(post_block) = post_basic_block {
+            self.builder.position_at_end(post_block);
+        }
+        Ok(())
+    }
 
     pub(super) fn build_while(
         &mut self,

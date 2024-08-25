@@ -77,11 +77,7 @@ fn analyze_block(
                     // Nothing to do here.
                     Control::Exit | Control::SysCall { .. } => {}
                     Control::Cond(cond_op) => {
-                        let mut is_all_terminal = stores.blocks.is_terminal(cond_op.else_block);
-                        for arm in &cond_op.arms {
-                            is_all_terminal &= stores.blocks.is_terminal(arm.block);
-                            is_all_terminal &= stores.blocks.is_terminal(arm.condition);
-                        }
+                        let is_all_terminal = cond_op.is_all_terminal(stores);
 
                         control::analyze_cond(
                             stores,
