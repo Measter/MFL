@@ -390,10 +390,14 @@ impl<'ctx> CodeGen<'ctx> {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merges {
-                let type_ids = ds.values.value_types([merge.a_in, merge.out]).unwrap();
+                // While loops only have two inputs, so we can just make the assumption.
+                let type_ids = ds
+                    .values
+                    .value_types([merge.inputs[0].1, merge.output])
+                    .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.a_in, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.inputs[0].1, ds.values, ds.types)?;
 
                 let data = match type_info_kinds {
                     [TypeKind::Integer(a_int), TypeKind::Integer(out_int)] => {
@@ -413,7 +417,7 @@ impl<'ctx> CodeGen<'ctx> {
                     _ => data,
                 };
 
-                value_store.store_value(self, merge.out, data)?;
+                value_store.store_value(self, merge.output, data)?;
             }
         }
 
@@ -444,10 +448,13 @@ impl<'ctx> CodeGen<'ctx> {
                 panic!("ICE: While block doesn't have merges");
             };
             for merge in &merge_values {
-                let type_ids = ds.values.value_types([merge.b_in, merge.out]).unwrap();
+                let type_ids = ds
+                    .values
+                    .value_types([merge.inputs[1].1, merge.output])
+                    .unwrap();
                 let type_info_kinds = type_ids.map(|id| ds.types.get_type_info(id).kind);
 
-                let data = value_store.load_value(self, merge.b_in, ds.values, ds.types)?;
+                let data = value_store.load_value(self, merge.inputs[1].1, ds.values, ds.types)?;
 
                 let data = match type_info_kinds {
                     [TypeKind::Integer(b_int), TypeKind::Integer(out_int)] => {
@@ -467,7 +474,7 @@ impl<'ctx> CodeGen<'ctx> {
                     _ => data,
                 };
 
-                value_store.store_value(self, merge.out, data)?;
+                value_store.store_value(self, merge.output, data)?;
             }
         }
 

@@ -403,10 +403,11 @@ pub(crate) fn analyze_while(
     };
 
     for merge_pair in merge_values {
-        let [b_in_value_info] = stores.values.values([merge_pair.b_in]);
+        // While loop merges only have two inputs, so we can just make that assumption.
+        let [b_in_value_info] = stores.values.values([merge_pair.inputs[1].1]);
         let Some([a_in_type_id, b_in_type_id]) = stores
             .values
-            .value_types([merge_pair.a_in, merge_pair.b_in])
+            .value_types([merge_pair.inputs[0].1, merge_pair.inputs[1].1])
         else {
             continue;
         };
@@ -427,8 +428,8 @@ pub(crate) fn analyze_while(
             let labels = diagnostics::build_creator_label_chain(
                 stores,
                 [
-                    (merge_pair.a_in, 0, a_in_type_name),
-                    (merge_pair.b_in, 1, b_in_type_name),
+                    (merge_pair.inputs[0].1, 0, a_in_type_name),
+                    (merge_pair.inputs[1].1, 1, b_in_type_name),
                 ],
                 Color::Yellow,
                 Color::Cyan,
@@ -446,7 +447,9 @@ pub(crate) fn analyze_while(
         }
 
         // Our output type is the same as a_in because the body can't change the existing type.
-        stores.values.set_value_type(merge_pair.out, a_in_type_id);
+        stores
+            .values
+            .set_value_type(merge_pair.output, a_in_type_id);
     }
 
     // Check after the merge values have been done so that if the condition is a merge value it will have a type.

@@ -747,7 +747,7 @@ impl<'ctx> CodeGen<'ctx> {
                         panic!("ICE: While block doesn't have merge info");
                     };
                     for merge in &op_merges {
-                        make_variable(ds, merge.out, self, merge_pair_map)?;
+                        make_variable(ds, merge.output, self, merge_pair_map)?;
                     }
 
                     self.build_merge_variables(ds, while_op.condition, merge_pair_map)?;
