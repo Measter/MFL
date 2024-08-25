@@ -9,7 +9,7 @@ pub struct BlockId(u32);
 
 impl Display for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Op")?;
+        f.write_str("Block")?;
         self.0.fmt(f)
     }
 }
