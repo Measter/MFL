@@ -306,6 +306,7 @@ pub(crate) fn analyze_cond(
                     )
                 };
 
+            let mut same_length = true;
             // Length check
             for (arm_loc, _, arm_stack) in stacks_to_check {
                 if arm_stack.len() != expected_stack.len() {
@@ -319,47 +320,50 @@ pub(crate) fn analyze_cond(
                     );
                     had_error.set();
                 }
+                same_length = false;
             }
 
-            stack.clear();
-            let expected_stack_iter = expected_stack.iter().copied();
-            let mut to_check_iters = stacks_to_check
-                .iter()
-                .map(|(_, id, s)| (id, s.iter().copied()))
-                .collect::<Vec<_>>();
+            if same_length {
+                stack.clear();
+                let expected_stack_iter = expected_stack.iter().copied();
+                let mut to_check_iters = stacks_to_check
+                    .iter()
+                    .map(|(_, id, s)| (id, s.iter().copied()))
+                    .collect::<Vec<_>>();
 
-            for orig_value_id in expected_stack_iter {
-                let mut needs_merge = false;
-                let mut merge_value = MergeValue {
-                    inputs: Vec::new(),
-                    output: orig_value_id,
-                };
+                for orig_value_id in expected_stack_iter {
+                    let mut needs_merge = false;
+                    let mut merge_value = MergeValue {
+                        inputs: Vec::new(),
+                        output: orig_value_id,
+                    };
 
-                for (block_id, arm_values) in &mut to_check_iters {
-                    let to_check_value = arm_values.next().unwrap(); // We know they're the same length.
-                    if orig_value_id != to_check_value {
-                        // If we found our first merge, create a new merge value and insert the expected input
-                        // as an input.
-                        if !needs_merge {
-                            needs_merge = true;
-                            merge_value.output = stores.values.new_value(cond_op.token, None);
-                            merge_value.inputs.push((expected_block, orig_value_id));
+                    for (block_id, arm_values) in &mut to_check_iters {
+                        let to_check_value = arm_values.next().unwrap(); // We know they're the same length.
+                        if orig_value_id != to_check_value {
+                            // If we found our first merge, create a new merge value and insert the expected input
+                            // as an input.
+                            if !needs_merge {
+                                needs_merge = true;
+                                merge_value.output = stores.values.new_value(cond_op.token, None);
+                                merge_value.inputs.push((expected_block, orig_value_id));
+                            }
+
+                            merge_value.inputs.push((**block_id, to_check_value));
                         }
-
-                        merge_value.inputs.push((**block_id, to_check_value));
                     }
-                }
 
-                if needs_merge {
-                    stack.push(merge_value.output);
+                    if needs_merge {
+                        stack.push(merge_value.output);
 
-                    // Sort the merge value inputs by block ID, so we know where the else block is
-                    // for type checking.
-                    merge_value.inputs.sort_by_key(|i| i.0);
+                        // Sort the merge value inputs by block ID, so we know where the else block is
+                        // for type checking.
+                        merge_value.inputs.sort_by_key(|i| i.0);
 
-                    merge_values.push(merge_value);
-                } else {
-                    stack.push(orig_value_id);
+                        merge_values.push(merge_value);
+                    } else {
+                        stack.push(orig_value_id);
+                    }
                 }
             }
         }
