@@ -254,6 +254,7 @@ pub(crate) fn analyze_cond(
         let condition_terminal = stores.blocks.is_terminal(arm.condition);
         let block_terminal = stores.blocks.is_terminal(arm.block);
         if !(condition_terminal | block_terminal) {
+            trace!(?arm.condition, ?arm.block, "cond arm doesn't terminate");
             arm_stacks.push((arm.close, arm.block, stack.clone()));
         } else {
             trace!(?arm.condition, ?arm.block, "cond arm terminates");
@@ -276,6 +277,7 @@ pub(crate) fn analyze_cond(
     );
 
     if !stores.blocks.is_terminal(cond_op.else_block) {
+        trace!(?cond_op.else_block, "cond else doesn't terminate");
         arm_stacks.push((cond_op.else_close, cond_op.else_block, stack.clone()));
     } else {
         trace!(?cond_op.else_block, "cond else terminates");
@@ -319,8 +321,8 @@ pub(crate) fn analyze_cond(
                         None,
                     );
                     had_error.set();
+                    same_length = false;
                 }
-                same_length = false;
             }
 
             if same_length {

@@ -253,7 +253,7 @@ impl<'ctx> CodeGen<'ctx> {
         for arm in &cond_op.arms {
             arm_condition_blocks.push(self.ctx.append_basic_block(
                 function,
-                &format!("cond_{op_id}_arm_{}_condition", arm.condition),
+                &format!("cond_{op_id}_arm_condition_{}", arm.condition),
             ));
         }
         // Considering it a condition block simplifies things.
@@ -270,17 +270,17 @@ impl<'ctx> CodeGen<'ctx> {
             .zip(&op_io.inputs)
         {
             let [this_condition, next_condition] = *pair.as_arr();
-            self.builder.position_at_end(this_condition);
 
             let then_block = self
                 .ctx
-                .append_basic_block(function, &format!("cond_{op_id}_arm_{}_block", arm.block));
+                .append_basic_block(function, &format!("cond_{op_id}_arm_block_{}", arm.block));
 
             trace!(
                 "Compiling arm condition for {:?} {:?}",
                 op_id,
                 arm.condition
             );
+            self.builder.position_at_end(this_condition);
             self.compile_block(ds, value_store, id, arm.condition, function)?;
 
             trace!("Compiling jump for arm {:?} {:?}", op_id, arm.condition);
