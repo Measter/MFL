@@ -118,6 +118,7 @@ impl ValueStore {
         self.value_types.get_n(ids)
     }
 
+    #[track_caller]
     pub fn set_value_type(&mut self, id: ValueId, kind: TypeId) {
         self.value_types
             .insert(id, kind)
@@ -132,13 +133,28 @@ impl ValueStore {
         self.value_consts[id.0.to_usize()] = const_val;
     }
 
+    #[track_caller]
     pub fn set_merge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
+        merges.iter().for_each(|mv| {
+            assert!(
+                mv.inputs.len() >= 2,
+                "ICE: Created merge value with less than 2 inputs"
+            )
+        });
+
         self.op_merges
             .insert(op_id, merges)
             .expect_none("ICE: Tried to overwrite merges");
     }
 
+    #[track_caller]
     pub fn update_marge_values(&mut self, op_id: OpId, merges: Vec<MergeValue>) {
+        merges.iter().for_each(|mv| {
+            assert!(
+                mv.inputs.len() >= 2,
+                "ICE: Created merge value with less than 2 inputs"
+            )
+        });
         self.op_merges.insert(op_id, merges);
     }
 
