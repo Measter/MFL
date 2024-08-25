@@ -28,18 +28,20 @@ proc(lang(alloc)) alloc(T) [
     0 // File offset
     syscall(7)
     dup cast(s64)
+
     // [len ptr errcode]
+    cond {
+        dup 0< {
+            // Some kind of failure
+            0 swap - cast(u64)
+            // Drop the len and pointer
+            rot(3>1) drop(2)
 
-    if dup 0< {
-        // Some kind of failure
-        0 swap - cast(u64)
-        // Drop the len and pointer
-        rot(3>1) drop(2)
-
-        result::Err(MMap(T), u64)
-        return
+            result::Err(MMap(T), u64)
+            return
+        }
+        else { drop }
     }
-    drop
     // [len ptr]
     cast(T*) swap
     MMap result::Ok(MMap(T), u64)
@@ -68,12 +70,14 @@ proc copy(T) [
     var src MMap(T),
     var dst MMap(T),
 ] to [] {
-    if src.length@ dst.length@ != {
-        "Mismatched length in copy - src: " std::term::ewrite
-        src.length@ std::term::ewrite_ui
-        " dst: " std::term::ewrite
-        dst.length@ std::term::ewrite_ui_ln
-        exit
+    cond {
+        src.length@ dst.length@ != {
+            "Mismatched length in copy - src: " std::term::ewrite
+            src.length@ std::term::ewrite_ui
+            " dst: " std::term::ewrite
+            dst.length@ std::term::ewrite_ui_ln
+            exit
+        }
     }
 
     0 while dup dst.length@ < {
@@ -88,11 +92,13 @@ proc mmap_file [
     u64 // Protection flags. Must match the FD.
 ] to [Result(MMap(u8), u64)] {
     over std::fs::fstat
-    if xtr(is_ok) not {
-        rot(3>1) drop(2)
-        result::unwrap_err
-        result::Err(MMap(u8), u64)
-        return
+    cond {
+        xtr(is_ok) not {
+            rot(3>1) drop(2)
+            result::unwrap_err
+            result::Err(MMap(u8), u64)
+            return
+        }
     }
     result::unwrap_ok
 
@@ -111,14 +117,17 @@ proc mmap_file [
     dup cast(s64)
     // [length ptr errcode]
 
-    if dup 0< {
-        // Some kind of failure
-        0 swap - cast(u64)
-        // Drop the len and pointer
-        rev(3) drop(2)
-        result::Err(MMap(u8), u64)
-    } else {
-        drop cast(u8*) swap MMap result::Ok(MMap(u8), u64)
+    cond {
+        dup 0< {
+            // Some kind of failure
+            0 swap - cast(u64)
+            // Drop the len and pointer
+            rev(3) drop(2)
+            result::Err(MMap(u8), u64)
+        }
+        else {
+            drop cast(u8*) swap MMap result::Ok(MMap(u8), u64)
+        }
     }
 }
 

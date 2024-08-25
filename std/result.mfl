@@ -18,22 +18,24 @@ proc Err(T, E) [E] to [Result(T, E)] {
 
 proc unwrap_ok(T, E) [Result(T, E)] to [T] {
     unpack swap
-    if {
-        xtrd(t)
-    } else {
-        drop
-        "Error: called unwrap on err" std::term::ewriteln
-        exit
+    cond {
+        { xtrd(t) }
+        else {
+            drop
+            "Error: called unwrap on err" std::term::ewriteln
+            exit
+        }
     }
 }
 
 proc unwrap_err(T, E) [Result(T, E)] to [E] {
     unpack swap
-    if not {
-        xtrd(e)
-    } else {
-        drop
-        "Error: called unwrap_err on ok" std::term::ewriteln
-        exit
+    cond {
+        not { xtrd(e) }
+        else{
+            drop
+            "Error: called unwrap_err on ok" std::term::ewriteln
+            exit
+        }
     }
 }

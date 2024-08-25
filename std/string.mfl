@@ -19,44 +19,48 @@ proc split_front [
 ] to [
     SplitResult
 ] {
-    if str.length@ 0= {
-        false str@ str@ SplitResult
-    } else {
-        0(u64) while 
-            dup str.length@ <
-            if dup { over str#@ char@ != and }
-        {
-            // [counter]
-            1+
+    cond {
+        str.length@ 0= {
+            false str@ str@ SplitResult
         }
-        // We're either at the end of the string, or found our character.
+        else {
+            0(u64) while 
+                dup str.length@ <
+                cond {dup { over str#@ char@ != and}}
+            {
+                // [counter]
+                1+
+            }
+            // We're either at the end of the string, or found our character.
 
-        // [idx]
-        if dup str.length@ = {
-            // Reached the end of the string
-            drop
-            false str@ "" SplitResult
-        } else {
-            // We found the split character!
+            // [idx]
+            cond {
+                str.length@ = {
+                    false str@ "" SplitResult
+                }
+                else {
+                    // We found the split character!
 
-            // Construct the prefix
-            str.pointer@
-            // [idx, ptr]
-            over
-            // [idx, ptr, len]
-            swap String swap
+                    // Construct the prefix
+                    str.pointer@
+                    // [idx, ptr]
+                    over
+                    // [idx, ptr, len]
+                    swap String swap
 
-            // [prefix, idx]
-            // Construct the remander.
-            str@ unpack
-            // [prefix, idx, len, ptr]
-            over(2)+ 1+
-            rev(3) - 1-
-            swap String
-            
-            swap true rot(3>1)
-            // [flag, remainder, prefix]
-            SplitResult
+                    // [prefix, idx]
+                    // Construct the remander.
+                    str@ unpack
+                    // [prefix, idx, len, ptr]
+                    over(2)+ 1+
+                    rev(3) - 1-
+                    swap String
+                    
+                    swap true rot(3>1)
+                    // [flag, remainder, prefix]
+                    SplitResult
+                }
+            }
         }
     }
 }
@@ -76,14 +80,17 @@ proc is_digit [u8] to [bool] {
 
 proc trim_start [var str String] to [String] {
     0 while dup str.length@ < {
-        if 0 str#@ is_whitespace {
-            str@ unpack
-            1+ str.pointer!
-            1- str.length!
-        } else {
-            // Can't break loops at the moment, so this will do.
-            drop
-            str@ return
+        cond {
+            0 str#@ is_whitespace {
+                str@ unpack
+                1+ str.pointer!
+                1- str.length!
+            }
+            else {
+                // Can't break loops at the moment, so this will do.
+                drop
+                str@ return
+            }
         }
         1+
     } drop
@@ -93,14 +100,19 @@ proc trim_start [var str String] to [String] {
 
 
 proc trim_end [var str String] to [String] {
-    if str.length@ 0= { str@ return }
+    cond {
+        str.length@ 0= { str@ return }
+    }
 
     str.length@ 1- while dup 0> {
-        if dup str#@ is_whitespace {
-            str.length@ 1- str.length!
-        } else {
-            // Cant break loops at the moment.
-            drop str@ return
+        cond {
+            dup str#@ is_whitespace {
+                str.length@ 1- str.length!
+            }
+            else {
+                // Cant break loops at the moment.
+                drop str@ return
+            }
         }
         1-
     } drop
@@ -113,12 +125,14 @@ proc trim [String] to [String] {
 }
 
 proc remove_start[String, u64] to [String] {
-    if over xtrd(length) over< {
-        "Cannot trim " std::term::ewrite
-        std::term::ewrite_ui
-        " from string of length "
-        xtr(length) std::term::ewrite_ui_ln
-        exit
+    cond {
+        over xtrd(length) over< {
+            "Cannot trim " std::term::ewrite
+            std::term::ewrite_ui
+            " from string of length "
+            xtr(length) std::term::ewrite_ui_ln
+            exit
+        }
     }
 
     swap xtr(length) over(2)- swap ins(length)

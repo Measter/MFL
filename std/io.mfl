@@ -21,42 +21,45 @@ proc write [FD, String] to [WriteResult] {
     // [sysid fd string]
     unpack swap
     syscall(4)
-    if dup 0>= {
-        0
-    } else {
-        0- 0 swap
+    cond {
+        dup 0>= { 0 }
+        else { 0- 0 swap }
     }
     WriteResult
 }
 
 proc writeln [FD, String] to [WriteResult] {
     over swap write
-    if xtr(errno) 0= { drop "\n" write }
-    else { swap drop }
+    cond {
+        xtrd(errno) 0= { "\n" write }
+        else { swap drop }
+    }
 }
 
 proc write_ui [FD, u64] to [WriteResult] {
     var buf u8[30]
 
     // [num]
-    if dup 0= {
-        drop
-        '0' buf 29 ins drop
-        29
-    } else {
-        30
-        // [num idx]
-        while over 0!= {
-            1- swap // Decrement the idx
-            // [idx, num]
-            dup 10/
-            swap 10% '0'+ cast(u8)
-            // [idx, num/10, char]
-            over(2) buf#!
-            swap
+    cond {
+        0= {
+            '0' 29 buf#!
+            29
         }
+        else {
+            30
+            // [num idx]
+            while over 0!= {
+                1- swap // Decrement the idx
+                // [idx, num]
+                dup 10/
+                swap 10% '0'+ cast(u8)
+                // [idx, num/10, char]
+                over(2) buf#!
+                swap
+            }
 
-        swap drop
+            swap drop
+        }
     }
     // [idx.start]
     30 over -
@@ -69,20 +72,26 @@ proc write_ui [FD, u64] to [WriteResult] {
 
 proc write_ui_ln [FD, u64] to [WriteResult] {
     over swap write_ui
-    if xtr(errno) 0= { drop "\n" write }
-    else { swap drop }
+    cond {
+        xtrd(errno) 0= { "\n" write }
+        else { swap drop }
+    }
 }
 
 proc write_si [FD, s64] to [WriteResult] {
     // TODO: Properly handle min value.
 
     // [num]
-    if dup 0(s64)>= {
-        cast(u64)
-    } else {
-        over "-" write
-        if xtr(errno) 0!= { rot(3>1) drop(2) return } else { drop }
-        0 swap- cast(u64)
+    cond {
+        dup 0>= { cast(u64) }
+        else {
+            over "-" write
+            cond {
+                xtr(errno) 0!= { rot(3>1) drop(2) return }
+                else { drop }
+            }
+            0 swap- cast(u64)
+        }
     }
 
     write_ui
@@ -90,21 +99,24 @@ proc write_si [FD, s64] to [WriteResult] {
 
 proc write_si_ln [FD, s64] to [WriteResult] {
     over swap write_si
-    if xtr(errno) 0= { drop "\n" write }
-    else { swap drop }
+    cond {
+        xtrd(errno) 0= { "\n" write }
+        else { swap drop }
+    }
 }
 
 proc write_bool [FD, bool] to [WriteResult] {
-    if {
-        "true"
-    } else {
-        "false"
+    cond {
+        { "true" }
+        else { drop "false" }
     }
     write
 }
 
 proc write_bool_ln [FD, bool] to [WriteResult] {
     over swap write_bool
-    if xtr(errno) 0= {drop "\n" write}
-    else {swap drop}
+    cond {
+        xtrd(errno) 0= { "\n" write }
+        else { swap drop }
+    }
 }

@@ -24,11 +24,13 @@ proc open [
 ] to [Result(FD, u64)] {
     // The syscall requires a null-terminated string.
     // Check for null termination
-    if over xtr(length) 1- xtrd 0 != {
-        drop(2)
+    cond {
+        over xtr(length) 1- xtrd 0 != {
+            drop(2)
 
-        0 1- result::Err(FD, u64)
-        return
+            0 1- result::Err(FD, u64)
+            return
+        }
     }
 
     SYS_OPEN rot(3>1) 0o666
@@ -37,11 +39,14 @@ proc open [
     rot(3<1) xtrd(pointer) rot(3>1)
     syscall(4)
 
-    // An error ocurred
-    if dup cast(s64) 0< {
-        cast(s64) 0 swap - cast(u64) result::Err(FD, u64)
-    } else {
-        FD result::Ok(FD, u64)
+    cond {
+        // An error ocurred
+        cast(s64) dup 0< {
+            0 swap - cast(u64) result::Err(FD, u64)
+        }
+        else {
+            FD result::Ok(FD, u64)
+        }
     }
 }
 
@@ -58,7 +63,7 @@ proc open_write [
     bool    // Append if it already exists
 ] to [Result(FD, u64)] {
     FLAG_READWRITE FLAG_CREATE or swap
-    if { FLAG_APPEND or }
+    cond {{ FLAG_APPEND or } else { drop }}
     open
 }
 
@@ -69,9 +74,7 @@ proc create [
     bool // Force new file.
 ] to [Result(FD, u64)] {
     FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
-    if {
-        FLAG_CREATE_NEW or
-    }
+    cond {{ FLAG_CREATE_NEW or } else { drop }}
 
     open
 }
@@ -108,10 +111,13 @@ proc fstat [FD] to [Result(Stat, u64)] {
     var buf Stat
     xtrd(fd)
     SYS_FSTAT swap buf syscall(3) cast(s64)
-    if dup 0< {
-        0 swap - cast(u64) result::Err(Stat, u64)
-    } else {
-        assumeinit(buf)
-        drop buf@ result::Ok(Stat, u64)
+    cond {
+        dup 0< {
+            0 swap - cast(u64) result::Err(Stat, u64)
+        }
+        else {
+            assumeinit(buf)
+            drop buf@ result::Ok(Stat, u64)
+        }
     }
 }
