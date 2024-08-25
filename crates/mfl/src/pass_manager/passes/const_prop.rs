@@ -76,24 +76,25 @@ fn analyze_block(
                     }
                     // Nothing to do here.
                     Control::Exit | Control::SysCall { .. } => {}
-                    // Control::If(if_op) => {
-                    //     control::analyze_if(
-                    //         stores,
-                    //         pass_manager,
-                    //         variable_state,
-                    //         had_error,
-                    //         item_id,
-                    //         if_op,
-                    //     );
+                    Control::Cond(cond_op) => {
+                        let mut is_all_terminal = stores.blocks.is_terminal(cond_op.else_block);
+                        for arm in &cond_op.arms {
+                            is_all_terminal &= stores.blocks.is_terminal(arm.block);
+                            is_all_terminal &= stores.blocks.is_terminal(arm.condition);
+                        }
 
-                    //     if stores.blocks.is_terminal(if_op.else_block)
-                    //         && stores.blocks.is_terminal(if_op.then_block)
-                    //     {
-                    //         break;
-                    //     }
-                    // }
-                    Control::Cond(_) => {
-                        todo!();
+                        control::analyze_cond(
+                            stores,
+                            pass_manager,
+                            variable_state,
+                            had_error,
+                            item_id,
+                            cond_op,
+                        );
+
+                        if is_all_terminal {
+                            break;
+                        }
                     }
                     Control::While(while_op) => {
                         control::analyze_while(
