@@ -411,57 +411,6 @@ pub(crate) fn analyze_cond(
     }
 }
 
-//     for merge_pair in merges {
-//         let [then_value_info] = stores.values.values([merge_pair.a_in]);
-//         let Some([then_type_id, else_type_id]) = stores
-//             .values
-//             .value_types([merge_pair.a_in, merge_pair.b_in])
-//         else {
-//             continue;
-//         };
-
-//         let then_type_info = stores.types.get_type_info(then_type_id);
-//         let else_type_info = stores.types.get_type_info(else_type_id);
-
-//         let final_type_id = match (then_type_info.kind, else_type_info.kind) {
-//             (TypeKind::Integer(then_int), TypeKind::Integer(else_int))
-//                 if can_promote_int_bidirectional(then_int, else_int) =>
-//             {
-//                 let kind = promote_int_type_bidirectional(then_int, else_int).unwrap();
-//                 stores.types.get_builtin(kind.into()).id
-//             }
-//             _ if then_type_id != else_type_id => {
-//                 let then_type_name = stores.strings.resolve(then_type_info.friendly_name);
-//                 let else_type_name = stores.strings.resolve(else_type_info.friendly_name);
-
-//                 let labels = diagnostics::build_creator_label_chain(
-//                     stores,
-//                     [
-//                         (merge_pair.a_in, 0, then_type_name),
-//                         (merge_pair.b_in, 1, else_type_name),
-//                     ],
-//                     Color::Yellow,
-//                     Color::Cyan,
-//                 );
-
-//                 diagnostics::emit_error(
-//                     stores,
-//                     then_value_info.source_location,
-//                     "conditional body cannot change types on the stack",
-//                     labels,
-//                     None,
-//                 );
-
-//                 had_error.set();
-//                 then_type_id
-//             }
-//             _ => then_type_id,
-//         };
-
-//         stores.values.set_value_type(merge_pair.out, final_type_id);
-//     }
-// }
-
 pub(crate) fn analyze_while(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
