@@ -14,7 +14,7 @@ use crate::{
 
 use super::{block::BlockId, item::ItemKind, types::TypeId, Stores};
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
     fn expand_generic_params_in_block(
         &mut self,
         pass_manager: &mut PassManager,

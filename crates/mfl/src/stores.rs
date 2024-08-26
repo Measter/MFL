@@ -1,4 +1,5 @@
 use block::BlockStore;
+use diagnostics::DiagnosticStore;
 use item::{ItemAttribute, ItemKind, ItemStore};
 use lasso::Spur;
 use ops::OpStore;
@@ -10,6 +11,7 @@ use values::ValueStore;
 use crate::pass_manager::PassManager;
 
 pub mod block;
+pub mod diagnostics;
 mod generics;
 pub mod item;
 pub mod ops;
@@ -35,7 +37,7 @@ pub const FRENDLY_ARRAY_CLOSE: &str = "]";
 pub const FRENDLY_PTR_MULTI: &str = "*";
 pub const FRENDLY_PTR_SINGLE: &str = "&";
 
-pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'sigs> {
+pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'sigs, 'diags> {
     pub source: &'source mut SourceStore,
     pub strings: &'strings mut StringStore,
     pub types: &'types mut TypeStore,
@@ -44,9 +46,10 @@ pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'si
     pub values: &'values mut ValueStore,
     pub items: &'items mut ItemStore,
     pub sigs: &'sigs mut SigStore,
+    pub diags: &'diags mut DiagnosticStore,
 }
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
     pub fn build_mangled_name(&mut self, pass_manager: &mut PassManager, item_id: ItemId) -> Spur {
         let item_header = self.items.get_item_header(item_id);
 

@@ -23,6 +23,7 @@ use tracing::{debug, debug_span, Level};
 
 use stores::{
     block::BlockStore,
+    diagnostics::DiagnosticStore,
     item::{ItemAttribute, ItemKind, ItemStore},
     ops::OpStore,
     signatures::{SigStore, TypeResolvedItemSignature},
@@ -189,6 +190,7 @@ fn run_compile(args: &Args) -> Result<()> {
     let mut value_store = ValueStore::new();
     let mut item_store = ItemStore::new(&mut string_store);
     let mut sig_store = SigStore::new();
+    let mut diag_store = DiagnosticStore::new();
 
     let mut stores = Stores {
         source: &mut source_storage,
@@ -199,10 +201,14 @@ fn run_compile(args: &Args) -> Result<()> {
         values: &mut value_store,
         items: &mut item_store,
         sigs: &mut sig_store,
+        diags: &mut diag_store,
     };
 
     print!("   Compiling...");
-    let top_level_items = match load_program(&mut stores, args) {
+
+    let loaded_program = load_program(&mut stores, args);
+    stores.display_diags();
+    let top_level_items = match loaded_program {
         Ok(o) => o,
         Err(e) => {
             eprintln!();
