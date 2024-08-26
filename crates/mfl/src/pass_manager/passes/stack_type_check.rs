@@ -89,7 +89,7 @@ fn analyze_block(
                             count,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(stores, op_id);
+                            type_check::stack_ops::dup_over_rotate_swap_reverse(stores, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
@@ -111,13 +111,14 @@ fn analyze_block(
                             depth,
                         );
                         if local_had_error.is_ok() {
-                            type_check::stack_ops::dup_over(stores, op_id);
+                            type_check::stack_ops::dup_over_rotate_swap_reverse(stores, op_id);
                         }
 
                         had_error.merge_with(local_had_error);
                     }
                     Stack::Reverse { count } => {
                         stack_check::stack_ops::reverse(stores, had_error, stack, op_id, count);
+                        type_check::stack_ops::dup_over_rotate_swap_reverse(stores, op_id);
                     }
                     Stack::Rotate {
                         item_count,
@@ -133,9 +134,11 @@ fn analyze_block(
                             direction,
                             shift_count,
                         );
+                        type_check::stack_ops::dup_over_rotate_swap_reverse(stores, op_id);
                     }
                     Stack::Swap { count } => {
                         stack_check::stack_ops::swap(stores, had_error, stack, op_id, count);
+                        type_check::stack_ops::dup_over_rotate_swap_reverse(stores, op_id);
                     }
                 },
                 Basic::Control(co) => match co {

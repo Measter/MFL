@@ -54,14 +54,14 @@ fn analyze_block(
                     Compare::IsNull => comparative::is_null(stores, op_id),
                 },
                 Basic::Stack(so) => match so {
-                    Stack::Dup { .. } | Stack::Over { .. } => stack_ops::dup_over(stores, op_id),
-
-                    // These just change the order of the virtual stack, so there's no work to do here.
-                    Stack::Drop { .. }
-                    | Stack::Emit { .. }
+                    Stack::Dup { .. }
+                    | Stack::Over { .. }
                     | Stack::Reverse { .. }
                     | Stack::Rotate { .. }
-                    | Stack::Swap { .. } => {}
+                    | Stack::Swap { .. } => stack_ops::dup_over_rotate_swap_reverse(stores, op_id),
+
+                    // No work to do here
+                    Stack::Drop { .. } | Stack::Emit { .. } => {}
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {

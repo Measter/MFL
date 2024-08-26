@@ -638,16 +638,16 @@ impl<'ctx> CodeGen<'ctx> {
                 },
 
                 OpCode::Basic(Basic::Stack(stk_op)) => match stk_op {
-                    Stack::Dup { .. } | Stack::Over { .. } => {
-                        self.build_dup_over(ds, value_store, op_id)?
-                    }
-
-                    // These do nothing in codegen
-                    Stack::Drop { .. }
-                    | Stack::Emit { .. }
+                    Stack::Dup { .. }
+                    | Stack::Over { .. }
                     | Stack::Reverse { .. }
                     | Stack::Rotate { .. }
                     | Stack::Swap { .. } => {
+                        self.build_dup_over_rotate_swap_reverse(ds, value_store, op_id)?
+                    }
+
+                    // These do nothing in codegen
+                    Stack::Drop { .. } | Stack::Emit { .. } => {
                         continue;
                     }
                 },

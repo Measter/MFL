@@ -162,7 +162,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    pub(super) fn build_dup_over(
+    pub(super) fn build_dup_over_rotate_swap_reverse(
         &mut self,
         ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,

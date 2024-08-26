@@ -7,7 +7,6 @@ use crate::{
     diagnostics,
     error_signal::ErrorSignal,
     ir::Direction,
-    n_ops::SliceNOps,
     stores::{ops::OpId, values::ValueId},
     Stores,
 };
@@ -156,8 +155,19 @@ pub(crate) fn reverse(
     let count = count.inner.to_usize();
     ensure_stack_depth(stores, had_error, stack, op_id, count);
 
-    stack.lastn_mut(count).unwrap().reverse();
-    stores.ops.set_op_io(op_id, &[], &[]);
+    let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - count..).collect();
+    assert_eq!(inputs.len(), count);
+    inputs.reverse();
+
+    let mut outputs = SmallVec::<[_; 8]>::new();
+    for &input in &inputs {
+        stores.values.consume_value(input, op_id);
+        let new_value = stores.values.new_value(op_loc, Some(input));
+        outputs.push(new_value);
+        stack.push(new_value);
+    }
+
+    stores.ops.set_op_io(op_id, &inputs, &outputs);
 }
 
 pub(crate) fn rotate(
@@ -215,13 +225,22 @@ pub(crate) fn rotate(
     let shift_count = shift_count.inner.to_usize();
     ensure_stack_depth(stores, had_error, stack, op_id, item_count);
 
-    let items = stack.lastn_mut(item_count).unwrap();
+    let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - item_count..).collect();
+    assert_eq!(inputs.len(), item_count);
     match direction {
-        Direction::Left => items.rotate_left(shift_count),
-        Direction::Right => items.rotate_right(shift_count),
+        Direction::Left => inputs.rotate_left(shift_count),
+        Direction::Right => inputs.rotate_right(shift_count),
     }
 
-    stores.ops.set_op_io(op_id, &[], &[]);
+    let mut outputs = SmallVec::<[_; 8]>::new();
+    for &input in &inputs {
+        stores.values.consume_value(input, op_id);
+        let new_value = stores.values.new_value(op_loc, Some(input));
+        outputs.push(new_value);
+        stack.push(new_value);
+    }
+
+    stores.ops.set_op_io(op_id, &inputs, &outputs);
 }
 
 pub(crate) fn swap(
@@ -231,8 +250,9 @@ pub(crate) fn swap(
     op_id: OpId,
     count: Spanned<u8>,
 ) {
+    let op_loc = stores.ops.get_token(op_id).location;
+
     if count.inner == 0 {
-        let op_loc = stores.ops.get_token(op_id).location;
         diagnostics::emit_warning(
             stores,
             op_loc,
@@ -248,11 +268,17 @@ pub(crate) fn swap(
     let count = count.inner.to_usize();
     ensure_stack_depth(stores, had_error, stack, op_id, count * 2);
 
-    let slice_start = stack.len() - count;
-    let (rest, a_slice) = stack.split_at_mut(slice_start);
-    let (_, b_slice) = rest.split_at_mut(rest.len() - count);
+    let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - count * 2..).collect();
+    assert_eq!(inputs.len(), count * 2);
+    inputs.rotate_left(count);
 
-    a_slice.swap_with_slice(b_slice);
+    let mut outputs = SmallVec::<[_; 8]>::new();
+    for &input in &inputs {
+        stores.values.consume_value(input, op_id);
+        let new_value = stores.values.new_value(op_loc, Some(input));
+        outputs.push(new_value);
+        stack.push(new_value);
+    }
 
-    stores.ops.set_op_io(op_id, &[], &[]);
+    stores.ops.set_op_io(op_id, &inputs, &outputs);
 }

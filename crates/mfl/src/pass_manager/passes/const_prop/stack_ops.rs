@@ -8,7 +8,7 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn dup_over(stores: &mut Stores, op_id: OpId) {
+pub(crate) fn dup_over_rotate_swap_reverse(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id).clone();
 
     for (input_value_id, output_value_id) in op_data.inputs.into_iter().zip(op_data.outputs) {

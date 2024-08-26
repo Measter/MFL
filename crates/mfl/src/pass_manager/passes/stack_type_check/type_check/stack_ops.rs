@@ -15,7 +15,7 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn dup_over(stores: &mut Stores, op_id: OpId) {
+pub(crate) fn dup_over_rotate_swap_reverse(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let inputs: SmallVec<[ValueId; 20]> = op_data.inputs.as_slice().into();
     let outputs: SmallVec<[ValueId; 20]> = op_data.outputs.as_slice().into();
