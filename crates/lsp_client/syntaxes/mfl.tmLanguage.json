@@ -27,6 +27,10 @@
 				{
 					"name": "constant.character.escape.mfl",
 					"match": "\\\\."
+				},
+				{
+					"name": "constant.numeric.mfl",
+					"match": "\\b(here)\\b"
 				}
 			]
 		},
@@ -67,10 +71,6 @@
 				{
 					"name": "constant.numeric.mfl",
 					"match": "\\b(true|false)\\b"
-				},
-				{
-					"name": "constant.numeric.mfl",
-					"match": "\\b(here)\\b"
 				}
 			]
 		},
