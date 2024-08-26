@@ -9,44 +9,57 @@ proc bad_read [] to [u8] {
     yay@
 }
 
-proc bad_read_after_if_then [] to [u8] {
+proc bad_read_after_cond [] to [u8] {
     var yay u8
 
-    if true {
-        2 yay!
-    }
+    cond {true { 2 yay! }}
 
     yay@
 }
 
-proc bad_read_after_if_else [] to [u8] {
+proc bad_read_after_cond_else [] to [u8] {
     var yay u8
 
-    if true {} else {
-        3 yay!
-    }
+    cond {else { 3 yay! }}
 
     yay@
 }
 
-proc bad_read_in_if_then [] to [] {
+proc bad_read_in_cond_arm [] to [] {
     var yay u8
 
-    if true {
-        yay@ drop
-    } else {
-        4 yay!
+    cond {
+        true { yay@ drop }
+        else { 4 yay! }
     }
 }
 
-proc bad_read_in_if_else [] to [] {
+proc bad_read_in_cond_else [] to [] {
     var yay u8
 
-    if true {
-        5 yay!
-    } else {
-        yay@ drop
+    cond {
+        true { 5 yay! }
+        else { yay@ drop }
     }
+}
+
+proc bad_read_in_cond_arm_condition [] to [] {
+    var yay u8
+
+    cond {
+        5 yay! true { }
+        yay@ true { drop }
+    }
+}
+
+proc bad_read_in_after_cond_arm_condition [] to [] {
+    var yay u8
+
+    cond {
+        5 yay! true { }
+    }
+
+    yay@ drop
 }
 
 proc bad_read_after_while_body [] to [u8] {

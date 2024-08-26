@@ -26,25 +26,33 @@ proc good_read_param [u8] to [u8] {
     yay@
 }
 
-proc good_read_if_condition [] to [u8] {
+proc good_read_cond_condition [] to [] {
     var yay u8
 
-    if 6 yay! true {
-        yay@ drop
-    } else {
-        yay@ drop
+    cond {
+        6 yay! true { yay@ drop }
+        else {}
+    }
+}
+
+proc good_read_after_cond_arms [] to [u8] {
+    var yay u8
+
+    cond {
+        true { 7 yay! }
+        else { 8 yay! }
     }
 
     yay@
 }
 
-proc good_read_if_body [] to [u8] {
+proc good_read_after_cond_arm_conditions [] to [u8] {
     var yay u8
 
-    if true {
-        7 yay!
-    } else {
-        8 yay!
+    cond {
+        9 yay! true { }
+        10 yay! true { }
+        else { 11 yay! }
     }
 
     yay@
@@ -53,7 +61,7 @@ proc good_read_if_body [] to [u8] {
 proc good_read_while_condition [] to [u8] {
     var yay u8
 
-    while 9 yay! true {}
+    while 12 yay! true {}
 
     yay@
 }
@@ -61,7 +69,7 @@ proc good_read_while_condition [] to [u8] {
 proc good_read_in_while_body [] to [] {
     var yay u8
 
-    while 11 yay! true {
+    while 13 yay! true {
         yay@ drop
     }
 }
