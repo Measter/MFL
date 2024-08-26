@@ -46,6 +46,13 @@ pub(crate) fn epilogue_return(
                 .with_message("return type defined here"),
         ];
 
+        let msg = format!(
+            "function '{}' expects {} values, found {}",
+            stores.strings.resolve(item_header.name.inner),
+            exit_sig.len(),
+            stack.len()
+        );
+
         match stack.len().cmp(&exit_sig.len()) {
             Ordering::Less => {
                 let num_missing = usize::saturating_sub(exit_sig.len(), stack.len());
@@ -66,18 +73,7 @@ pub(crate) fn epilogue_return(
             Ordering::Equal => unreachable!(),
         }
 
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!(
-                "function '{}' return {}, found {}",
-                stores.strings.resolve(item_header.name.inner),
-                exit_sig.len(),
-                stack.len()
-            ),
-            labels,
-            None,
-        );
+        diagnostics::emit_error(stores, op_loc, msg, labels, None);
 
         had_error.set();
     }
