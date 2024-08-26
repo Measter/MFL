@@ -3,12 +3,12 @@ proc entry [] to [] {
 }
 
 proc ackermann [s32, s32] to [s32] {
-    if over 0= {
-        swap drop 1+
-    } else if dup 0= {
-        drop 1- 1 ackermann
-    } else {
-        1- over swap ackermann
-        swap 1- swap ackermann
+    cond {
+        swap 0= { 1+ }
+        0= { 1- 1 ackermann }
+        else {
+            1- over swap ackermann
+            swap 1- swap ackermann
+        }
     }
 }

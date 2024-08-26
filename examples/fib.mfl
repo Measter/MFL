@@ -1,11 +1,11 @@
 import core::String
 
 proc fibonacci_rec [u64] to [u64] {
-    if dup 1> {
+    cond { dup 1> {
         dup 1- fibonacci_rec
         swap 2- fibonacci_rec
         +
-    }
+    }}
 }
 
 proc fibonacci_iter [u64] to [u64] {
@@ -21,17 +21,19 @@ proc fibonacci_iter [u64] to [u64] {
 
 proc ord [u8] to [String] {
     100%
-    if dup 11= { "th" }
-    else if dup 12= { "th" }
-    else if dup 13= { "th" }
-    else {
-        10%
-        if dup 1= { "st" }
-        else if dup 2= { "nd" }
-        else if dup 3= { "rd" }
-        else { "th" }
+    cond {
+        11= { "th" }
+        12= { "th" }
+        13= { "th" }
+        else {
+            10% cond {
+                1= { "st" }
+                2= { "nd" }
+                3= { "rd" }
+                else { drop "th" }
+            }
+        }
     }
-    swap drop
 }
 
 proc entry [] to [] {
