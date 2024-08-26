@@ -124,7 +124,7 @@ pub(crate) fn analyze_cond(
     cond_op: Cond,
 ) {
     let pre_cond_variable_state = variable_state.clone();
-    let mut final_variable_state = variable_state.clone();
+    let mut final_variable_state = HashMap::new();
 
     for arm in &cond_op.arms {
         super::analyze_block(
@@ -145,16 +145,25 @@ pub(crate) fn analyze_cond(
             arm.block,
         );
 
-        for (var_id, final_state) in &mut final_variable_state {
-            let post_block_state = variable_state[var_id];
+        if final_variable_state.is_empty() {
+            // If we've not checked anything yet, start from the first arm's state.
+            // If we started from pre_cond_variable_state then anything uninitialized
+            // would stay uninitialized, even if all arms assigned.
+            final_variable_state.clone_from(variable_state);
+        } else {
+            for (var_id, final_state) in &mut final_variable_state {
+                let post_block_state = variable_state[var_id];
 
-            match (post_block_state, *final_state) {
-                (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
-                    *final_state = ConstVal::Uninitialized
+                match (post_block_state, *final_state) {
+                    (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
+                        *final_state = ConstVal::Uninitialized
+                    }
+                    (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => {
+                        *final_state = ConstVal::Unknown
+                    }
+                    _ if post_block_state == *final_state => {}
+                    _ => *final_state = ConstVal::Unknown,
                 }
-                (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *final_state = ConstVal::Unknown,
-                _ if post_block_state == *final_state => {}
-                _ => *final_state = ConstVal::Unknown,
             }
         }
 
