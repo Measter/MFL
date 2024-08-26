@@ -335,27 +335,24 @@ pub(crate) fn analyze_cond(
 
                 for orig_value_id in expected_stack_iter {
                     let mut needs_merge = false;
-                    let mut merge_value = MergeValue {
-                        inputs: Vec::new(),
-                        output: orig_value_id,
-                    };
+                    let mut inputs = SmallVec::<[_; 20]>::new();
+                    inputs.push((expected_block, orig_value_id));
 
                     for (block_id, arm_values) in &mut to_check_iters {
                         let to_check_value = arm_values.next().unwrap(); // We know they're the same length.
-                        if orig_value_id != to_check_value {
-                            // If we found our first merge, create a new merge value and insert the expected input
-                            // as an input.
-                            if !needs_merge {
-                                needs_merge = true;
-                                merge_value.output = stores.values.new_value(cond_op.token, None);
-                                merge_value.inputs.push((expected_block, orig_value_id));
-                            }
+                        inputs.push((**block_id, to_check_value));
 
-                            merge_value.inputs.push((**block_id, to_check_value));
+                        if orig_value_id != to_check_value {
+                            // We found a difference, so mark that we need a merge value.
+                            needs_merge = true;
                         }
                     }
 
                     if needs_merge {
+                        let mut merge_value = MergeValue {
+                            inputs: inputs.to_vec(),
+                            output: stores.values.new_value(cond_op.token, None),
+                        };
                         stack.push(merge_value.output);
 
                         // Sort the merge value inputs by block ID, so we know where the else block is
