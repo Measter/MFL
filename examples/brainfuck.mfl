@@ -19,50 +19,45 @@ proc entry [] to [] {
     0(u64) while dup input.length@ < {
         dup input#@
 
-        if dup '>' = {
-            drop
-            memory.ptr@ 1+ 512% memory.ptr!
-        } else if dup '<' = {
-            drop
-            memory.ptr@ 1- 512+ 512% memory.ptr!
-        } else if dup '.' = {
-            drop
-            memory.ptr@ memory.tape#@ write_char
-        } else if dup '+' = {
-            drop
-            memory.ptr@ memory.tape# dup @ 1+ swap !
-        } else if dup '-' = {
-            drop
-            memory.ptr@ memory.tape# dup @ 1- swap !
-        } else if dup '[' = {
-            drop
-            if memory.ptr@ memory.tape#@ 0= {
-                1 memory.counter!
-                while memory.counter@ 0> {
-                    1+
-                    input over xtrd 
-                    if dup '[' = {
-                        drop
-                        memory.counter@ 1+ memory.counter!
-                    } else if ']' = {
-                        memory.counter@ 1- memory.counter!
+        cond {
+            '>'= { memory.ptr@ 1+ 512% memory.ptr! }
+            '<'= { memory.ptr@ 1- 512+ 512% memory.ptr! }
+            '.'= { memory.ptr@ memory.tape#@ write_char }
+            '+'= { memory.ptr@ memory.tape# dup @ 1+ swap ! }
+            '-'= { memory.ptr@ memory.tape# dup @ 1- swap ! }
+            '['= {
+                cond {
+                    memory.ptr@ memory.tape#@ 0= {
+                        1 memory.counter!
+                        while memory.counter@ 0> {
+                            1+
+                            dup input#@
+                            cond {
+                                '['= { memory.counter@ 1+ memory.counter! }
+                                ']'= { memory.counter@ 1- memory.counter! }
+                                else { drop }
+                            }
+                        }
                     }
                 }
             }
-        } else if ']' = {
-            if memory.ptr@ memory.tape#@ 0!= {
-                1 memory.counter!
-                while memory.counter@ 0> {
-                    1-
-                    input over xtrd 
-                    if dup ']' = {
-                        drop
-                        memory.counter@ 1+ memory.counter!
-                    } else if '[' = {
-                        memory.counter@ 1- memory.counter!
+            ']'= {
+                cond {
+                    memory.ptr@ memory.tape#@ 0!= {
+                        1 memory.counter!
+                        while memory.counter@ 0> {
+                            1-
+                            dup input#@
+                            cond {
+                                ']'= { memory.counter@ 1+ memory.counter! }
+                                '['= { memory.counter@ 1- memory.counter! }
+                                else { drop }
+                            }
+                        }
                     }
                 }
             }
+            else { drop }
         }
 
         1+
