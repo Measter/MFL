@@ -5,17 +5,14 @@ use ::stores::{
     source::{SourceLocation, Spanned, WithSpan},
     strings::StringStore,
 };
-use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
 use tracing::{debug_span, trace};
 
 use crate::{
-    diagnostics,
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
     stores::{self},
-    Stores,
 };
 
 use super::item::LangItem;
@@ -938,16 +935,6 @@ impl TypeStore {
     pub fn get_generic_base_def(&self, id: TypeId) -> &StructDef<PartiallyResolvedType> {
         &self.generic_struct_id_map[&id]
     }
-}
-
-pub fn emit_type_error_diag(stores: &Stores, token: Spanned<Spur>) {
-    diagnostics::emit_error(
-        stores,
-        token.location,
-        format!("unknown type `{}`", stores.strings.resolve(token.inner)),
-        [Label::new(token.location).with_color(Color::Red)],
-        None,
-    );
 }
 
 fn next_multiple_of(a: u64, b: u64) -> u64 {

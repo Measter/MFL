@@ -1,3 +1,5 @@
+use stores::items::ItemId;
+
 use crate::{
     error_signal::ErrorSignal,
     n_ops::VecNOps,
@@ -14,12 +16,21 @@ fn ensure_stack_depth(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     depth: usize,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     if stack.len() < depth {
-        generate_stack_length_mismatch_diag(stores, op_loc, op_loc, stack.len(), depth, None);
+        generate_stack_length_mismatch_diag(
+            stores,
+            item_id,
+            op_loc,
+            op_loc,
+            stack.len(),
+            depth,
+            None,
+        );
         had_error.set();
 
         let num_missing = usize::saturating_sub(depth, stack.len());
@@ -34,9 +45,10 @@ pub(super) fn eat_one_make_one(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
 ) {
-    ensure_stack_depth(stores, had_error, stack, op_id, 1);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let value_id = stack.pop().unwrap();
     stores.values.consume_value(value_id, op_id);
@@ -51,9 +63,10 @@ pub(super) fn eat_two_make_one(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
 ) {
-    ensure_stack_depth(stores, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {

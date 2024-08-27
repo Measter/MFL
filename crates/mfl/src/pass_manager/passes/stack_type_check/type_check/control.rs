@@ -1,11 +1,9 @@
 use std::ops::ControlFlow;
 
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{Cond, OpCode, TypeResolvedOp, While},
     pass_manager::{
@@ -17,6 +15,7 @@ use crate::{
         PassManager,
     },
     stores::{
+        diagnostics::Diagnostic,
         item::ItemKind,
         ops::OpId,
         types::{BuiltinTypes, TypeId, TypeKind},
@@ -32,8 +31,8 @@ pub(crate) fn epilogue_return(
     item_id: ItemId,
 ) {
     let item_urir_sig = stores.sigs.urir.get_item_signature(item_id);
-    let item_trir_sig = stores.sigs.trir.get_item_signature(item_id);
-    let op_data = stores.ops.get_op_io(op_id);
+    let item_trir_sig = stores.sigs.trir.get_item_signature(item_id).clone();
+    let op_data = stores.ops.get_op_io(op_id).clone();
 
     for (&expected_type_id, &actual_value_id) in item_trir_sig.exit.iter().zip(&op_data.inputs) {
         let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
@@ -50,6 +49,7 @@ pub(crate) fn epilogue_return(
             {
                 failed_compare_stack_types(
                     stores,
+                    item_id,
                     &op_data.inputs,
                     &item_trir_sig.exit,
                     item_urir_sig.exit.location,
@@ -73,7 +73,12 @@ pub(crate) fn prologue(stores: &mut Stores, op_id: OpId, item_id: ItemId) {
     }
 }
 
-pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn syscall(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
 
     for (idx, &input_value_id) in op_data.inputs.iter().enumerate() {
@@ -93,16 +98,12 @@ pub(crate) fn syscall(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
         }
 
         let type_name = stores.strings.resolve(input_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(input_value_id, idx.to_u64(), type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
         let op_loc = stores.ops.get_token(op_id).location;
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(stores, op_loc, "invalid syscall parameter", labels, None);
+        Diagnostic::error(op_loc, "invalid syscall parameter")
+            .with_label_chain(input_value_id, idx.to_u64(), type_name)
+            .attached(stores.diags, item_id);
+
         had_error.set();
     }
 
@@ -117,6 +118,7 @@ pub(crate) fn call_function_const(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     callee_id: ItemId,
 ) {
@@ -131,9 +133,14 @@ pub(crate) fn call_function_const(
             return;
         }
 
-        let ControlFlow::Continue(id) =
-            call_generic_function_infer_params(stores, pass_manager, had_error, callee_id, op_id)
-        else {
+        let ControlFlow::Continue(id) = call_generic_function_infer_params(
+            stores,
+            pass_manager,
+            had_error,
+            item_id,
+            callee_id,
+            op_id,
+        ) else {
             return;
         };
 
@@ -158,9 +165,9 @@ pub(crate) fn call_function_const(
         return;
     }
 
-    let op_data = stores.ops.get_op_io(op_id);
+    let op_data = stores.ops.get_op_io(op_id).clone();
     let callee_sig_urir = stores.sigs.urir.get_item_signature(callee_id);
-    let callee_sig_trir = stores.sigs.trir.get_item_signature(callee_id);
+    let callee_sig_trir = stores.sigs.trir.get_item_signature(callee_id).clone();
 
     for (&actual_value_id, &expected_type_id) in op_data.inputs.iter().zip(&callee_sig_trir.entry) {
         let Some([actual_type_id]) = stores.values.value_types([actual_value_id]) else {
@@ -184,6 +191,7 @@ pub(crate) fn call_function_const(
             {
                 failed_compare_stack_types(
                     stores,
+                    item_id,
                     &op_data.inputs,
                     &callee_sig_trir.entry,
                     callee_sig_urir.entry.location,
@@ -209,6 +217,7 @@ fn call_generic_function_infer_params(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     callee_id: ItemId,
     op_id: OpId,
 ) -> ControlFlow<(), ItemId> {
@@ -247,16 +256,9 @@ fn call_generic_function_infer_params(
 
         if !found_param {
             let op_loc = stores.ops.get_token(op_id).location;
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                "unable to infer type parameter",
-                [
-                    Label::new(op_loc).with_color(Color::Red),
-                    Label::new(param.location).with_color(Color::Cyan),
-                ],
-                None,
-            );
+            Diagnostic::error(op_loc, "unable to infer type paramater")
+                .with_help_label(param.location, "this parameter")
+                .attached(stores.diags, item_id);
 
             local_had_error.set();
         }
@@ -308,6 +310,7 @@ pub(crate) fn variable(
 pub(crate) fn analyze_cond(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     cond_op: &Cond,
 ) {
@@ -320,6 +323,7 @@ pub(crate) fn analyze_cond(
             condition_type_check(
                 condition_type_id,
                 stores,
+                item_id,
                 condition_value_id,
                 arm.open,
                 had_error,
@@ -381,25 +385,15 @@ pub(crate) fn analyze_cond(
                         stores.strings.resolve(expected_type_info.friendly_name);
                     let other_input_type_name =
                         stores.strings.resolve(input_type_info.friendly_name);
-
-                    let labels = diagnostics::build_creator_label_chain(
-                        stores,
-                        [
-                            (expected_value_id, 0, expected_type_name),
-                            (other_input_value_id, 1, other_input_type_name),
-                        ],
-                        Color::Yellow,
-                        Color::Cyan,
-                    );
-
                     let [other_input_value_info] = stores.values.values([other_input_value_id]);
-                    diagnostics::emit_error(
-                        stores,
+
+                    Diagnostic::error(
                         other_input_value_info.source_location,
                         "conditional body cannot change types on the stack",
-                        labels,
-                        None,
-                    );
+                    )
+                    .with_label_chain(expected_value_id, 0, expected_type_name)
+                    .with_label_chain(other_input_value_id, 0, other_input_type_name)
+                    .attached(stores.diags, item_id);
 
                     had_error.set();
                 }
@@ -414,6 +408,7 @@ pub(crate) fn analyze_cond(
 pub(crate) fn analyze_while(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     while_op: &While,
 ) {
@@ -450,23 +445,13 @@ pub(crate) fn analyze_while(
             let a_in_type_name = stores.strings.resolve(a_in_type_info.friendly_name);
             let b_in_type_name = stores.strings.resolve(b_in_type_info.friendly_name);
 
-            let labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (merge_pair.inputs[0].1, 0, a_in_type_name),
-                    (merge_pair.inputs[1].1, 1, b_in_type_name),
-                ],
-                Color::Yellow,
-                Color::Cyan,
-            );
-
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 b_in_value_info.source_location,
                 "while loop body may not change types on the stack",
-                labels,
-                None,
-            );
+            )
+            .with_label_chain(merge_pair.inputs[0].1, 0, a_in_type_name)
+            .with_label_chain(merge_pair.inputs[1].1, 1, b_in_type_name)
+            .attached(stores.diags, item_id);
 
             had_error.set();
         }
@@ -484,6 +469,7 @@ pub(crate) fn analyze_while(
         condition_type_check(
             condition_type_id,
             stores,
+            item_id,
             condition_value_id,
             while_op.tokens.do_token,
             had_error,
@@ -494,6 +480,7 @@ pub(crate) fn analyze_while(
 fn condition_type_check(
     condition_type_id: TypeId,
     stores: &mut Stores,
+    item_id: ItemId,
     condition_value_id: ValueId,
     error_location: SourceLocation,
     had_error: &mut ErrorSignal,
@@ -502,21 +489,9 @@ fn condition_type_check(
         let condition_type_info = stores.types.get_type_info(condition_type_id);
         let condition_type_name = stores.strings.resolve(condition_type_info.friendly_name);
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(condition_value_id, 0, condition_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(error_location).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
-            error_location,
-            "condition must evaluate to a boolean",
-            labels,
-            None,
-        );
+        Diagnostic::error(error_location, "condition must evaluate to a boolean")
+            .with_label_chain(condition_value_id, 0, condition_type_name)
+            .attached(stores.diags, item_id);
 
         had_error.set();
     }

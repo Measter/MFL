@@ -1,14 +1,13 @@
-use ariadne::{Color, Label};
 use hashbrown::HashSet;
 use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{Basic, Control, NameResolvedOp, NameResolvedType, OpCode},
     pass_manager::PassManager,
     stores::{
         block::BlockId,
+        diagnostics::Diagnostic,
         item::{ItemHeader, ItemKind},
     },
     Stores,
@@ -58,7 +57,7 @@ fn check_invalid_cycles_structs(
             had_error.set();
         }
 
-        let struct_def = stores.sigs.nrir.get_struct(item);
+        let struct_def = stores.sigs.nrir.get_struct(item).clone();
         for field in &struct_def.fields {
             check_invalid_cyclic_refs_in_field_kind(
                 stores,
@@ -75,7 +74,7 @@ fn check_invalid_cycles_structs(
 }
 
 fn check_invalid_cyclic_refs_in_field_kind(
-    stores: &Stores,
+    stores: &mut Stores,
     had_error: &mut ErrorSignal,
     root_id: ItemId,
     root_name_location: SourceLocation,
@@ -95,20 +94,10 @@ fn check_invalid_cyclic_refs_in_field_kind(
 
             if *id == root_id {
                 had_error.set();
-                diagnostics::emit_error(
-                    stores,
-                    field_name_location,
-                    "recursive struct",
-                    [
-                        Label::new(root_name_location)
-                            .with_color(Color::Red)
-                            .with_message("in this struct"),
-                        Label::new(field_name_location)
-                            .with_color(Color::Cyan)
-                            .with_message("in this field"),
-                    ],
-                    None,
-                );
+                Diagnostic::error(field_name_location, "recursive struct")
+                    .primary_label_message("in this field")
+                    .with_help_label(root_name_location, "in this struct")
+                    .attached(stores.diags, root_id);
             } else {
                 check_queue.push(*id);
             }
@@ -254,20 +243,13 @@ fn check_invalid_cyclic_refs_in_block(
                 if id == root_header.id {
                     had_error.set();
                     let op_loc = stores.ops.get_token(op_id).location;
-                    diagnostics::emit_error(
-                        stores,
+                    Diagnostic::error(
                         cur_header.name.location,
                         format!("cyclic {kind_str} detected"),
-                        [
-                            Label::new(root_header.name.location)
-                                .with_color(Color::Red)
-                                .with_message(format!("in this {kind_str}")),
-                            Label::new(op_loc)
-                                .with_color(Color::Cyan)
-                                .with_message("cyclic reference"),
-                        ],
-                        None,
-                    );
+                    )
+                    .primary_label_message(format!("in this {kind_str}"))
+                    .with_help_label(op_loc, "cyclic reference")
+                    .attached(stores.diags, root_header.id);
                 } else {
                     check_queue.push(id);
                 }

@@ -1,13 +1,14 @@
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use prettytable::{row, Table};
 use smallvec::SmallVec;
+use stores::items::ItemId;
 
 use crate::{
-    diagnostics::{self, TABLE_FORMAT},
+    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     pass_manager::static_analysis::generate_type_mismatch_diag,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{BuiltinTypes, FloatWidth, IntKind, TypeId, TypeKind},
         values::ValueId,
@@ -28,12 +29,19 @@ pub(crate) fn dup_over_rotate_swap_reverse(stores: &mut Stores, op_id: OpId) {
     }
 }
 
-pub(crate) fn emit_stack(stores: &mut Stores, stack: &[ValueId], op_id: OpId, show_labels: bool) {
+pub(crate) fn emit_stack(
+    stores: &mut Stores,
+    stack: &[ValueId],
+    item_id: ItemId,
+    op_id: OpId,
+    show_labels: bool,
+) {
     let mut note = Table::new();
     note.set_format(*TABLE_FORMAT);
     note.set_titles(row!["ID", "Type"]);
 
-    let mut value_points = Vec::new();
+    let op_loc = stores.ops.get_token(op_id).location;
+    let mut diag = Diagnostic::advice(op_loc, "stack trace");
 
     for (idx, value_id) in stack.iter().enumerate().rev() {
         let value_type = stores
@@ -47,25 +55,14 @@ pub(crate) fn emit_stack(stores: &mut Stores, stack: &[ValueId], op_id: OpId, sh
         let value_idx = stack.len() - idx - 1;
 
         if show_labels {
-            value_points.push((*value_id, value_idx.to_u64(), value_type));
+            diag.add_label_chain(*value_id, value_idx.to_u64(), value_type);
         }
 
         note.add_row(row![value_idx.to_string(), value_type]);
     }
 
-    let mut labels =
-        diagnostics::build_creator_label_chain(stores, value_points, Color::Green, Color::Cyan);
-    let op_loc = stores.ops.get_token(op_id).location;
-    labels.push(Label::new(op_loc).with_color(Color::Cyan));
-
-    diagnostics::emit(
-        stores,
-        ariadne::ReportKind::Advice,
-        op_loc,
-        "printing stack trace",
-        labels,
-        note.to_string(),
-    );
+    diag.with_note(note.to_string())
+        .attached(stores.diags, item_id);
 }
 
 pub(crate) fn push_bool(stores: &mut Stores, op_id: OpId) {
@@ -100,16 +97,17 @@ pub(crate) fn push_str(stores: &mut Stores, op_id: OpId) {
 pub(crate) fn cast(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     target_id: TypeId,
 ) {
     let output_type_info = stores.types.get_type_info(target_id);
     match output_type_info.kind {
-        TypeKind::Integer(int) => cast_to_int(stores, had_error, op_id, target_id, int),
+        TypeKind::Integer(int) => cast_to_int(stores, had_error, item_id, op_id, target_id, int),
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
-            cast_to_ptr(stores, had_error, op_id, target_id)
+            cast_to_ptr(stores, had_error, item_id, op_id, target_id)
         }
-        TypeKind::Float(_) => cast_to_float(stores, had_error, op_id, target_id),
+        TypeKind::Float(_) => cast_to_float(stores, had_error, item_id, op_id, target_id),
         TypeKind::Array { .. }
         | TypeKind::Bool
         | TypeKind::Struct(_)
@@ -117,19 +115,20 @@ pub(crate) fn cast(
         | TypeKind::GenericStructInstance(_) => {
             let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                format!("cannot cast to `{output_type_name}`"),
-                [Label::new(op_loc).with_color(Color::Red)],
-                None,
-            );
+            Diagnostic::error(op_loc, format!("cannot cast to `{output_type_name}`"))
+                .attached(stores.diags, item_id);
             had_error.set();
         }
     }
 }
 
-fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to_id: TypeId) {
+fn cast_to_ptr(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    to_id: TypeId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let op_token = stores.ops.get_token(op_id);
     let input_value_id = op_data.inputs[0];
@@ -148,21 +147,14 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
             let ptr_type_info = stores.types.get_type_info(to_id);
             let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(input_value_id, 0, input_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_token.location).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 op_token.location,
                 format!("cannot cast `{input_type_name}` to `{ptr_type_name}`"),
-                labels,
-                "Can only cast U64 to pointers".to_owned(),
-            );
+            )
+            .with_note("Can only cast u64 to pointers")
+            .with_label_chain(input_value_id, 0, input_type_name)
+            .attached(stores.diags, item_id);
+
             had_error.set();
         }
 
@@ -172,8 +164,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;
         }
@@ -185,6 +176,7 @@ fn cast_to_ptr(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to
 fn cast_to_int(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     to_id: TypeId,
     to_int: IntKind,
@@ -205,21 +197,12 @@ fn cast_to_int(
                 let output_type_info = stores.types.get_type_info(to_id);
                 let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
 
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_id, 0, input_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op_token.location).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     op_token.location,
                     format!("cannot cast `{input_type_name}` to `{output_type_name}`"),
-                    labels,
-                    None,
-                );
+                )
+                .with_label_chain(input_value_id, 0, input_type_name)
+                .attached(stores.diags, item_id);
 
                 had_error.set();
             }
@@ -229,8 +212,7 @@ fn cast_to_int(
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;
         }
@@ -239,7 +221,13 @@ fn cast_to_int(
     stores.values.set_value_type(op_data.outputs[0], to_id);
 }
 
-fn cast_to_float(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, to_id: TypeId) {
+fn cast_to_float(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    to_id: TypeId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let op_token = stores.ops.get_token(op_id);
     let input_value_id = op_data.inputs[0];
@@ -258,8 +246,7 @@ fn cast_to_float(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, 
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => {
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;
         }

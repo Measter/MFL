@@ -1,3 +1,5 @@
+use stores::items::ItemId;
+
 use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, OpCode},
@@ -12,7 +14,7 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: ItemId, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = stores.values.value_types(input_ids) else {
@@ -46,8 +48,7 @@ pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId)
         _ => {
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
             return;
         }
     };
@@ -59,6 +60,7 @@ pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId)
 pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
@@ -91,8 +93,7 @@ pub(crate) fn multiply_div_rem_shift(
             // Type mismatch
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
             return;
         }
     };
@@ -101,7 +102,12 @@ pub(crate) fn multiply_div_rem_shift(
     stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn subtract(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = stores.values.value_types(input_ids) else {
@@ -129,8 +135,7 @@ pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: 
             // Type mismatch
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
             return;
         }
     };
@@ -139,7 +144,12 @@ pub(crate) fn subtract(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: 
     stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn bitnot(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn bitnot(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_id = op_data.inputs[0];
     let Some([input]) = stores.values.value_types([input_id]) else {
@@ -153,8 +163,7 @@ pub(crate) fn bitnot(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
             // Type mismatch
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &[input_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_id]);
             return;
         }
     };
@@ -163,7 +172,12 @@ pub(crate) fn bitnot(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
     stores.values.set_value_type(output_id, new_type);
 }
 
-pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn bitand_bitor_bitxor(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let Some(inputs) = stores.values.value_types(input_ids) else {
@@ -184,8 +198,7 @@ pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, had_error: &mut ErrorSign
             // Type mismatch
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
             return;
         }
     };

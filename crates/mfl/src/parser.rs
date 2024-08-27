@@ -1,14 +1,16 @@
 use std::{collections::VecDeque, ops::Not};
 
-use ariadne::{Color, Label};
 use lexer::{BracketKind, TokenKind};
-use stores::source::{SourceLocation, WithSpan};
+use stores::source::WithSpan;
 use tracing::debug_span;
 use utils::TokenIter;
 
 use crate::{
-    diagnostics, error_signal::ErrorSignal, lexer::TokenTree, program::ModuleQueueType,
-    stores::ops::OpId, ItemId, Stores,
+    error_signal::ErrorSignal,
+    lexer::TokenTree,
+    program::ModuleQueueType,
+    stores::{diagnostics::Diagnostic, ops::OpId},
+    ItemId, Stores,
 };
 
 use self::{
@@ -36,9 +38,12 @@ pub fn parse_item_body_contents(
                 let (kind, op_end) = match token.inner.kind {
                     TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                         if token_iter.next_is_group(BracketKind::Paren) {
-                            let Ok(new_ops) =
-                                parse_extract_insert_struct(stores, &mut token_iter, *token)
-                            else {
+                            let Ok(new_ops) = parse_extract_insert_struct(
+                                stores,
+                                &mut token_iter,
+                                parent_id,
+                                *token,
+                            ) else {
                                 had_error.set();
                                 continue;
                             };
@@ -48,7 +53,8 @@ pub fn parse_item_body_contents(
                         parse_extract_insert_array(*token)
                     }
                     TokenKind::While => {
-                        let Ok(code) = ops::parse_while(stores, &mut token_iter, *token, parent_id)
+                        let Ok(code) =
+                            ops::parse_while(stores, &mut token_iter, parent_id, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -56,7 +62,8 @@ pub fn parse_item_body_contents(
                         code
                     }
                     TokenKind::Cond => {
-                        let Ok(code) = ops::parse_cond(stores, &mut token_iter, *token, parent_id)
+                        let Ok(code) =
+                            ops::parse_cond(stores, &mut token_iter, parent_id, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -87,22 +94,19 @@ pub fn parse_item_body_contents(
                         continue;
                     }
                     TokenKind::Module | TokenKind::Proc | TokenKind::Struct | TokenKind::Union => {
-                        diagnostics::emit_error(
-                            stores,
+                        Diagnostic::error(
                             token.location,
                             format!("cannot use `{:?}` inside a procedure", token.inner.kind),
-                            Some(
-                                Label::new(token.location)
-                                    .with_color(Color::Red)
-                                    .with_message("here"),
-                            ),
-                            None,
-                        );
+                        )
+                        .primary_label_message("here")
+                        .attached(stores.diags, parent_id);
+
                         had_error.set();
                         continue;
                     }
                     TokenKind::Dot => {
-                        let Ok(op) = ops::parse_field_access(stores, &mut token_iter, *token)
+                        let Ok(op) =
+                            ops::parse_field_access(stores, &mut token_iter, parent_id, *token)
                         else {
                             had_error.set();
                             continue;
@@ -117,22 +121,21 @@ pub fn parse_item_body_contents(
                     | TokenKind::Else
                     | TokenKind::BracketClose(_)
                     | TokenKind::BracketOpen(_) => {
-                        diagnostics::emit_error(
-                            stores,
+                        Diagnostic::error(
                             token.location,
                             format!(
                                 "unexpected token `{}` in input",
                                 token.inner.kind.kind_str()
                             ),
-                            Some(Label::new(token.location).with_color(Color::Red)),
-                            None,
-                        );
+                        )
+                        .attached(stores.diags, parent_id);
                         had_error.set();
                         continue;
                     }
 
                     _ => {
-                        let Ok(op) = parse_simple_op(stores, &mut token_iter, *token) else {
+                        let Ok(op) = parse_simple_op(stores, &mut token_iter, parent_id, *token)
+                        else {
                             had_error.set();
                             continue;
                         };
@@ -144,17 +147,9 @@ pub fn parse_item_body_contents(
                 ops.push(stores.ops.new_op(kind, token));
             }
             TokenTree::Group(tg) => {
-                diagnostics::emit_error(
-                    stores,
-                    tg.span(),
-                    "unexpected bracket group in input",
-                    Some(
-                        Label::new(tg.span())
-                            .with_color(Color::Red)
-                            .with_message("here"),
-                    ),
-                    None,
-                );
+                Diagnostic::error(tg.span(), "unexpected bracket group in input")
+                    .primary_label_message("here")
+                    .attached(stores.diags, parent_id);
 
                 had_error.set();
                 continue;
@@ -250,13 +245,20 @@ pub(super) fn parse_file(
                     | TokenKind::Insert { .. }
                     | TokenKind::Cond
                     | TokenKind::While => {
-                        emit_top_level_op_error(stores, token.location, token.inner.kind);
+                        Diagnostic::bad_top_level_op(
+                            stores.diags,
+                            module_id,
+                            token.location,
+                            token.inner.kind,
+                        );
                         had_error.set();
                         continue;
                     }
 
                     TokenKind::Dot => {
-                        if ops::parse_field_access(stores, &mut token_iter, *token).is_err() {
+                        if ops::parse_field_access(stores, &mut token_iter, module_id, *token)
+                            .is_err()
+                        {
                             had_error.set();
                         }
                     }
@@ -267,16 +269,14 @@ pub(super) fn parse_file(
                     | TokenKind::Else
                     | TokenKind::BracketOpen(_)
                     | TokenKind::BracketClose(_) => {
-                        diagnostics::emit_error(
-                            stores,
+                        Diagnostic::error(
                             token.location,
                             format!(
                                 "unexpected token `{}` in input",
                                 token.inner.kind.kind_str()
                             ),
-                            Some(Label::new(token.location).with_color(Color::Red)),
-                            None,
-                        );
+                        )
+                        .attached(stores.diags, module_id);
 
                         had_error.set();
                         continue;
@@ -285,13 +285,18 @@ pub(super) fn parse_file(
                     // These are invalid in top level position, but we should properly parse them anyway.
                     _ => {
                         let location = if let Ok((_, loc)) =
-                            parse_simple_op(stores, &mut token_iter, *token)
+                            parse_simple_op(stores, &mut token_iter, module_id, *token)
                         {
                             token.location.merge(loc)
                         } else {
                             token.location
                         };
-                        emit_top_level_op_error(stores, location, token.inner.kind);
+                        Diagnostic::bad_top_level_op(
+                            stores.diags,
+                            module_id,
+                            location,
+                            token.inner.kind,
+                        );
 
                         had_error.set();
                         continue;
@@ -299,17 +304,9 @@ pub(super) fn parse_file(
                 }
             }
             TokenTree::Group(tg) => {
-                diagnostics::emit_error(
-                    stores,
-                    tg.span(),
-                    "unexpected bracket group in input",
-                    Some(
-                        Label::new(tg.span())
-                            .with_color(Color::Red)
-                            .with_message("here"),
-                    ),
-                    None,
-                );
+                Diagnostic::error(tg.span(), "unexpected bracket group in input")
+                    .primary_label_message("here")
+                    .attached(stores.diags, module_id);
 
                 had_error.set();
                 continue;
@@ -318,14 +315,4 @@ pub(super) fn parse_file(
     }
 
     had_error.into_err().not().then_some(()).ok_or(())
-}
-
-fn emit_top_level_op_error(stores: &Stores, location: SourceLocation, kind: TokenKind) {
-    diagnostics::emit_error(
-        stores,
-        location,
-        format!("top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `{}`", kind.kind_str()),
-        Some(Label::new(location).with_color(Color::Red)),
-        None,
-    );
 }

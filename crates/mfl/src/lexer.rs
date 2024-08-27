@@ -1,9 +1,8 @@
-use ariadne::{Color, Label};
 use lexer::{BracketKind, LexerError, Token, TokenKind};
 use stores::source::{FileId, SourceLocation, Spanned};
 use tracing::debug_span;
 
-use crate::{diagnostics, error_signal::ErrorSignal, Stores};
+use crate::{error_signal::ErrorSignal, stores::diagnostics::Diagnostic, Stores};
 
 #[derive(Debug, Clone)]
 pub struct TreeGroup {
@@ -106,24 +105,16 @@ pub(crate) fn lex_file(
             Ok(tk) => tk,
             Err(LexerError::UnexpectedChar(location)) => {
                 let span_text = stores.source.get_str(location);
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     location,
                     format!("unexpected character in input: `{span_text:?}`"),
-                    [Label::new(location).with_color(Color::Red)],
-                    None,
-                );
+                )
+                .detached(stores.diags);
                 had_error.set();
                 continue;
             }
             Err(LexerError::InvalidCharLiteral(location)) => {
-                diagnostics::emit_error(
-                    stores,
-                    location,
-                    "invalid char literal",
-                    [Label::new(location).with_color(Color::Red)],
-                    None,
-                );
+                Diagnostic::error(location, "invalid char literal").detached(stores.diags);
                 had_error.set();
                 continue;
             }
@@ -143,13 +134,7 @@ pub(crate) fn lex_file(
                     cur_group.close = Some(token);
                     TokenTree::Group(cur_group)
                 } else {
-                    diagnostics::emit_error(
-                        stores,
-                        token.location,
-                        "unmatched bracket",
-                        [Label::new(token.location).with_color(Color::Red)],
-                        None,
-                    );
+                    Diagnostic::error(token.location, "unmatched bracket").detached(stores.diags);
                     had_error.set();
 
                     TokenTree::Single(token)
@@ -173,13 +158,7 @@ pub(crate) fn lex_file(
     }
 
     while let Some(cur_group) = token_tree_group_stack.pop() {
-        diagnostics::emit_error(
-            stores,
-            cur_group.open.location,
-            "unclosed bracket",
-            [Label::new(cur_group.open.location).with_color(Color::Red)],
-            None,
-        );
+        Diagnostic::error(cur_group.open.location, "unclosed bracket").detached(stores.diags);
         had_error.set();
 
         let stream = token_tree_group_stack

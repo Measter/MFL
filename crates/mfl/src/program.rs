@@ -1,6 +1,5 @@
 use std::{collections::VecDeque, ffi::OsStr, path::Path};
 
-use ariadne::{Color, Label};
 use color_eyre::eyre::{eyre, Context as _, Result};
 use hashbrown::HashSet;
 use lasso::Spur;
@@ -10,7 +9,9 @@ use stores::{
 };
 use tracing::debug_span;
 
-use crate::{diagnostics, error_signal::ErrorSignal, lexer, Args, Stores};
+use crate::{
+    diagnostics, error_signal::ErrorSignal, lexer, stores::diagnostics::Diagnostic, Args, Stores,
+};
 
 // mod passes;
 
@@ -143,13 +144,14 @@ fn load_library(
                 let contents = match std::fs::read_to_string(&root) {
                     Ok(c) => c,
                     Err(e) => {
-                        diagnostics::emit_error(
-                            stores,
-                            token.location,
-                            format!("error loading module: {e}"),
-                            [Label::new(token.location).with_color(Color::Red)],
-                            None,
-                        );
+                        let diag =
+                            Diagnostic::error(token.location, format!("error loading module: {e}"));
+                        if let Some(parent) = parent {
+                            diag.attached(stores.diags, parent);
+                        } else {
+                            diag.detached(stores.diags);
+                        }
+
                         had_error.set();
                         root.pop();
                         continue;
@@ -167,7 +169,7 @@ fn load_library(
             parent,
             module == ModuleQueueType::Root,
         );
-        diagnostics::handle_symbol_redef_error(stores, had_error, prev_def_loc);
+        diagnostics::handle_symbol_redef_error(stores, had_error, parent, prev_def_loc);
 
         first_module = first_module.or(Some(module_id));
         let res = load_module(stores, module_id, &root, &contents, &mut module_queue);

@@ -13,7 +13,6 @@ use std::{
 };
 
 use ::stores::{items::ItemId, source::SourceStore, strings::StringStore};
-use ariadne::{Color, Label};
 use clap::Parser;
 use color_eyre::{
     eyre::{eyre, Context as _, Result},
@@ -23,7 +22,7 @@ use tracing::{debug, debug_span, Level};
 
 use stores::{
     block::BlockStore,
-    diagnostics::DiagnosticStore,
+    diagnostics::{Diagnostic, DiagnosticStore},
     item::{ItemAttribute, ItemKind, ItemStore},
     ops::OpStore,
     signatures::{SigStore, TypeResolvedItemSignature},
@@ -146,17 +145,11 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
         let entry_item = stores.items.get_item_header(entry_function_id);
         if !matches!(entry_item.kind, ItemKind::Function { .. }) {
             let name = entry_item.name;
-            diagnostics::emit_error(
-                stores,
-                name.location,
-                "`entry` must be a function",
-                Some(
-                    Label::new(name.location)
-                        .with_color(Color::Red)
-                        .with_message(format!("found `{:?}`", entry_item.kind)),
-                ),
-                None,
-            );
+
+            Diagnostic::error(name.location, "`entry` must be a function")
+                .primary_label_message(format!("found `{:?}", entry_item.kind))
+                .attached(stores.diags, entry_item.id);
+
             return Err(eyre!("invalid `entry` procedure type"));
         }
 
@@ -167,13 +160,12 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
             .clone();
         if !is_valid_entry_sig(stores, &entry_sig) {
             let name = entry_item.name;
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 name.location,
                 "`entry` must have the signature `[] to []` or `[u64 u8&&] to []`",
-                Some(Label::new(name.location).with_color(Color::Red)),
-                None,
-            );
+            )
+            .attached(stores.diags, entry_item.id);
+
             return Err(eyre!("invalid `entry` signature"));
         }
     }

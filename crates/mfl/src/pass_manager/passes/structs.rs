@@ -1,12 +1,10 @@
-use ariadne::{Color, Label};
 use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
-    stores::types::TypeKind,
+    stores::{diagnostics::Diagnostic, types::TypeKind},
     Stores,
 };
 
@@ -16,7 +14,7 @@ pub fn declare_struct(
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
-    let def = stores.sigs.nrir.get_struct(cur_id);
+    let def = stores.sigs.nrir.get_struct(cur_id).clone();
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
         stores.strings,
@@ -27,27 +25,16 @@ pub fn declare_struct(
     ) {
         if let Some(loc) = existing_info.location {
             // The user defined the type.
-            diagnostics::emit_error(
-                stores,
-                def.name.location,
-                "type with this name already exists",
-                [
-                    Label::new(def.name.location).with_color(Color::Red),
-                    Label::new(loc)
-                        .with_color(Color::Cyan)
-                        .with_message("already defined here"),
-                ],
-                None,
-            );
+            Diagnostic::error(def.name.location, "type with this name already exists")
+                .with_help_label(loc, "already defined here")
+                .attached(stores.diags, cur_id);
         } else {
             // It's a builtin type
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 def.name.location,
-                "cannot define struct with the name of a primitive",
-                [Label::new(def.name.location).with_color(Color::Red)],
-                None,
-            );
+                "cannot define struct with name of a primitive",
+            )
+            .attached(stores.diags, cur_id);
         }
 
         had_error.set();
@@ -98,18 +85,9 @@ pub fn define_struct(
             .define_fixed_struct(stores.strings, cur_id, &def)
     {
         // The type that failed to resolve is us.
-        diagnostics::emit_error(
-            stores,
-            missing_token.location,
-            "undefined field type",
-            [
-                Label::new(missing_token.location).with_color(Color::Red),
-                Label::new(def.name.location)
-                    .with_color(Color::Cyan)
-                    .with_message("In this struct"),
-            ],
-            None,
-        );
+        Diagnostic::error(missing_token.location, "undefined field type")
+            .with_help_label(def.name.location, "in this struct")
+            .attached(stores.diags, cur_id);
         had_error.set();
         return;
     }

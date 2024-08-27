@@ -1,18 +1,17 @@
 use std::ops::ControlFlow;
 
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
 use stores::{items::ItemId, source::Spanned};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
     n_ops::SliceNOps,
     pass_manager::{static_analysis::can_promote_int_unidirectional, PassManager},
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{IntKind, TypeId, TypeInfo, TypeKind},
     },
@@ -53,6 +52,7 @@ pub(crate) fn extract_array(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     emit_array: bool,
 ) {
@@ -74,23 +74,17 @@ pub(crate) fn extract_array(
         op_data.outputs[0]
     };
 
-    let mut make_error_for_aggr = |stores: &mut Stores, note| {
+    let mut make_error_for_aggr = |stores: &mut Stores, note: Option<String>| {
         let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(array_value_id, 0, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("cannot extract a `{value_type_name}`"),
-            labels,
-            note,
-        );
+        let mut diag = Diagnostic::error(op_loc, format!("cannot extract a `{value_type_name}`"))
+            .with_label_chain(array_value_id, 0, value_type_name);
+
+        if let Some(note) = note {
+            diag.set_note(note);
+        }
+
+        diag.attached(stores.diags, item_id);
 
         had_error.set();
     };
@@ -153,21 +147,13 @@ pub(crate) fn extract_array(
 
     if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(idx_value_id, 1, idx_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("cannot index an array with `{idx_type_name}`"),
-            labels,
-            None,
-        );
+        )
+        .with_label_chain(idx_value_id, 1, idx_type_name)
+        .attached(stores.diags, item_id);
+
         had_error.set();
         return;
     }
@@ -179,6 +165,7 @@ pub(crate) fn extract_struct(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     field_name: Spanned<Spur>,
     emit_struct: bool,
@@ -209,8 +196,9 @@ pub(crate) fn extract_struct(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                diagnostics::not_struct_error(
+                Diagnostic::not_a_struct(
                     stores,
+                    item_id,
                     input_struct_type_info,
                     input_struct_value_id,
                     op_id,
@@ -227,8 +215,9 @@ pub(crate) fn extract_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            diagnostics::not_struct_error(
+            Diagnostic::not_a_struct(
                 stores,
+                item_id,
                 input_struct_type_info,
                 input_struct_value_id,
                 op_id,
@@ -253,8 +242,9 @@ pub(crate) fn extract_struct(
         .iter()
         .find(|fi| fi.name.inner == field_name.inner)
     else {
-        diagnostics::field_not_found_error(
+        Diagnostic::field_not_found(
             stores,
+            item_id,
             field_name,
             &struct_def,
             input_struct_type_info,
@@ -274,6 +264,7 @@ pub(crate) fn field_access(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     field_name: Spanned<Spur>,
 ) {
@@ -291,8 +282,9 @@ pub(crate) fn field_access(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                diagnostics::not_struct_error(
+                Diagnostic::not_a_struct(
                     stores,
+                    item_id,
                     input_struct_type_info,
                     input_struct_value_id,
                     op_id,
@@ -306,23 +298,13 @@ pub(crate) fn field_access(
 
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
             let op_loc = stores.ops.get_token(op_id);
-
             let struct_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(input_struct_value_id, 1, struct_type_name)],
-                Color::Cyan,
-                Color::Green,
-            );
-            labels.push(Label::new(op_loc.location).with_color(Color::Red));
 
-            diagnostics::emit_error(
-                stores,
-                op_loc.location,
-                "field access not supported on struct value",
-                labels,
-                "Struct must be behind a point".to_owned(),
-            );
+            Diagnostic::error(op_loc.location, "field access not support on struct value")
+                .with_note("Struct must be behind a pointer")
+                .with_label_chain(input_struct_value_id, 1, struct_type_name)
+                .attached(stores.diags, item_id);
+
             had_error.set();
             return;
         }
@@ -332,8 +314,9 @@ pub(crate) fn field_access(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            diagnostics::not_struct_error(
+            Diagnostic::not_a_struct(
                 stores,
+                item_id,
                 input_struct_type_info,
                 input_struct_value_id,
                 op_id,
@@ -358,8 +341,9 @@ pub(crate) fn field_access(
         .iter()
         .find(|fi| fi.name.inner == field_name.inner)
     else {
-        diagnostics::field_not_found_error(
+        Diagnostic::field_not_found(
             stores,
+            item_id,
             field_name,
             &struct_def,
             input_struct_type_info,
@@ -383,6 +367,7 @@ pub(crate) fn index(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
@@ -397,42 +382,29 @@ pub(crate) fn index(
 
     if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(idx_value_id, 2, idx_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("cannot index an array with `{idx_type_name}`"),
-            labels,
-            None,
-        );
+        )
+        .with_label_chain(idx_value_id, 2, idx_type_name)
+        .attached(stores.diags, item_id);
 
         had_error.set();
     }
 
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
         let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(array_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("cannot index into a `{value_type_name}`"),
-            labels,
-            note,
-        );
+        let mut diag =
+            Diagnostic::error(op_loc, format!("cannot index into a `{value_type_name}`"))
+                .with_label_chain(array_value_id, 1, value_type_name);
+
+        if let Some(note) = note {
+            diag.set_note(note);
+        }
+
+        diag.attached(stores.diags, item_id);
 
         had_error.set();
     };
@@ -492,6 +464,7 @@ pub(crate) fn insert_array(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     emit_array: bool,
 ) {
@@ -512,21 +485,16 @@ pub(crate) fn insert_array(
 
     let mut make_error_for_aggr = |stores: &mut Stores, note| {
         let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(array_value_id, 1, value_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("cannot insert into a `{value_type_name}`"),
-            labels,
-            note,
-        );
+        let mut diag =
+            Diagnostic::error(op_loc, format!("cannot insert into a `{value_type_name}`"))
+                .with_label_chain(array_value_id, 1, value_type_name);
+
+        if let Some(note) = note {
+            diag.set_note(note);
+        }
+
+        diag.attached(stores.diags, item_id);
 
         had_error.set();
     };
@@ -598,21 +566,13 @@ pub(crate) fn insert_array(
 
     if !idx_type_info.kind.is_unsigned_int() {
         let idx_type_name = stores.strings.resolve(idx_type_info.friendly_name);
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(idx_value_id, 2, idx_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("cannot index an array with `{idx_type_name}`"),
-            labels,
-            None,
-        );
+        )
+        .with_label_chain(idx_value_id, 2, idx_type_name)
+        .attached(stores.diags, item_id);
 
         had_error.set();
     }
@@ -632,24 +592,14 @@ pub(crate) fn insert_array(
             }
             _ => unreachable!(),
         };
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [
-                (data_value_id, 0, data_type_name),
-                (array_value_id, 1, array_type_name),
-            ],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("cannot store a value of type `{data_type_name}` in an array of type `{array_type_name}`"),
-            labels,
-            None
-        );
+        )
+        .with_label_chain(data_value_id, 0, data_type_name)
+        .with_label_chain(array_value_id, 1, array_type_name)
+        .attached(stores.diags, item_id);
 
         had_error.set();
     }
@@ -659,6 +609,7 @@ pub(crate) fn insert_struct(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     field_name: Spanned<Spur>,
     emit_struct: bool,
@@ -688,8 +639,9 @@ pub(crate) fn insert_struct(
             let (TypeKind::Struct(struct_item_id)
             | TypeKind::GenericStructInstance(struct_item_id)) = ptr_type_info.kind
             else {
-                diagnostics::not_struct_error(
+                Diagnostic::not_a_struct(
                     stores,
+                    item_id,
                     input_struct_info,
                     input_struct_value_id,
                     op_id,
@@ -707,8 +659,9 @@ pub(crate) fn insert_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
-            diagnostics::not_struct_error(
+            Diagnostic::not_a_struct(
                 stores,
+                item_id,
                 input_struct_info,
                 input_struct_value_id,
                 op_id,
@@ -733,8 +686,9 @@ pub(crate) fn insert_struct(
         .iter()
         .find(|fi| fi.name.inner == field_name.inner)
     else {
-        diagnostics::field_not_found_error(
+        Diagnostic::field_not_found(
             stores,
+            item_id,
             field_name,
             &struct_def,
             input_struct_info,
@@ -767,35 +721,20 @@ pub(crate) fn insert_struct(
         };
         let struct_type_name = stores.strings.resolve(struct_type_name);
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [
-                (data_value_id, 0, data_type_name),
-                (input_struct_value_id, 1, struct_type_name),
-            ],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-        labels.push(
-            Label::new(field_info.name.location)
-                .with_color(Color::Cyan)
-                .with_message("field defined here"),
-        );
-
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("cannot store a value of type `{data_type_name}` into `{struct_type_name}`"),
-            labels,
-            None,
-        );
+        )
+        .with_help_label(field_info.name.location, "field defined here")
+        .with_label_chain(data_value_id, 0, data_type_name)
+        .with_label_chain(input_struct_value_id, 1, struct_type_name)
+        .attached(stores.diags, item_id);
 
         had_error.set();
     }
 }
 
-pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: ItemId, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let ptr_id = op_data.inputs[0];
     let Some([ptr_type]) = stores.values.value_types([ptr_id]) else {
@@ -807,17 +746,11 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId
         ptr_info.kind
     else {
         let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
-
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(ptr_id, 0, ptr_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
         let op_loc = stores.ops.get_token(op_id).location;
-        labels.push(Label::new(op_loc).with_color(Color::Red));
 
-        diagnostics::emit_error(stores, op_loc, "value must be a pointer", labels, None);
+        Diagnostic::error(op_loc, "value must be a pointer")
+            .with_label_chain(ptr_id, 0, ptr_type_name)
+            .attached(stores.diags, item_id);
 
         had_error.set();
         return;
@@ -828,17 +761,18 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId
         .set_value_type(op_data.outputs[0], ptee_type_id);
 }
 
-pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId, count: u8) {
+pub(crate) fn pack_array(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    count: u8,
+) {
     let op_loc = stores.ops.get_token(op_id).location;
 
     if count == 0 {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "cannot pack an array of length 0",
-            [Label::new(op_loc).with_color(Color::Red)],
-            None,
-        );
+        Diagnostic::error(op_loc, "cannot pack an array of length 0")
+            .attached(stores.diags, item_id);
 
         had_error.set();
         return;
@@ -871,24 +805,14 @@ pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id
             let other_value_name = stores.strings.resolve(type_info.friendly_name);
             let expected_value_name = stores.strings.resolve(expected_store_type.friendly_name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (other_id, id, other_value_name),
-                    (*first, 0, expected_value_name),
-                ],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 op_loc,
                 format!("unable to pack array: expect `{expected_value_name}`, found `{other_value_name}`"),
-                labels,
-                format!("Expected `{expected_value_name}` because the first value is that type")
-            );
+            )
+            .with_note(format!("Expected `{expected_value_name}` because the first value is that type"))
+            .with_label_chain(other_id, id, other_value_name)
+            .with_label_chain(*first, 0, expected_value_name).attached(stores.diags, item_id);
+
             had_error.set();
         }
     }
@@ -901,7 +825,12 @@ pub(crate) fn pack_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id
     stores.values.set_value_type(output_id, array_type.id);
 }
 
-pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn store(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
@@ -919,21 +848,12 @@ pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
         let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
         let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(ptr_value_id, 1, ptr_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!("found `{ptr_type_name}` expected a `{data_type_name}&`"),
-            labels,
-            None,
-        );
+        )
+        .with_label_chain(ptr_value_id, 1, ptr_type_name)
+        .attached(stores.diags, item_id);
 
         had_error.set();
         return;
@@ -950,27 +870,20 @@ pub(crate) fn store(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
         let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
         let ptee_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(data_value_id, 0, data_type_name)],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc).with_color(Color::Red));
-
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            format!("value must be a `{ptee_type_name}`"),
-            labels,
-            None,
-        );
+        Diagnostic::error(op_loc, format!("value must be a `{ptee_type_name}`"))
+            .with_label_chain(data_value_id, 0, data_type_name)
+            .attached(stores.diags, item_id);
 
         had_error.set();
     }
 }
 
-pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn unpack(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let outputs: SmallVec<[_; 20]> = op_data.outputs.as_slice().into();
     let aggr_value_id = op_data.inputs[0];
@@ -1001,23 +914,14 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);
-
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(aggr_value_id, 0, aggr_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
             let op_loc = stores.ops.get_token(op_id).location;
-            labels.push(Label::new(op_loc).with_color(Color::Red));
 
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 op_loc,
                 format!("expected array or struct, found `{aggr_type_name}`"),
-                labels,
-                None,
-            );
+            )
+            .with_label_chain(aggr_value_id, 0, aggr_type_name)
+            .attached(stores.diags, item_id);
 
             had_error.set();
         }
@@ -1027,6 +931,7 @@ pub(crate) fn unpack(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: Op
 pub(crate) fn pack_struct(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     struct_type_id: TypeId,
 ) {
@@ -1034,9 +939,14 @@ pub(crate) fn pack_struct(
     let struct_type_id = if let TypeKind::GenericStructBase(struct_item_id) =
         stores.types.get_type_info(struct_type_id).kind
     {
-        let ControlFlow::Continue(id) =
-            pack_struct_infer_generic(stores, had_error, struct_type_id, struct_item_id, op_id)
-        else {
+        let ControlFlow::Continue(id) = pack_struct_infer_generic(
+            stores,
+            had_error,
+            item_id,
+            struct_type_id,
+            struct_item_id,
+            op_id,
+        ) else {
             return;
         };
 
@@ -1067,22 +977,13 @@ pub(crate) fn pack_struct(
             let input_type_info = stores.types.get_type_info(input_type_id);
             let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(inputs[0], 0, input_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(
-                Label::new(struct_type_info.name.location)
-                    .with_color(Color::Cyan)
-                    .with_message(format!(
-                        "expected a field with type `{input_type_name}` in this union"
-                    )),
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-
-            diagnostics::emit_error(stores, op_loc, "unable to pack union", labels, None);
+            Diagnostic::error(op_loc, "unable to pack union")
+                .with_help_label(
+                    struct_type_info.name.location,
+                    format!("expected a field with type `{input_type_name}` in this union"),
+                )
+                .with_label_chain(inputs[0], 0, input_type_name)
+                .attached(stores.diags, item_id);
 
             had_error.set();
         }
@@ -1106,31 +1007,14 @@ pub(crate) fn pack_struct(
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
                 let field_type_name = stores.strings.resolve(field_type_info.friendly_name);
 
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_id, value_idx, input_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(
-                    Label::new(field_def.name.location)
-                        .with_color(Color::Cyan)
-                        .with_message("expected type defined here..."),
-                );
-                labels.push(
-                    Label::new(struct_type_info.name.location)
-                        .with_color(Color::Cyan)
-                        .with_message("... in this struct"),
-                );
-                labels.push(Label::new(op_loc).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    stores,
-                    op_loc,
-                    "unable to pack struct: mismatched input types",
-                    labels,
-                    format!("Expected type `{field_type_name}`, found `{input_type_name}`"),
-                );
+                Diagnostic::error(op_loc, "unable to pack struct: mismatched input types")
+                    .with_note(format!(
+                        "Expected type `{field_type_name}`, found `{input_type_name}`"
+                    ))
+                    .with_help_label(field_def.name.location, "expected type defined here...")
+                    .with_help_label(struct_type_info.name.location, "... in this struct")
+                    .with_label_chain(input_value_id, value_idx, input_type_name)
+                    .attached(stores.diags, item_id);
 
                 had_error.set();
             }
@@ -1146,6 +1030,7 @@ pub(crate) fn pack_struct(
 fn pack_struct_infer_generic(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     struct_type_id: TypeId,
     struct_item_id: ItemId,
     op_id: OpId,
@@ -1159,13 +1044,11 @@ fn pack_struct_infer_generic(
     // take a single input.
     let generic_params = &generic_def.generic_params;
     if generic_def.is_union && generic_params.len() != 1 {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
-            "unable to infer parameters of generic unions with more than 1 generic parameter",
-            [Label::new(op_loc).with_color(Color::Red)],
-            None,
-        );
+            "unable to infer parameters of generic unions with more than 0 generic parameter",
+        )
+        .attached(stores.diags, item_id);
 
         had_error.set();
         return ControlFlow::Break(());
@@ -1189,26 +1072,13 @@ fn pack_struct_infer_generic(
                 let input_type_info = stores.types.get_type_info(input_type_id);
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(inputs[0], 0, input_type_name)],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(
-                    Label::new(field.name.location)
-                        .with_color(Color::Green)
-                        .with_message("input type matches this non-generic field"),
-                );
-                labels.push(Label::new(op_loc).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    stores,
-                    op_loc,
-                    "unable to infer type parameter of generic union",
-                    labels,
-                    None,
-                );
+                Diagnostic::error(op_loc, "unable to infer type parameter of generic union")
+                    .with_help_label(
+                        field.name.location,
+                        "input type matches this non-generic field",
+                    )
+                    .with_label_chain(inputs[0], 0, input_type_name)
+                    .attached(stores.diags, item_id);
 
                 had_error.set();
                 return ControlFlow::Break(());
@@ -1246,16 +1116,9 @@ fn pack_struct_infer_generic(
             }
 
             if !found_field {
-                diagnostics::emit_error(
-                    stores,
-                    op_loc,
-                    "unable to infer type parameter",
-                    [
-                        Label::new(op_loc).with_color(Color::Red),
-                        Label::new(param.location).with_color(Color::Cyan),
-                    ],
-                    None,
-                );
+                Diagnostic::error(op_loc, "Unable to infer type paramater")
+                    .with_help_label(param.location, "this parameter")
+                    .attached(stores.diags, item_id);
 
                 local_had_error.set();
             }

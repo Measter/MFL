@@ -1,31 +1,44 @@
+use std::collections::BTreeMap;
+
 use ariadne::{Color, Label, Report, ReportBuilder, ReportKind, Span};
-use hashbrown::HashMap;
 use intcast::IntCast;
+use lasso::Spur;
+use lexer::TokenKind;
 use stores::{
     items::ItemId,
-    source::{SourceLocation, SourceStore},
+    source::{SourceLocation, SourceStore, Spanned},
 };
 
+use crate::ir::StructDef;
+
 use super::{
+    item::{ItemHeader, LangItem},
+    ops::OpId,
+    types::{TypeId, TypeInfo},
     values::{ValueId, ValueStore},
     Stores,
 };
 
 pub struct DiagnosticStore {
     detatched: Vec<Diagnostic>,
-    attached: HashMap<ItemId, Vec<Diagnostic>>,
+    attached: BTreeMap<ItemId, Vec<Diagnostic>>,
 }
 
 impl DiagnosticStore {
     pub fn new() -> Self {
         Self {
             detatched: Vec::new(),
-            attached: HashMap::new(),
+            attached: BTreeMap::new(),
         }
     }
 
-    pub fn add_detached(&mut self, diag: Diagnostic) {
+    fn add_detached(&mut self, diag: Diagnostic) {
         self.detatched.push(diag);
+    }
+
+    fn add_attached(&mut self, item_id: ItemId, diag: Diagnostic) {
+        let list = self.attached.entry(item_id).or_default();
+        list.push(diag);
     }
 }
 
@@ -42,13 +55,6 @@ impl DiagKind {
             DiagKind::Error => Color::Red,
             DiagKind::Warning => Color::Yellow,
             DiagKind::Advise => Color::Green,
-        }
-    }
-
-    fn secondary_label_color(&self) -> Color {
-        match self {
-            DiagKind::Error => Color::Yellow,
-            DiagKind::Warning | DiagKind::Advise => Color::Cyan,
         }
     }
 
@@ -83,7 +89,6 @@ impl From<DiagKind> for ReportKind<'_> {
 
 #[derive(Clone, Copy)]
 enum LabelKind {
-    Secondary,
     Help,
 }
 
@@ -99,6 +104,7 @@ struct ChainLabel {
     description: String,
 }
 
+#[must_use]
 pub struct Diagnostic {
     kind: DiagKind,
     location: SourceLocation,
@@ -110,10 +116,10 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub(crate) fn new_error(op_loc: SourceLocation, message: impl Into<String>) -> Diagnostic {
+    pub(crate) fn error(loc: SourceLocation, message: impl Into<String>) -> Diagnostic {
         Self {
             kind: DiagKind::Error,
-            location: op_loc,
+            location: loc,
             primary_message: message.into(),
             primary_label_message: None,
             simple_labels: Vec::new(),
@@ -122,29 +128,45 @@ impl Diagnostic {
         }
     }
 
-    pub(crate) fn primary_label_message(&mut self, message: impl Into<String>) -> &mut Self {
+    pub(crate) fn warning(loc: SourceLocation, message: impl Into<String>) -> Diagnostic {
+        Self {
+            kind: DiagKind::Warning,
+            location: loc,
+            primary_message: message.into(),
+            primary_label_message: None,
+            simple_labels: Vec::new(),
+            chain_labels: Vec::new(),
+            note: None,
+        }
+    }
+
+    pub(crate) fn advice(loc: SourceLocation, message: impl Into<String>) -> Diagnostic {
+        Self {
+            kind: DiagKind::Advise,
+            location: loc,
+            primary_message: message.into(),
+            primary_label_message: None,
+            simple_labels: Vec::new(),
+            chain_labels: Vec::new(),
+            note: None,
+        }
+    }
+
+    pub(crate) fn primary_label_message(mut self, message: impl Into<String>) -> Self {
         self.primary_label_message = Some(message.into());
         self
     }
 
-    pub(crate) fn with_label<M, O>(&mut self, location: SourceLocation, message: O) -> &mut Self
+    pub(crate) fn with_help_label<M, O>(mut self, location: SourceLocation, message: O) -> Self
     where
         O: Into<Option<M>>,
         M: Into<String>,
     {
-        self.simple_labels.push(SimpleLabel {
-            location,
-            kind: LabelKind::Secondary,
-            message: message.into().map(Into::into),
-        });
+        self.add_help_label(location, message);
         self
     }
 
-    pub(crate) fn with_help_label<M, O>(
-        &mut self,
-        location: SourceLocation,
-        message: O,
-    ) -> &mut Self
+    pub(crate) fn add_help_label<M, O>(&mut self, location: SourceLocation, message: O) -> &mut Self
     where
         O: Into<Option<M>>,
         M: Into<String>,
@@ -158,6 +180,16 @@ impl Diagnostic {
     }
 
     pub(crate) fn with_label_chain(
+        mut self,
+        value_id: ValueId,
+        idx: u64,
+        description: impl Into<String>,
+    ) -> Self {
+        self.add_label_chain(value_id, idx, description);
+        self
+    }
+
+    pub(crate) fn add_label_chain(
         &mut self,
         value_id: ValueId,
         idx: u64,
@@ -172,9 +204,118 @@ impl Diagnostic {
         self
     }
 
-    pub(crate) fn with_note(&mut self, message: impl Into<String>) -> &mut Self {
+    pub(crate) fn with_note(mut self, message: impl Into<String>) -> Self {
         self.note = Some(message.into());
         self
+    }
+
+    pub(crate) fn set_note(&mut self, message: impl Into<String>) -> &mut Self {
+        self.note = Some(message.into());
+        self
+    }
+
+    pub(crate) fn attached(self, diags: &mut DiagnosticStore, item_id: ItemId) {
+        diags.add_attached(item_id, self);
+    }
+
+    pub(crate) fn detached(self, diags: &mut DiagnosticStore) {
+        diags.add_detached(self);
+    }
+}
+
+impl Diagnostic {
+    pub fn bad_extern(diags: &mut DiagnosticStore, item_header: ItemHeader) {
+        Diagnostic::error(
+            item_header.name.location,
+            format!("{} cannot be extern", item_header.kind.kind_str()),
+        )
+        .attached(diags, item_header.id);
+    }
+
+    pub fn bad_lang_item(
+        diags: &mut DiagnosticStore,
+        item_header: ItemHeader,
+        lang_item: LangItem,
+    ) {
+        Diagnostic::error(
+            item_header.name.location,
+            format!(
+                "{} is invalid for lang item {}",
+                item_header.kind.kind_str(),
+                lang_item.kind_str()
+            ),
+        )
+        .attached(diags, item_header.id);
+    }
+
+    pub fn bad_top_level_op(
+        diags: &mut DiagnosticStore,
+        module_id: ItemId,
+        location: SourceLocation,
+        kind: TokenKind,
+    ) {
+        Diagnostic::error(location,
+            format!("top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `{}`", kind.kind_str()),
+        ).attached(diags, module_id);
+    }
+
+    pub fn field_not_found(
+        stores: &mut Stores,
+        item_id: ItemId,
+        field_name: Spanned<Spur>,
+        struct_def: &StructDef<TypeId>,
+        input_struct_type_info: TypeInfo,
+        input_struct_value_id: ValueId,
+    ) {
+        let unknown_field_name = stores.strings.resolve(field_name.inner);
+        let struct_name = stores.strings.resolve(struct_def.name.inner);
+
+        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
+
+        let diag = Diagnostic::error(
+            field_name.location,
+            format!("unknown field `{unknown_field_name}` in struct `{struct_name}`"),
+        )
+        .with_label_chain(input_struct_value_id, 1, value_type_name)
+        .with_help_label(struct_def.name.location, "struct defined here");
+        stores.diags.add_attached(item_id, diag);
+    }
+
+    pub fn not_a_struct(
+        stores: &mut Stores,
+        item_id: ItemId,
+        input_struct_type_info: TypeInfo,
+        input_struct_value_id: ValueId,
+        op_id: OpId,
+        error_str: &str,
+    ) {
+        let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
+        let op_loc = stores.ops.get_token(op_id).location;
+
+        let diag = Diagnostic::error(
+            op_loc,
+            format!("cannot {error_str} field from a `{value_type_name}`"),
+        )
+        .with_label_chain(input_struct_value_id, 1, value_type_name);
+        stores.diags.add_attached(item_id, diag)
+    }
+
+    pub fn type_error(stores: &mut Stores, token: Spanned<Spur>) {
+        Diagnostic::error(
+            token.location,
+            format!("unknown type `{}`", stores.strings.resolve(token.inner)),
+        )
+        .detached(stores.diags);
+    }
+
+    pub fn unsupported_sim_op(stores: &mut Stores, item_id: ItemId, op_id: OpId) {
+        let op_location = stores.ops.get_token(op_id).location;
+
+        Diagnostic::error(
+            op_location,
+            "operation not supported during const evalutation",
+        )
+        .attached(stores.diags, item_id);
     }
 }
 
@@ -184,7 +325,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
             display_single_diag(self.values, self.source, diag);
         }
 
-        for (_, diags) in self.diags.attached.drain() {
+        while let Some((_, diags)) = self.diags.attached.pop_first() {
             for diag in diags {
                 display_single_diag(self.values, self.source, diag);
             }
@@ -216,7 +357,6 @@ fn display_single_diag(value_store: &ValueStore, source_store: &SourceStore, dia
 
     for label in diag.simple_labels {
         let color = match label.kind {
-            LabelKind::Secondary => diag.kind.secondary_label_color(),
             LabelKind::Help => diag.kind.help_label_color(),
         };
 

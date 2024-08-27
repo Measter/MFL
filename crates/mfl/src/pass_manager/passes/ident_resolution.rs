@@ -1,4 +1,3 @@
-use ariadne::{Color, Label};
 use lasso::Spur;
 use stores::{
     items::ItemId,
@@ -15,6 +14,7 @@ use crate::{
     pass_manager::PassManager,
     stores::{
         block::BlockId,
+        diagnostics::Diagnostic,
         item::{ItemKind, ItemStore},
         signatures::{NameResolvedItemSignature, StackDefItemNameResolved, StackDefItemUnresolved},
         types::BuiltinTypes,
@@ -24,24 +24,22 @@ use crate::{
 
 fn invalid_generic_count_diag(
     stores: &mut Stores,
+    item_id: ItemId,
     error_span: SourceLocation,
     expected: usize,
     actual: usize,
     extra_labels: &[(SourceLocation, &str)],
 ) {
-    let mut labels: Vec<_> = extra_labels
-        .iter()
-        .map(|(loc, msg)| Label::new(*loc).with_color(Color::Cyan).with_message(msg))
-        .collect();
-    labels.push(Label::new(error_span).with_color(Color::Red));
-
-    diagnostics::emit_error(
-        stores,
+    let mut diag = Diagnostic::error(
         error_span,
         format!("expected {expected} generic parameters, found {actual}",),
-        labels,
-        None,
     );
+
+    for &(label_loc, label_msg) in extra_labels {
+        diag.add_help_label(label_loc, label_msg);
+    }
+
+    diag.attached(stores.diags, item_id);
 }
 
 fn resolved_single_ident(
@@ -57,13 +55,11 @@ fn resolved_single_ident(
     let mut current_item = if ident.is_from_root {
         let Some(tlm) = stores.items.get_top_level_module(first_ident.inner) else {
             let item_name = stores.strings.resolve(first_ident.inner);
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 first_ident.location,
                 format!("symbol `{item_name}` not found"),
-                [Label::new(first_ident.location).with_color(Color::Red)],
-                None,
-            );
+            )
+            .attached(stores.diags, cur_id);
             had_error.set();
             return Err(());
         };
@@ -76,13 +72,11 @@ fn resolved_single_ident(
                 .get_visible_symbol(stores.sigs, header, first_ident.inner)
         else {
             let item_name = stores.strings.resolve(first_ident.inner);
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 first_ident.location,
                 format!("symbol `{item_name}` not found"),
-                [Label::new(first_ident.location).with_color(Color::Red)],
-                None,
-            );
+            )
+            .attached(stores.diags, cur_id);
 
             had_error.set();
             return Err(());
@@ -94,31 +88,17 @@ fn resolved_single_ident(
     for sub_ident in rest {
         let current_item_header = stores.items.get_item_header(current_item);
         if current_item_header.kind != ItemKind::Module {
-            diagnostics::emit_error(
-                stores,
-                sub_ident.location,
-                "cannot path into non-module item",
-                [
-                    Label::new(sub_ident.location).with_color(Color::Red),
-                    Label::new(last_ident.location)
-                        .with_color(Color::Cyan)
-                        .with_message("not a module"),
-                ],
-                None,
-            );
+            Diagnostic::error(sub_ident.location, "cannot path into non-module item")
+                .with_help_label(last_ident.location, "not a module")
+                .attached(stores.diags, cur_id);
             had_error.set();
             return Err(());
         }
 
         let scope = stores.sigs.nrir.get_scope(current_item_header.id);
         let Some(sub_item) = scope.get_symbol(sub_ident.inner) else {
-            diagnostics::emit_error(
-                stores,
-                sub_ident.location,
-                "symbol not found",
-                [Label::new(sub_ident.location).with_color(Color::Red)],
-                None,
-            );
+            Diagnostic::error(sub_ident.location, "symbol not found")
+                .attached(stores.diags, cur_id);
             had_error.set();
             return Err(());
         };
@@ -152,14 +132,8 @@ fn resolve_idents_in_type(
                 || !unresolved_ident.generic_params.is_empty())
                 && builtin_name.is_some()
             {
-                // Emit error
-                diagnostics::emit_error(
-                    stores,
-                    unresolved_ident.span,
-                    "cannot name builtin with a path",
-                    [Label::new(unresolved_ident.span).with_color(Color::Red)],
-                    None,
-                );
+                Diagnostic::error(unresolved_ident.span, "cannot name builtin with a path")
+                    .attached(stores.diags, cur_id);
                 had_error.set();
                 return Err(());
             }
@@ -218,6 +192,7 @@ fn resolve_idents_in_type(
 fn check_generic_param_length(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    cur_id: ItemId,
     kind: &NameResolvedType,
     kind_span: SourceLocation,
     can_infer: bool,
@@ -233,6 +208,7 @@ fn check_generic_param_length(
             if !struct_def.generic_params.is_empty() && !can_infer {
                 invalid_generic_count_diag(
                     stores,
+                    cur_id,
                     kind_span,
                     struct_def.generic_params.len(),
                     0,
@@ -254,6 +230,7 @@ fn check_generic_param_length(
             if struct_def.generic_params.len() != params.len() {
                 invalid_generic_count_diag(
                     stores,
+                    cur_id,
                     kind_span,
                     struct_def.generic_params.len(),
                     params.len(),
@@ -268,7 +245,7 @@ fn check_generic_param_length(
         NameResolvedType::Array(inner, _)
         | NameResolvedType::MultiPointer(inner)
         | NameResolvedType::SinglePointer(inner) => {
-            check_generic_param_length(stores, had_error, inner, kind_span, can_infer)
+            check_generic_param_length(stores, had_error, cur_id, inner, kind_span, can_infer)
         }
 
         // Nothing to do here.
@@ -301,7 +278,14 @@ fn resolve_idents_in_struct_def(
             continue;
         };
 
-        check_generic_param_length(stores, had_error, &new_kind, field.kind.location, false);
+        check_generic_param_length(
+            stores,
+            had_error,
+            cur_id,
+            &new_kind,
+            field.kind.location,
+            false,
+        );
 
         resolved.fields.push(StructDefField {
             name: field.name,
@@ -321,13 +305,8 @@ fn resolve_idents_in_module_imports(
 
     for import in unresolved_imports {
         if !import.generic_params.is_empty() {
-            diagnostics::emit_error(
-                stores,
-                import.span,
-                "import cannot have generic parameters",
-                [Label::new(import.span).with_color(Color::Red)],
-                None,
-            );
+            Diagnostic::error(import.span, "import cannot have generic parameters")
+                .attached(stores.diags, cur_id);
             had_error.set();
         }
 
@@ -347,6 +326,7 @@ fn resolve_idents_in_module_imports(
                 diagnostics::handle_symbol_redef_error(
                     stores,
                     had_error,
+                    cur_id,
                     Some(NameCollision {
                         prev: prev_loc,
                         new: import.span,
@@ -428,6 +408,7 @@ pub fn resolve_signature(
             check_generic_param_length(
                 stores,
                 had_error,
+                cur_id,
                 &new_kind,
                 unresolved_variable_type.location,
                 false,
@@ -474,7 +455,14 @@ pub fn resolve_signature(
                     return None;
                 };
 
-                check_generic_param_length(stores, had_error, &new_kind, kind.location, false);
+                check_generic_param_length(
+                    stores,
+                    had_error,
+                    cur_id,
+                    &new_kind,
+                    kind.location,
+                    false,
+                );
                 Some(new_kind)
             };
 
@@ -598,6 +586,7 @@ fn resolve_idents_in_block(
                     check_generic_param_length(
                         stores,
                         had_error,
+                        cur_id,
                         &new_ty,
                         op_token.location,
                         false,
@@ -616,6 +605,7 @@ fn resolve_idents_in_block(
                     check_generic_param_length(
                         stores,
                         had_error,
+                        cur_id,
                         &new_ty,
                         op_token.location,
                         false,
@@ -648,6 +638,7 @@ fn resolve_idents_in_block(
                             check_generic_param_length(
                                 stores,
                                 had_error,
+                                cur_id,
                                 &new_kind,
                                 op_token.location,
                                 true,
@@ -664,6 +655,7 @@ fn resolve_idents_in_block(
                             if !ident.generic_params.is_empty() {
                                 invalid_generic_count_diag(
                                     stores,
+                                    cur_id,
                                     op_token.location,
                                     0,
                                     ident.generic_params.len(),
@@ -687,6 +679,7 @@ fn resolve_idents_in_block(
                             {
                                 invalid_generic_count_diag(
                                     stores,
+                                    cur_id,
                                     op_token.location,
                                     expected_params_len,
                                     ident.generic_params.len(),
@@ -707,6 +700,7 @@ fn resolve_idents_in_block(
                             if !ident.generic_params.is_empty() {
                                 invalid_generic_count_diag(
                                     stores,
+                                    cur_id,
                                     op_token.location,
                                     0,
                                     ident.generic_params.len(),
@@ -736,7 +730,7 @@ fn resolve_idents_in_block(
                             };
 
                             check_generic_param_length(
-                                stores, had_error, &new_ty, ident.span, true,
+                                stores, had_error, cur_id, &new_ty, ident.span, true,
                             );
 
                             NameResolvedOp::PackStruct { id: new_ty }
@@ -745,16 +739,16 @@ fn resolve_idents_in_block(
                         ItemKind::Assert | ItemKind::Module => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
-                            let mut labels = vec![Label::new(op_loc).with_color(Color::Red)];
+                            let mut diag = Diagnostic::error(
+                                op_loc,
+                                format!("cannot refer to a {:?} here", found_item_header.kind),
+                            );
+
                             // This would be the case if the item was a top-level mmodule.
                             let note = if found_item_header.name.location.file_id != FileId::dud() {
-                                labels.push(
-                                    Label::new(found_item_header.name.location)
-                                        .with_color(Color::Cyan)
-                                        .with_message(format!(
-                                            "item is a {:?}",
-                                            found_item_header.kind
-                                        )),
+                                diag.add_help_label(
+                                    found_item_header.name.location,
+                                    format!("item is a {:?}", found_item_header.kind),
                                 );
                                 String::new()
                             } else {
@@ -762,13 +756,8 @@ fn resolve_idents_in_block(
                                 format!("`{name}` is a top-level module")
                             };
 
-                            diagnostics::emit_error(
-                                stores,
-                                op_loc,
-                                format!("cannot refer to a {:?} here", found_item_header.kind),
-                                labels,
-                                note,
-                            );
+                            diag.with_note(note).attached(stores.diags, cur_id);
+
                             continue;
                         }
                     };
@@ -796,6 +785,7 @@ fn resolve_idents_in_block(
                         check_generic_param_length(
                             stores,
                             had_error,
+                            cur_id,
                             &new_kind,
                             op_token.location,
                             true,
@@ -807,18 +797,15 @@ fn resolve_idents_in_block(
                         ItemKind::Variable => {
                             let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
                             if parent_id != cur_id {
-                                diagnostics::emit_error(
-                                    stores,
+                                Diagnostic::error(
                                     op_token.location,
-                                    "`init` only supports local variables",
-                                    [
-                                        Label::new(op_token.location).with_color(Color::Red),
-                                        Label::new(found_item_header.name.location)
-                                            .with_color(Color::Cyan)
-                                            .with_message("variable is global"),
-                                    ],
-                                    None,
-                                );
+                                    "`init` only support local variable",
+                                )
+                                .with_help_label(
+                                    found_item_header.name.location,
+                                    "variable is a global",
+                                )
+                                .attached(stores.diags, cur_id);
 
                                 had_error.set();
                                 continue;
@@ -833,21 +820,15 @@ fn resolve_idents_in_block(
                         | ItemKind::GenericFunction
                         | ItemKind::StructDef
                         | ItemKind::Module => {
-                            diagnostics::emit_error(
-                                stores,
+                            Diagnostic::error(
                                 op_token.location,
                                 "`init` only supports local variables",
-                                [
-                                    Label::new(op_token.location).with_color(Color::Red),
-                                    Label::new(found_item_header.name.location)
-                                        .with_color(Color::Cyan)
-                                        .with_message(format!(
-                                            "item is a {}",
-                                            found_item_header.kind.kind_str()
-                                        )),
-                                ],
-                                None,
-                            );
+                            )
+                            .with_help_label(
+                                found_item_header.name.location,
+                                format!("item is a {}", found_item_header.kind.kind_str()),
+                            )
+                            .attached(stores.diags, cur_id);
                             continue;
                         }
                     }

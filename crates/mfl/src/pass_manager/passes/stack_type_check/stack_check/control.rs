@@ -1,19 +1,18 @@
 use std::cmp::Ordering;
 
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
 use stores::{items::ItemId, source::Spanned};
 use tracing::trace;
 
 use crate::{
-    diagnostics::{self, build_creator_label_chain},
     error_signal::ErrorSignal,
     ir::{Basic, Cond, Control, OpCode, While},
     n_ops::SliceNOps,
     pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
     stores::{
         block::BlockId,
+        diagnostics::Diagnostic,
         ops::OpId,
         signatures::StackDefItemUnresolved,
         values::{MergeValue, ValueId},
@@ -37,21 +36,17 @@ pub(crate) fn epilogue_return(
     if stack.len() != exit_sig.len() {
         let op_loc = stores.ops.get_token(op_id).location;
 
-        let mut labels = vec![
-            Label::new(op_loc)
-                .with_color(Color::Red)
-                .with_message("returning here"),
-            Label::new(item_sig.exit.location)
-                .with_color(Color::Cyan)
-                .with_message("return type defined here"),
-        ];
-
-        let msg = format!(
-            "function '{}' expects {} values, found {}",
-            stores.strings.resolve(item_header.name.inner),
-            exit_sig.len(),
-            stack.len()
-        );
+        let mut diag = Diagnostic::error(
+            op_loc,
+            format!(
+                "function '{}' expects {} values, found {}",
+                stores.strings.resolve(item_header.name.inner),
+                exit_sig.len(),
+                stack.len()
+            ),
+        )
+        .primary_label_message("returning here")
+        .with_help_label(item_sig.exit.location, "return type defined here");
 
         match stack.len().cmp(&exit_sig.len()) {
             Ordering::Less => {
@@ -66,14 +61,14 @@ pub(crate) fn epilogue_return(
                     .iter()
                     .zip(0..)
                     .map(|(&id, idx)| (id, idx, "unused value"));
-                let unused_value_labels =
-                    build_creator_label_chain(stores, unused_values, Color::Green, Color::Cyan);
-                labels.extend(unused_value_labels);
+                for (vid, idx, label) in unused_values {
+                    diag.add_label_chain(vid, idx, label);
+                }
             }
             Ordering::Equal => unreachable!(),
         }
 
-        diagnostics::emit_error(stores, op_loc, msg, labels, None);
+        diag.attached(stores.diags, item_id);
 
         had_error.set();
     }
@@ -116,26 +111,21 @@ pub(crate) fn syscall(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     num_args: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     if !matches!(num_args.inner, 1..=7) {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "invalid syscall size",
-            [Label::new(num_args.location)
-                .with_color(Color::Red)
-                .with_message("valid syscall sizes are 1..=7")],
-            None,
-        );
+        Diagnostic::error(op_loc, "invalid syscall size")
+            .primary_label_message("valid syscall sizes are 1..=7")
+            .attached(stores.diags, item_id);
         had_error.set();
         return;
     }
 
     let num_args = num_args.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, num_args);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
     for &value_id in &inputs {
@@ -151,6 +141,7 @@ pub(crate) fn call_function_const(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     callee_id: ItemId,
 ) {
@@ -159,21 +150,16 @@ pub(crate) fn call_function_const(
     let entry_arg_count = callee_sig.entry.inner.len();
 
     if stack.len() < entry_arg_count {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             op_loc,
             format!(
                 "procedure takes {entry_arg_count} arguments, found {}",
                 stack.len()
             ),
-            [
-                Label::new(op_loc).with_color(Color::Red),
-                Label::new(callee_sig.entry.location)
-                    .with_color(Color::Cyan)
-                    .with_message("signature defined here"),
-            ],
-            None,
-        );
+        )
+        .with_help_label(callee_sig.entry.location, "signature defined here")
+        .attached(stores.diags, item_id);
+
         had_error.set();
 
         let num_missing = usize::saturating_sub(entry_arg_count, stack.len());
@@ -227,7 +213,15 @@ pub(crate) fn analyze_cond(
 
         // We expect there to be a boolean value on teh top of the stack afterwards.
         if stack.is_empty() {
-            generate_stack_length_mismatch_diag(stores, arm.open, arm.open, stack.len(), 1, None);
+            generate_stack_length_mismatch_diag(
+                stores,
+                item_id,
+                arm.open,
+                arm.open,
+                stack.len(),
+                1,
+                None,
+            );
 
             had_error.set();
 
@@ -310,6 +304,7 @@ pub(crate) fn analyze_cond(
                 if arm_stack.len() != expected_stack.len() {
                     generate_stack_length_mismatch_diag(
                         stores,
+                        item_id,
                         expected_stack_loc,
                         *arm_loc,
                         arm_stack.len(),
@@ -397,6 +392,7 @@ pub(crate) fn analyze_while(
     if stack.is_empty() {
         generate_stack_length_mismatch_diag(
             stores,
+            item_id,
             while_op.tokens.do_token,
             while_op.tokens.do_token,
             stack.len(),
@@ -427,6 +423,7 @@ pub(crate) fn analyze_while(
     if stack.len() != pre_condition_stack.len() {
         generate_stack_length_mismatch_diag(
             stores,
+            item_id,
             op_loc,
             while_op.tokens.end_token,
             stack.len(),

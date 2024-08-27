@@ -1,16 +1,14 @@
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use stores::items::ItemId;
 use tracing::info;
 
 use crate::{
-    diagnostics,
     ir::{Arithmetic, Basic, Compare, Control, Direction, OpCode, Stack, TypeResolvedOp},
     n_ops::{SliceNOps, VecNOps},
     pass_manager::{static_analysis::promote_int_type_bidirectional, PassManager},
     stores::{
         block::BlockId,
-        ops::OpId,
+        diagnostics::Diagnostic,
         types::{IntWidth, Integer},
     },
     Stores,
@@ -110,6 +108,7 @@ fn apply_bool_op(
 fn simulate_execute_program_block(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
+    item_id: ItemId,
     block_id: BlockId,
     value_stack: &mut Vec<SimulatorValue>,
 ) -> Result<(), SimulationError> {
@@ -153,7 +152,7 @@ fn simulate_execute_program_block(
             },
             OpCode::Basic(Basic::Compare(co_op)) => {
                 if co_op == Compare::IsNull {
-                    emit_unsupported_diag(stores, op_id);
+                    Diagnostic::unsupported_sim_op(stores, item_id, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
 
@@ -171,7 +170,7 @@ fn simulate_execute_program_block(
                 Control::Epilogue | Control::Prologue => {}
                 Control::Return => break,
                 Control::Exit | Control::SysCall { .. } => {
-                    emit_unsupported_diag(stores, op_id);
+                    Diagnostic::unsupported_sim_op(stores, item_id, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }
                 Control::Cond(_) => {
@@ -181,6 +180,7 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         stores,
                         pass_manager,
+                        item_id,
                         while_op.condition,
                         value_stack,
                     )?;
@@ -191,6 +191,7 @@ fn simulate_execute_program_block(
                     simulate_execute_program_block(
                         stores,
                         pass_manager,
+                        item_id,
                         while_op.body_block,
                         value_stack,
                     )?;
@@ -203,7 +204,7 @@ fn simulate_execute_program_block(
                 | TypeResolvedOp::Variable { .. }
                 | TypeResolvedOp::PackStruct { .. },
             ) => {
-                emit_unsupported_diag(stores, op_id);
+                Diagnostic::unsupported_sim_op(stores, item_id, op_id);
                 return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(val)),
@@ -286,17 +287,6 @@ fn simulate_execute_program_block(
     Ok(())
 }
 
-fn emit_unsupported_diag(stores: &mut Stores, op_id: OpId) {
-    let op_location = stores.ops.get_token(op_id).location;
-    diagnostics::emit_error(
-        stores,
-        op_location,
-        "operation not supported during const evaluation",
-        [Label::new(op_location).with_color(Color::Red)],
-        None,
-    );
-}
-
 pub(crate) fn simulate_execute_program(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
@@ -306,7 +296,7 @@ pub(crate) fn simulate_execute_program(
     let mut value_stack: Vec<SimulatorValue> = Vec::new();
 
     let block = stores.items.get_item_body(item_id);
-    simulate_execute_program_block(stores, pass_manager, block, &mut value_stack)?;
+    simulate_execute_program_block(stores, pass_manager, item_id, block, &mut value_stack)?;
 
     Ok(value_stack)
 }

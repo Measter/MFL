@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 
-use ariadne::{Color, Label};
 use color_eyre::{eyre::eyre, Result};
 use flagset::{flags, FlagSet};
 use hashbrown::HashMap;
@@ -9,11 +8,11 @@ use stores::items::ItemId;
 use tracing::{debug_span, trace};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     option::OptionExt,
     simulate::{simulate_execute_program, SimulatorValue},
     stores::{
+        diagnostics::Diagnostic,
         item::{ItemHeader, ItemKind, LangItem},
         types::TypeKind,
     },
@@ -234,15 +233,9 @@ impl PassManager {
 
         if !assert_is_true {
             let item_header = stores.items.get_item_header(cur_item);
-            diagnostics::emit_error(
-                stores,
-                item_header.name.location,
-                "assert failure",
-                [Label::new(item_header.name.location)
-                    .with_color(Color::Red)
-                    .with_message("evaluated to false")],
-                None,
-            );
+            Diagnostic::error(item_header.name.location, "assert failure")
+                .primary_label_message("evaluated to false")
+                .attached(stores.diags, cur_item);
 
             self.set_error(cur_item, STATE);
             Err(())

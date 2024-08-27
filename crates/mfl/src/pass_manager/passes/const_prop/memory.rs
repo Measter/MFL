@@ -1,13 +1,12 @@
-use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use intcast::IntCast;
 use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     n_ops::SliceNOps,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{Integer, TypeKind},
         values::ConstVal,
@@ -15,7 +14,12 @@ use crate::{
     Stores,
 };
 
-pub(crate) fn index(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn index(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let [idx_value_id, array_value_id] = *op_data.inputs.as_arr();
     let [ConstVal::Int(Integer::Unsigned(idx))] = stores.values.value_consts([idx_value_id]) else {
@@ -56,24 +60,22 @@ pub(crate) fn index(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
 
     let array_type_name = stores.strings.resolve(array_type_info.friendly_name);
     let idx_value = idx.to_string();
-    let mut labels = diagnostics::build_creator_label_chain(
-        stores,
-        [
-            (array_value_id, 0, array_type_name),
-            (idx_value_id, 1, &idx_value),
-        ],
-        Color::Yellow,
-        Color::Cyan,
-    );
     let op_loc = stores.ops.get_token(op_id).location;
-    labels.push(Label::new(op_loc).with_color(Color::Red));
 
-    diagnostics::emit_error(stores, op_loc, "index out of bounds", labels, None);
+    Diagnostic::error(op_loc, "index out of bounds")
+        .with_label_chain(array_value_id, 0, array_type_name)
+        .with_label_chain(idx_value_id, 1, idx_value)
+        .attached(stores.diags, item_id);
 
     had_error.set();
 }
 
-pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn insert_extract_array(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
@@ -114,19 +116,12 @@ pub(crate) fn insert_extract_array(stores: &mut Stores, had_error: &mut ErrorSig
 
     let array_type_name = stores.strings.resolve(array_type_info.friendly_name);
     let idx_value = idx.to_string();
-    let mut labels = diagnostics::build_creator_label_chain(
-        stores,
-        [
-            (array_value_id, 0, array_type_name),
-            (idx_value_id, 1, &idx_value),
-        ],
-        Color::Yellow,
-        Color::Cyan,
-    );
     let op_loc = stores.ops.get_token(op_id).location;
-    labels.push(Label::new(op_loc).with_color(Color::Red));
 
-    diagnostics::emit_error(stores, op_loc, "index out of bounds", labels, None);
+    Diagnostic::error(op_loc, "index out of bounds")
+        .with_label_chain(array_value_id, 0, array_type_name)
+        .with_label_chain(idx_value_id, 1, idx_value)
+        .attached(stores.diags, item_id);
 
     had_error.set();
 }
@@ -135,6 +130,7 @@ pub(crate) fn load(
     stores: &mut Stores,
     variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
@@ -154,26 +150,10 @@ pub(crate) fn load(
         let var_header = stores.items.get_item_header(source_variable);
         let op_loc = stores.ops.get_token(op_id);
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(var_value_id, 0, "variable pointer")],
-            Color::Yellow,
-            Color::Cyan,
-        );
-        labels.push(Label::new(op_loc.location).with_color(Color::Red));
-        labels.push(
-            Label::new(var_header.name.location)
-                .with_color(Color::Cyan)
-                .with_message("Variable defined here"),
-        );
-
-        diagnostics::emit_error(
-            stores,
-            op_loc.location,
-            "Read from uninitialized variable",
-            labels,
-            None,
-        );
+        Diagnostic::error(op_loc.location, "read from unitialized variable")
+            .with_label_chain(var_value_id, 0, "variable pointer")
+            .with_help_label(var_header.name.location, "variable defined here")
+            .attached(stores.diags, item_id);
 
         had_error.set();
     }

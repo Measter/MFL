@@ -1,12 +1,12 @@
-use ariadne::{Color, Label};
+use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::Compare,
     n_ops::SliceNOps,
     pass_manager::static_analysis::promote_int_type_bidirectional,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{Integer, TypeKind},
         values::ConstVal,
@@ -17,6 +17,7 @@ use crate::{
 pub(crate) fn equal(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     comp_code: Compare,
 ) {
@@ -85,24 +86,10 @@ pub(crate) fn equal(
             source_variable: id2,
             ..
         }] if id1 != id2 => {
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (input_value_ids[0], 0, "..and this"),
-                    (input_value_ids[1], 1, "comparing this..."),
-                ],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                "pointers have different sources",
-                labels,
-                None,
-            );
+            Diagnostic::error(op_loc, "pointers have different sources")
+                .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                .with_label_chain(input_value_ids[0], 0, "... and this")
+                .attached(stores.diags, item_id);
 
             had_error.set();
             ConstVal::Bool(false)
@@ -110,17 +97,10 @@ pub(crate) fn equal(
 
         // Single-Pointers with same IDs
         [ConstVal::SinglePtr { .. }, ConstVal::SinglePtr { .. }] => {
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (input_value_ids[0], 0, "..and this"),
-                    (input_value_ids[1], 1, "comparing this..."),
-                ],
-                Color::Cyan,
-                Color::Green,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Yellow));
-            diagnostics::emit_error(stores, op_loc, "pointers always equal", labels, None);
+            Diagnostic::warning(op_loc, "pointers always equal")
+                .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                .with_label_chain(input_value_ids[0], 0, "... and this")
+                .attached(stores.diags, item_id);
 
             let res = comp_code.get_unsigned_binary_op()(1, 1) != 0;
             ConstVal::Bool(res)
@@ -140,17 +120,10 @@ pub(crate) fn equal(
                 "pointers never equal"
             };
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (input_value_ids[0], 0, "..and this"),
-                    (input_value_ids[1], 1, "comparing this..."),
-                ],
-                Color::Cyan,
-                Color::Green,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Yellow));
-            diagnostics::emit_error(stores, op_loc, msg, labels, None);
+            Diagnostic::warning(op_loc, msg)
+                .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                .with_label_chain(input_value_ids[0], 0, "... and this")
+                .attached(stores.diags, item_id);
 
             let res = comp_code.get_unsigned_binary_op()(offset1, offset2) != 0;
             ConstVal::Bool(res)
@@ -170,6 +143,7 @@ pub(crate) fn equal(
 pub(crate) fn compare(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     comp_code: Compare,
 ) {
@@ -227,25 +201,11 @@ pub(crate) fn compare(
             source_variable: id2,
             ..
         }] if id1 != id2 => {
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (input_value_ids[0], 0, "..and this"),
-                    (input_value_ids[1], 1, "comparing this..."),
-                ],
-                Color::Yellow,
-                Color::Cyan,
-            );
             let op_loc = stores.ops.get_token(op_id).location;
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                "pointers have different sources",
-                labels,
-                None,
-            );
+            Diagnostic::error(op_loc, "pointers have different sources")
+                .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                .with_label_chain(input_value_ids[0], 0, "... and this")
+                .attached(stores.diags, item_id);
 
             had_error.set();
             ConstVal::Bool(false)

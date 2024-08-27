@@ -1,3 +1,5 @@
+use stores::items::ItemId;
+
 use crate::{
     error_signal::ErrorSignal,
     n_ops::SliceNOps,
@@ -12,7 +14,12 @@ use crate::{
 // Unlike the arithmatic functions, the output of these is always a boolean, so we'll just set the output
 // to that type under the assumption that the comparison succeeds.
 
-pub(crate) fn equal(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn equal(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let output_id = op_data.outputs[0];
@@ -33,13 +40,17 @@ pub(crate) fn equal(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpI
             // Type mismatch.
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
         }
     }
 }
 
-pub(crate) fn compare(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn compare(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_ids = *op_data.inputs.as_arr::<2>();
     let output_id = op_data.outputs[0];
@@ -60,13 +71,17 @@ pub(crate) fn compare(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
             // Type mismatch.
             had_error.set();
             let op_token = stores.ops.get_token(op_id);
-            let lexeme = stores.strings.resolve(op_token.inner);
-            generate_type_mismatch_diag(stores, lexeme, op_id, &input_ids);
+            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
         }
     }
 }
 
-pub(crate) fn is_null(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn is_null(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
     let input_id = op_data.inputs[0];
     let output_id = op_data.outputs[0];
@@ -85,7 +100,6 @@ pub(crate) fn is_null(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: O
         // Type mismatch.
         had_error.set();
         let op_token = stores.ops.get_token(op_id);
-        let lexeme = stores.strings.resolve(op_token.inner);
-        generate_type_mismatch_diag(stores, lexeme, op_id, &[input_id]);
+        generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_id]);
     }
 }

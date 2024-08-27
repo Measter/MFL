@@ -1,13 +1,13 @@
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
+use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     n_ops::{SliceNOps, VecNOps},
     pass_manager::PassManager,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{TypeId, TypeKind},
         values::ValueId,
@@ -21,11 +21,12 @@ pub(crate) fn extract_array(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     emit_array: bool,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let [array_id, idx] = stack.popn().unwrap();
     stores.values.consume_value(array_id, op_id);
@@ -50,11 +51,12 @@ pub(crate) fn extract_struct(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     emit_struct: bool,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, 1);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let struct_id = stack.pop().unwrap();
     stores.values.consume_value(struct_id, op_id);
@@ -77,11 +79,12 @@ pub(crate) fn insert_array(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     emit_array: bool,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<3>().unwrap();
     for id in inputs {
@@ -103,11 +106,12 @@ pub(crate) fn insert_struct(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     emit_struct: bool,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for id in inputs {
@@ -128,11 +132,12 @@ pub(crate) fn pack_array(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     count: u8,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, count.to_usize());
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, count.to_usize());
 
     let mut inputs = SmallVec::<[_; 8]>::new();
     let input_ids = stack.lastn(count.to_usize()).unwrap();
@@ -152,9 +157,10 @@ pub(crate) fn store(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
 ) {
-    ensure_stack_depth(stores, had_error, stack, op_id, 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
     for value_id in inputs {
@@ -169,10 +175,11 @@ pub(crate) fn unpack(
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
-    ensure_stack_depth(stores, had_error, stack, op_id, 1);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
     let input_value_id = stack.pop().unwrap();
 
     // To find out how any values we create, we need to look up the type of our input.
@@ -200,21 +207,10 @@ pub(crate) fn unpack(
         _ => {
             let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
 
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [(input_value_id, 0, input_type_name)],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                format!("unable to unpack a `{input_type_name}`"),
-                labels,
-                "value must be an array or struct".to_owned(),
-            );
+            Diagnostic::error(op_loc, format!("unable to unpack a `{input_type_name}`"))
+                .with_note("value must be an array or struct")
+                .with_label_chain(input_value_id, 0, input_type_name)
+                .attached(stores.diags, item_id);
 
             had_error.set();
 
@@ -238,6 +234,7 @@ pub(crate) fn pack_struct(
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     target_type_id: TypeId,
 ) {
@@ -247,13 +244,7 @@ pub(crate) fn pack_struct(
     | TypeKind::GenericStructInstance(struct_item_id)
     | TypeKind::GenericStructBase(struct_item_id)) = type_info.kind
     else {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "cannot pack that type",
-            [Label::new(op_loc).with_color(Color::Red)],
-            None,
-        );
+        Diagnostic::error(op_loc, "cannot pack that type").attached(stores.diags, item_id);
         had_error.set();
         return;
     };
@@ -293,7 +284,7 @@ pub(crate) fn pack_struct(
         }
     };
 
-    ensure_stack_depth(stores, had_error, stack, op_id, num_fields);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, num_fields);
 
     let mut inputs = SmallVec::<[_; 20]>::new();
     let input_value_ids = stack.lastn(num_fields).unwrap();

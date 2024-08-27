@@ -10,11 +10,11 @@ use crate::{
     pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
     stores::{
         block::BlockId,
+        diagnostics::Diagnostic,
         item::ItemKind,
         signatures::{
             PartiallyTypeResolvedItemSignature, StackDefItemNameResolved, TypeResolvedItemSignature,
         },
-        types::emit_type_error_diag,
     },
     Stores,
 };
@@ -65,7 +65,7 @@ pub fn resolve_signature(
                     Ok(info) => info,
                     Err(tk) => {
                         local_had_error.set();
-                        emit_type_error_diag(stores, tk);
+                        Diagnostic::type_error(stores, tk);
                         return None;
                     }
                 };
@@ -128,7 +128,7 @@ pub fn resolve_signature(
                     Ok(info) => info,
                     Err(tk) => {
                         local_had_error.set();
-                        emit_type_error_diag(stores, tk);
+                        Diagnostic::type_error(stores, tk);
                         return None;
                     }
                 };
@@ -180,7 +180,7 @@ pub fn resolve_signature(
                     Ok(pt) => pt,
                     Err(tk) => {
                         had_error.set();
-                        emit_type_error_diag(stores, tk);
+                        Diagnostic::type_error(stores, tk);
                         return;
                     }
                 };
@@ -197,7 +197,7 @@ pub fn resolve_signature(
                     Ok(info) => info,
                     Err(tk) => {
                         had_error.set();
-                        emit_type_error_diag(stores, tk);
+                        Diagnostic::type_error(stores, tk);
                         return;
                     }
                 };
@@ -265,7 +265,7 @@ fn fully_resolve_block(
                         let type_info = match stores.types.resolve_type(stores.strings, ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
-                                emit_type_error_diag(stores, err_token);
+                                Diagnostic::type_error(stores, err_token);
                                 had_error.set();
                                 continue;
                             }
@@ -316,7 +316,7 @@ fn fully_resolve_block(
                 let type_info = match stores.types.resolve_type(stores.strings, id) {
                     Ok(info) => info,
                     Err(err_token) => {
-                        emit_type_error_diag(stores, err_token);
+                        Diagnostic::type_error(stores, err_token);
                         had_error.set();
                         continue;
                     }
@@ -416,7 +416,7 @@ fn partially_resolve_block(
                         {
                             Ok(info) => info,
                             Err(err_token) => {
-                                emit_type_error_diag(stores, err_token);
+                                Diagnostic::type_error(stores, err_token);
                                 had_error.set();
                                 continue;
                             }
@@ -464,7 +464,7 @@ fn partially_resolve_block(
                 {
                     Ok(info) => info,
                     Err(err_token) => {
-                        emit_type_error_diag(stores, err_token);
+                        Diagnostic::type_error(stores, err_token);
                         had_error.set();
                         continue;
                     }

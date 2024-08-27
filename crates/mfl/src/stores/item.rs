@@ -12,7 +12,7 @@ use stores::{
 use crate::{
     diagnostics::NameCollision,
     error_signal::ErrorSignal,
-    ir::{StructDef, UnresolvedIdent, UnresolvedType},
+    ir::{UnresolvedIdent, UnresolvedType},
     option::OptionExt,
     simulate::SimulatorValue,
 };
@@ -487,17 +487,16 @@ impl ItemStore {
         sigs: &mut SigStore,
         had_error: &mut ErrorSignal,
         module: ItemId,
-        def: StructDef<UnresolvedType>,
+        name: Spanned<Spur>,
+        is_generic: bool,
         attributes: FlagSet<ItemAttribute>,
     ) -> (ItemId, Option<NameCollision>) {
-        let name = def.name;
         let header = self.new_header(sigs, name, Some(module), ItemKind::StructDef, attributes);
 
-        if !def.generic_params.is_empty() {
+        if is_generic {
             self.generic_structs.push(header.id);
         }
 
-        sigs.urir.set_struct(header.id, def);
         (
             header.id,
             self.add_to_parent(sigs, had_error, module, name, header.id)

@@ -1,18 +1,19 @@
 use std::{fmt::Display, slice::Iter, str::FromStr};
 
-use ariadne::{Color, Label};
 use lasso::Spur;
 use lexer::{BracketKind, IntegerBase, Token, TokenKind};
 use num_traits::{Float, PrimInt, Unsigned};
-use stores::source::{SourceLocation, Spanned, WithSpan};
+use stores::{
+    items::ItemId,
+    source::{SourceLocation, Spanned, WithSpan},
+};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{TokenTree, TreeGroup},
     parser::matcher::{integer_tokens, Matcher},
-    stores::signatures::StackDefItemUnresolved,
+    stores::{diagnostics::Diagnostic, signatures::StackDefItemUnresolved},
     Stores,
 };
 
@@ -35,7 +36,8 @@ impl<'a> TokenIter<'a> {
 
     pub(super) fn expect_single(
         &mut self,
-        stores: &Stores,
+        stores: &mut Stores,
+        item_id: ItemId,
         filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
         prev: SourceLocation,
     ) -> Result<Spanned<Token>, ()> {
@@ -43,34 +45,25 @@ impl<'a> TokenIter<'a> {
             Some(TokenTree::Single(tk)) => match filter.is_match(tk.map(|t| t.kind)) {
                 IsMatch::Yes => Ok(self.next().unwrap_single()),
                 IsMatch::No(kind_str, location) => {
-                    diagnostics::emit_error(
-                        stores,
+                    Diagnostic::error(
                         location,
                         format!("expected `{}`, found `{kind_str}`", filter.kind_str()),
-                        Some(Label::new(location).with_color(Color::Red)),
-                        None,
-                    );
+                    )
+                    .attached(stores.diags, item_id);
+
                     Err(())
                 }
             },
             Some(TokenTree::Group(tg)) => {
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     tg.span(),
                     format!("expected `{}`, found bracket group", filter.kind_str()),
-                    Some(Label::new(tg.span()).with_color(Color::Red)),
-                    None,
-                );
+                )
+                .attached(stores.diags, item_id);
                 Err(())
             }
             None => {
-                diagnostics::emit_error(
-                    stores,
-                    prev,
-                    "unexpected end of tokens",
-                    Some(Label::new(prev).with_color(Color::Red)),
-                    None,
-                );
+                Diagnostic::error(prev, "unexpected end of tokens").attached(stores.diags, item_id);
                 Err(())
             }
         }
@@ -78,7 +71,8 @@ impl<'a> TokenIter<'a> {
 
     pub(super) fn expect_group(
         &mut self,
-        stores: &Stores,
+        stores: &mut Stores,
+        item_id: ItemId,
         expected: BracketKind,
         prev: Spanned<Token>,
     ) -> Result<&'a TreeGroup, ()> {
@@ -87,37 +81,28 @@ impl<'a> TokenIter<'a> {
                 Ok(self.next().unwrap_group())
             }
             Some(TokenTree::Group(tk)) => {
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     tk.open.location,
                     format!("expected `{}`, found `{}`", expected, tk.bracket_kind,),
-                    Some(Label::new(tk.open.location).with_color(Color::Red)),
-                    None,
-                );
+                )
+                .attached(stores.diags, item_id);
                 Err(())
             }
             Some(TokenTree::Single(tk)) => {
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     tk.location,
                     format!(
                         "expected `{}`, found `{}`",
                         expected,
                         tk.inner.kind.kind_str()
                     ),
-                    Some(Label::new(tk.location).with_color(Color::Red)),
-                    None,
-                );
+                )
+                .attached(stores.diags, item_id);
                 Err(())
             }
             None => {
-                diagnostics::emit_error(
-                    stores,
-                    prev.location,
-                    "unexpected end of tokens",
-                    Some(Label::new(prev.location).with_color(Color::Red)),
-                    None,
-                );
+                Diagnostic::error(prev.location, "unexpected end of tokens")
+                    .attached(stores.diags, item_id);
                 Err(())
             }
         }
@@ -213,17 +198,24 @@ impl LengthRequirement for Min {
 pub(super) trait TreeGroupResultExt {
     fn with_kinds<'a>(
         self,
-        stores: &Stores,
+        stores: &mut Stores,
+        item_id: ItemId,
         filter: impl ExpectedTokenMatcher<&'a TokenTree>,
     ) -> Self
     where
         Self: 'a;
-    fn with_length(self, stores: &Stores, length: impl LengthRequirement) -> Self;
+    fn with_length(
+        self,
+        stores: &mut Stores,
+        item_id: ItemId,
+        length: impl LengthRequirement,
+    ) -> Self;
 }
 impl TreeGroupResultExt for Result<&TreeGroup, ()> {
     fn with_kinds<'a>(
         self,
-        stores: &Stores,
+        stores: &mut Stores,
+        item_id: ItemId,
         filter: impl ExpectedTokenMatcher<&'a TokenTree>,
     ) -> Self
     where
@@ -234,13 +226,11 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
         let mut had_error = ErrorSignal::new();
         for tt in &group.tokens {
             if let IsMatch::No(kind_str, loc) = filter.is_match(tt) {
-                diagnostics::emit_error(
-                    stores,
+                Diagnostic::error(
                     loc,
                     format!("expected `{}`, found `{kind_str}`", filter.kind_str(),),
-                    Some(Label::new(loc).with_color(Color::Red)),
-                    None,
-                );
+                )
+                .attached(stores.diags, item_id);
                 had_error.set();
             }
         }
@@ -252,16 +242,19 @@ impl TreeGroupResultExt for Result<&TreeGroup, ()> {
         }
     }
 
-    fn with_length(self, stores: &Stores, length: impl LengthRequirement) -> Self {
+    fn with_length(
+        self,
+        stores: &mut Stores,
+        item_id: ItemId,
+        length: impl LengthRequirement,
+    ) -> Self {
         let group = self?;
         if !length.is_met(group.tokens.len()) {
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 group.span(),
                 format!("expected {length} tokens, found {}", group.tokens.len()),
-                [Label::new(group.span()).with_color(Color::Red)],
-                None,
-            );
+            )
+            .attached(stores.diags, item_id);
             Err(())
         } else {
             Ok(group)
@@ -311,8 +304,9 @@ pub struct Terminated {
 }
 
 pub fn get_terminated_tokens<'a>(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter<'a>,
+    item_id: ItemId,
     open_token: Spanned<Token>,
     expected_len: Option<usize>,
     inner_matcher: impl ExpectedTokenMatcher<&'a TokenTree>,
@@ -331,13 +325,8 @@ pub fn get_terminated_tokens<'a>(
 
     loop {
         let Some(next_token) = token_iter.peek() else {
-            diagnostics::emit_error(
-                stores,
-                prev.location,
-                "unexpected end of tokens",
-                Some(Label::new(prev.location).with_color(Color::Red)),
-                None,
-            );
+            Diagnostic::error(prev.location, "unexpected end of tokens")
+                .attached(stores.diags, item_id);
             return Err(());
         };
 
@@ -380,13 +369,11 @@ pub fn get_terminated_tokens<'a>(
     if let Some(len) = expected_len {
         if len != tokens.len() {
             let range = open_token.location.merge(close_token.location);
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 range,
                 format!("expected {len} tokens, found {}", tokens.len()),
-                [Label::new(range).with_color(Color::Red)],
-                None,
-            );
+            )
+            .attached(stores.diags, item_id);
             had_error.set();
         }
     }
@@ -403,6 +390,7 @@ pub fn get_terminated_tokens<'a>(
 
 pub fn parse_multiple_unresolved_types(
     stores: &mut Stores,
+    item_id: ItemId,
     prev: SourceLocation,
     tokens: &[TokenTree],
 ) -> Result<Vec<Spanned<UnresolvedType>>, ()> {
@@ -412,14 +400,20 @@ pub fn parse_multiple_unresolved_types(
 
     while token_iter.peek().is_some() {
         let Ok((unresolved_type, _)) =
-            parse_unresolved_type(&mut token_iter, stores, prev, &mut had_error)
+            parse_unresolved_type(&mut token_iter, stores, item_id, prev, &mut had_error)
         else {
             continue;
         };
         types.push(unresolved_type);
 
         if TrailingCommaResult::Break
-            == validate_trailing_comma(&mut token_iter, stores, &mut had_error, "paramaters")
+            == validate_trailing_comma(
+                &mut token_iter,
+                stores,
+                &mut had_error,
+                item_id,
+                "paramaters",
+            )
         {
             break;
         }
@@ -435,11 +429,13 @@ pub fn parse_multiple_unresolved_types(
 pub fn parse_unresolved_type(
     token_iter: &mut TokenIter,
     stores: &mut Stores,
+    item_id: ItemId,
     prev: SourceLocation,
     had_error: &mut ErrorSignal,
 ) -> Result<(Spanned<UnresolvedType>, Spanned<Token>), Option<SourceLocation>> {
     let Ok(ident) = token_iter.expect_single(
         stores,
+        item_id,
         Matcher("ident", |t: Spanned<TokenKind>| {
             if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
                 IsMatch::Yes
@@ -454,7 +450,8 @@ pub fn parse_unresolved_type(
         return Err(Some(bad_token));
     };
 
-    let Ok((ident, mut last_token)) = parse_ident(stores, had_error, token_iter, ident) else {
+    let Ok((ident, mut last_token)) = parse_ident(stores, had_error, item_id, token_iter, ident)
+    else {
         had_error.set();
         return Err(None);
     };
@@ -480,9 +477,9 @@ pub fn parse_unresolved_type(
         match next_token {
             TokenTree::Group(_) => {
                 let Ok(delim) = token_iter
-                    .expect_group(stores, BracketKind::Square, last_token)
-                    .with_kinds(stores, Matcher("integer", integer_tokens))
-                    .with_length(stores, 1)
+                    .expect_group(stores, item_id, BracketKind::Square, last_token)
+                    .with_kinds(stores, item_id, Matcher("integer", integer_tokens))
+                    .with_length(stores, item_id, 1)
                 else {
                     had_error.set();
                     continue;
@@ -491,7 +488,7 @@ pub fn parse_unresolved_type(
                 let TokenTree::Single(len_token) = delim.tokens[0] else {
                     unreachable!()
                 };
-                let length = parse_integer_lexeme(stores, len_token).map_err(|_| None)?;
+                let length = parse_integer_lexeme(stores, item_id, len_token).map_err(|_| None)?;
 
                 type_span = type_span.merge(delim.span());
                 parsed_type = UnresolvedType::Array(Box::new(parsed_type), length);
@@ -517,6 +514,7 @@ pub fn parse_unresolved_type(
 pub fn parse_ident(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     token_iter: &mut TokenIter,
     mut token: Spanned<Token>,
 ) -> Result<(UnresolvedIdent, Spanned<Token>), ()> {
@@ -529,13 +527,8 @@ pub fn parse_ident(
         }) {
             token_iter.next().unwrap_single()
         } else {
-            diagnostics::emit_error(
-                stores,
-                token.location,
-                "unexpected end of ident",
-                Some(Label::new(token.location).with_color(Color::Red)),
-                None,
-            );
+            Diagnostic::error(token.location, "unexpected end of ident")
+                .attached(stores.diags, item_id);
             had_error.set();
             return Err(());
         };
@@ -557,13 +550,8 @@ pub fn parse_ident(
         }) {
             token_iter.next().unwrap_single()
         } else {
-            diagnostics::emit_error(
-                stores,
-                colons.location,
-                "unexpected end of ident",
-                Some(Label::new(colons.location).with_color(Color::Red)),
-                None,
-            );
+            Diagnostic::error(colons.location, "unexpected end of ident")
+                .attached(stores.diags, item_id);
             had_error.set();
             return Err(());
         };
@@ -576,8 +564,8 @@ pub fn parse_ident(
 
     let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
         let Ok(delim) = token_iter
-            .expect_group(stores, BracketKind::Paren, token)
-            .with_kinds(stores, Matcher("type", valid_type_token))
+            .expect_group(stores, item_id, BracketKind::Paren, token)
+            .with_kinds(stores, item_id, Matcher("type", valid_type_token))
         else {
             had_error.set();
             return Err(());
@@ -586,7 +574,7 @@ pub fn parse_ident(
         token.location = token.location.merge(delim.span());
 
         let Ok(unresolved_types) =
-            parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)
+            parse_multiple_unresolved_types(stores, item_id, delim.open.location, &delim.tokens)
         else {
             had_error.set();
             return Err(());
@@ -611,7 +599,11 @@ pub fn parse_ident(
     ))
 }
 
-pub fn parse_integer_lexeme<T>(stores: &Stores, int_token: Spanned<Token>) -> Result<T, ()>
+pub fn parse_integer_lexeme<T>(
+    stores: &mut Stores,
+    item_id: ItemId,
+    int_token: Spanned<Token>,
+) -> Result<T, ()>
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
@@ -630,26 +622,24 @@ where
 
     let res = T::from_str_radix(&string, literal_base as _);
     let Ok(int) = res else {
-        diagnostics::emit_error(
-            stores,
-            int_token.location,
-            "integer out bounds",
-            [Label::new(int_token.location)
-                .with_color(Color::Red)
-                .with_message(format!(
-                    "integer must be in range {}..={}",
-                    T::min_value(),
-                    T::max_value()
-                ))],
-            None,
-        );
+        Diagnostic::error(int_token.location, "integer out of bounds")
+            .primary_label_message(format!(
+                "integer must be in range {}..={}",
+                T::min_value(),
+                T::max_value()
+            ))
+            .attached(stores.diags, item_id);
         return Err(());
     };
 
     Ok(int)
 }
 
-pub fn parse_float_lexeme<T>(stores: &Stores, float_token: Spanned<Token>) -> Result<T, ()>
+pub fn parse_float_lexeme<T>(
+    stores: &mut Stores,
+    item_id: ItemId,
+    float_token: Spanned<Token>,
+) -> Result<T, ()>
 where
     T: Float + FromStr + Display,
 {
@@ -661,19 +651,13 @@ where
 
     let res = T::from_str(&string);
     let Ok(int) = res else {
-        diagnostics::emit_error(
-            stores,
-            float_token.location,
-            "float out bounds",
-            [Label::new(float_token.location)
-                .with_color(Color::Red)
-                .with_message(format!(
-                    "float must be in range {}..={}",
-                    T::min_value(),
-                    T::max_value()
-                ))],
-            None,
-        );
+        Diagnostic::error(float_token.location, "float out of bounds")
+            .primary_label_message(format!(
+                "float must be in range {}..={}",
+                T::min_value(),
+                T::max_value()
+            ))
+            .attached(stores.diags, item_id);
         return Err(());
     };
 
@@ -681,17 +665,18 @@ where
 }
 
 pub fn parse_integer_param(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> Result<(Spanned<u8>, SourceLocation), ()> {
     let delim = token_iter
-        .expect_group(stores, BracketKind::Paren, token)
-        .with_kinds(stores, Matcher("integer", integer_tokens))
-        .with_length(stores, 1)?;
+        .expect_group(stores, item_id, BracketKind::Paren, token)
+        .with_kinds(stores, item_id, Matcher("integer", integer_tokens))
+        .with_length(stores, item_id, 1)?;
 
     let count_token = delim.tokens[0].unwrap_single();
-    let count: u8 = parse_integer_lexeme(stores, count_token)?;
+    let count: u8 = parse_integer_lexeme(stores, item_id, count_token)?;
     Ok((count.with_span(count_token.location), delim.span()))
 }
 
@@ -699,12 +684,13 @@ pub fn parse_proc_entry_stack_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     prev_token: Spanned<Token>,
 ) -> Spanned<Vec<StackDefItemUnresolved>> {
     let fallback = TreeGroup::fallback(BracketKind::Square, prev_token);
     let stack = token_iter
-        .expect_group(stores, BracketKind::Square, prev_token)
-        .with_kinds(stores, Matcher("ident", stack_def_tokens))
+        .expect_group(stores, item_id, BracketKind::Square, prev_token)
+        .with_kinds(stores, item_id, Matcher("ident", stack_def_tokens))
         .recover(had_error, &fallback);
 
     let mut token_iter = TokenIter::new(stack.tokens.iter());
@@ -717,7 +703,7 @@ pub fn parse_proc_entry_stack_def(
                 token_iter.next(); // Consume the var token.
 
                 let name_token = token_iter
-                    .expect_single(stores, TokenKind::Ident, prev_token.location)
+                    .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
                     .recover(had_error, prev_token);
 
                 (Some(name_token.map(|t| t.lexeme)), name_token)
@@ -726,7 +712,7 @@ pub fn parse_proc_entry_stack_def(
             };
 
             let Ok((unresolved_type, last_token)) =
-                parse_unresolved_type(&mut token_iter, stores, prev.location, had_error)
+                parse_unresolved_type(&mut token_iter, stores, item_id, prev.location, had_error)
             else {
                 continue;
             };
@@ -742,7 +728,13 @@ pub fn parse_proc_entry_stack_def(
             prev_token = last_token;
 
             if TrailingCommaResult::Break
-                == validate_trailing_comma(&mut token_iter, stores, had_error, "paramaters")
+                == validate_trailing_comma(
+                    &mut token_iter,
+                    stores,
+                    had_error,
+                    item_id,
+                    "paramaters",
+                )
             {
                 break;
             }
@@ -756,17 +748,18 @@ pub fn parse_stack_def(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     prev_token: Spanned<Token>,
 ) -> Spanned<Vec<Spanned<UnresolvedType>>> {
     let fallback = TreeGroup::fallback(BracketKind::Square, prev_token);
     let stack = token_iter
-        .expect_group(stores, BracketKind::Square, prev_token)
-        .with_kinds(stores, Matcher("ident", valid_type_token))
+        .expect_group(stores, item_id, BracketKind::Square, prev_token)
+        .with_kinds(stores, item_id, Matcher("ident", valid_type_token))
         .recover(had_error, &fallback);
 
     let stack_location = stack.span();
     let unresolved_types =
-        parse_multiple_unresolved_types(stores, stack.open.location, &stack.tokens)
+        parse_multiple_unresolved_types(stores, item_id, stack.open.location, &stack.tokens)
             .recover(had_error, Vec::new());
 
     unresolved_types.with_span(stack_location)
@@ -776,13 +769,15 @@ pub fn try_parse_generic_pramas(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     prev_token: Spanned<Token>,
 ) -> Result<(Vec<Spanned<Spur>>, Spanned<Token>), ()> {
     if token_iter.next_is_group(BracketKind::Paren) {
         let group = token_iter
-            .expect_group(stores, BracketKind::Paren, prev_token)
+            .expect_group(stores, item_id, BracketKind::Paren, prev_token)
             .with_kinds(
                 stores,
+                item_id,
                 Matcher("generic params", |tk: Spanned<TokenKind>| {
                     if let TokenKind::Ident | TokenKind::Comma = tk.inner {
                         IsMatch::Yes
@@ -798,14 +793,20 @@ pub fn try_parse_generic_pramas(
 
         while token_iter.peek().is_some() {
             let next = token_iter
-                .expect_single(stores, TokenKind::Ident, prev_token.location)
+                .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
                 .recover(had_error, prev_token);
 
             params.push(next.map(|t| t.lexeme));
             prev_token = next;
 
             if TrailingCommaResult::Break
-                == validate_trailing_comma(&mut token_iter, stores, had_error, "paramaters")
+                == validate_trailing_comma(
+                    &mut token_iter,
+                    stores,
+                    had_error,
+                    item_id,
+                    "paramaters",
+                )
             {
                 break;
             }
@@ -827,6 +828,7 @@ pub fn validate_trailing_comma(
     token_iter: &mut TokenIter,
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     kind_str: &str,
 ) -> TrailingCommaResult {
     let requires_end = if token_iter.next_is_single(TokenKind::Comma) {
@@ -840,13 +842,13 @@ pub fn validate_trailing_comma(
 
     if requires_end && token_iter.peek().is_some() {
         let next = next.unwrap();
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             next.span(),
             format!("expected end of {kind_str}, found `{}`", next.kind_str()),
-            [Label::new(next.span()).with_color(Color::Red)],
-            "You may be missing a comma".to_owned(),
-        );
+        )
+        .with_note("You may be missing a comma")
+        .attached(stores.diags, item_id);
+
         had_error.set();
     }
 

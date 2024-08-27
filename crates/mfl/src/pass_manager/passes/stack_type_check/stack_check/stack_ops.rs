@@ -1,13 +1,11 @@
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use smallvec::SmallVec;
-use stores::source::Spanned;
+use stores::{items::ItemId, source::Spanned};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::Direction,
-    stores::{ops::OpId, values::ValueId},
+    stores::{diagnostics::Diagnostic, ops::OpId, values::ValueId},
     Stores,
 };
 
@@ -17,27 +15,23 @@ pub(crate) fn dup(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     count: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
 
     if count.inner == 0 {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "invalid duplicate count",
-            [Label::new(count.location)
-                .with_color(Color::Red)
-                .with_message("cannot duplicate 0 item")],
-            None,
-        );
+        Diagnostic::error(op_loc, "invalid duplicate count")
+            .primary_label_message("cannot duplicate 0 items")
+            .attached(stores.diags, item_id);
+
         had_error.set();
         return;
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, count);
 
     let input_range = (stack.len() - count)..stack.len();
     let output_range_start = stack.len();
@@ -58,26 +52,21 @@ pub(crate) fn drop(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     count: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     if count.inner == 0 {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "invalid drop count",
-            [Label::new(count.location)
-                .with_color(Color::Red)
-                .with_message("cannot drop 0 items")],
-            None,
-        );
+        Diagnostic::error(op_loc, "invalid drop count")
+            .primary_label_message("cannot drop 0 items")
+            .attached(stores.diags, item_id);
         had_error.set();
         return;
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, count);
 
     let split_point = stack.len() - count;
     let inputs = stack.split_off(split_point);
@@ -93,24 +82,19 @@ pub(crate) fn over(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     depth: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     if depth.inner == 0 {
-        diagnostics::emit_warning(
-            stores,
-            op_loc,
-            "unclear stack op",
-            [Label::new(op_loc)
-                .with_color(Color::Yellow)
-                .with_message("using `dup` would be intent clearer")],
-            None,
-        );
+        Diagnostic::warning(op_loc, "unclear stack op")
+            .primary_label_message("using `dup` would make intent clearer")
+            .attached(stores.diags, item_id);
     };
 
     let depth = depth.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, depth + 1);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, depth + 1);
 
     let src_id = stack[stack.len() - 1 - depth];
     let new_id = stores.values.new_value(op_loc, Some(src_id));
@@ -123,37 +107,29 @@ pub(crate) fn reverse(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     count: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     match count.inner {
         0 | 1 => {
-            // TODO: Change this message to say it's a noop.
-            diagnostics::emit_warning(
-                stores,
+            Diagnostic::warning(
                 op_loc,
-                "invalid reverse count",
-                [Label::new(count.location)
-                    .with_color(Color::Yellow)
-                    .with_message(format!("cannot reverse {} items", count.inner))],
-                None,
-            );
+                format!("reversing {} items is a no-op", count.inner),
+            )
+            .attached(stores.diags, item_id);
         }
-        2 => diagnostics::emit_warning(
-            stores,
-            op_loc,
-            "unclear stack op",
-            [Label::new(count.location)
-                .with_color(Color::Yellow)
-                .with_message("using `swat would make intent clearer")],
-            None,
-        ),
+        2 => {
+            Diagnostic::warning(op_loc, "unclear stack op")
+                .primary_label_message("using `swap` would make intent clearer")
+                .attached(stores.diags, item_id);
+        }
         _ => {}
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, count);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, count);
 
     let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - count..).collect();
     assert_eq!(inputs.len(), count);
@@ -174,6 +150,7 @@ pub(crate) fn rotate(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     item_count: Spanned<u8>,
     direction: Direction,
@@ -181,49 +158,28 @@ pub(crate) fn rotate(
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
     if item_count.inner == 0 {
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "invalid item count",
-            [Label::new(item_count.location)
-                .with_color(Color::Red)
-                .with_message("cannot rotate 0 items")],
-            None,
-        );
-        had_error.set();
+        Diagnostic::warning(op_loc, "rotating 0 items is a no-op").attached(stores.diags, item_id);
         return;
     }
     if shift_count.inner >= item_count.inner {
         shift_count.inner %= item_count.inner;
-        diagnostics::emit_warning(
-            stores,
-            op_loc,
-            "truncated shift count",
-            [Label::new(shift_count.location)
-                .with_color(Color::Yellow)
-                .with_message(format!(
-                    "shift count has been truncated to {}",
-                    shift_count.inner
-                ))],
-            None,
-        );
+        Diagnostic::warning(op_loc, "truncated shift count")
+            .primary_label_message(format!(
+                "shift count has been truncated to {}",
+                shift_count.inner
+            ))
+            .attached(stores.diags, item_id);
     }
 
     if shift_count.inner == 0 {
-        diagnostics::emit_warning(
-            stores,
-            op_loc,
-            "rotate is a no-op",
-            [Label::new(shift_count.location)
-                .with_color(Color::Yellow)
-                .with_message("no items will be rotate")],
-            None,
-        );
+        Diagnostic::warning(op_loc, "rotate is a no-op")
+            .primary_label_message("no items wills be rotate")
+            .attached(stores.diags, item_id);
     }
 
     let item_count = item_count.inner.to_usize();
     let shift_count = shift_count.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, item_count);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, item_count);
 
     let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - item_count..).collect();
     assert_eq!(inputs.len(), item_count);
@@ -247,26 +203,19 @@ pub(crate) fn swap(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
     stack: &mut Vec<ValueId>,
+    item_id: ItemId,
     op_id: OpId,
     count: Spanned<u8>,
 ) {
     let op_loc = stores.ops.get_token(op_id).location;
 
     if count.inner == 0 {
-        diagnostics::emit_warning(
-            stores,
-            op_loc,
-            "invalid swap count",
-            [Label::new(count.location)
-                .with_color(Color::Yellow)
-                .with_message("cannot swap 0 items")],
-            None,
-        );
+        Diagnostic::warning(op_loc, "swapping 0 items is a no-op").attached(stores.diags, item_id);
         return;
     }
 
     let count = count.inner.to_usize();
-    ensure_stack_depth(stores, had_error, stack, op_id, count * 2);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, count * 2);
 
     let mut inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - count * 2..).collect();
     assert_eq!(inputs.len(), count * 2);

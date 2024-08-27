@@ -1,15 +1,16 @@
 use std::fmt::Write;
 
-use ariadne::{Color, Label};
 use intcast::IntCast;
+use lasso::Spur;
 use prettytable::{row, Table};
-use stores::source::SourceLocation;
+use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
-    diagnostics::{self, TABLE_FORMAT},
+    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},
         values::ValueId,
@@ -116,19 +117,23 @@ pub(super) fn ensure_structs_declared_in_type(
 }
 
 pub(super) fn failed_compare_stack_types(
-    stores: &Stores,
+    stores: &mut Stores,
+    item_id: ItemId,
     actual_stack: &[ValueId],
     expected_stack: &[TypeId],
     sample_location: SourceLocation,
     error_location: SourceLocation,
     msg: &str,
 ) {
+    let mut diag = Diagnostic::error(error_location, msg)
+        .primary_label_message("stack sampled here")
+        .with_help_label(sample_location, "expected due to this signature");
+
     let mut note = Table::new();
     note.set_format(*TABLE_FORMAT);
     note.set_titles(row!("Depth", "Expected", "Actual"));
 
     let pairs = expected_stack.iter().zip(actual_stack).enumerate().rev();
-    let mut bad_values = Vec::new();
     for (idx, (expected, actual_id)) in pairs {
         let value_type = stores
             .values
@@ -138,7 +143,7 @@ pub(super) fn failed_compare_stack_types(
                 stores.strings.resolve(type_info.friendly_name)
             });
 
-        bad_values.push((*actual_id, idx.to_u64(), value_type));
+        diag.add_label_chain(*actual_id, idx.to_u64(), value_type);
 
         let expected_type_info = stores.types.get_type_info(*expected);
         let expected_name = stores.strings.resolve(expected_type_info.friendly_name);
@@ -149,27 +154,19 @@ pub(super) fn failed_compare_stack_types(
         ));
     }
 
-    let mut labels =
-        diagnostics::build_creator_label_chain(stores, bad_values, Color::Yellow, Color::Cyan);
-    labels.extend([
-        Label::new(error_location)
-            .with_color(Color::Red)
-            .with_message("stack sampled here"),
-        Label::new(sample_location)
-            .with_color(Color::Cyan)
-            .with_message("expected due to this signature"),
-    ]);
-
-    diagnostics::emit_error(stores, error_location, msg, labels, note.to_string());
+    diag.with_note(note.to_string())
+        .attached(stores.diags, item_id);
 }
 
 pub(super) fn generate_type_mismatch_diag(
-    stores: &Stores,
-    operator_str: &str,
+    stores: &mut Stores,
+    item_id: ItemId,
+    operator_spur: Spur,
     op_id: OpId,
     types: &[ValueId],
 ) {
-    let mut message = format!("cannot use `{operator_str}` on ");
+    let lexeme = stores.strings.resolve(operator_spur);
+    let mut message = format!("cannot use `{lexeme}` on ");
     match types {
         [] => unreachable!(),
         [a] => {
@@ -208,7 +205,9 @@ pub(super) fn generate_type_mismatch_diag(
         }
     }
 
-    let mut bad_values = Vec::new();
+    let op_loc = stores.ops.get_token(op_id).location;
+    let mut diag = Diagnostic::error(op_loc, message);
+
     for (value_id, order) in types.iter().rev().zip(1..) {
         let value_type = stores
             .values
@@ -217,18 +216,15 @@ pub(super) fn generate_type_mismatch_diag(
                 let type_info = stores.types.get_type_info(v);
                 stores.strings.resolve(type_info.friendly_name)
             });
-        bad_values.push((*value_id, order, value_type));
+        diag.add_label_chain(*value_id, order, value_type);
     }
 
-    let mut labels =
-        diagnostics::build_creator_label_chain(stores, bad_values, Color::Yellow, Color::Cyan);
-    let op_loc = stores.ops.get_token(op_id).location;
-    labels.push(Label::new(op_loc).with_color(Color::Red));
-    diagnostics::emit_error(stores, op_loc, message, labels, None);
+    diag.attached(stores.diags, item_id);
 }
 
 pub(super) fn generate_stack_length_mismatch_diag(
-    stores: &Stores,
+    stores: &mut Stores,
+    item_id: ItemId,
     sample_location: SourceLocation,
     error_location: SourceLocation,
     actual: usize,
@@ -236,24 +232,23 @@ pub(super) fn generate_stack_length_mismatch_diag(
     note: impl Into<Option<String>>,
 ) {
     let message = format!("expected {expected} items, found {actual}");
+    let mut diag = Diagnostic::error(sample_location, message);
+    if let Some(note) = note.into() {
+        diag.set_note(note);
+    }
 
-    let labels = if sample_location != error_location {
+    if sample_location != error_location {
         let expected_suffix = if expected == 1 { "" } else { "s" };
         let actual_suffix = if actual == 1 { "" } else { "s" };
-        vec![
-            Label::new(sample_location)
-                .with_color(Color::Cyan)
-                .with_message(format!("{expected} value{expected_suffix} here...",))
-                .with_order(1),
-            Label::new(error_location)
-                .with_color(Color::Red)
-                .with_message(format!("... but found {actual} value{actual_suffix} here")),
-        ]
+        diag = diag
+            .primary_label_message(format!("... but found {actual} value{actual_suffix} here"))
+            .with_help_label(
+                sample_location,
+                format!("{expected} value{expected_suffix} here...",),
+            );
     } else {
-        vec![Label::new(error_location)
-            .with_color(Color::Red)
-            .with_message("here")]
+        diag = diag.primary_label_message("here");
     };
 
-    diagnostics::emit_error(stores, sample_location, message, labels, note);
+    diag.attached(stores.diags, item_id);
 }

@@ -1,18 +1,24 @@
-use ariadne::{Color, Label};
 use hashbrown::HashMap;
 use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{Cond, While},
     pass_manager::PassManager,
     simulate::SimulatorValue,
-    stores::{item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, values::ConstVal},
+    stores::{
+        diagnostics::Diagnostic, item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved,
+        values::ConstVal,
+    },
     Stores,
 };
 
-pub(crate) fn epilogue_return(stores: &mut Stores, had_error: &mut ErrorSignal, op_id: OpId) {
+pub(crate) fn epilogue_return(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
     let op_data = stores.ops.get_op_io(op_id);
 
     for &input_value_id in &op_data.inputs {
@@ -35,27 +41,11 @@ pub(crate) fn epilogue_return(stores: &mut Stores, had_error: &mut ErrorSignal, 
             continue;
         }
 
-        let mut labels = diagnostics::build_creator_label_chain(
-            stores,
-            [(input_value_id, 0, "pointer")],
-            Color::Yellow,
-            Color::Cyan,
-        );
-
-        labels.push(
-            Label::new(variable_header.name.location)
-                .with_color(Color::Cyan)
-                .with_message("points to this variable"),
-        );
-
         let op_loc = stores.ops.get_token(op_id).location;
-        diagnostics::emit_error(
-            stores,
-            op_loc,
-            "returning pointer to local variable",
-            labels,
-            None,
-        );
+        Diagnostic::error(op_loc, "returning pointer to local variable")
+            .with_help_label(variable_header.name.location, "points to this variable")
+            .with_label_chain(input_value_id, 0, "pointer")
+            .attached(stores.diags, item_id);
 
         had_error.set();
     }

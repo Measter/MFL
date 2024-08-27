@@ -1,4 +1,3 @@
-use ariadne::{Color, Label};
 use intcast::IntCast;
 use lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind};
 use smallvec::SmallVec;
@@ -8,7 +7,6 @@ use stores::{
 };
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Compare, Cond, CondArm, Control, Direction, Memory, OpCode, Stack,
@@ -17,6 +15,7 @@ use crate::{
     lexer::TokenTree,
     parser::utils::parse_float_lexeme,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{Float, FloatWidth, IntSignedness, IntWidth, Integer},
     },
@@ -58,14 +57,16 @@ pub fn parse_extract_insert_array(token: Spanned<Token>) -> (OpCode<UnresolvedOp
 pub fn parse_extract_insert_struct(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     mut token: Spanned<Token>,
 ) -> Result<SmallVec<[OpId; 1]>, ()> {
     let mut ops = SmallVec::new();
 
     let delim = token_iter
-        .expect_group(stores, BracketKind::Paren, token)
+        .expect_group(stores, item_id, BracketKind::Paren, token)
         .with_kinds(
             stores,
+            item_id,
             Matcher("ident", |t: Spanned<TokenKind>| {
                 if matches!(t.inner, TokenKind::Ident | TokenKind::Dot) {
                     IsMatch::Yes
@@ -83,7 +84,8 @@ pub fn parse_extract_insert_struct(
     let mut local_had_error = ErrorSignal::new();
     let mut prev_token = delim.open;
     loop {
-        let Ok(next) = delim_iter.expect_single(stores, TokenKind::Ident, prev_token.location)
+        let Ok(next) =
+            delim_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
         else {
             local_had_error.set();
             break;
@@ -178,6 +180,7 @@ pub fn parse_extract_insert_struct(
 pub fn parse_simple_op(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let code = match token.inner.kind {
@@ -187,19 +190,21 @@ pub fn parse_simple_op(
         | TokenKind::Reverse
         | TokenKind::Swap
         | TokenKind::SysCall => {
-            return parse_drop_dup_over_reverse_swap_syscall(stores, token_iter, token);
+            return parse_drop_dup_over_reverse_swap_syscall(stores, token_iter, item_id, token);
         }
 
-        TokenKind::Pack => return parse_pack(stores, token_iter, token),
+        TokenKind::Pack => return parse_pack(stores, token_iter, item_id, token),
         TokenKind::Unpack => OpCode::Basic(Basic::Memory(Memory::Unpack)),
-        TokenKind::Rot => return parse_rot(stores, token_iter, token),
+        TokenKind::Rot => return parse_rot(stores, token_iter, item_id, token),
 
-        TokenKind::Cast | TokenKind::SizeOf => return parse_cast_sizeof(stores, token_iter, token),
+        TokenKind::Cast | TokenKind::SizeOf => {
+            return parse_cast_sizeof(stores, token_iter, item_id, token)
+        }
 
         TokenKind::Hash => OpCode::Basic(Basic::Memory(Memory::Index)),
         TokenKind::Load => OpCode::Basic(Basic::Memory(Memory::Load)),
         TokenKind::Store => OpCode::Basic(Basic::Memory(Memory::Store)),
-        TokenKind::AssumeInit => return parse_assumeinit(stores, token_iter, token),
+        TokenKind::AssumeInit => return parse_assumeinit(stores, token_iter, item_id, token),
 
         TokenKind::IsNull => OpCode::Basic(Basic::Compare(Compare::IsNull)),
         TokenKind::Equal => OpCode::Basic(Basic::Compare(Compare::Equal)),
@@ -216,16 +221,18 @@ pub fn parse_simple_op(
         }),
 
         TokenKind::Ident | TokenKind::ColonColon => {
-            return parse_ident_op(stores, token_iter, token)
+            return parse_ident_op(stores, token_iter, item_id, token)
         }
-        TokenKind::Integer { .. } => return parse_integer_op(stores, token_iter, token, false),
-        TokenKind::Float => return parse_float_op(stores, token_iter, token, false),
+        TokenKind::Integer { .. } => {
+            return parse_integer_op(stores, token_iter, item_id, token, false)
+        }
+        TokenKind::Float => return parse_float_op(stores, token_iter, item_id, token, false),
         TokenKind::String(StringToken { id }) | TokenKind::Here(id) => {
             OpCode::Basic(Basic::PushStr { id })
         }
-        TokenKind::EmitStack => return parse_emit_stack(stores, token_iter, token),
+        TokenKind::EmitStack => return parse_emit_stack(stores, token_iter, item_id, token),
 
-        TokenKind::Minus => return parse_minus(stores, token_iter, token),
+        TokenKind::Minus => return parse_minus(stores, token_iter, item_id, token),
         TokenKind::Plus => OpCode::Basic(Basic::Arithmetic(Arithmetic::Add)),
         TokenKind::Star => OpCode::Basic(Basic::Arithmetic(Arithmetic::Multiply)),
         TokenKind::Div => OpCode::Basic(Basic::Arithmetic(Arithmetic::Div)),
@@ -255,12 +262,13 @@ pub fn parse_simple_op(
 fn parse_assumeinit(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     keyword: Spanned<Token>,
 ) -> Result<(OpCode<UnresolvedOp>, SourceLocation), ()> {
     let group = token_iter
-        .expect_group(stores, BracketKind::Paren, keyword)
-        .with_kinds(stores, TokenKind::Ident)
-        .with_length(stores, 1)?;
+        .expect_group(stores, item_id, BracketKind::Paren, keyword)
+        .with_kinds(stores, item_id, TokenKind::Ident)
+        .with_length(stores, item_id, 1)?;
 
     let ident_token = group.tokens[0].unwrap_single();
     let ident = UnresolvedIdent {
@@ -278,11 +286,13 @@ fn parse_assumeinit(
 fn parse_ident_op(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let mut local_had_error = ErrorSignal::new();
 
-    let Ok((ident, last_token)) = parse_ident(stores, &mut local_had_error, token_iter, token)
+    let Ok((ident, last_token)) =
+        parse_ident(stores, &mut local_had_error, item_id, token_iter, token)
     else {
         local_had_error.forget();
         return Err(());
@@ -299,8 +309,9 @@ fn parse_ident_op(
 }
 
 fn parse_minus(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     if token_iter.next_is_single_and(Matcher("integer literal", integer_tokens), |t| {
@@ -308,7 +319,7 @@ fn parse_minus(
     }) {
         let mut int_token = token_iter.next().unwrap_single();
         int_token.location = int_token.location.merge(token.location);
-        parse_integer_op(stores, token_iter, int_token, true)
+        parse_integer_op(stores, token_iter, item_id, int_token, true)
     } else {
         Ok((
             OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)),
@@ -318,15 +329,17 @@ fn parse_minus(
 }
 
 fn parse_emit_stack(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let (emit_labels, loc) = if token_iter.next_is_group(BracketKind::Paren) {
         let delim = token_iter
-            .expect_group(stores, BracketKind::Paren, token)
+            .expect_group(stores, item_id, BracketKind::Paren, token)
             .with_kinds(
                 stores,
+                item_id,
                 Matcher("bool literal", |t: Spanned<TokenKind>| {
                     if let TokenKind::Boolean(_) = t.inner {
                         IsMatch::Yes
@@ -335,7 +348,7 @@ fn parse_emit_stack(
                     }
                 }),
             )
-            .with_length(stores, 1)?;
+            .with_length(stores, item_id, 1)?;
 
         let emit_token = delim.tokens[0].unwrap_single();
         let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else {
@@ -358,24 +371,23 @@ fn parse_emit_stack(
 fn parse_cast_sizeof(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let delim = token_iter
-        .expect_group(stores, BracketKind::Paren, token)
-        .with_kinds(stores, Matcher("ident", valid_type_token))?;
+        .expect_group(stores, item_id, BracketKind::Paren, token)
+        .with_kinds(stores, item_id, Matcher("ident", valid_type_token))?;
 
     let span = delim.span();
     let mut unresolved_types =
-        parse_multiple_unresolved_types(stores, delim.open.location, &delim.tokens)?;
+        parse_multiple_unresolved_types(stores, item_id, delim.open.location, &delim.tokens)?;
 
     if unresolved_types.len() != 1 {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             span,
             format!("expected 1 type, found {}", unresolved_types.len()),
-            [Label::new(span).with_color(Color::Red)],
-            None,
-        );
+        )
+        .attached(stores.diags, item_id);
         return Err(());
     }
 
@@ -394,10 +406,15 @@ fn parse_cast_sizeof(
     Ok((OpCode::Complex(code), delim.last_token().location))
 }
 
-fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>) -> ParseOpResult {
+fn parse_rot(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    token: Spanned<Token>,
+) -> ParseOpResult {
     let delim = token_iter
-        .expect_group(stores, BracketKind::Paren, token)
-        .with_length(stores, 3)?;
+        .expect_group(stores, item_id, BracketKind::Paren, token)
+        .with_length(stores, item_id, 3)?;
 
     let mut had_error = ErrorSignal::new();
     let [item_count_token, direction_token, shift_count_token] = &*delim.tokens else {
@@ -406,37 +423,33 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
 
     let int_matcher = Matcher("integer literal", integer_tokens);
     let item_count = if int_matcher.is_match(item_count_token).no() {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             item_count_token.span(),
             format!(
                 "expected `integer literal`, found `{}`",
                 item_count_token.kind_str(),
             ),
-            Some(Label::new(item_count_token.span()).with_color(Color::Red)),
-            None,
-        );
+        )
+        .attached(stores.diags, item_id);
         had_error.set();
         1
     } else {
-        parse_integer_lexeme(stores, item_count_token.unwrap_single())?
+        parse_integer_lexeme(stores, item_id, item_count_token.unwrap_single())?
     };
 
     let shift_count = if int_matcher.is_match(shift_count_token).no() {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             shift_count_token.span(),
             format!(
                 "expected `integer literal`, found `{}`",
                 shift_count_token.kind_str()
             ),
-            Some(Label::new(shift_count_token.span()).with_color(Color::Red)),
-            None,
-        );
+        )
+        .attached(stores.diags, item_id);
         had_error.set();
         1
     } else {
-        parse_integer_lexeme(stores, shift_count_token.unwrap_single())?
+        parse_integer_lexeme(stores, item_id, shift_count_token.unwrap_single())?
     };
 
     let direction = if TokenKind::Less.is_match(direction_token).yes()
@@ -448,16 +461,14 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
             _ => unreachable!(),
         }
     } else {
-        diagnostics::emit_error(
-            stores,
+        Diagnostic::error(
             direction_token.span(),
             format!(
                 "expected `<` or `>`, found `{}`",
                 direction_token.kind_str()
             ),
-            Some(Label::new(direction_token.span()).with_color(Color::Red)),
-            None,
-        );
+        )
+        .attached(stores.diags, item_id);
         had_error.set();
         Direction::Left
     };
@@ -477,14 +488,15 @@ fn parse_rot(stores: &Stores, token_iter: &mut TokenIter, token: Spanned<Token>)
 }
 
 fn parse_integer_op(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
     is_known_negative: bool,
 ) -> ParseOpResult {
     let mut had_error = ErrorSignal::new();
     let mut overall_location = token.location;
-    let literal_value: u64 = match parse_integer_lexeme(stores, token) {
+    let literal_value: u64 = match parse_integer_lexeme(stores, item_id, token) {
         Ok(lit) => lit,
         Err(_) => {
             had_error.set();
@@ -493,21 +505,16 @@ fn parse_integer_op(
     };
 
     if is_known_negative && literal_value.to_i64().is_none() {
-        diagnostics::emit_error(
-            stores,
-            token.location,
-            "literal out of range of signed integer",
-            [Label::new(token.location).with_color(Color::Red)],
-            None,
-        );
+        Diagnostic::error(token.location, "literal out of range of signed integer")
+            .attached(stores.diags, item_id);
         return Err(());
     }
 
     let (width, value) = if token_iter.next_is_group(BracketKind::Paren) {
         let delim = token_iter
-            .expect_group(stores, BracketKind::Paren, token)
-            .with_kinds(stores, TokenKind::Ident)
-            .with_length(stores, 1)?;
+            .expect_group(stores, item_id, BracketKind::Paren, token)
+            .with_kinds(stores, item_id, TokenKind::Ident)
+            .with_length(stores, item_id, 1)?;
 
         let ident_token = delim.tokens[0].unwrap_single();
         overall_location = overall_location.merge(delim.last_token().location);
@@ -523,28 +530,19 @@ fn parse_integer_op(
             "s64" => (IntWidth::I64, IntSignedness::Signed),
 
             _ => {
-                diagnostics::emit_error(
-                    stores,
-                    ident_token.location,
-                    "invalid integer type",
-                    [Label::new(ident_token.location)
-                        .with_color(Color::Red)
-                        .with_message("unknown type")],
-                    None,
-                );
+                Diagnostic::error(ident_token.location, "invalid integer type")
+                    .attached(stores.diags, item_id);
                 return Err(());
             }
         };
 
         // The user specified an unsigned type, but gave a negative literal.
         if is_signed_kind == IntSignedness::Unsigned && is_known_negative {
-            diagnostics::emit_error(
-                stores,
+            Diagnostic::error(
                 ident_token.location,
                 "signed integer literal with unsigned type kind",
-                [Label::new(token.location).with_color(Color::Red)],
-                None,
-            );
+            )
+            .attached(stores.diags, item_id);
             return Err(());
         }
 
@@ -555,38 +553,26 @@ fn parse_integer_op(
                 let value = if is_known_negative { -value } else { value };
 
                 if !width.bounds_signed().contains(&value) {
-                    diagnostics::emit_error(
-                        stores,
-                        token.location,
-                        "literal out of bounds",
-                        [Label::new(token.location)
-                            .with_color(Color::Red)
-                            .with_message(format!(
-                                "valid range for {} is {:?}",
-                                width.name(is_signed_kind),
-                                width.bounds_signed(),
-                            ))],
-                        None,
-                    );
+                    Diagnostic::error(token.location, "literal out of bounds")
+                        .primary_label_message(format!(
+                            "valid range for {} is {:?}",
+                            width.name(is_signed_kind),
+                            width.bounds_signed(),
+                        ))
+                        .attached(stores.diags, item_id);
                     return Err(());
                 }
                 Integer::Signed(value)
             }
             IntSignedness::Unsigned => {
                 if !width.bounds_unsigned().contains(&literal_value) {
-                    diagnostics::emit_error(
-                        stores,
-                        token.location,
-                        "literal out of bounds",
-                        [Label::new(token.location)
-                            .with_color(Color::Red)
-                            .with_message(format!(
-                                "valid range for {} is {:?}",
-                                width.name(is_signed_kind),
-                                width.bounds_unsigned(),
-                            ))],
-                        None,
-                    );
+                    Diagnostic::error(token.location, "Literal out of bounds")
+                        .primary_label_message(format!(
+                            "valid range for {} is {:?}",
+                            width.name(is_signed_kind),
+                            width.bounds_unsigned(),
+                        ))
+                        .attached(stores.diags, item_id);
                     return Err(());
                 }
                 Integer::Unsigned(literal_value)
@@ -633,14 +619,15 @@ fn parse_integer_op(
 }
 
 fn parse_float_op(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
     is_known_negative: bool,
 ) -> ParseOpResult {
     let mut had_error = ErrorSignal::new();
     let mut overall_location = token.location;
-    let literal_value: f64 = match parse_float_lexeme(stores, token) {
+    let literal_value: f64 = match parse_float_lexeme(stores, item_id, token) {
         Ok(lit) => lit,
         Err(_) => {
             had_error.set();
@@ -656,9 +643,9 @@ fn parse_float_op(
 
     let width = if token_iter.next_is_group(BracketKind::Paren) {
         let delim = token_iter
-            .expect_group(stores, BracketKind::Paren, token)
-            .with_kinds(stores, TokenKind::Ident)
-            .with_length(stores, 1)?;
+            .expect_group(stores, item_id, BracketKind::Paren, token)
+            .with_kinds(stores, item_id, TokenKind::Ident)
+            .with_length(stores, item_id, 1)?;
 
         let ident_token = delim.tokens[0].unwrap_single();
         overall_location = overall_location.merge(delim.last_token().location);
@@ -668,15 +655,8 @@ fn parse_float_op(
             "f64" => FloatWidth::F64,
 
             _ => {
-                diagnostics::emit_error(
-                    stores,
-                    ident_token.location,
-                    "invalid float type",
-                    [Label::new(ident_token.location)
-                        .with_color(Color::Red)
-                        .with_message("unknown type")],
-                    None,
-                );
+                Diagnostic::error(ident_token.location, "invalid float type")
+                    .attached(stores.diags, item_id);
                 return Err(());
             }
         }
@@ -687,19 +667,13 @@ fn parse_float_op(
     };
 
     if !width.bounds().contains(&value) {
-        diagnostics::emit_error(
-            stores,
-            token.location,
-            "literal out of bounds",
-            [Label::new(token.location)
-                .with_color(Color::Red)
-                .with_message(format!(
-                    "valid range for {} is {:?}",
-                    width.name(),
-                    width.bounds(),
-                ))],
-            None,
-        );
+        Diagnostic::error(token.location, "literal out of bounds")
+            .primary_label_message(format!(
+                "valid range for {} is {:?}",
+                width.name(),
+                width.bounds(),
+            ))
+            .attached(stores.diags, item_id);
         return Err(());
     }
 
@@ -718,12 +692,13 @@ fn parse_float_op(
 }
 
 pub fn parse_drop_dup_over_reverse_swap_syscall(
-    stores: &Stores,
+    stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let (count, op_end) = if token_iter.next_is_group(BracketKind::Paren) {
-        parse_integer_param(stores, token_iter, token)?
+        parse_integer_param(stores, token_iter, item_id, token)?
     } else {
         let default_amount = if token.inner.kind == TokenKind::Reverse {
             2
@@ -750,15 +725,16 @@ pub fn parse_drop_dup_over_reverse_swap_syscall(
 pub fn parse_pack(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
     let delim = token_iter
-        .expect_group(stores, BracketKind::Paren, token)
-        .with_kinds(stores, Matcher("integer literal", integer_tokens))
-        .with_length(stores, 1)?;
+        .expect_group(stores, item_id, BracketKind::Paren, token)
+        .with_kinds(stores, item_id, Matcher("integer literal", integer_tokens))
+        .with_length(stores, item_id, 1)?;
 
     let count_token = delim.tokens[0].unwrap_single();
-    let count = parse_integer_lexeme(stores, count_token)?;
+    let count = parse_integer_lexeme(stores, item_id, count_token)?;
 
     Ok((
         OpCode::Basic(Basic::Memory(Memory::PackArray { count })),
@@ -769,10 +745,11 @@ pub fn parse_pack(
 pub fn parse_cond(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
-    let arm_tokens = token_iter.expect_group(stores, BracketKind::Brace, keyword)?;
+    let arm_tokens = token_iter.expect_group(stores, item_id, BracketKind::Brace, keyword)?;
 
     let mut arm_token_iter = TokenIter::new(arm_tokens.tokens.iter());
     let mut close_token = arm_tokens.first_token();
@@ -784,7 +761,8 @@ pub fn parse_cond(
     while arm_token_iter.peek().is_some() {
         if arm_token_iter.next_is(TokenKind::Else) {
             let else_token = arm_token_iter.next().unwrap_single();
-            let else_block = arm_token_iter.expect_group(stores, BracketKind::Brace, else_token)?;
+            let else_block =
+                arm_token_iter.expect_group(stores, item_id, BracketKind::Brace, else_token)?;
             close_token = else_block.last_token();
             else_block_ops = parse_item_body_contents(stores, &else_block.tokens, parent_id)?;
             else_close = else_block.last_token().location;
@@ -796,6 +774,7 @@ pub fn parse_cond(
         let condition_tokens = get_terminated_tokens(
             stores,
             &mut arm_token_iter,
+            item_id,
             close_token,
             None,
             Matcher("any", |_: &TokenTree| IsMatch::Yes),
@@ -805,8 +784,12 @@ pub fn parse_cond(
         let condition = parse_item_body_contents(stores, &condition_tokens.list, parent_id)?;
         let condition = stores.blocks.new_block(condition);
 
-        let then_block_tokens =
-            arm_token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
+        let then_block_tokens = arm_token_iter.expect_group(
+            stores,
+            item_id,
+            BracketKind::Brace,
+            condition_tokens.close,
+        )?;
         close_token = then_block_tokens.last_token();
 
         let then_block = parse_item_body_contents(stores, &then_block_tokens.tokens, parent_id)?;
@@ -829,15 +812,9 @@ pub fn parse_cond(
 
         let location = first_loc.location.merge(last_loc.location);
 
-        diagnostics::emit_error(
-            stores,
-            location,
-            "`else` must be the last arm in a cond",
-            [Label::new(location)
-                .with_color(Color::Red)
-                .with_message("here")],
-            None,
-        );
+        Diagnostic::error(location, "`else` must be the last arm in a cond")
+            .primary_label_message("here")
+            .attached(stores.diags, item_id);
         return Err(());
     }
 
@@ -860,12 +837,14 @@ pub fn parse_cond(
 pub fn parse_while(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     keyword: Spanned<Token>,
     parent_id: ItemId,
 ) -> ParseOpResult {
     let condition_tokens = get_terminated_tokens(
         stores,
         token_iter,
+        item_id,
         keyword,
         None,
         Matcher("any", |_: &TokenTree| IsMatch::Yes),
@@ -877,7 +856,7 @@ pub fn parse_while(
     let condition = stores.blocks.new_block(condition);
 
     let body_tokens =
-        token_iter.expect_group(stores, BracketKind::Brace, condition_tokens.close)?;
+        token_iter.expect_group(stores, item_id, BracketKind::Brace, condition_tokens.close)?;
 
     let body_block = parse_item_body_contents(stores, &body_tokens.tokens, parent_id)?;
     let body_block = stores.blocks.new_block(body_block);
@@ -901,9 +880,10 @@ pub fn parse_while(
 pub fn parse_field_access(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
+    item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let ident = token_iter.expect_single(stores, TokenKind::Ident, token.location)?;
+    let ident = token_iter.expect_single(stores, item_id, TokenKind::Ident, token.location)?;
 
     Ok((
         OpCode::Basic(Basic::Memory(Memory::FieldAccess {

@@ -39,18 +39,22 @@ fn analyze_block(
                     | Arithmetic::Rem
                     | Arithmetic::ShiftLeft
                     | Arithmetic::ShiftRight => {
-                        arithmetic::multiply_div_rem_shift(stores, had_error, op_id, ao)
+                        arithmetic::multiply_div_rem_shift(stores, had_error, item_id, op_id, ao)
                     }
-                    Arithmetic::Subtract => arithmetic::subtract(stores, had_error, op_id, ao),
+                    Arithmetic::Subtract => {
+                        arithmetic::subtract(stores, had_error, item_id, op_id, ao)
+                    }
                 },
                 Basic::Compare(co) => match co {
                     Compare::Equal | Compare::NotEq => {
-                        comparative::equal(stores, had_error, op_id, co)
+                        comparative::equal(stores, had_error, item_id, op_id, co)
                     }
                     Compare::Less
                     | Compare::LessEqual
                     | Compare::Greater
-                    | Compare::GreaterEqual => comparative::compare(stores, had_error, op_id, co),
+                    | Compare::GreaterEqual => {
+                        comparative::compare(stores, had_error, item_id, op_id, co)
+                    }
                     Compare::IsNull => comparative::is_null(stores, op_id),
                 },
                 Basic::Stack(so) => match so {
@@ -65,7 +69,7 @@ fn analyze_block(
                 },
                 Basic::Control(co) => match co {
                     Control::Epilogue | Control::Return => {
-                        control::epilogue_return(stores, had_error, op_id);
+                        control::epilogue_return(stores, had_error, item_id, op_id);
 
                         // We're terminated the current block, so don't process any remaining ops.
                         break;
@@ -104,12 +108,12 @@ fn analyze_block(
                     }
                 },
                 Basic::Memory(mo) => match mo {
-                    Memory::Index => memory::index(stores, had_error, op_id),
+                    Memory::Index => memory::index(stores, had_error, item_id, op_id),
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
-                        memory::insert_extract_array(stores, had_error, op_id)
+                        memory::insert_extract_array(stores, had_error, item_id, op_id)
                     }
                     Memory::Load => {
-                        memory::load(stores, variable_state, had_error, op_id);
+                        memory::load(stores, variable_state, had_error, item_id, op_id);
                     }
                     Memory::Store => {
                         memory::store(stores, variable_state, op_id);

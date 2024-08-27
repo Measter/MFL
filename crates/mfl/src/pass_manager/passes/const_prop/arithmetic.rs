@@ -1,12 +1,12 @@
-use ariadne::{Color, Label};
 use num_traits::Zero;
+use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::Arithmetic,
     n_ops::SliceNOps,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{Float, Integer, TypeKind},
         values::ConstVal,
@@ -163,6 +163,7 @@ pub(crate) fn bitnot(stores: &mut Stores, op_id: OpId) {
 pub(crate) fn multiply_div_rem_shift(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
@@ -204,22 +205,13 @@ pub(crate) fn multiply_div_rem_shift(
             if is_out_of_range {
                 let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
 
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_ids[1], 0, "shift value from here")],
-                    Color::Cyan,
-                    Color::Green,
-                );
-                labels.push(Label::new(op_loc).with_color(Color::Yellow));
-                diagnostics::emit_warning(
-                    stores,
-                    op_loc,
-                    "shift value out of range",
-                    labels,
+                Diagnostic::warning(op_loc, "shift value out of range")
+                .with_note(
                     format!(
                         "shift value ({shift_value_string}) masked to the width of a {output_type_name}"
                     ),
-                );
+                )
+                .with_label_chain(input_value_ids[1], 0, "shift value from here").attached(stores.diags, item_id);
             }
         }
 
@@ -230,14 +222,9 @@ pub(crate) fn multiply_div_rem_shift(
                     | ConstVal::Float(Float(0.0))
             );
             if div_is_zero {
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [(input_value_ids[1], 0, "divisor value from here")],
-                    Color::Cyan,
-                    Color::Green,
-                );
-                labels.push(Label::new(op_loc).with_color(Color::Yellow));
-                diagnostics::emit_error(stores, op_loc, "division by 0", labels, None);
+                Diagnostic::error(op_loc, "division by 0")
+                    .with_label_chain(input_value_ids[1], 0, "divisor from here")
+                    .attached(stores.diags, item_id);
 
                 had_error.set();
             }
@@ -300,6 +287,7 @@ pub(crate) fn multiply_div_rem_shift(
 pub(crate) fn subtract(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
     arith_code: Arithmetic,
 ) {
@@ -366,23 +354,10 @@ pub(crate) fn subtract(
             source_variable: id2,
             ..
         }] if id1 != id2 => {
-            let mut labels = diagnostics::build_creator_label_chain(
-                stores,
-                [
-                    (input_value_ids[0], 0, "...from this"),
-                    (input_value_ids[1], 1, "sutracting this..."),
-                ],
-                Color::Yellow,
-                Color::Cyan,
-            );
-            labels.push(Label::new(op_loc).with_color(Color::Red));
-            diagnostics::emit_error(
-                stores,
-                op_loc,
-                "subtracting pointers of different sources",
-                labels,
-                None,
-            );
+            Diagnostic::error(op_loc, "subtracting pointers of different sources")
+                .with_label_chain(input_value_ids[1], 1, "subtracting this...")
+                .with_label_chain(input_value_ids[0], 0, "... from this")
+                .attached(stores.diags, item_id);
 
             had_error.set();
             return;
@@ -401,24 +376,10 @@ pub(crate) fn subtract(
                 let offset1_label = format!("...from this offset: {offset1}");
                 let offset2_label = format!("subtracting offset {offset2}...");
 
-                let mut labels = diagnostics::build_creator_label_chain(
-                    stores,
-                    [
-                        (input_value_ids[0], 0, offset1_label.as_str()),
-                        (input_value_ids[1], 1, offset2_label.as_str()),
-                    ],
-                    Color::Yellow,
-                    Color::Cyan,
-                );
-                labels.push(Label::new(op_loc).with_color(Color::Red));
-
-                diagnostics::emit_error(
-                    stores,
-                    op_loc,
-                    "subtracting end of array from start",
-                    labels,
-                    None,
-                );
+                Diagnostic::error(op_loc, "subtracting later pointer from earlier")
+                    .with_label_chain(input_value_ids[0], 0, offset1_label)
+                    .with_label_chain(input_value_ids[1], 1, offset2_label)
+                    .attached(stores.diags, item_id);
 
                 had_error.set();
                 return;
