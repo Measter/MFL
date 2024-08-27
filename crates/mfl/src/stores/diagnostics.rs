@@ -59,7 +59,7 @@ impl DiagKind {
     }
 
     fn help_label_color(&self) -> Color {
-        Color::Cyan
+        Color::Green
     }
 
     fn chain_label_root_color(&self) -> Color {
@@ -69,11 +69,8 @@ impl DiagKind {
         }
     }
 
-    fn chain_label_chained_color(&self) -> Color {
-        match self {
-            DiagKind::Error => Color::Cyan,
-            DiagKind::Warning | DiagKind::Advise => Color::Green,
-        }
+    fn chain_label_link_color(&self) -> Color {
+        Color::Blue
     }
 }
 
@@ -402,7 +399,7 @@ fn build_label_chains(
     for creator in creators {
         labels.push((
             Label::new(creator)
-                .with_color(diag_kind.chain_label_chained_color())
+                .with_color(diag_kind.chain_label_link_color())
                 .with_message(&msg),
             creator,
         ));
