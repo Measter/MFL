@@ -348,6 +348,8 @@ fn display_single_diag(value_store: &ValueStore, source_store: &SourceStore, dia
             Label::new(diag.location).with_color(diag.kind.primary_label_color());
         if let Some(msg) = diag.primary_label_message {
             ariadne_label = ariadne_label.with_message(msg);
+        } else {
+            ariadne_label = ariadne_label.with_message("here");
         }
         labels.push((ariadne_label, diag.location));
     }
