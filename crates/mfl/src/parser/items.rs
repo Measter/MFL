@@ -447,6 +447,22 @@ pub fn parse_struct_or_union(
             if field_iter.peek().is_none() {
                 break;
             }
+        } else if field_iter.next_is(Matcher("struct or union", |t: Spanned<TokenKind>| {
+            if matches!(t.inner, TokenKind::Struct | TokenKind::Union) {
+                IsMatch::Yes
+            } else {
+                IsMatch::No(t.inner.kind_str(), t.location)
+            }
+        })) {
+            //
+            let keyword = field_iter.next().unwrap_single();
+            if parse_struct_or_union(stores, &mut field_iter, item_id, keyword).is_err() {
+                had_error.set();
+            }
+
+            if field_iter.peek().is_none() {
+                break;
+            }
         } else {
             let name_token = field_iter
                 .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
