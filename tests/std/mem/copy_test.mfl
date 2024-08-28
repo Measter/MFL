@@ -23,10 +23,10 @@ proc entry[u64, u8**] to [] {
 
     1+@@ '0'- // This is our destination length
 
-    3 alloc(u32) std::result::unwrap_ok
+    3 alloc(u32) std::Result::unwrap_ok
     dup 2 fill(u32)
     
-    swap alloc(u32) std::result::unwrap_ok
+    swap alloc(u32) std::Result::unwrap_ok
     swap over copy(u32)
 
     0 xtr write_ui_ln

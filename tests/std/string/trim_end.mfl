@@ -9,6 +9,6 @@
 
 proc entry [] to [] {
     "'" std::term::write
-    "  foo  " std::string::trim_end std::term::write
+    "  foo  " core::String::trim_end std::term::write
     "'" std::term::writeln
 }

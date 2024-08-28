@@ -1,7 +1,6 @@
 import core::String
 import std::io::FD
-import std::result
-import std::result::Result
+import std::Result
 import std::SimpleResult
 
 const SYS_OPEN [u64] { 0x02 }
@@ -28,7 +27,7 @@ proc open [
         over xtr(length) 1- xtrd 0 != {
             drop(2)
 
-            0 1- result::Err(FD, u64)
+            0 1- Result::Err(FD, u64)
             return
         }
     }
@@ -42,10 +41,10 @@ proc open [
     cond {
         // An error ocurred
         cast(s64) dup 0< {
-            0 swap - cast(u64) result::Err(FD, u64)
+            0 swap - cast(u64) Result::Err(FD, u64)
         }
         else {
-            FD result::Ok(FD, u64)
+            FD Result::Ok(FD, u64)
         }
     }
 }
@@ -113,11 +112,11 @@ proc fstat [FD] to [Result(Stat, u64)] {
     SYS_FSTAT swap buf syscall(3) cast(s64)
     cond {
         dup 0< {
-            0 swap - cast(u64) result::Err(Stat, u64)
+            0 swap - cast(u64) Result::Err(Stat, u64)
         }
         else {
             assumeinit(buf)
-            drop buf@ result::Ok(Stat, u64)
+            drop buf@ Result::Ok(Stat, u64)
         }
     }
 }

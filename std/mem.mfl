@@ -1,5 +1,4 @@
-import std::result
-import std::result::Result
+import std::Result
 import std::SimpleResult
 
 const PROT_READ [u64] { 0x01 }
@@ -37,14 +36,14 @@ proc(lang(alloc)) alloc(T) [
             // Drop the len and pointer
             rot(3>1) drop(2)
 
-            result::Err(MMap(T), u64)
+            Result::Err(MMap(T), u64)
             return
         }
         else { drop }
     }
     // [len ptr]
     cast(T*) swap
-    MMap result::Ok(MMap(T), u64)
+    MMap Result::Ok(MMap(T), u64)
 }
 
 proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
@@ -95,12 +94,12 @@ proc mmap_file [
     cond {
         xtr(is_ok) not {
             rot(3>1) drop(2)
-            result::unwrap_err
-            result::Err(MMap(u8), u64)
+            Result::unwrap_err
+            Result::Err(MMap(u8), u64)
             return
         }
     }
-    result::unwrap_ok
+    Result::unwrap_ok
 
     xtrd(st_size) 0
     // [FD PROT length addr]
@@ -123,10 +122,10 @@ proc mmap_file [
             0 swap - cast(u64)
             // Drop the len and pointer
             rev(3) drop(2)
-            result::Err(MMap(u8), u64)
+            Result::Err(MMap(u8), u64)
         }
         else {
-            drop cast(u8*) swap MMap result::Ok(MMap(u8), u64)
+            drop cast(u8*) swap MMap Result::Ok(MMap(u8), u64)
         }
     }
 }

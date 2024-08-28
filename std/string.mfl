@@ -1,9 +1,5 @@
 import std::term
 
-struct(lang(string)) String {
-    length u64,
-    pointer u8*,
-}
 
 struct SplitResult {
     split bool,
@@ -11,57 +7,123 @@ struct SplitResult {
     prefix String,
 }
 
-// Splits the given string at the first instance of the given
-// character. Remaining string does not include the split char.
-proc split_front [
-    var str String,
-    var char u8  // Char to split on
-] to [
-    SplitResult
-] {
-    cond {
-        str.length@ 0= {
-            false str@ str@ SplitResult
-        }
-        else {
-            0(u64) while 
-                dup str.length@ <
-                cond {dup { over str#@ char@ != and}}
-            {
-                // [counter]
-                1+
-            }
-            // We're either at the end of the string, or found our character.
+struct(lang(string)) String {
+    length u64,
+    pointer u8*,
 
-            // [idx]
+    // Splits the given string at the first instance of the given
+    // character. Remaining string does not include the split char.
+    proc split_front [
+        var str String,
+        var char u8  // Char to split on
+    ] to [
+        SplitResult
+    ] {
+        cond {
+            str.length@ 0= {
+                false str@ str@ SplitResult
+            }
+            else {
+                0(u64) while 
+                    dup str.length@ <
+                    cond {dup { over str#@ char@ != and}}
+                {
+                    // [counter]
+                    1+
+                }
+                // We're either at the end of the string, or found our character.
+
+                // [idx]
+                cond {
+                    str.length@ = {
+                        false str@ "" SplitResult
+                    }
+                    else {
+                        // We found the split character!
+
+                        // Construct the prefix
+                        str.pointer@
+                        // [idx, ptr]
+                        over
+                        // [idx, ptr, len]
+                        swap String swap
+
+                        // [prefix, idx]
+                        // Construct the remander.
+                        str@ unpack
+                        // [prefix, idx, len, ptr]
+                        over(2)+ 1+
+                        rev(3) - 1-
+                        swap String
+                        
+                        swap true rot(3>1)
+                        // [flag, remainder, prefix]
+                        SplitResult
+                    }
+                }
+            }
+        }
+    }
+
+    proc trim_start [var str String] to [String] {
+        0 while dup str.length@ < {
             cond {
-                str.length@ = {
-                    false str@ "" SplitResult
+                0 str#@ is_whitespace {
+                    str@ unpack
+                    1+ str.pointer!
+                    1- str.length!
                 }
                 else {
-                    // We found the split character!
-
-                    // Construct the prefix
-                    str.pointer@
-                    // [idx, ptr]
-                    over
-                    // [idx, ptr, len]
-                    swap String swap
-
-                    // [prefix, idx]
-                    // Construct the remander.
-                    str@ unpack
-                    // [prefix, idx, len, ptr]
-                    over(2)+ 1+
-                    rev(3) - 1-
-                    swap String
-                    
-                    swap true rot(3>1)
-                    // [flag, remainder, prefix]
-                    SplitResult
+                    // Can't break loops at the moment, so this will do.
+                    drop
+                    str@ return
                 }
             }
+            1+
+        } drop
+
+        str@
+    }
+
+
+    proc trim_end [var str String] to [String] {
+        cond {
+            str.length@ 0= { str@ return }
         }
+
+        str.length@ 1- while dup 0> {
+            cond {
+                dup str#@ is_whitespace {
+                    str.length@ 1- str.length!
+                }
+                else {
+                    // Cant break loops at the moment.
+                    drop str@ return
+                }
+            }
+            1-
+        } drop
+
+        str@
+    }
+
+    proc trim [String] to [String] { 
+        trim_start trim_end
+    }
+
+    proc remove_start[String, u64] to [String] {
+        cond {
+            over xtrd(length) over< {
+                "Cannot trim " std::term::ewrite
+                std::term::ewrite_ui
+                " from string of length "
+                xtr(length) std::term::ewrite_ui_ln
+                exit
+            }
+        }
+
+        swap xtr(length) over(2)- swap ins(length)
+        xtr(pointer) rot(3<1)+ swap ins(pointer)
     }
 }
 
@@ -76,65 +138,4 @@ proc is_whitespace [u8] to [bool] {
 
 proc is_digit [u8] to [bool] {
     dup '0' >= swap '9' <= and
-}
-
-proc trim_start [var str String] to [String] {
-    0 while dup str.length@ < {
-        cond {
-            0 str#@ is_whitespace {
-                str@ unpack
-                1+ str.pointer!
-                1- str.length!
-            }
-            else {
-                // Can't break loops at the moment, so this will do.
-                drop
-                str@ return
-            }
-        }
-        1+
-    } drop
-
-    str@
-}
-
-
-proc trim_end [var str String] to [String] {
-    cond {
-        str.length@ 0= { str@ return }
-    }
-
-    str.length@ 1- while dup 0> {
-        cond {
-            dup str#@ is_whitespace {
-                str.length@ 1- str.length!
-            }
-            else {
-                // Cant break loops at the moment.
-                drop str@ return
-            }
-        }
-        1-
-    } drop
-
-    str@
-}
-
-proc trim [String] to [String] { 
-    trim_start trim_end
-}
-
-proc remove_start[String, u64] to [String] {
-    cond {
-        over xtrd(length) over< {
-            "Cannot trim " std::term::ewrite
-            std::term::ewrite_ui
-            " from string of length "
-            xtr(length) std::term::ewrite_ui_ln
-            exit
-        }
-    }
-
-    swap xtr(length) over(2)- swap ins(length)
-    xtr(pointer) rot(3<1)+ swap ins(pointer)
 }

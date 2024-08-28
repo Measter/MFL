@@ -1,10 +1,51 @@
 module fs
 module io
 module mem
-module result
 module string
 module term
 
 struct SimpleResult {
     errno u64,
+}
+
+struct Result(T, E) {
+    is_ok bool,
+    data Payload(T, E),
+
+    union Payload(T, E) {
+        t T,
+        e E,
+    }
+
+    proc Ok(T, E) [T] to [Result(T, E)] {
+        true swap Payload(T, E) Result
+    }
+
+    proc Err(T, E) [E] to [Result(T, E)] {
+        false swap Payload(T, E) Result
+    }
+
+    proc unwrap_ok(T, E) [Result(T, E)] to [T] {
+        unpack swap
+        cond {
+            { xtrd(t) }
+            else {
+                drop
+                "Error: called unwrap on err" std::term::ewriteln
+                exit
+            }
+        }
+    }
+
+    proc unwrap_err(T, E) [Result(T, E)] to [E] {
+        unpack swap
+        cond {
+            not { xtrd(e) }
+            else{
+                drop
+                "Error: called unwrap_err on ok" std::term::ewriteln
+                exit
+            }
+        }
+    }
 }

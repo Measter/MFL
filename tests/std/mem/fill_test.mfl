@@ -12,7 +12,7 @@ import std::mem::fill
 import std::term::write_ui_ln
 
 proc entry[] to [] {
-    3 alloc(u32) std::result::unwrap_ok
+    3 alloc(u32) std::Result::unwrap_ok
     dup 2 fill(u32)
     
     0 xtr write_ui_ln

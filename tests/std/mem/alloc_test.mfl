@@ -12,7 +12,7 @@ import std::mem::free
 
 proc entry[] to [] {
     3 alloc(u32)
-    std::result::unwrap_ok
+    std::Result::unwrap_ok
 
     free(u32)
     cond {

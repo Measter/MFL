@@ -7,8 +7,10 @@
 // expected = "Ok"
 // END
 
+import core::String
+
 proc entry [] to [] {
-    "fooxbar" 'x' std::string::split_front
+    "fooxbar" 'x' String::split_front
 
     xtr(split) std::term::write_bool_ln
     "'" std::term::write
@@ -20,7 +22,7 @@ proc entry [] to [] {
     "'" std::term::writeln
 
 
-    "fooxbar" 'y' std::string::split_front
+    "fooxbar" 'y' String::split_front
 
     xtr(split) std::term::write_bool_ln
     "'" std::term::write
