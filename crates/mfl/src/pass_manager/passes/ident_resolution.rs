@@ -87,12 +87,27 @@ fn resolved_single_ident(
     let mut last_ident = *first_ident;
     for sub_ident in rest {
         let current_item_header = stores.items.get_item_header(current_item);
-        if current_item_header.kind != ItemKind::Module {
-            Diagnostic::error(sub_ident.location, "cannot path into non-module item")
-                .with_help_label(last_ident.location, "not a module")
+        match current_item_header.kind {
+            ItemKind::StructDef | ItemKind::Module => {}
+
+            ItemKind::Assert
+            | ItemKind::Const
+            | ItemKind::Variable
+            | ItemKind::Function
+            | ItemKind::FunctionDecl
+            | ItemKind::GenericFunction => {
+                Diagnostic::error(
+                    sub_ident.location,
+                    format!("cannot path into {}", current_item_header.kind.kind_str()),
+                )
+                .with_help_label(
+                    last_ident.location,
+                    format!("is a {}", current_item_header.kind.kind_str()),
+                )
                 .attached(stores.diags, cur_id);
-            had_error.set();
-            return Err(());
+                had_error.set();
+                return Err(());
+            }
         }
 
         let scope = stores.sigs.nrir.get_scope(current_item_header.id);

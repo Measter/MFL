@@ -8,12 +8,7 @@ use crate::{
     Stores,
 };
 
-pub fn declare_struct(
-    stores: &mut Stores,
-    pass_manager: &mut PassManager,
-    had_error: &mut ErrorSignal,
-    cur_id: ItemId,
-) {
+pub fn declare_struct(stores: &mut Stores, had_error: &mut ErrorSignal, cur_id: ItemId) {
     let def = stores.sigs.nrir.get_struct(cur_id).clone();
     // We check if the name already exists by trying to resolve it.
     if let Ok(existing_info) = stores.types.resolve_type(
@@ -43,8 +38,8 @@ pub fn declare_struct(
     let has_generics = !def.generic_params.is_empty();
     let def_name = def.name;
 
-    let friendly_name = stores.build_friendly_name(pass_manager, cur_id);
-    let mangled_name = stores.build_mangled_name(pass_manager, cur_id);
+    let friendly_name = stores.strings.try_get_friendly_name(cur_id).unwrap();
+    let mangled_name = stores.strings.try_get_mangled_name(cur_id).unwrap();
 
     if has_generics {
         stores.types.add_type(

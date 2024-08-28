@@ -71,6 +71,12 @@ impl StringStore {
 
     #[inline]
     #[track_caller]
+    pub fn try_get_mangled_name(&self, item_id: ItemId) -> Option<Spur> {
+        self.mangled_names.get(&item_id).copied()
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn set_mangled_name(&mut self, item_id: ItemId, name: &str) -> Spur {
         let spur = self.lexemes.get_or_intern(name);
         let prev = self.mangled_names.insert(item_id, spur);

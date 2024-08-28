@@ -24,8 +24,8 @@ use super::{
     parse_item_body_contents,
     utils::{
         parse_ident, parse_proc_entry_stack_def, parse_stack_def, parse_unresolved_type,
-        try_parse_generic_pramas, validate_trailing_comma, TokenIter, TrailingCommaResult,
-        TreeGroupResultExt,
+        try_parse_generic_pramas, validate_trailing_comma, TokenIter, TokenTreeOptionExt,
+        TrailingCommaResult, TreeGroupResultExt,
     },
     Recover,
 };
@@ -438,30 +438,47 @@ pub fn parse_struct_or_union(
     let mut prev_token = struct_body.first_token();
 
     loop {
-        let name_token = field_iter
-            .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
-            .recover(&mut had_error, prev_token);
+        if field_iter.next_is(TokenKind::Proc) {
+            let keyword = field_iter.next().unwrap_single();
+            if parse_function(stores, &mut field_iter, keyword, item_id).is_err() {
+                had_error.set();
+            }
 
-        let Ok((unresolved_store_type, last_token)) = parse_unresolved_type(
-            &mut field_iter,
-            stores,
-            item_id,
-            name_token.location,
-            &mut had_error,
-        ) else {
-            break;
-        };
+            if field_iter.peek().is_none() {
+                break;
+            }
+        } else {
+            let name_token = field_iter
+                .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+                .recover(&mut had_error, prev_token);
 
-        fields.push(StructDefField {
-            name: name_token.map(|t| t.lexeme),
-            kind: unresolved_store_type,
-        });
-        prev_token = last_token;
+            let Ok((unresolved_store_type, last_token)) = parse_unresolved_type(
+                &mut field_iter,
+                stores,
+                item_id,
+                name_token.location,
+                &mut had_error,
+            ) else {
+                break;
+            };
 
-        if TrailingCommaResult::Break
-            == validate_trailing_comma(&mut field_iter, stores, &mut had_error, item_id, "fields")
-        {
-            break;
+            fields.push(StructDefField {
+                name: name_token.map(|t| t.lexeme),
+                kind: unresolved_store_type,
+            });
+            prev_token = last_token;
+
+            if TrailingCommaResult::Break
+                == validate_trailing_comma(
+                    &mut field_iter,
+                    stores,
+                    &mut had_error,
+                    item_id,
+                    "fields",
+                )
+            {
+                break;
+            }
         }
     }
 

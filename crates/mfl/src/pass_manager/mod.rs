@@ -79,9 +79,8 @@ impl PassState {
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
             CyclicRefCheckBody | TypeResolvedBody => &[IdentResolvedBody],
-            DeclareStructs | SelfContainingStruct | TypeResolvedSignature => {
-                &[IdentResolvedSignature]
-            }
+            DeclareStructs => &[BuildNames, IdentResolvedSignature],
+            SelfContainingStruct | TypeResolvedSignature => &[IdentResolvedSignature],
             DefineStructs => &[DeclareStructs],
             EvaluatedConstsAsserts => &[CyclicRefCheckBody, ConstPropBody],
             PartiallyTypeResolved => &[IdentResolvedBody, IdentResolvedSignature],
@@ -313,7 +312,7 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::declare_struct(stores, self, &mut had_error, cur_item);
+        passes::structs::declare_struct(stores, &mut had_error, cur_item);
         if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
