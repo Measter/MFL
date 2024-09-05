@@ -10,7 +10,7 @@ use stores::{
 
 use crate::{
     error_signal::ErrorSignal,
-    ir::{OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
+    ir::{IdentPathRoot, OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{TokenTree, TreeGroup},
     parser::matcher::{integer_tokens, Matcher},
     stores::{diagnostics::Diagnostic, signatures::StackDefItemUnresolved},
@@ -521,24 +521,27 @@ pub fn parse_ident(
     let mut import_span = token.location;
     let mut last_token = token;
 
-    let (is_from_root, mut path) = if token.inner.kind == TokenKind::ColonColon {
-        let ident = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
-            t.location.neighbour_of(token.location)
-        }) {
-            token_iter.next().unwrap_single()
-        } else {
-            Diagnostic::error(token.location, "unexpected end of ident")
-                .attached(stores.diags, item_id);
-            had_error.set();
-            return Err(());
-        };
+    let (path_root, mut path) = match token.inner.kind {
+        TokenKind::ColonColon => {
+            let ident = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
+                t.location.neighbour_of(token.location)
+            }) {
+                token_iter.next().unwrap_single()
+            } else {
+                Diagnostic::error(token.location, "unexpected end of ident")
+                    .attached(stores.diags, item_id);
+                had_error.set();
+                return Err(());
+            };
 
-        last_token = ident;
-        import_span = import_span.merge(ident.location);
+            last_token = ident;
+            import_span = import_span.merge(ident.location);
 
-        (true, vec![ident.map(|t| t.lexeme)])
-    } else {
-        (false, vec![token.map(|t| t.lexeme)])
+            (IdentPathRoot::Root, vec![ident.map(|t| t.lexeme)])
+        }
+        TokenKind::Ident => (IdentPathRoot::CurrentScope, vec![token.map(|t| t.lexeme)]),
+        TokenKind::SelfKw => (IdentPathRoot::CurrentModule, Vec::new()),
+        _ => unreachable!(),
     };
 
     while token_iter.next_is_single_and(TokenKind::ColonColon, |t| {
@@ -591,7 +594,7 @@ pub fn parse_ident(
     Ok((
         UnresolvedIdent {
             span: import_span,
-            is_from_root,
+            path_root,
             path,
             generic_params,
         },

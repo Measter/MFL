@@ -9,8 +9,8 @@ use stores::{
 use crate::{
     error_signal::ErrorSignal,
     ir::{
-        Arithmetic, Basic, Compare, Cond, CondArm, Control, Direction, Memory, OpCode, Stack,
-        UnresolvedIdent, UnresolvedOp, While, WhileTokens,
+        Arithmetic, Basic, Compare, Cond, CondArm, Control, Direction, IdentPathRoot, Memory,
+        OpCode, Stack, UnresolvedIdent, UnresolvedOp, While, WhileTokens,
     },
     lexer::TokenTree,
     parser::utils::parse_float_lexeme,
@@ -220,7 +220,7 @@ pub fn parse_simple_op(
             value: Integer::Unsigned((ch as u8).to_u64()),
         }),
 
-        TokenKind::Ident | TokenKind::ColonColon => {
+        TokenKind::Ident | TokenKind::ColonColon | TokenKind::SelfKw => {
             return parse_ident_op(stores, token_iter, item_id, token)
         }
         TokenKind::Integer { .. } => {
@@ -307,7 +307,7 @@ fn parse_assumeinit(
     let ident_token = group.tokens[0].unwrap_single();
     let ident = UnresolvedIdent {
         span: ident_token.location,
-        is_from_root: false,
+        path_root: IdentPathRoot::CurrentScope,
         path: vec![ident_token.map(|t| t.lexeme)],
         generic_params: Vec::new(),
     };

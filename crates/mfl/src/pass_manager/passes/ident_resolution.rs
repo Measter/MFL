@@ -8,8 +8,8 @@ use crate::{
     diagnostics::{self, NameCollision},
     error_signal::ErrorSignal,
     ir::{
-        Basic, Control, NameResolvedOp, NameResolvedType, OpCode, StructDef, StructDefField,
-        UnresolvedIdent, UnresolvedOp, UnresolvedType,
+        Basic, Control, IdentPathRoot, NameResolvedOp, NameResolvedType, OpCode, StructDef,
+        StructDefField, UnresolvedIdent, UnresolvedOp, UnresolvedType,
     },
     pass_manager::PassManager,
     stores::{
@@ -52,36 +52,49 @@ fn resolved_single_ident(
         unreachable!()
     };
 
-    let mut current_item = if ident.is_from_root {
-        let Some(tlm) = stores.items.get_top_level_module(first_ident.inner) else {
-            let item_name = stores.strings.resolve(first_ident.inner);
-            Diagnostic::error(
-                first_ident.location,
-                format!("symbol `{item_name}` not found"),
-            )
-            .attached(stores.diags, cur_id);
-            had_error.set();
-            return Err(());
-        };
-        tlm
-    } else {
-        let header = stores.items.get_item_header(cur_id);
-        let Some(start_item) =
-            stores
-                .items
-                .get_visible_symbol(stores.sigs, header, first_ident.inner)
-        else {
-            let item_name = stores.strings.resolve(first_ident.inner);
-            Diagnostic::error(
-                first_ident.location,
-                format!("symbol `{item_name}` not found"),
-            )
-            .attached(stores.diags, cur_id);
+    let (mut current_item, rest) = match ident.path_root {
+        IdentPathRoot::CurrentScope => {
+            let header = stores.items.get_item_header(cur_id);
+            let Some(start_item) =
+                stores
+                    .items
+                    .get_visible_symbol(stores.sigs, header, first_ident.inner)
+            else {
+                let item_name = stores.strings.resolve(first_ident.inner);
+                Diagnostic::error(
+                    first_ident.location,
+                    format!("symbol `{item_name}` not found"),
+                )
+                .attached(stores.diags, cur_id);
 
-            had_error.set();
-            return Err(());
-        };
-        start_item
+                had_error.set();
+                return Err(());
+            };
+            (start_item, rest)
+        }
+        IdentPathRoot::Root => {
+            let Some(tlm) = stores.items.get_top_level_module(first_ident.inner) else {
+                let item_name = stores.strings.resolve(first_ident.inner);
+                Diagnostic::error(
+                    first_ident.location,
+                    format!("symbol `{item_name}` not found"),
+                )
+                .attached(stores.diags, cur_id);
+                had_error.set();
+                return Err(());
+            };
+            (tlm, rest)
+        }
+        IdentPathRoot::CurrentModule => {
+            let current_item_kind = stores.items.get_item_header(cur_id).kind;
+            let id = if current_item_kind == ItemKind::Module {
+                cur_id
+            } else {
+                get_parent_module(stores.items, cur_id)
+            };
+
+            (id, ident.path.as_slice())
+        }
     };
 
     let mut last_ident = *first_ident;
@@ -143,7 +156,7 @@ fn resolve_idents_in_type(
             let builtin_name = BuiltinTypes::from_name(name);
 
             if (unresolved_ident.path.len() > 1
-                || unresolved_ident.is_from_root
+                || unresolved_ident.path_root != IdentPathRoot::CurrentScope
                 || !unresolved_ident.generic_params.is_empty())
                 && builtin_name.is_some()
             {
@@ -156,7 +169,7 @@ fn resolve_idents_in_type(
             if let Some(builtin) = builtin_name {
                 NameResolvedType::SimpleBuiltin(builtin)
             } else if unresolved_ident.path.len() == 1
-                && !unresolved_ident.is_from_root
+                && unresolved_ident.path_root == IdentPathRoot::CurrentScope
                 && unresolved_ident.generic_params.is_empty()
                 && generic_params.iter().any(|tp| tp.inner == item_name.inner)
             {

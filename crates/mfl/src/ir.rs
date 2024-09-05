@@ -418,17 +418,24 @@ pub enum Basic {
     PushStr { id: Spur },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IdentPathRoot {
+    CurrentScope,
+    Root,
+    CurrentModule,
+}
+
 #[derive(Debug, Clone, Eq)]
 pub struct UnresolvedIdent {
     pub span: SourceLocation,
-    pub is_from_root: bool,
+    pub path_root: IdentPathRoot,
     pub path: Vec<Spanned<Spur>>,
     pub generic_params: Vec<UnresolvedType>,
 }
 
 impl std::hash::Hash for UnresolvedIdent {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.is_from_root.hash(state);
+        self.path_root.hash(state);
         self.path.hash(state);
         self.generic_params.hash(state);
     }
@@ -436,7 +443,7 @@ impl std::hash::Hash for UnresolvedIdent {
 
 impl PartialEq for UnresolvedIdent {
     fn eq(&self, other: &Self) -> bool {
-        self.is_from_root == other.is_from_root
+        self.path_root == other.path_root
             && self.path == other.path
             && self.generic_params == other.generic_params
     }

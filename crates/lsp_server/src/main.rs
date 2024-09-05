@@ -235,7 +235,9 @@ impl Backend {
                         | TokenKind::Module
                         | TokenKind::Proc
                         | TokenKind::Return
+                        | TokenKind::SelfKw
                         | TokenKind::Struct
+                        | TokenKind::Super
                         | TokenKind::Union
                         | TokenKind::Variable
                         | TokenKind::While => Legend::Keyword,

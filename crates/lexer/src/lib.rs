@@ -240,6 +240,9 @@ pub enum TokenKind {
     #[token("rot")]
     Rot,
 
+    #[token("self")]
+    SelfKw,
+
     #[token("shl")]
     ShiftLeft,
 
@@ -261,6 +264,9 @@ pub enum TokenKind {
 
     #[token("struct")]
     Struct,
+
+    #[token("super")]
+    Super,
 
     #[token("swap")]
     Swap,
@@ -344,6 +350,7 @@ impl TokenKind {
             TokenKind::Return => "return",
             TokenKind::Reverse => "rev",
             TokenKind::Rot => "rot",
+            TokenKind::SelfKw => "self",
             TokenKind::ShiftLeft => "shl",
             TokenKind::ShiftRight => "shr",
             TokenKind::SizeOf => "sizeof",
@@ -351,6 +358,7 @@ impl TokenKind {
             TokenKind::String(_) => "string literal",
             TokenKind::Store => "!",
             TokenKind::Struct => "struct",
+            TokenKind::Super => "super",
             TokenKind::Swap => "swap",
             TokenKind::SysCall => "syscall",
             TokenKind::Union => "union",

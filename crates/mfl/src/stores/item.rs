@@ -12,7 +12,7 @@ use stores::{
 use crate::{
     diagnostics::NameCollision,
     error_signal::ErrorSignal,
-    ir::{UnresolvedIdent, UnresolvedType},
+    ir::{IdentPathRoot, UnresolvedIdent, UnresolvedType},
     option::OptionExt,
     simulate::SimulatorValue,
 };
@@ -399,7 +399,7 @@ impl ItemStore {
             UnresolvedItemSignature {
                 exit: vec![UnresolvedType::Simple(UnresolvedIdent {
                     span: name.location,
-                    is_from_root: false,
+                    path_root: IdentPathRoot::CurrentScope,
                     path: vec![bool_spur.with_span(name.location)],
                     generic_params: Vec::new(),
                 })
