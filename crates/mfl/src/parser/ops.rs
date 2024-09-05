@@ -246,7 +246,7 @@ pub fn parse_simple_op(
         TokenKind::ShiftRight => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftRight)),
 
         TokenKind::Return => OpCode::Basic(Basic::Control(Control::Return)),
-        TokenKind::Exit => OpCode::Basic(Basic::Control(Control::Exit)),
+        TokenKind::Exit => return parse_exit(stores, token_iter, item_id, token),
 
         _ => {
             panic!(
@@ -257,6 +257,40 @@ pub fn parse_simple_op(
     };
 
     Ok((code, token.location))
+}
+
+fn parse_exit(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    keyword: Spanned<Token>,
+) -> Result<(OpCode<UnresolvedOp>, SourceLocation), ()> {
+    let code = if token_iter.next_is_group(BracketKind::Paren) {
+        let group = token_iter
+            .expect_group(stores, item_id, BracketKind::Paren, keyword)
+            .with_kinds(
+                stores,
+                item_id,
+                Matcher("integer", |tk: Spanned<TokenKind>| {
+                    if let TokenKind::Integer(_) = tk.inner {
+                        IsMatch::Yes
+                    } else {
+                        IsMatch::No(tk.inner.kind_str(), tk.location)
+                    }
+                }),
+            )
+            .with_length(stores, item_id, 1)?;
+
+        let code_token = group.tokens[0].unwrap_single();
+        parse_integer_lexeme::<u8>(stores, item_id, code_token)?
+    } else {
+        0
+    };
+
+    Ok((
+        OpCode::Basic(Basic::Control(Control::Exit(code))),
+        keyword.location,
+    ))
 }
 
 fn parse_assumeinit(

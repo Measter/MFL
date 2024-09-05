@@ -30,7 +30,7 @@ fn determine_terminal_blocks_in_block(stores: &mut Stores, block_id: BlockId) ->
         };
 
         match cont_op {
-            Control::Exit | Control::Return => {
+            Control::Exit(_) | Control::Return => {
                 stores.blocks.set_terminal(block_id);
                 return true;
             }

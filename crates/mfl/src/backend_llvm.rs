@@ -585,8 +585,8 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_epilogue_return(ds, value_store, id, op_id)?;
                         break;
                     }
-                    Control::Exit => {
-                        self.build_exit()?;
+                    Control::Exit(code) => {
+                        self.build_exit(code)?;
                         break;
                     }
                     Control::Prologue => {

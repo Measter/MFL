@@ -78,7 +78,7 @@ fn analyze_block(
                     Control::Prologue => {
                         control::prologue(stores, variable_state, item_id);
                     }
-                    Control::Exit => {
+                    Control::Exit(_) => {
                         // We're terminating the current block, so don't process any remaning ops.
                         break;
                     }

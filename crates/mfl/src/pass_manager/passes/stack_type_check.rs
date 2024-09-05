@@ -177,7 +177,7 @@ fn analyze_block(
                         // We're terminated the current block, so don't process any remaining ops.
                         break;
                     }
-                    Control::Exit => {
+                    Control::Exit(_) => {
                         stores.ops.set_op_io(op_id, &[], &[]);
                         break;
                     }

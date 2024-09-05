@@ -369,7 +369,7 @@ pub enum Stack {
 pub enum Control {
     Cond(Cond),
     Epilogue,
-    Exit,
+    Exit(u8),
     Prologue,
     Return,
     SysCall { arg_count: Spanned<u8> },

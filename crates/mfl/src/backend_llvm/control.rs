@@ -134,10 +134,10 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    pub(super) fn build_exit(&mut self) -> InkwellResult {
+    pub(super) fn build_exit(&mut self, code: u8) -> InkwellResult {
         let args = vec![
             self.ctx.i64_type().const_int(60, false).into(),
-            self.ctx.i64_type().const_int(1, false).into(),
+            self.ctx.i64_type().const_int(code.to_u64(), false).into(),
         ];
 
         let callee = self.syscall_wrappers[1];
