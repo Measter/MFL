@@ -78,8 +78,12 @@ fn analyze_block(
                     Control::Prologue => {
                         control::prologue(stores, variable_state, item_id);
                     }
+                    Control::Exit => {
+                        // We're terminating the current block, so don't process any remaning ops.
+                        break;
+                    }
                     // Nothing to do here.
-                    Control::Exit | Control::SysCall { .. } => {}
+                    Control::SysCall { .. } => {}
                     Control::Cond(cond_op) => {
                         let is_all_terminal = cond_op.is_all_terminal(stores);
 
