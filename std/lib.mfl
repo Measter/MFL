@@ -32,7 +32,7 @@ struct Result(T, E) {
             else {
                 drop
                 "Error: called unwrap on err" std::term::ewriteln
-                exit
+                exit(1)
             }
         }
     }
@@ -44,7 +44,7 @@ struct Result(T, E) {
             else{
                 drop
                 "Error: called unwrap_err on ok" std::term::ewriteln
-                exit
+                exit(1)
             }
         }
     }

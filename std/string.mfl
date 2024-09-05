@@ -118,7 +118,7 @@ struct(lang(string)) String {
                 std::term::ewrite_ui
                 " from string of length "
                 xtr(length) std::term::ewrite_ui_ln
-                exit
+                exit(1)
             }
         }
 

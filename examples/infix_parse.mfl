@@ -17,7 +17,7 @@ proc match [String, u8] to [String] {
             "` found `" std::term::write
             std::term::write_char
             "`" std::term::writeln
-            exit
+            exit(1)
         }
     }
 }
@@ -46,7 +46,7 @@ proc rest [String] to [String] {
             "Error unexpected character `" std::term::write
             0 xtr std::term::write_char
             "`" std::term::writeln
-            exit
+            exit(1)
         }
     }
 }
@@ -70,7 +70,7 @@ proc term [String] to [String] {
             "\nError: expected digit found `" std::term::write
             std::term::write_char
             "`" std::term::writeln
-            exit
+            exit(1)
         }
     }
 }

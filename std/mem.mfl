@@ -75,7 +75,7 @@ proc copy(T) [
             src.length@ std::term::ewrite_ui
             " dst: " std::term::ewrite
             dst.length@ std::term::ewrite_ui_ln
-            exit
+            exit(1)
         }
     }
 
