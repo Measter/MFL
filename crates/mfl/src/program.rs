@@ -202,7 +202,7 @@ fn load_module(
     let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
     stores.strings.intern(file_stem);
 
-    crate::parser::parse_file(stores, module_id, &tokens, include_queue)
+    crate::parser::parse_module(stores, module_id, &tokens, include_queue)
         .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
 
     Ok(())

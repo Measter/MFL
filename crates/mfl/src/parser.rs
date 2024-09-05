@@ -3,9 +3,10 @@ use std::{collections::VecDeque, ops::Not};
 use lexer::{BracketKind, TokenKind};
 use stores::source::WithSpan;
 use tracing::debug_span;
-use utils::TokenIter;
+use utils::{TokenIter, TokenTreeOptionExt};
 
 use crate::{
+    diagnostics,
     error_signal::ErrorSignal,
     lexer::TokenTree,
     program::ModuleQueueType,
@@ -160,7 +161,7 @@ pub fn parse_item_body_contents(
     had_error.into_err().not().then_some(ops).ok_or(())
 }
 
-pub(super) fn parse_file(
+pub(super) fn parse_module(
     stores: &mut Stores,
     module_id: ItemId,
     tokens: &[TokenTree],
@@ -220,16 +221,45 @@ pub(super) fn parse_file(
                     }
 
                     TokenKind::Module => {
-                        if items::parse_module(
+                        let module_ident = token_iter.expect_single(
                             stores,
-                            &mut token_iter,
-                            include_queue,
-                            *token,
                             module_id,
-                        )
-                        .is_err()
-                        {
-                            had_error.set();
+                            TokenKind::Ident,
+                            token.location,
+                        )?;
+
+                        if token_iter.next_is_group(BracketKind::Brace) {
+                            let (new_module_id, prev_def_loc) = stores.items.new_module(
+                                stores.sigs,
+                                &mut had_error,
+                                module_ident.map(|t| t.lexeme),
+                                Some(module_id),
+                                false,
+                            );
+                            diagnostics::handle_symbol_redef_error(
+                                stores,
+                                &mut had_error,
+                                module_id,
+                                prev_def_loc,
+                            );
+
+                            let sub_tokens = token_iter.next().unwrap_group();
+
+                            if parse_module(
+                                stores,
+                                new_module_id,
+                                &sub_tokens.tokens,
+                                include_queue,
+                            )
+                            .is_err()
+                            {
+                                had_error.set();
+                            }
+                        } else {
+                            include_queue.push_back((
+                                ModuleQueueType::Include(module_ident.map(|t| t.lexeme)),
+                                Some(module_id),
+                            ));
                         }
                     }
 

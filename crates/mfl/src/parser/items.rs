@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use flagset::FlagSet;
 use lexer::{BracketKind, Token, TokenKind};
 use stores::{items::ItemId, source::Spanned};
@@ -9,7 +7,6 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Basic, Control, OpCode, StructDef, StructDefField},
     lexer::{TokenTree, TreeGroup},
-    program::ModuleQueueType,
     stores::{
         diagnostics::Diagnostic,
         item::{ItemAttribute, LangItem},
@@ -512,24 +509,6 @@ pub fn parse_struct_or_union(
     } else {
         Ok(())
     }
-}
-
-pub fn parse_module(
-    stores: &mut Stores,
-    token_iter: &mut TokenIter,
-    include_queue: &mut VecDeque<(ModuleQueueType, Option<ItemId>)>,
-    token: Spanned<Token>,
-    module_id: ItemId,
-) -> Result<(), ()> {
-    let module_ident =
-        token_iter.expect_single(stores, module_id, TokenKind::Ident, token.location)?;
-
-    include_queue.push_back((
-        ModuleQueueType::Include(module_ident.map(|t| t.lexeme)),
-        Some(module_id),
-    ));
-
-    Ok(())
 }
 
 pub fn parse_import(
