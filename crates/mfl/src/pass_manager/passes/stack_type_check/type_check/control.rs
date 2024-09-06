@@ -385,7 +385,8 @@ pub(crate) fn analyze_cond(
                         stores.strings.resolve(expected_type_info.friendly_name);
                     let other_input_type_name =
                         stores.strings.resolve(input_type_info.friendly_name);
-                    let [other_input_value_info] = stores.values.values([other_input_value_id]);
+                    let [other_input_value_info] =
+                        stores.values.values_headers([other_input_value_id]);
 
                     Diagnostic::error(
                         other_input_value_info.source_location,
@@ -420,7 +421,7 @@ pub(crate) fn analyze_while(
 
     for merge_pair in merge_values {
         // While loop merges only have two inputs, so we can just make that assumption.
-        let [b_in_value_info] = stores.values.values([merge_pair.inputs[1].1]);
+        let [b_in_value_info] = stores.values.values_headers([merge_pair.inputs[1].1]);
         let Some([a_in_type_id, b_in_type_id]) = stores
             .values
             .value_types([merge_pair.inputs[0].1, merge_pair.inputs[1].1])

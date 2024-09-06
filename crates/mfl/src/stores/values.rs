@@ -25,7 +25,7 @@ impl Display for ValueId {
 }
 
 #[derive(Debug, Clone)]
-pub struct Value {
+pub struct ValueHeader {
     pub source_location: SourceLocation,
     pub is_merge_value: bool,
     pub parent_values: SmallVec<[ValueId; 4]>,
@@ -65,7 +65,7 @@ impl MergeValue {
 
 #[derive(Debug, Clone, Default)]
 pub struct ValueStore {
-    value_lifetime: Vec<Value>,
+    value_headers: Vec<ValueHeader>,
     value_types: HashMap<ValueId, TypeId>,
     value_consts: Vec<ConstVal>,
 
@@ -75,7 +75,7 @@ pub struct ValueStore {
 impl ValueStore {
     pub fn new() -> Self {
         Self {
-            value_lifetime: Vec::new(),
+            value_headers: Vec::new(),
             value_types: HashMap::default(),
             value_consts: Vec::new(),
             op_merges: HashMap::default(),
@@ -88,10 +88,10 @@ impl ValueStore {
         is_merge_value: bool,
         parent_value: impl IntoIterator<Item = ValueId>,
     ) -> ValueId {
-        let id = self.value_lifetime.len();
+        let id = self.value_headers.len();
         let id = ValueId(id.to_u32().unwrap());
 
-        self.value_lifetime.push(Value {
+        self.value_headers.push(ValueHeader {
             source_location,
             is_merge_value,
             parent_values: parent_value.into_iter().collect(),
@@ -119,11 +119,11 @@ impl ValueStore {
     }
 
     pub fn value_count(&self) -> usize {
-        self.value_lifetime.len()
+        self.value_headers.len()
     }
 
-    pub fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
-        ids.map(|id| &self.value_lifetime[id.0.to_usize()])
+    pub fn values_headers<const N: usize>(&self, ids: [ValueId; N]) -> [&ValueHeader; N] {
+        ids.map(|id| &self.value_headers[id.0.to_usize()])
     }
 
     pub fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[TypeId; N]> {
@@ -177,7 +177,7 @@ impl ValueStore {
     pub fn get_creator_tokens(&self, value_id: ValueId) -> SmallVec<[(bool, SourceLocation); 4]> {
         let mut creators = SmallVec::new();
 
-        let value_info = &self.value_lifetime[value_id.0.to_usize()];
+        let value_info = &self.value_headers[value_id.0.to_usize()];
         if !value_info.is_merge_value {
             // The merge value's location is the cond/while loop itself, so not very useful.
             creators.push((
@@ -188,7 +188,7 @@ impl ValueStore {
 
         let mut queue = value_info.parent_values.clone();
         while let Some(parent) = queue.pop() {
-            let value_info = &self.value_lifetime[parent.0.to_usize()];
+            let value_info = &self.value_headers[parent.0.to_usize()];
             queue.extend_from_slice(&value_info.parent_values);
 
             if value_info.is_merge_value {
