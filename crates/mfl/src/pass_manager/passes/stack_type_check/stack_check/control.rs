@@ -331,9 +331,13 @@ pub(crate) fn analyze_cond(
                     }
 
                     if needs_merge {
+                        let output_id = stores
+                            .values
+                            .new_merge_value(cond_op.token, inputs.iter().map(|i| i.1));
+
                         let mut merge_value = MergeValue {
                             inputs: inputs.to_vec(),
-                            output: stores.values.new_value(cond_op.token, None),
+                            output: output_id,
                         };
                         stack.push(merge_value.output);
 
@@ -438,7 +442,9 @@ pub(crate) fn analyze_while(
         .zip(&*stack)
         .filter(|(a, b)| a != b)
     {
-        let merged_value_id = stores.values.new_value(op_loc, None);
+        let merged_value_id = stores
+            .values
+            .new_merge_value(op_loc, [pre_condition_value_id, post_body_value_id]);
         trace!(
             ?pre_condition_value_id,
             ?post_body_value_id,

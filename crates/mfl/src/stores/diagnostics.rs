@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use ariadne::{Color, Label, Report, ReportBuilder, ReportKind, Span};
+use hashbrown::HashSet;
 use intcast::IntCast;
 use lasso::Spur;
 use lexer::TokenKind;
@@ -65,7 +66,7 @@ impl DiagKind {
     fn chain_label_root_color(&self) -> Color {
         match self {
             DiagKind::Error => Color::Yellow,
-            DiagKind::Warning | DiagKind::Advise => Color::Cyan,
+            DiagKind::Warning | DiagKind::Advise => Color::Magenta,
         }
     }
 
@@ -388,22 +389,24 @@ fn build_label_chains(
     diag_kind: DiagKind,
     chain: &ChainLabel,
 ) {
-    let mut creators = value_store.get_creator_token(chain.value_id);
+    let creators = value_store.get_creator_tokens(chain.value_id);
     let msg = format!("{}: {}", chain.idx, chain.description);
+    let mut seen = HashSet::<(bool, SourceLocation)>::new();
 
-    let root = creators.pop().unwrap();
-    labels.push((
-        Label::new(root)
-            .with_color(diag_kind.chain_label_root_color())
-            .with_message(&msg),
-        root,
-    ));
-    for creator in creators {
+    for pair @ (is_root, creator) in creators {
+        if seen.contains(&pair) {
+            continue;
+        }
+
+        let color = if is_root {
+            diag_kind.chain_label_root_color()
+        } else {
+            diag_kind.chain_label_link_color()
+        };
         labels.push((
-            Label::new(creator)
-                .with_color(diag_kind.chain_label_link_color())
-                .with_message(&msg),
+            Label::new(creator).with_color(color).with_message(&msg),
             creator,
         ));
+        seen.insert(pair);
     }
 }

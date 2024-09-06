@@ -27,7 +27,8 @@ impl Display for ValueId {
 #[derive(Debug, Clone)]
 pub struct Value {
     pub source_location: SourceLocation,
-    pub parent_value: Option<ValueId>,
+    pub is_merge_value: bool,
+    pub parent_values: SmallVec<[ValueId; 4]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -81,22 +82,40 @@ impl ValueStore {
         }
     }
 
-    pub fn new_value(
+    fn make_value(
         &mut self,
         source_location: SourceLocation,
-        parent_value: Option<ValueId>,
+        is_merge_value: bool,
+        parent_value: impl IntoIterator<Item = ValueId>,
     ) -> ValueId {
         let id = self.value_lifetime.len();
         let id = ValueId(id.to_u32().unwrap());
 
         self.value_lifetime.push(Value {
             source_location,
-            parent_value,
+            is_merge_value,
+            parent_values: parent_value.into_iter().collect(),
         });
 
         self.value_consts.push(ConstVal::Unknown);
 
         id
+    }
+
+    pub fn new_value(
+        &mut self,
+        source_location: SourceLocation,
+        parent_value: impl IntoIterator<Item = ValueId>,
+    ) -> ValueId {
+        self.make_value(source_location, false, parent_value)
+    }
+
+    pub fn new_merge_value(
+        &mut self,
+        source_location: SourceLocation,
+        parent_value: impl IntoIterator<Item = ValueId>,
+    ) -> ValueId {
+        self.make_value(source_location, true, parent_value)
     }
 
     pub fn value_count(&self) -> usize {
@@ -155,18 +174,32 @@ impl ValueStore {
         self.op_merges.get(&op_id)
     }
 
-    /// Returns the creator token of a value, treating Dup and Over tokens as transparent.
-    pub fn get_creator_token(&self, value_id: ValueId) -> SmallVec<[SourceLocation; 2]> {
+    pub fn get_creator_tokens(&self, value_id: ValueId) -> SmallVec<[(bool, SourceLocation); 4]> {
         let mut creators = SmallVec::new();
 
         let value_info = &self.value_lifetime[value_id.0.to_usize()];
-        let mut cur_creator = value_info.parent_value;
-        creators.push(value_info.source_location);
+        if !value_info.is_merge_value {
+            // The merge value's location is the cond/while loop itself, so not very useful.
+            creators.push((
+                value_info.parent_values.is_empty(),
+                value_info.source_location,
+            ));
+        }
 
-        while let Some(parent) = cur_creator {
+        let mut queue = value_info.parent_values.clone();
+        while let Some(parent) = queue.pop() {
             let value_info = &self.value_lifetime[parent.0.to_usize()];
-            cur_creator = value_info.parent_value;
-            creators.push(value_info.source_location);
+            queue.extend_from_slice(&value_info.parent_values);
+
+            if value_info.is_merge_value {
+                // The merge value's location is the cond/while loop itself, so not very useful.
+                continue;
+            }
+
+            creators.push((
+                value_info.parent_values.is_empty(),
+                value_info.source_location,
+            ));
         }
 
         creators
