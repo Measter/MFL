@@ -118,11 +118,13 @@ pub struct PassManager {
 impl PassManager {
     fn new(i: impl Iterator<Item = ItemHeader>) -> Self {
         let (states, queue) = i.map(|i| ((i.id, ItemState::new()), i.id)).unzip();
+        let mut stack_stats_table = Table::new();
+        stack_stats_table.set_titles(row!["Item", "Stack Depth", "No. Values"]);
         Self {
             states,
             queue,
             defined_generic_structs: false,
-            stack_stats_table: Table::new(),
+            stack_stats_table,
         }
     }
 
