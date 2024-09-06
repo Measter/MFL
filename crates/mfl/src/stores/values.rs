@@ -28,7 +28,6 @@ impl Display for ValueId {
 pub struct Value {
     pub source_location: SourceLocation,
     pub parent_value: Option<ValueId>,
-    pub consumer: SmallVec<[OpId; 4]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,7 +92,6 @@ impl ValueStore {
         self.value_lifetime.push(Value {
             source_location,
             parent_value,
-            consumer: SmallVec::new(),
         });
 
         self.value_consts.push(ConstVal::Unknown);
@@ -107,11 +105,6 @@ impl ValueStore {
 
     pub fn values<const N: usize>(&self, ids: [ValueId; N]) -> [&Value; N] {
         ids.map(|id| &self.value_lifetime[id.0.to_usize()])
-    }
-
-    pub fn consume_value(&mut self, value: ValueId, consumer_id: OpId) {
-        let val = &mut self.value_lifetime[value.0.to_usize()];
-        val.consumer.push(consumer_id);
     }
 
     pub fn value_types<const N: usize>(&self, ids: [ValueId; N]) -> Option<[TypeId; N]> {

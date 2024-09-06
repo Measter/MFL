@@ -29,9 +29,6 @@ pub(crate) fn extract_array(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let [array_id, idx] = stack.popn().unwrap();
-    stores.values.consume_value(array_id, op_id);
-    stores.values.consume_value(idx, op_id);
-
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_array {
@@ -59,7 +56,6 @@ pub(crate) fn extract_struct(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let struct_id = stack.pop().unwrap();
-    stores.values.consume_value(struct_id, op_id);
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_struct {
@@ -87,11 +83,8 @@ pub(crate) fn insert_array(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<3>().unwrap();
-    for id in inputs {
-        stores.values.consume_value(id, op_id);
-    }
-
     let mut output = None;
+
     if emit_array {
         // Leave the array on the stack so the user can continue using it.
         let output_id = stores.values.new_value(op_loc, Some(inputs[1]));
@@ -114,11 +107,8 @@ pub(crate) fn insert_struct(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
-    for id in inputs {
-        stores.values.consume_value(id, op_id);
-    }
-
     let mut output = None;
+
     if emit_struct {
         let output_id = stores.values.new_value(op_loc, Some(inputs[1]));
         output = Some(output_id);
@@ -143,7 +133,6 @@ pub(crate) fn pack_array(
     let input_ids = stack.lastn(count.to_usize()).unwrap();
     for &id in input_ids {
         inputs.push(id);
-        stores.values.consume_value(id, op_id);
     }
 
     stack.truncate(stack.len() - input_ids.len());
@@ -163,10 +152,6 @@ pub(crate) fn store(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
-    for value_id in inputs {
-        stores.values.consume_value(value_id, op_id);
-    }
-
     stores.ops.set_op_io(op_id, &inputs, &[]);
 }
 
@@ -290,7 +275,6 @@ pub(crate) fn pack_struct(
     let input_value_ids = stack.lastn(num_fields).unwrap();
     for &input_value_id in input_value_ids {
         inputs.push(input_value_id);
-        stores.values.consume_value(input_value_id, op_id);
     }
 
     stack.truncate(stack.len() - input_value_ids.len());

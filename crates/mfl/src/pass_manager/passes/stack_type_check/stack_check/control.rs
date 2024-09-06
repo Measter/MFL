@@ -74,11 +74,8 @@ pub(crate) fn epilogue_return(
     }
 
     let inputs = stack.lastn(exit_sig.len()).unwrap();
-
-    for &value_id in inputs {
-        stores.values.consume_value(value_id, op_id);
-    }
     stores.ops.set_op_io(op_id, inputs, &[]);
+
     let len = inputs.len();
     stack.truncate(stack.len() - len);
 }
@@ -128,11 +125,8 @@ pub(crate) fn syscall(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, num_args);
 
     let inputs = stack.split_off(stack.len() - num_args);
-    for &value_id in &inputs {
-        stores.values.consume_value(value_id, op_id);
-    }
-
     let new_id = stores.values.new_value(op_loc, None);
+
     stores.ops.set_op_io(op_id, &inputs, &[new_id]);
     stack.push(new_id);
 }
@@ -170,11 +164,8 @@ pub(crate) fn call_function_const(
     }
 
     let inputs: SmallVec<[_; 8]> = stack.drain(stack.len() - entry_arg_count..).collect();
-    for &value_id in &inputs {
-        stores.values.consume_value(value_id, op_id);
-    }
-
     let mut outputs = SmallVec::<[_; 8]>::new();
+
     for _ in &callee_sig.exit.inner {
         let new_id = stores.values.new_value(op_loc, None);
         outputs.push(new_id);
@@ -494,7 +485,6 @@ pub(crate) fn analyze_while(
 
     stores.values.set_merge_values(op_id, while_merges);
     stores.ops.set_op_io(op_id, &[condition_value], &[]);
-    stores.values.consume_value(condition_value, op_id);
 }
 
 fn fixup_op_input_values(

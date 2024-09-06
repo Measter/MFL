@@ -70,11 +70,6 @@ pub(crate) fn drop(
 
     let split_point = stack.len() - count;
     let inputs = stack.split_off(split_point);
-
-    for &input in &inputs {
-        stores.values.consume_value(input, op_id);
-    }
-
     stores.ops.set_op_io(op_id, &inputs, &[]);
 }
 
@@ -137,7 +132,6 @@ pub(crate) fn reverse(
 
     let mut outputs = SmallVec::<[_; 8]>::new();
     for &input in &inputs {
-        stores.values.consume_value(input, op_id);
         let new_value = stores.values.new_value(op_loc, Some(input));
         outputs.push(new_value);
         stack.push(new_value);
@@ -190,7 +184,6 @@ pub(crate) fn rotate(
 
     let mut outputs = SmallVec::<[_; 8]>::new();
     for &input in &inputs {
-        stores.values.consume_value(input, op_id);
         let new_value = stores.values.new_value(op_loc, Some(input));
         outputs.push(new_value);
         stack.push(new_value);
@@ -223,7 +216,6 @@ pub(crate) fn swap(
 
     let mut outputs = SmallVec::<[_; 8]>::new();
     for &input in &inputs {
-        stores.values.consume_value(input, op_id);
         let new_value = stores.values.new_value(op_loc, Some(input));
         outputs.push(new_value);
         stack.push(new_value);

@@ -51,7 +51,6 @@ pub(super) fn eat_one_make_one(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let value_id = stack.pop().unwrap();
-    stores.values.consume_value(value_id, op_id);
     let op_loc = stores.ops.get_token(op_id).location;
     let new_id = stores.values.new_value(op_loc, None);
 
@@ -69,9 +68,6 @@ pub(super) fn eat_two_make_one(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>().unwrap();
-    for value_id in inputs {
-        stores.values.consume_value(value_id, op_id);
-    }
     let op_loc = stores.ops.get_token(op_id).location;
     let new_id = stores.values.new_value(op_loc, None);
 
