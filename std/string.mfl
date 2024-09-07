@@ -24,10 +24,7 @@ struct(lang(string)) String {
                 false str@ str@ SplitResult
             }
             else {
-                0(u64) while 
-                    dup str.length@ <
-                    cond {dup { over str#@ char@ != and}}
-                {
+                0(u64) while dup str.length@ < && dup str#@ char@ != {
                     // [counter]
                     1+
                 }
