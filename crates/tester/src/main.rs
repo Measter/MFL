@@ -394,6 +394,9 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
             write!(stdout, "{mark}",)?;
 
             if print_diff_streams {
+                if !diffs.is_empty() {
+                    writeln!(stdout)?;
+                }
                 for line in diffs {
                     writeln!(stdout, "{line}")?;
                 }
@@ -402,6 +405,7 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
             if print_streams {
                 for (name, stream) in [("STDOUT", &command.stdout), ("STDERR", &command.stderr)] {
                     if !stream.is_empty() {
+                        writeln!(stdout)?;
                         writeln!(stdout, "    -- {name} --")?;
                         std::str::from_utf8(stream).unwrap().lines().try_for_each(
                             |line| -> Result<()> {
@@ -410,7 +414,6 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
                             },
                         )?;
                     }
-                    writeln!(stdout)?;
                 }
             }
 
