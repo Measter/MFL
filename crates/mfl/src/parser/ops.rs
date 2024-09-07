@@ -213,6 +213,9 @@ pub fn parse_simple_op(
         TokenKind::Less => OpCode::Basic(Basic::Compare(Compare::Less)),
         TokenKind::LessEqual => OpCode::Basic(Basic::Compare(Compare::LessEqual)),
         TokenKind::NotEqual => OpCode::Basic(Basic::Compare(Compare::NotEq)),
+        TokenKind::Ampersand | TokenKind::Pipe => {
+            return parse_logical_and_or(stores, token_iter, item_id, token)
+        }
 
         TokenKind::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
         TokenKind::Char(ch) => OpCode::Basic(Basic::PushInt {
@@ -360,6 +363,52 @@ fn parse_minus(
             token.location,
         ))
     }
+}
+
+fn parse_logical_and_or(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    token: Spanned<Token>,
+) -> ParseOpResult {
+    let next = token_iter.expect_single(stores, item_id, token.inner.kind, token.location)?;
+    let location = token.location.merge(next.location);
+
+    if !next.location.neighbour_of(token.location) {
+        let msg = if token.inner.kind == TokenKind::Ampersand {
+            "expected `logical and`, found `& &`"
+        } else {
+            "expected `logical or`, found `| |`"
+        };
+        Diagnostic::error(location, msg).attached(stores.diags, item_id);
+        return Err(());
+    }
+
+    let condition_block = if token.inner.kind == TokenKind::Ampersand {
+        Vec::new()
+    } else {
+        let op = OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot));
+        let op_id = stores
+            .ops
+            .new_op(op, token.inner.lexeme.with_span(location));
+        vec![op_id]
+    };
+
+    let then_block = parse_item_body_contents(stores, token_iter, item_id)?;
+    let op = OpCode::Basic(Basic::Control(Control::Cond(Cond {
+        token: location,
+        arms: vec![CondArm {
+            condition: stores.blocks.new_block(condition_block),
+            open: location,
+            block: stores.blocks.new_block(then_block),
+            close: location,
+        }],
+        implicit_else: true,
+        else_block: stores.blocks.new_block(Vec::new()),
+        else_close: location,
+    })));
+
+    Ok((op, location))
 }
 
 fn parse_emit_stack(
@@ -798,7 +847,11 @@ pub fn parse_cond(
             let else_block =
                 arm_token_iter.expect_group(stores, item_id, BracketKind::Brace, else_token)?;
             close_token = else_block.last_token();
-            else_block_ops = parse_item_body_contents(stores, &else_block.tokens, parent_id)?;
+            else_block_ops = parse_item_body_contents(
+                stores,
+                &mut TokenIter::new(else_block.tokens.iter()),
+                parent_id,
+            )?;
             else_close = else_block.last_token().location;
             had_else_block = true;
 
@@ -815,7 +868,11 @@ pub fn parse_cond(
             ConditionMatch,
             false,
         )?;
-        let condition = parse_item_body_contents(stores, &condition_tokens.list, parent_id)?;
+        let condition = parse_item_body_contents(
+            stores,
+            &mut TokenIter::new(condition_tokens.list.iter()),
+            parent_id,
+        )?;
         let condition = stores.blocks.new_block(condition);
 
         let then_block_tokens = arm_token_iter.expect_group(
@@ -826,7 +883,11 @@ pub fn parse_cond(
         )?;
         close_token = then_block_tokens.last_token();
 
-        let then_block = parse_item_body_contents(stores, &then_block_tokens.tokens, parent_id)?;
+        let then_block = parse_item_body_contents(
+            stores,
+            &mut TokenIter::new(then_block_tokens.tokens.iter()),
+            parent_id,
+        )?;
         let then_block = stores.blocks.new_block(then_block);
 
         arms.push(CondArm {
@@ -886,13 +947,21 @@ pub fn parse_while(
         false,
     )?;
 
-    let condition = parse_item_body_contents(stores, &condition_tokens.list, parent_id)?;
+    let condition = parse_item_body_contents(
+        stores,
+        &mut TokenIter::new(condition_tokens.list.iter()),
+        parent_id,
+    )?;
     let condition = stores.blocks.new_block(condition);
 
     let body_tokens =
         token_iter.expect_group(stores, item_id, BracketKind::Brace, condition_tokens.close)?;
 
-    let body_block = parse_item_body_contents(stores, &body_tokens.tokens, parent_id)?;
+    let body_block = parse_item_body_contents(
+        stores,
+        &mut TokenIter::new(body_tokens.tokens.iter()),
+        parent_id,
+    )?;
     let body_block = stores.blocks.new_block(body_block);
 
     let while_tokens = WhileTokens {

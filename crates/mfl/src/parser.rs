@@ -24,27 +24,23 @@ mod matcher;
 mod ops;
 mod utils;
 
-pub fn parse_item_body_contents(
+fn parse_item_body_contents(
     stores: &mut Stores,
-    tokens: &[TokenTree],
+    token_iter: &mut TokenIter,
     parent_id: ItemId,
 ) -> Result<Vec<OpId>, ()> {
     let mut ops = Vec::new();
     let mut had_error = ErrorSignal::new();
 
-    let mut token_iter = TokenIter::new(tokens.iter());
     while let Some(tree_item) = token_iter.next() {
         match tree_item {
             TokenTree::Single(token) => {
                 let (kind, op_end) = match token.inner.kind {
                     TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
                         if token_iter.next_is_group(BracketKind::Paren) {
-                            let Ok(new_ops) = parse_extract_insert_struct(
-                                stores,
-                                &mut token_iter,
-                                parent_id,
-                                *token,
-                            ) else {
+                            let Ok(new_ops) =
+                                parse_extract_insert_struct(stores, token_iter, parent_id, *token)
+                            else {
                                 had_error.set();
                                 continue;
                             };
@@ -55,7 +51,7 @@ pub fn parse_item_body_contents(
                     }
                     TokenKind::While => {
                         let Ok(code) =
-                            ops::parse_while(stores, &mut token_iter, parent_id, *token, parent_id)
+                            ops::parse_while(stores, token_iter, parent_id, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -64,7 +60,7 @@ pub fn parse_item_body_contents(
                     }
                     TokenKind::Cond => {
                         let Ok(code) =
-                            ops::parse_cond(stores, &mut token_iter, parent_id, *token, parent_id)
+                            ops::parse_cond(stores, token_iter, parent_id, *token, parent_id)
                         else {
                             had_error.set();
                             continue;
@@ -73,23 +69,20 @@ pub fn parse_item_body_contents(
                     }
 
                     TokenKind::Assert => {
-                        if items::parse_assert(stores, &mut token_iter, *token, parent_id).is_err()
-                        {
+                        if items::parse_assert(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
 
                         continue;
                     }
                     TokenKind::Const => {
-                        if items::parse_const(stores, &mut token_iter, *token, parent_id).is_err() {
+                        if items::parse_const(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
                         continue;
                     }
                     TokenKind::Variable => {
-                        if items::parse_variable(stores, &mut token_iter, *token, parent_id)
-                            .is_err()
-                        {
+                        if items::parse_variable(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
                         continue;
@@ -106,8 +99,7 @@ pub fn parse_item_body_contents(
                         continue;
                     }
                     TokenKind::Dot => {
-                        let Ok(op) =
-                            ops::parse_field_access(stores, &mut token_iter, parent_id, *token)
+                        let Ok(op) = ops::parse_field_access(stores, token_iter, parent_id, *token)
                         else {
                             had_error.set();
                             continue;
@@ -135,8 +127,7 @@ pub fn parse_item_body_contents(
                     }
 
                     _ => {
-                        let Ok(op) = parse_simple_op(stores, &mut token_iter, parent_id, *token)
-                        else {
+                        let Ok(op) = parse_simple_op(stores, token_iter, parent_id, *token) else {
                             had_error.set();
                             continue;
                         };

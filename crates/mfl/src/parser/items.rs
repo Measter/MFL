@@ -150,7 +150,8 @@ fn parse_item_body(
         .recover(had_error, &fallback);
 
     let mut body =
-        parse_item_body_contents(stores, &delim.tokens, parent_id).recover(had_error, Vec::new());
+        parse_item_body_contents(stores, &mut TokenIter::new(delim.tokens.iter()), parent_id)
+            .recover(had_error, Vec::new());
 
     // Makes later logic easier if we always have a prologue and epilogue.
     body.insert(

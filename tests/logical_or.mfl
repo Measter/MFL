@@ -1,0 +1,33 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+import std::term::writeln
+import std::term::write
+
+proc entry [] to [] {
+    cond {
+        "1" write true || "2" write true { "YAY" writeln }
+        else { "BOO" writeln }
+    }
+
+    cond {
+        "3" write true || "4" write false { "YAY" writeln }
+        else { "BOO" writeln }
+    }
+    
+    cond {
+        "5" write false || "6" write true { "YAY" writeln }
+        else { "BOO" writeln }
+    }
+
+    cond {
+        "7" write false || "8" write false { "YAY" writeln }
+        else { "BOO" writeln }
+    }
+}

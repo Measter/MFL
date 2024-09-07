@@ -222,6 +222,9 @@ pub enum TokenKind {
     #[token("pack")]
     Pack,
 
+    #[token("|")]
+    Pipe,
+
     #[token("+")]
     Plus,
 
@@ -344,6 +347,7 @@ impl TokenKind {
             TokenKind::NotEqual => "!=",
             TokenKind::Over => "over",
             TokenKind::Pack => "pack",
+            TokenKind::Pipe => "|",
             TokenKind::Plus => "+",
             TokenKind::Proc => "proc",
             TokenKind::Rem => "%",

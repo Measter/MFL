@@ -261,6 +261,7 @@ impl Backend {
                         | TokenKind::LessEqual
                         | TokenKind::Minus
                         | TokenKind::NotEqual
+                        | TokenKind::Pipe
                         | TokenKind::Plus
                         | TokenKind::Rem
                         | TokenKind::ShiftLeft
