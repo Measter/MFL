@@ -208,33 +208,33 @@
  [38;5;240m   │[0m [31m┬[0m  
  [38;5;240m   │[0m [31m╰[0m[31m─[0m[31m─[0m here
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `and`
+[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `&`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:38:1[38;5;246m][0m
     [38;5;246m│[0m
- [38;5;246m38 │[0m [31ma[0m[31mn[0m[31md[0m
- [38;5;240m   │[0m [31m─[0m[31m┬[0m[31m─[0m  
- [38;5;240m   │[0m  [31m╰[0m[31m─[0m[31m─[0m[31m─[0m here
+ [38;5;246m38 │[0m [31m&[0m
+ [38;5;240m   │[0m [31m┬[0m  
+ [38;5;240m   │[0m [31m╰[0m[31m─[0m[31m─[0m here
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `not`
+[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `!`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:39:1[38;5;246m][0m
     [38;5;246m│[0m
  [38;5;246m39 │[0m [31mn[0m[31mo[0m[31mt[0m
  [38;5;240m   │[0m [31m─[0m[31m┬[0m[31m─[0m  
  [38;5;240m   │[0m  [31m╰[0m[31m─[0m[31m─[0m[31m─[0m here
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `or`
+[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `|`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:40:1[38;5;246m][0m
     [38;5;246m│[0m
- [38;5;246m40 │[0m [31mo[0m[31mr[0m
- [38;5;240m   │[0m [31m─[0m[31m┬[0m  
- [38;5;240m   │[0m  [31m╰[0m[31m─[0m[31m─[0m here
+ [38;5;246m40 │[0m [31m|[0m
+ [38;5;240m   │[0m [31m┬[0m  
+ [38;5;240m   │[0m [31m╰[0m[31m─[0m[31m─[0m here
 [38;5;246m────╯[0m
-[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `xor`
+[31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `^`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:41:1[38;5;246m][0m
     [38;5;246m│[0m
- [38;5;246m41 │[0m [31mx[0m[31mo[0m[31mr[0m
- [38;5;240m   │[0m [31m─[0m[31m┬[0m[31m─[0m  
- [38;5;240m   │[0m  [31m╰[0m[31m─[0m[31m─[0m[31m─[0m here
+ [38;5;246m41 │[0m [31m^[0m
+ [38;5;240m   │[0m [31m┬[0m  
+ [38;5;240m   │[0m [31m╰[0m[31m─[0m[31m─[0m here
 [38;5;246m────╯[0m
 [31mError:[0m top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `shl`
     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m./tests/parser/bad_top_level.mfl:42:1[38;5;246m][0m

@@ -21,8 +21,8 @@ proc(lang(alloc)) alloc(T) [
 
     sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
     SYS_MMAP 0 rot(3<1)
-    PROT_READ PROT_WRITE or
-    MAP_ANONYMOUS MAP_PRIVATE or
+    PROT_READ PROT_WRITE |
+    MAP_ANONYMOUS MAP_PRIVATE |
     0 // File descriptor
     0 // File offset
     syscall(7)

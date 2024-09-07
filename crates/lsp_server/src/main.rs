@@ -248,9 +248,8 @@ impl Backend {
                         }
 
                         // Operator
-                        TokenKind::BitAnd
+                        TokenKind::Ampersand
                         | TokenKind::BitNot
-                        | TokenKind::BitOr
                         | TokenKind::BitXor
                         | TokenKind::Div
                         | TokenKind::Equal
@@ -289,8 +288,7 @@ impl Backend {
                         | TokenKind::Unpack => Legend::Function,
 
                         // Nothing
-                        TokenKind::Ampersand
-                        | TokenKind::BracketClose(_)
+                        TokenKind::BracketClose(_)
                         | TokenKind::BracketOpen(_)
                         | TokenKind::ColonColon
                         | TokenKind::Comma

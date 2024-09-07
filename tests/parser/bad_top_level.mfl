@@ -35,10 +35,10 @@ stktrc(true)
 *
 /
 %
-and
+&
 not
-or
-xor
+|
+^
 shl
 shr
 return

@@ -79,16 +79,10 @@ pub enum TokenKind {
     #[token("assumeinit")]
     AssumeInit,
 
-    #[token("and")]
-    BitAnd,
-
     #[token("not")]
     BitNot,
 
-    #[token("or")]
-    BitOr,
-
-    #[token("xor")]
+    #[token("^")]
     BitXor,
 
     #[token("true", |_| true)]
@@ -297,10 +291,8 @@ impl TokenKind {
             TokenKind::Ampersand => "&",
             TokenKind::Assert => "assert",
             TokenKind::AssumeInit => "init",
-            TokenKind::BitAnd => "and",
-            TokenKind::BitNot => "not",
-            TokenKind::BitOr => "or",
-            TokenKind::BitXor => "xor",
+            TokenKind::BitNot => "!",
+            TokenKind::BitXor => "^",
             TokenKind::Boolean(_) => "boolean literal",
             TokenKind::BracketClose(BracketKind::Brace) => "}",
             TokenKind::BracketClose(BracketKind::Paren) => ")",
