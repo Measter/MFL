@@ -9,7 +9,7 @@ edition = "2021"
 ariadne = { path = "../../../ariadne" }
 clap = { version = "4.2", features = ["derive"] }
 color-eyre = "0.6.1"
-hashbrown = "0.13.2"
+hashbrown = "0.14.5"
 intcast = { path = "../intcast" }
 lasso = "0.7.2"
 lexer = { path = "../lexer" }
