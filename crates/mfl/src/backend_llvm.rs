@@ -670,6 +670,7 @@ impl<'ctx> CodeGen<'ctx> {
                     TypeResolvedOp::CallFunction { id: callee_id, .. } => {
                         self.build_function_call(ds, value_store, op_id, callee_id)?
                     }
+                    TypeResolvedOp::FunctionPointer { .. } => todo!(),
                     TypeResolvedOp::Const { id } => self.build_const(ds, value_store, op_id, id)?,
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
                     TypeResolvedOp::Variable { id, is_global } => {

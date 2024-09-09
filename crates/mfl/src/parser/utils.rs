@@ -12,7 +12,7 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{IdentPathRoot, OpCode, UnresolvedIdent, UnresolvedOp, UnresolvedType},
     lexer::{TokenTree, TreeGroup},
-    parser::matcher::{integer_tokens, Matcher},
+    parser::matcher::{integer_tokens, IdentPathMatch, Matcher},
     stores::{diagnostics::Diagnostic, signatures::StackDefItemUnresolved},
     Stores,
 };
@@ -433,18 +433,7 @@ pub fn parse_unresolved_type(
     prev: SourceLocation,
     had_error: &mut ErrorSignal,
 ) -> Result<(Spanned<UnresolvedType>, Spanned<Token>), Option<SourceLocation>> {
-    let Ok(ident) = token_iter.expect_single(
-        stores,
-        item_id,
-        Matcher("ident", |t: Spanned<TokenKind>| {
-            if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
-                IsMatch::Yes
-            } else {
-                IsMatch::No(t.inner.kind_str(), t.location)
-            }
-        }),
-        prev,
-    ) else {
+    let Ok(ident) = token_iter.expect_single(stores, item_id, IdentPathMatch, prev) else {
         had_error.set();
         let bad_token = token_iter.next().map(|t| t.span()).unwrap_or(prev); // Consume the token so we can progress.
         return Err(Some(bad_token));

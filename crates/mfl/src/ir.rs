@@ -452,6 +452,7 @@ impl PartialEq for UnresolvedIdent {
 #[derive(Debug, Clone)]
 pub enum UnresolvedOp {
     Cast { id: UnresolvedType },
+    FunctionPointer(UnresolvedIdent),
     Ident(UnresolvedIdent),
     AssumeInit(UnresolvedIdent),
     SizeOf { id: UnresolvedType },
@@ -462,6 +463,7 @@ pub enum NResolvedOp<T> {
     Cast { id: T },
     CallFunction { id: ItemId, generic_params: Vec<T> },
     Const { id: ItemId },
+    FunctionPointer { id: ItemId, generic_params: Vec<T> },
     AssumeInit { id: ItemId },
     PackStruct { id: T },
     Variable { id: ItemId, is_global: bool },

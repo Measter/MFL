@@ -291,6 +291,7 @@ fn fully_resolve_block(
                     })
                 }
             }
+            OpCode::Complex(NameResolvedOp::FunctionPointer { .. }) => todo!(),
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 OpCode::Complex(TypeResolvedOp::Const { id })
             }
@@ -437,6 +438,7 @@ fn partially_resolve_block(
                     })
                 }
             }
+            OpCode::Complex(NameResolvedOp::FunctionPointer { .. }) => todo!(),
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 OpCode::Complex(PartiallyResolvedOp::Const { id })
             }

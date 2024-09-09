@@ -105,6 +105,9 @@ pub enum TokenKind {
     #[token("[", |_| BracketKind::Square)]
     BracketOpen(BracketKind),
 
+    #[token("^")]
+    Carat,
+
     #[token("cast")]
     Cast,
 
@@ -308,6 +311,7 @@ impl TokenKind {
             TokenKind::BracketOpen(BracketKind::Brace) => "{",
             TokenKind::BracketOpen(BracketKind::Paren) => "(",
             TokenKind::BracketOpen(BracketKind::Square) => "[",
+            TokenKind::Carat => "^",
             TokenKind::Cast => "cast",
             TokenKind::Char(_) => "character literal",
             TokenKind::ColonColon => "::'",

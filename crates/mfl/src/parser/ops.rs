@@ -24,7 +24,8 @@ use crate::{
 
 use super::{
     matcher::{
-        integer_tokens, valid_type_token, ConditionMatch, ExpectedTokenMatcher, IsMatch, Matcher,
+        integer_tokens, valid_type_token, ConditionMatch, ExpectedTokenMatcher, IdentPathMatch,
+        IsMatch, Matcher,
     },
     parse_item_body_contents,
     utils::{
@@ -994,4 +995,24 @@ pub fn parse_field_access(
         })),
         ident.location,
     ))
+}
+
+pub fn parse_function_pointer(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    token: Spanned<Token>,
+) -> ParseOpResult {
+    let mut had_error = ErrorSignal::new();
+    let first_ident = token_iter.expect_single(stores, item_id, IdentPathMatch, token.location)?;
+    let (ident, span) = parse_ident(stores, &mut had_error, item_id, token_iter, first_ident)?;
+
+    if had_error.into_err() {
+        Err(())
+    } else {
+        Ok((
+            OpCode::Complex(UnresolvedOp::FunctionPointer(ident)),
+            token.location.merge(span.location),
+        ))
+    }
 }

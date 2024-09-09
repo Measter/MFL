@@ -524,6 +524,7 @@ fn analyze_block(
 
                     had_error.merge_with(local_had_error);
                 }
+                TypeResolvedOp::FunctionPointer { .. } => todo!(),
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::memory::pack_struct(

@@ -792,6 +792,7 @@ fn resolve_idents_in_block(
 
                     OpCode::Complex(new_code)
                 }
+                UnresolvedOp::FunctionPointer(_) => todo!(),
                 UnresolvedOp::AssumeInit(ident) => {
                     let Ok(resolved_ident) =
                         resolved_single_ident(stores, had_error, cur_id, &ident)

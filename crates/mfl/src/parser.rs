@@ -106,7 +106,15 @@ fn parse_item_body_contents(
                         };
                         op
                     }
-
+                    TokenKind::Carat => {
+                        let Ok(op) =
+                            ops::parse_function_pointer(stores, token_iter, parent_id, *token)
+                        else {
+                            had_error.set();
+                            continue;
+                        };
+                        op
+                    }
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
                     TokenKind::GoesTo

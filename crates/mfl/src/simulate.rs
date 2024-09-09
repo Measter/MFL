@@ -201,6 +201,7 @@ fn simulate_execute_program_block(
             | OpCode::Complex(
                 TypeResolvedOp::CallFunction { .. }
                 | TypeResolvedOp::Cast { .. }
+                | TypeResolvedOp::FunctionPointer { .. }
                 | TypeResolvedOp::Variable { .. }
                 | TypeResolvedOp::PackStruct { .. },
             ) => {

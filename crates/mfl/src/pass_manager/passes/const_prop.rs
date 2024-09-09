@@ -147,7 +147,9 @@ fn analyze_block(
                 }
 
                 // Nothing to do here.
-                TypeResolvedOp::CallFunction { .. } | TypeResolvedOp::PackStruct { .. } => {}
+                TypeResolvedOp::CallFunction { .. }
+                | TypeResolvedOp::FunctionPointer { .. }
+                | TypeResolvedOp::PackStruct { .. } => {}
             },
         }
     }

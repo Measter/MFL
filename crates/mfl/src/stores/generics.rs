@@ -153,6 +153,10 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
                         })
                     }
 
+                    PartiallyResolvedOp::FunctionPointer { .. } => {
+                        todo!();
+                    }
+
                     PartiallyResolvedOp::AssumeInit { id } => {
                         let id = if let Some(new_id) = old_alloc_map.get(&id) {
                             *new_id

@@ -252,6 +252,7 @@ impl Backend {
                         | TokenKind::BitNot
                         | TokenKind::BitOr
                         | TokenKind::BitXor
+                        | TokenKind::Carat
                         | TokenKind::Div
                         | TokenKind::Equal
                         | TokenKind::Greater

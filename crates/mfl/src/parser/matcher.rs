@@ -115,6 +115,22 @@ impl ExpectedTokenMatcher<&TokenTree> for ConditionMatch {
     }
 }
 
+pub(super) struct IdentPathMatch;
+impl ExpectedTokenMatcher<Spanned<TokenKind>> for IdentPathMatch {
+    fn kind_str(&self) -> &'static str {
+        "ident"
+    }
+
+    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
+        match tk.inner {
+            TokenKind::ColonColon | TokenKind::SelfKw | TokenKind::Super | TokenKind::Ident => {
+                IsMatch::Yes
+            }
+            _ => IsMatch::No(tk.inner.kind_str(), tk.location),
+        }
+    }
+}
+
 pub(super) fn integer_tokens(t: Spanned<TokenKind>) -> IsMatch {
     if let TokenKind::Integer(_) = t.inner {
         IsMatch::Yes
