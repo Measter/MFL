@@ -139,7 +139,8 @@ pub(crate) fn extract_array(
         TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
         }
@@ -214,7 +215,8 @@ pub(crate) fn extract_struct(
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
                 item_id,
@@ -313,7 +315,8 @@ pub(crate) fn field_access(
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
                 item_id,
@@ -447,7 +450,8 @@ pub(crate) fn index(
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
         }
@@ -556,7 +560,8 @@ pub(crate) fn insert_array(
         TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
         }
@@ -658,7 +663,8 @@ pub(crate) fn insert_struct(
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
                 item_id,
@@ -742,23 +748,30 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
     };
     let ptr_info = stores.types.get_type_info(ptr_type);
 
-    let (TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id)) =
-        ptr_info.kind
-    else {
-        let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
-        let op_loc = stores.ops.get_token(op_id).location;
+    match ptr_info.kind {
+        TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id) => {
+            stores
+                .values
+                .set_value_type(op_data.outputs[0], ptee_type_id);
+        }
+        TypeKind::FunctionPointer => todo!(),
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::Bool
+        | TypeKind::Struct(_)
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::GenericStructInstance(_) => {
+            let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
+            let op_loc = stores.ops.get_token(op_id).location;
 
-        Diagnostic::error(op_loc, "value must be a pointer")
-            .with_label_chain(ptr_id, 0, ptr_type_name)
-            .attached(stores.diags, item_id);
+            Diagnostic::error(op_loc, "value must be a pointer")
+                .with_label_chain(ptr_id, 0, ptr_type_name)
+                .attached(stores.diags, item_id);
 
-        had_error.set();
-        return;
-    };
-
-    stores
-        .values
-        .set_value_type(op_data.outputs[0], ptee_type_id);
+            had_error.set();
+        }
+    }
 }
 
 pub(crate) fn pack_array(
@@ -911,6 +924,7 @@ pub(crate) fn unpack(
         | TypeKind::Float(_)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
+        | TypeKind::FunctionPointer
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_) => {
             let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);

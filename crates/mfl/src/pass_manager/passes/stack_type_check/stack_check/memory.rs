@@ -264,6 +264,7 @@ pub(crate) fn pack_struct(
         | TypeKind::Float(_)
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
+        | TypeKind::FunctionPointer
         | TypeKind::Bool => {
             unreachable!()
         }

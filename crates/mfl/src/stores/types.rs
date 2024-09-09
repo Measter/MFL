@@ -8,6 +8,7 @@ use ::stores::{
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
+use smallvec::SmallVec;
 use tracing::{debug_span, trace};
 
 use crate::{
@@ -212,11 +213,18 @@ impl Float {
     }
 }
 
+#[derive(Debug)]
+pub struct FunctionPointerArgs {
+    inputs: SmallVec<[TypeId; 8]>,
+    outputs: SmallVec<[TypeId; 8]>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Array { type_id: TypeId, length: usize },
     Integer(IntKind),
     Float(FloatWidth),
+    FunctionPointer,
     MultiPointer(TypeId),
     SinglePointer(TypeId),
     Bool,
@@ -312,6 +320,7 @@ pub struct TypeSize {
 #[derive(Debug)]
 pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
+    function_pointer_args: HashMap<TypeId, FunctionPointerArgs>,
     multi_pointer_map: HashMap<TypeId, TypeId>,
     single_pointer_map: HashMap<TypeId, TypeId>,
     array_map: HashMap<(TypeId, usize), TypeId>,
@@ -331,6 +340,7 @@ impl TypeStore {
     pub fn new(string_store: &mut StringStore) -> Self {
         let mut s = Self {
             kinds: HashMap::new(),
+            function_pointer_args: HashMap::new(),
             multi_pointer_map: HashMap::new(),
             single_pointer_map: HashMap::new(),
             array_map: HashMap::new(),
@@ -453,6 +463,7 @@ impl TypeStore {
                 .map(|id| self.kinds[id])
                 .ok_or(*token),
             NameResolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
+            NameResolvedType::FunctionPointer { .. } => todo!(),
             NameResolvedType::Array(at, length) => {
                 let inner = self.resolve_type(string_store, at)?;
                 Ok(self.get_array(string_store, inner.id, *length))
@@ -606,6 +617,7 @@ impl TypeStore {
             NameResolvedType::SimpleGenericParam(n) => {
                 PartiallyResolvedType::GenericParamSimple(*n)
             }
+            NameResolvedType::FunctionPointer { .. } => todo!(),
             NameResolvedType::Array(sub_type, length) => {
                 let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
                 PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
@@ -845,10 +857,12 @@ impl TypeStore {
                 byte_width: float.byte_width(),
                 alignement: float.byte_width(),
             },
-            TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => TypeSize {
-                byte_width: 8,
-                alignement: 8,
-            },
+            TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) | TypeKind::FunctionPointer => {
+                TypeSize {
+                    byte_width: 8,
+                    alignement: 8,
+                }
+            }
             TypeKind::Bool => TypeSize {
                 byte_width: 1,
                 alignement: 1,

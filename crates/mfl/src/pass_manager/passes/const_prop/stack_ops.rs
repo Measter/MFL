@@ -52,7 +52,8 @@ pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
         | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => unreachable!(),
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::FunctionPointer => unreachable!(),
     }
 }
 
@@ -188,7 +189,8 @@ pub(crate) fn size_of(
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => {}
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => {}
     }
 
     let size_info = stores.types.get_size_info(type_id);

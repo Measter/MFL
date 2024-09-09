@@ -42,7 +42,8 @@ pub(crate) fn index(
                 | TypeKind::MultiPointer(_)
                 | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
-                | TypeKind::GenericStructBase(_) => unreachable!(),
+                | TypeKind::GenericStructBase(_)
+                | TypeKind::FunctionPointer => unreachable!(),
             }
         }
         TypeKind::Array { .. }
@@ -51,7 +52,8 @@ pub(crate) fn index(
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => unreachable!(),
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => unreachable!(),
     };
 
     if idx.to_usize() < array_length {
@@ -100,14 +102,16 @@ pub(crate) fn insert_extract_array(
                 | TypeKind::MultiPointer(_)
                 | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
-                | TypeKind::GenericStructBase(_) => unreachable!(),
+                | TypeKind::GenericStructBase(_)
+                | TypeKind::FunctionPointer => unreachable!(),
             }
         }
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
         TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
-        | TypeKind::GenericStructBase(_) => unreachable!(),
+        | TypeKind::GenericStructBase(_)
+        | TypeKind::FunctionPointer => unreachable!(),
     };
 
     if idx.to_usize() < array_length {

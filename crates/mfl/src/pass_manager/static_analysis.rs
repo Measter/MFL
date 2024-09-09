@@ -113,6 +113,7 @@ pub(super) fn ensure_structs_declared_in_type(
         | NameResolvedType::SinglePointer(sub_type) => {
             ensure_structs_declared_in_type(stores, pass_manager, had_error, sub_type);
         }
+        NameResolvedType::FunctionPointer { .. } => todo!(),
     };
 }
 

@@ -69,7 +69,8 @@ impl<'ctx> CodeGen<'ctx> {
                     TypeKind::Array { .. }
                     | TypeKind::Struct(_)
                     | TypeKind::GenericStructBase(_)
-                    | TypeKind::GenericStructInstance(_) => {
+                    | TypeKind::GenericStructInstance(_)
+                    | TypeKind::FunctionPointer => {
                         unreachable!()
                     }
                 };
@@ -110,7 +111,8 @@ impl<'ctx> CodeGen<'ctx> {
                     | TypeKind::Bool
                     | TypeKind::Struct(_)
                     | TypeKind::GenericStructBase(_)
-                    | TypeKind::GenericStructInstance(_) => unreachable!(),
+                    | TypeKind::GenericStructInstance(_)
+                    | TypeKind::FunctionPointer => unreachable!(),
                 };
 
                 value_store.store_value(self, op_io.outputs[0], output.into())?;
@@ -145,7 +147,8 @@ impl<'ctx> CodeGen<'ctx> {
                     | TypeKind::Array { .. }
                     | TypeKind::Struct(_)
                     | TypeKind::GenericStructBase(_)
-                    | TypeKind::GenericStructInstance(_) => {
+                    | TypeKind::GenericStructInstance(_)
+                    | TypeKind::FunctionPointer => {
                         unreachable!()
                     }
                 };
@@ -156,7 +159,8 @@ impl<'ctx> CodeGen<'ctx> {
             | TypeKind::Array { .. }
             | TypeKind::Struct(_)
             | TypeKind::GenericStructBase(_)
-            | TypeKind::GenericStructInstance(_) => unreachable!(),
+            | TypeKind::GenericStructInstance(_)
+            | TypeKind::FunctionPointer => unreachable!(),
         }
 
         Ok(())

@@ -69,6 +69,10 @@ pub enum NameResolvedType {
     },
     SimpleBuiltin(BuiltinTypes),
     SimpleGenericParam(Spanned<Spur>),
+    FunctionPointer {
+        inputs: Vec<NameResolvedType>,
+        outputs: Vec<NameResolvedType>,
+    },
     Array(Box<NameResolvedType>, usize),
     MultiPointer(Box<NameResolvedType>),
     SinglePointer(Box<NameResolvedType>),
@@ -84,7 +88,9 @@ impl NameResolvedType {
         match self {
             NameResolvedType::SimpleCustom { id, .. }
             | NameResolvedType::GenericInstance { id, .. } => Some(*id),
-            NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => None,
+            NameResolvedType::SimpleBuiltin(_)
+            | NameResolvedType::SimpleGenericParam(_)
+            | NameResolvedType::FunctionPointer { .. } => None,
             NameResolvedType::Array(sub_type, _)
             | NameResolvedType::MultiPointer(sub_type)
             | NameResolvedType::SinglePointer(sub_type) => sub_type.item_id(),

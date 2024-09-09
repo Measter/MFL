@@ -112,7 +112,8 @@ pub(crate) fn cast(
         | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => {
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::FunctionPointer => {
             let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;
             Diagnostic::error(op_loc, format!("cannot cast to `{output_type_name}`"))
@@ -163,7 +164,8 @@ fn cast_to_ptr(
         | TypeKind::Float(_)
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => {
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::FunctionPointer => {
             generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;
@@ -211,7 +213,8 @@ fn cast_to_int(
         TypeKind::Array { .. }
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => {
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::FunctionPointer => {
             generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;
@@ -245,7 +248,8 @@ fn cast_to_float(
         | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => {
+        | TypeKind::GenericStructInstance(_)
+        | TypeKind::FunctionPointer => {
             generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
             return;

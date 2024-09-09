@@ -124,6 +124,7 @@ fn check_invalid_cyclic_refs_in_field_kind(
         // All these are indirect, so fine.
         NameResolvedType::MultiPointer(_)
         | NameResolvedType::SinglePointer(_)
+        | NameResolvedType::FunctionPointer { .. }
         | NameResolvedType::SimpleBuiltin(_)
         | NameResolvedType::SimpleGenericParam(_) => {}
     }

@@ -271,6 +271,7 @@ fn check_generic_param_length(
                 had_error.set();
             }
         }
+        NameResolvedType::FunctionPointer { .. } => todo!(),
         NameResolvedType::Array(inner, _)
         | NameResolvedType::MultiPointer(inner)
         | NameResolvedType::SinglePointer(inner) => {

@@ -464,6 +464,7 @@ impl<'ctx> CodeGen<'ctx> {
             TypeKind::Float(FloatWidth::F32) => self.ctx.f32_type().into(),
             TypeKind::Float(FloatWidth::F64) => self.ctx.f64_type().into(),
             TypeKind::Bool => self.ctx.bool_type().into(),
+            TypeKind::FunctionPointer => todo!(),
             TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 self.ctx.ptr_type(AddressSpace::default()).into()
             }
@@ -790,6 +791,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                     TypeKind::Integer { .. }
                     | TypeKind::Float(_)
+                    | TypeKind::FunctionPointer
                     | TypeKind::MultiPointer(_)
                     | TypeKind::SinglePointer(_)
                     | TypeKind::Bool
