@@ -197,7 +197,19 @@ fn resolve_idents_in_type(
                 }
             }
         }
-        UnresolvedType::FunctionPointer { .. } => todo!(),
+        UnresolvedType::FunctionPointer { inputs, outputs } => {
+            let inputs = inputs
+                .iter()
+                .map(|t| resolve_idents_in_type(stores, had_error, cur_id, t, generic_params))
+                .collect::<Result<_, _>>()?;
+
+            let outputs = outputs
+                .iter()
+                .map(|t| resolve_idents_in_type(stores, had_error, cur_id, t, generic_params))
+                .collect::<Result<_, _>>()?;
+
+            NameResolvedType::FunctionPointer { inputs, outputs }
+        }
         UnresolvedType::Array(sub_type, length) => {
             let sub_type =
                 resolve_idents_in_type(stores, had_error, cur_id, sub_type, generic_params)?;
@@ -271,7 +283,11 @@ fn check_generic_param_length(
                 had_error.set();
             }
         }
-        NameResolvedType::FunctionPointer { .. } => todo!(),
+        NameResolvedType::FunctionPointer { inputs, outputs } => {
+            inputs.iter().chain(outputs).for_each(|kind| {
+                check_generic_param_length(stores, had_error, cur_id, kind, kind_span, can_infer);
+            });
+        }
         NameResolvedType::Array(inner, _)
         | NameResolvedType::MultiPointer(inner)
         | NameResolvedType::SinglePointer(inner) => {
@@ -794,7 +810,100 @@ fn resolve_idents_in_block(
 
                     OpCode::Complex(new_code)
                 }
-                UnresolvedOp::FunctionPointer(_) => todo!(),
+                UnresolvedOp::FunctionPointer(ident) => {
+                    let Ok(resolved_ident) =
+                        resolved_single_ident(stores, had_error, cur_id, &ident)
+                    else {
+                        continue;
+                    };
+
+                    let resolved_generic_params = ident
+                        .generic_params
+                        .iter()
+                        .filter_map(|param| {
+                            let Ok(new_kind) = resolve_idents_in_type(
+                                stores,
+                                had_error,
+                                cur_id,
+                                param,
+                                generic_params,
+                            ) else {
+                                return None;
+                            };
+
+                            check_generic_param_length(
+                                stores,
+                                had_error,
+                                cur_id,
+                                &new_kind,
+                                op_token.location,
+                                true,
+                            );
+
+                            Some(new_kind)
+                        })
+                        .collect();
+
+                    let found_item_header = stores.items.get_item_header(resolved_ident);
+
+                    match found_item_header.kind {
+                        ItemKind::Function | ItemKind::FunctionDecl => {
+                            if !ident.generic_params.is_empty() {
+                                invalid_generic_count_diag(
+                                    stores,
+                                    cur_id,
+                                    op_token.location,
+                                    0,
+                                    ident.generic_params.len(),
+                                    &[(found_item_header.name.location, "function defined here")],
+                                );
+                                had_error.set();
+                            }
+                        }
+                        ItemKind::GenericFunction => {
+                            let expected_params_len = stores
+                                .items
+                                .get_function_template_paramaters(resolved_ident)
+                                .len();
+
+                            if ident.generic_params.len() != expected_params_len {
+                                invalid_generic_count_diag(
+                                    stores,
+                                    cur_id,
+                                    op_token.location,
+                                    expected_params_len,
+                                    ident.generic_params.len(),
+                                    &[(found_item_header.name.location, "function defined here")],
+                                );
+                                had_error.set();
+                            }
+                        }
+
+                        ItemKind::Assert
+                        | ItemKind::Const
+                        | ItemKind::Variable
+                        | ItemKind::StructDef
+                        | ItemKind::Module => {
+                            had_error.set();
+                            let op_loc = stores.ops.get_token(op_id).location;
+                            Diagnostic::error(
+                                op_loc,
+                                format!(
+                                    "cannot create function pointer to a {:?}",
+                                    found_item_header.kind
+                                ),
+                            )
+                            .attached(stores.diags, cur_id);
+
+                            continue;
+                        }
+                    }
+
+                    OpCode::Complex(NameResolvedOp::FunctionPointer {
+                        id: resolved_ident,
+                        generic_params: resolved_generic_params,
+                    })
+                }
                 UnresolvedOp::AssumeInit(ident) => {
                     let Ok(resolved_ident) =
                         resolved_single_ident(stores, had_error, cur_id, &ident)
