@@ -213,7 +213,7 @@ impl Float {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionPointerArgs {
     inputs: SmallVec<[TypeId; 8]>,
     outputs: SmallVec<[TypeId; 8]>,
@@ -321,6 +321,7 @@ pub struct TypeSize {
 pub struct TypeStore {
     kinds: HashMap<TypeId, TypeInfo>,
     function_pointer_args: HashMap<TypeId, FunctionPointerArgs>,
+    function_pointer_instance_map: HashMap<FunctionPointerArgs, TypeId>,
     multi_pointer_map: HashMap<TypeId, TypeId>,
     single_pointer_map: HashMap<TypeId, TypeId>,
     array_map: HashMap<(TypeId, usize), TypeId>,
@@ -341,6 +342,7 @@ impl TypeStore {
         let mut s = Self {
             kinds: HashMap::new(),
             function_pointer_args: HashMap::new(),
+            function_pointer_instance_map: HashMap::new(),
             multi_pointer_map: HashMap::new(),
             single_pointer_map: HashMap::new(),
             array_map: HashMap::new(),
@@ -463,7 +465,21 @@ impl TypeStore {
                 .map(|id| self.kinds[id])
                 .ok_or(*token),
             NameResolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
-            NameResolvedType::FunctionPointer { .. } => todo!(),
+            NameResolvedType::FunctionPointer { inputs, outputs } => {
+                let mut new_inputs = Vec::new();
+                for kind in inputs {
+                    let inner = self.resolve_type(string_store, kind)?;
+                    new_inputs.push(inner.id);
+                }
+
+                let mut new_outputs = Vec::new();
+                for kind in outputs {
+                    let inner = self.resolve_type(string_store, kind)?;
+                    new_outputs.push(inner.id);
+                }
+
+                Ok(self.get_function_pointer(string_store, new_inputs, new_outputs))
+            }
             NameResolvedType::Array(at, length) => {
                 let inner = self.resolve_type(string_store, at)?;
                 Ok(self.get_array(string_store, inner.id, *length))
@@ -492,6 +508,70 @@ impl TypeStore {
             }
             NameResolvedType::SimpleGenericParam(f) => Err(*f),
         }
+    }
+
+    pub fn get_function_pointer(
+        &mut self,
+        string_store: &mut StringStore,
+        inputs: Vec<TypeId>,
+        outputs: Vec<TypeId>,
+    ) -> TypeInfo {
+        let args = FunctionPointerArgs {
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        };
+
+        if let Some(id) = self.function_pointer_instance_map.get(&args) {
+            return self.get_type_info(*id);
+        }
+
+        let _span = debug_span!(stringify!(get_function_pointer)).entered();
+        trace!(?args);
+
+        let mut friendly_name = "proc".to_owned();
+        let mut mangled_name = "proc".to_owned();
+        friendly_name += stores::FRENDLY_ARRAY_OPEN;
+        mangled_name += stores::MANGLED_ARRAY_OPEN;
+
+        self.mangle_type_list(
+            &args.inputs,
+            string_store,
+            &mut friendly_name,
+            &mut mangled_name,
+        );
+
+        friendly_name += stores::FRENDLY_ARRAY_CLOSE;
+        mangled_name += stores::MANGLED_ARRAY_CLOSE;
+
+        friendly_name += " to ";
+
+        friendly_name += stores::FRENDLY_ARRAY_OPEN;
+        mangled_name += stores::MANGLED_ARRAY_OPEN;
+
+        self.mangle_type_list(
+            &args.outputs,
+            string_store,
+            &mut friendly_name,
+            &mut mangled_name,
+        );
+
+        friendly_name += stores::FRENDLY_ARRAY_CLOSE;
+        mangled_name += stores::MANGLED_ARRAY_CLOSE;
+
+        dbg!(&friendly_name);
+        dbg!(&mangled_name);
+
+        let friendly_name = string_store.intern(&friendly_name);
+        let mangled_name = string_store.intern(&mangled_name);
+
+        let new_type_id =
+            self.add_type(friendly_name, mangled_name, None, TypeKind::FunctionPointer);
+        trace!(?new_type_id);
+
+        self.function_pointer_args.insert(new_type_id, args.clone());
+        self.function_pointer_instance_map.insert(args, new_type_id);
+
+        self.kinds[&new_type_id]
     }
 
     pub fn get_multi_pointer(
@@ -769,40 +849,12 @@ impl TypeStore {
         friendly_name += stores::FRENDLY_GENERIC_OPEN;
         mangled_name += stores::MANGLED_GENERIC_OPEN;
 
-        match type_params.as_slice() {
-            [] => unreachable!(),
-            [n] => {
-                let ti = self.get_type_info(*n);
-                let friendly_name_part = string_store.resolve(ti.friendly_name);
-                let mangled_name_part = string_store.resolve(ti.mangled_name);
-                friendly_name += friendly_name_part;
-                mangled_name += mangled_name_part;
-            }
-            [n, xs @ ..] => {
-                use std::fmt::Write;
-                let ti = self.get_type_info(*n);
-                let friendly_name_part = string_store.resolve(ti.friendly_name);
-                let mangled_name_part = string_store.resolve(ti.mangled_name);
-                let _ = write!(&mut friendly_name, "{friendly_name_part}");
-                let _ = write!(&mut mangled_name, "{mangled_name_part}");
-
-                for t in xs {
-                    let ti = self.get_type_info(*t);
-                    let friendly_name_part = string_store.resolve(ti.friendly_name);
-                    let mangled_name_part = string_store.resolve(ti.mangled_name);
-                    let _ = write!(
-                        &mut friendly_name,
-                        "{}{friendly_name_part}",
-                        stores::FRENDLY_GENERIC_SEP
-                    );
-                    let _ = write!(
-                        &mut mangled_name,
-                        "{}{mangled_name_part}",
-                        stores::MANGLED_GENERIC_SEP
-                    );
-                }
-            }
-        }
+        self.mangle_type_list(
+            &type_params,
+            string_store,
+            &mut friendly_name,
+            &mut mangled_name,
+        );
 
         friendly_name += stores::FRENDLY_GENERIC_CLOSE;
         mangled_name += stores::MANGLED_GENERIC_CLOSE;
@@ -822,6 +874,49 @@ impl TypeStore {
             .insert((base_type_id, type_params), new_type_id);
 
         self.kinds[&new_type_id]
+    }
+
+    fn mangle_type_list(
+        &mut self,
+        type_params: &[TypeId],
+        string_store: &mut StringStore,
+        friendly_name: &mut String,
+        mangled_name: &mut String,
+    ) {
+        match type_params {
+            [] => {}
+            [n] => {
+                let ti = self.get_type_info(*n);
+                let friendly_name_part = string_store.resolve(ti.friendly_name);
+                let mangled_name_part = string_store.resolve(ti.mangled_name);
+                *friendly_name += friendly_name_part;
+                *mangled_name += mangled_name_part;
+            }
+            [n, xs @ ..] => {
+                use std::fmt::Write;
+                let ti = self.get_type_info(*n);
+                let friendly_name_part = string_store.resolve(ti.friendly_name);
+                let mangled_name_part = string_store.resolve(ti.mangled_name);
+                let _ = write!(friendly_name, "{friendly_name_part}");
+                let _ = write!(mangled_name, "{mangled_name_part}");
+
+                for t in xs {
+                    let ti = self.get_type_info(*t);
+                    let friendly_name_part = string_store.resolve(ti.friendly_name);
+                    let mangled_name_part = string_store.resolve(ti.mangled_name);
+                    let _ = write!(
+                        friendly_name,
+                        "{}{friendly_name_part}",
+                        stores::FRENDLY_GENERIC_SEP
+                    );
+                    let _ = write!(
+                        mangled_name,
+                        "{}{mangled_name_part}",
+                        stores::MANGLED_GENERIC_SEP
+                    );
+                }
+            }
+        }
     }
 
     #[inline]
