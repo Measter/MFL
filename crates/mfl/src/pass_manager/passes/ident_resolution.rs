@@ -197,6 +197,7 @@ fn resolve_idents_in_type(
                 }
             }
         }
+        UnresolvedType::FunctionPointer { .. } => todo!(),
         UnresolvedType::Array(sub_type, length) => {
             let sub_type =
                 resolve_idents_in_type(stores, had_error, cur_id, sub_type, generic_params)?;

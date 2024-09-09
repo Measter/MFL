@@ -195,6 +195,8 @@ pub(super) fn stack_def_tokens(tt: &TokenTree) -> IsMatch {
                     | TokenKind::Star
                     | TokenKind::Comma
                     | TokenKind::Variable
+                    | TokenKind::Proc
+                    | TokenKind::GoesTo
             ) =>
         {
             IsMatch::Yes

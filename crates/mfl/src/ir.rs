@@ -52,6 +52,10 @@ pub struct StructDefField<Kind> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedType {
     Simple(UnresolvedIdent),
+    FunctionPointer {
+        inputs: Vec<UnresolvedType>,
+        outputs: Vec<UnresolvedType>,
+    },
     Array(Box<UnresolvedType>, usize),
     MultiPointer(Box<UnresolvedType>),
     SinglePointer(Box<UnresolvedType>),

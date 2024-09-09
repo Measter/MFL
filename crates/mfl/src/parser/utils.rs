@@ -433,20 +433,37 @@ pub fn parse_unresolved_type(
     prev: SourceLocation,
     had_error: &mut ErrorSignal,
 ) -> Result<(Spanned<UnresolvedType>, Spanned<Token>), Option<SourceLocation>> {
-    let Ok(ident) = token_iter.expect_single(stores, item_id, IdentPathMatch, prev) else {
-        had_error.set();
-        let bad_token = token_iter.next().map(|t| t.span()).unwrap_or(prev); // Consume the token so we can progress.
-        return Err(Some(bad_token));
+    let (mut type_span, mut parsed_type, mut last_token) = if token_iter.next_is(TokenKind::Proc) {
+        let keyword = token_iter.next().unwrap_single();
+        let inputs = parse_stack_def(stores, had_error, token_iter, item_id, keyword);
+        let to_token = token_iter
+            .expect_single(stores, item_id, TokenKind::GoesTo, keyword.location)
+            .recover(had_error, keyword);
+        let outputs = parse_stack_def(stores, had_error, token_iter, item_id, to_token);
+
+        let type_span = keyword.location.merge(inputs.location);
+        let inputs = inputs.inner.into_iter().map(|s| s.inner).collect();
+        let outputs = outputs.inner.into_iter().map(|s| s.inner).collect();
+        (
+            type_span,
+            UnresolvedType::FunctionPointer { inputs, outputs },
+            keyword.inner.with_span(type_span),
+        )
+    } else {
+        let Ok(ident) = token_iter.expect_single(stores, item_id, IdentPathMatch, prev) else {
+            had_error.set();
+            let bad_token = token_iter.next().map(|t| t.span()).unwrap_or(prev); // Consume the token so we can progress.
+            return Err(Some(bad_token));
+        };
+
+        let Ok((ident, last_token)) = parse_ident(stores, had_error, item_id, token_iter, ident)
+        else {
+            had_error.set();
+            return Err(None);
+        };
+        (ident.span, UnresolvedType::Simple(ident), last_token)
     };
 
-    let Ok((ident, mut last_token)) = parse_ident(stores, had_error, item_id, token_iter, ident)
-    else {
-        had_error.set();
-        return Err(None);
-    };
-
-    let mut type_span = ident.span;
-    let mut parsed_type = UnresolvedType::Simple(ident);
     fn pointer_or_array(tt: &TokenTree) -> IsMatch {
         match tt {
             TokenTree::Single(tk)
