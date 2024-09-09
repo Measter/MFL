@@ -126,13 +126,13 @@ struct(lang(string)) String {
 
 proc is_whitespace [u8] to [bool] {
     dup 32=         // Space
-    over 9= |      // Tab
-    over 10= |     // Line Feed
-    over 12= |     // Form Feed
-    over 13= |     // Carriage return
+    over 9= or      // Tab
+    over 10= or     // Line Feed
+    over 12= or     // Form Feed
+    over 13= or     // Carriage return
     swap drop
 }
 
 proc is_digit [u8] to [bool] {
-    dup '0' >= swap '9' <= &
+    dup '0' >= swap '9' <= and
 }

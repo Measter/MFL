@@ -241,7 +241,9 @@ pub fn parse_simple_op(
         TokenKind::Div => OpCode::Basic(Basic::Arithmetic(Arithmetic::Div)),
         TokenKind::Rem => OpCode::Basic(Basic::Arithmetic(Arithmetic::Rem)),
 
+        TokenKind::BitAnd => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitAnd)),
         TokenKind::BitNot => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot)),
+        TokenKind::BitOr => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitOr)),
         TokenKind::BitXor => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitXor)),
         TokenKind::ShiftLeft => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftLeft)),
         TokenKind::ShiftRight => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftRight)),
@@ -369,46 +371,44 @@ fn parse_logical_and_or(
     item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    if token_iter.next_is_single_and(token.inner.kind, |t| {
-        t.location.neighbour_of(token.location)
-    }) {
-        let next = token_iter.next().unwrap();
-        let location = token.location.merge(next.span());
+    let next = token_iter.expect_single(stores, item_id, token.inner.kind, token.location)?;
+    let location = token.location.merge(next.location);
 
-        let condition_block = if token.inner.kind == TokenKind::Ampersand {
-            Vec::new()
+    if !next.location.neighbour_of(token.location) {
+        let msg = if token.inner.kind == TokenKind::Ampersand {
+            "expected `logical and`, found `& &`"
         } else {
-            let op = OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot));
-            let op_id = stores
-                .ops
-                .new_op(op, token.inner.lexeme.with_span(location));
-            vec![op_id]
+            "expected `logical or`, found `| |`"
         };
-
-        let then_block = parse_item_body_contents(stores, token_iter, item_id)?;
-        let op = OpCode::Basic(Basic::Control(Control::Cond(Cond {
-            token: location,
-            arms: vec![CondArm {
-                condition: stores.blocks.new_block(condition_block),
-                open: location,
-                block: stores.blocks.new_block(then_block),
-                close: location,
-            }],
-            implicit_else: true,
-            else_block: stores.blocks.new_block(Vec::new()),
-            else_close: location,
-        })));
-
-        Ok((op, location))
-    } else {
-        let kind = match token.inner.kind {
-            TokenKind::Ampersand => Arithmetic::BitAnd,
-            TokenKind::Pipe => Arithmetic::BitOr,
-            _ => unreachable!(),
-        };
-
-        Ok((OpCode::Basic(Basic::Arithmetic(kind)), token.location))
+        Diagnostic::error(location, msg).attached(stores.diags, item_id);
+        return Err(());
     }
+
+    let condition_block = if token.inner.kind == TokenKind::Ampersand {
+        Vec::new()
+    } else {
+        let op = OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot));
+        let op_id = stores
+            .ops
+            .new_op(op, token.inner.lexeme.with_span(location));
+        vec![op_id]
+    };
+
+    let then_block = parse_item_body_contents(stores, token_iter, item_id)?;
+    let op = OpCode::Basic(Basic::Control(Control::Cond(Cond {
+        token: location,
+        arms: vec![CondArm {
+            condition: stores.blocks.new_block(condition_block),
+            open: location,
+            block: stores.blocks.new_block(then_block),
+            close: location,
+        }],
+        implicit_else: true,
+        else_block: stores.blocks.new_block(Vec::new()),
+        else_close: location,
+    })));
+
+    Ok((op, location))
 }
 
 fn parse_emit_stack(
