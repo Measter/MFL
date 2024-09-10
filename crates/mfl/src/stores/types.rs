@@ -558,9 +558,6 @@ impl TypeStore {
         friendly_name += stores::FRENDLY_ARRAY_CLOSE;
         mangled_name += stores::MANGLED_ARRAY_CLOSE;
 
-        dbg!(&friendly_name);
-        dbg!(&mangled_name);
-
         let friendly_name = string_store.intern(&friendly_name);
         let mangled_name = string_store.intern(&mangled_name);
 
