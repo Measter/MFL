@@ -441,7 +441,7 @@ pub fn parse_unresolved_type(
             .recover(had_error, keyword);
         let outputs = parse_stack_def(stores, had_error, token_iter, item_id, to_token);
 
-        let type_span = keyword.location.merge(inputs.location);
+        let type_span = keyword.location.merge(outputs.location);
         let inputs = inputs.inner.into_iter().map(|s| s.inner).collect();
         let outputs = outputs.inner.into_iter().map(|s| s.inner).collect();
         (
