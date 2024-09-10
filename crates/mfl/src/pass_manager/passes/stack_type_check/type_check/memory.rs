@@ -9,7 +9,10 @@ use crate::{
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
     n_ops::SliceNOps,
-    pass_manager::{static_analysis::can_promote_int_unidirectional, PassManager},
+    pass_manager::{
+        static_analysis::{can_promote_int_unidirectional, failed_compare_stack_types},
+        PassManager,
+    },
     stores::{
         diagnostics::Diagnostic,
         ops::OpId,
@@ -741,9 +744,11 @@ pub(crate) fn insert_struct(
 }
 
 pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: ItemId, op_id: OpId) {
-    let op_data = stores.ops.get_op_io(op_id);
-    let ptr_id = op_data.inputs[0];
-    let Some([ptr_type]) = stores.values.value_types([ptr_id]) else {
+    let op_data = stores.ops.get_op_io(op_id).clone();
+    let [inputs @ .., ptr_id] = op_data.inputs.as_slice() else {
+        unreachable!()
+    };
+    let Some([ptr_type]) = stores.values.value_types([*ptr_id]) else {
         return;
     };
     let ptr_info = stores.types.get_type_info(ptr_type);
@@ -755,7 +760,27 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
                 .set_value_type(op_data.outputs[0], ptee_type_id);
         }
         TypeKind::FunctionPointer => {
-            let function_args = stores.types.get_function_pointer_args(ptr_info.id);
+            let function_args = stores.types.get_function_pointer_args(ptr_info.id).clone();
+
+            for (&expected_type_id, &input_value_id) in function_args.inputs.iter().zip(inputs) {
+                let Some([actual_type_id]) = stores.values.value_types([input_value_id]) else {
+                    continue;
+                };
+
+                if expected_type_id != actual_type_id {
+                    let [value_header] = stores.values.values_headers([*ptr_id]);
+                    failed_compare_stack_types(
+                        stores,
+                        item_id,
+                        inputs,
+                        &function_args.inputs,
+                        value_header.source_location,
+                        stores.ops.get_token(op_id).location,
+                        "procedure call signature mismatch",
+                    );
+                }
+            }
+
             let outputs = &op_data.outputs;
             for (&type_id, &value_id) in function_args.outputs.iter().zip(outputs) {
                 stores.values.set_value_type(value_id, type_id);
@@ -772,7 +797,7 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
             let op_loc = stores.ops.get_token(op_id).location;
 
             Diagnostic::error(op_loc, "value must be a pointer")
-                .with_label_chain(ptr_id, 0, ptr_type_name)
+                .with_label_chain(*ptr_id, 0, ptr_type_name)
                 .attached(stores.diags, item_id);
 
             had_error.set();

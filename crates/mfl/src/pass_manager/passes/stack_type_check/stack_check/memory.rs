@@ -162,10 +162,10 @@ pub(crate) fn load(
     };
 
     let input_type_info = stores.types.get_type_info(input_type_id);
-    let length = match input_type_info.kind {
+    let (input_count, output_count) = match input_type_info.kind {
         TypeKind::FunctionPointer => {
             let function_args = stores.types.get_function_pointer_args(input_type_info.id);
-            function_args.outputs.len()
+            (function_args.inputs.len(), function_args.outputs.len())
         }
 
         // We'll leave the full type checking up to the type checker, so the rest of the stack check
@@ -178,18 +178,22 @@ pub(crate) fn load(
         | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
-        | TypeKind::GenericStructInstance(_) => 1,
+        | TypeKind::GenericStructInstance(_) => (0, 1),
     };
 
-    let mut outputs = SmallVec::<[_; 20]>::new();
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, input_count);
 
-    for _ in 0..length {
+    let mut inputs: SmallVec<[ValueId; 20]> = stack.drain(stack.len() - input_count..).collect();
+    inputs.push(input_value_id);
+
+    let mut outputs = SmallVec::<[_; 20]>::new();
+    for _ in 0..output_count {
         let id = stores.values.new_value(op_loc, None);
         stack.push(id);
         outputs.push(id);
     }
 
-    stores.ops.set_op_io(op_id, &[input_value_id], &outputs);
+    stores.ops.set_op_io(op_id, &inputs, &outputs);
 }
 
 pub(crate) fn store(
