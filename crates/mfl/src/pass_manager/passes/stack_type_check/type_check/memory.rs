@@ -754,7 +754,13 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
                 .values
                 .set_value_type(op_data.outputs[0], ptee_type_id);
         }
-        TypeKind::FunctionPointer => todo!(),
+        TypeKind::FunctionPointer => {
+            let function_args = stores.types.get_function_pointer_args(ptr_info.id);
+            let outputs = &op_data.outputs;
+            for (&type_id, &value_id) in function_args.outputs.iter().zip(outputs) {
+                stores.values.set_value_type(value_id, type_id);
+            }
+        }
         TypeKind::Array { .. }
         | TypeKind::Integer(_)
         | TypeKind::Float(_)
