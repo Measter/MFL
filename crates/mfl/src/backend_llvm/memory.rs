@@ -1,8 +1,9 @@
 use ariadne::Cache;
 use inkwell::{
+    types::BasicMetadataTypeEnum,
     values::{
-        AggregateValue, AggregateValueEnum, BasicValue, FunctionValue, IntValue, PointerValue,
-        StructValue,
+        AggregateValue, AggregateValueEnum, BasicMetadataValueEnum, BasicValue, FunctionValue,
+        IntValue, PointerValue, StructValue,
     },
     AddressSpace, IntPredicate,
 };
@@ -939,22 +940,83 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
 
-        let ptr_value_id = op_io.inputs()[0];
-        let [ptr_type_id] = ds.values.value_types([ptr_value_id]).unwrap();
-        let ptr_type_info = ds.types.get_type_info(ptr_type_id);
-        let (TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id)) =
-            ptr_type_info.kind
-        else {
+        let [inputs @ .., ptr_value_id] = op_io.inputs.as_slice() else {
             unreachable!()
         };
+        let [ptr_type_id] = ds.values.value_types([*ptr_value_id]).unwrap();
+        let ptr_type_info = ds.types.get_type_info(ptr_type_id);
 
         let ptr = value_store
-            .load_value(self, ptr_value_id, ds.values, ds.types)?
+            .load_value(self, *ptr_value_id, ds.values, ds.types)?
             .into_pointer_value();
 
-        let ptee_type = self.get_type(ds.types, ptee_id);
-        let value = self.builder.build_load(ptee_type, ptr, "load")?;
-        value_store.store_value(self, op_io.outputs()[0], value)?;
+        match ptr_type_info.kind {
+            TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id) => {
+                let ptee_type = self.get_type(ds.types, ptee_id);
+                let value = self.builder.build_load(ptee_type, ptr, "load")?;
+                value_store.store_value(self, op_io.outputs()[0], value)?;
+            }
+            TypeKind::FunctionPointer => {
+                let function_args = ds.types.get_function_pointer_args(ptr_type_id).clone();
+
+                let entry_stack: Vec<BasicMetadataTypeEnum> = function_args
+                    .inputs
+                    .iter()
+                    .map(|t| self.get_type(ds.types, *t).into())
+                    .collect();
+
+                let function_type = if function_args.outputs.is_empty() {
+                    self.ctx.void_type().fn_type(&entry_stack, false)
+                } else {
+                    let exit_stack: Vec<_> = function_args
+                        .outputs
+                        .iter()
+                        .map(|t| self.get_type(ds.types, *t))
+                        .collect();
+                    self.ctx
+                        .struct_type(&exit_stack, false)
+                        .fn_type(entry_stack.as_slice(), false)
+                };
+
+                let args: Vec<BasicMetadataValueEnum> = inputs
+                    .iter()
+                    .zip(&function_args.inputs)
+                    .map(|(&value_id, &expected_type)| -> InkwellResult<_> {
+                        let value = value_store.load_value(self, value_id, ds.values, ds.types)?;
+                        let [input_type_id] = ds.values.value_types([value_id]).unwrap();
+
+                        let v = match (
+                            ds.types.get_type_info(expected_type).kind,
+                            ds.types.get_type_info(input_type_id).kind,
+                        ) {
+                            (TypeKind::Integer(expected_int), TypeKind::Integer(input_int)) => self
+                                .cast_int(
+                                    value.into_int_value(),
+                                    expected_int.width.get_int_type(self.ctx),
+                                    input_int.signed,
+                                )?
+                                .as_basic_value_enum(),
+                            (TypeKind::Float(expected_float), TypeKind::Float(_)) => self
+                                .builder
+                                .build_float_cast(
+                                    value.into_float_value(),
+                                    expected_float.get_float_type(self.ctx),
+                                    "",
+                                )?
+                                .as_basic_value_enum(),
+                            _ => value,
+                        };
+                        Ok(v)
+                    })
+                    .map(|p| p.map(Into::into))
+                    .collect::<InkwellResult<_>>()?;
+
+                self.builder
+                    .build_indirect_call(function_type, ptr, &args, "indirect_call")?;
+            }
+
+            _ => unreachable!(),
+        }
 
         Ok(())
     }

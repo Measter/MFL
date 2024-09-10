@@ -14,6 +14,24 @@ use crate::{
 use super::{CodeGen, InkwellResult, SsaMap};
 
 impl<'ctx> CodeGen<'ctx> {
+    pub(super) fn build_function_pointer(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        callee_id: ItemId,
+    ) -> InkwellResult {
+        self.enqueue_function(callee_id);
+
+        let output_value_id = ds.ops.get_op_io(op_id).outputs[0];
+        let function_value = self.item_function_map[&callee_id];
+        let function_pointer = function_value.as_global_value().as_pointer_value();
+
+        value_store.store_value(self, output_value_id, function_pointer.into())?;
+
+        Ok(())
+    }
+
     pub(super) fn build_function_call(
         &mut self,
         ds: &mut Stores,

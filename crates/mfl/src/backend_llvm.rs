@@ -464,8 +464,7 @@ impl<'ctx> CodeGen<'ctx> {
             TypeKind::Float(FloatWidth::F32) => self.ctx.f32_type().into(),
             TypeKind::Float(FloatWidth::F64) => self.ctx.f64_type().into(),
             TypeKind::Bool => self.ctx.bool_type().into(),
-            TypeKind::FunctionPointer => todo!(),
-            TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
+            TypeKind::FunctionPointer | TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
                 self.ctx.ptr_type(AddressSpace::default()).into()
             }
             TypeKind::Array { type_id, length } => self
@@ -671,7 +670,9 @@ impl<'ctx> CodeGen<'ctx> {
                     TypeResolvedOp::CallFunction { id: callee_id, .. } => {
                         self.build_function_call(ds, value_store, op_id, callee_id)?
                     }
-                    TypeResolvedOp::FunctionPointer { .. } => todo!(),
+                    TypeResolvedOp::FunctionPointer { id, .. } => {
+                        self.build_function_pointer(ds, value_store, op_id, id)?
+                    }
                     TypeResolvedOp::Const { id } => self.build_const(ds, value_store, op_id, id)?,
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
                     TypeResolvedOp::Variable { id, is_global } => {
