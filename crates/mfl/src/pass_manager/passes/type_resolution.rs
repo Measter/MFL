@@ -291,7 +291,60 @@ fn fully_resolve_block(
                     })
                 }
             }
-            OpCode::Complex(NameResolvedOp::FunctionPointer { .. }) => todo!(),
+            OpCode::Complex(NameResolvedOp::FunctionPointer { id, generic_params }) => {
+                let function_item_header = stores.items.get_item_header(id);
+                if function_item_header.kind != ItemKind::GenericFunction {
+                    OpCode::Complex(TypeResolvedOp::FunctionPointer {
+                        id,
+                        generic_params: Vec::new(),
+                    })
+                } else {
+                    let unresolved_generic_params = &generic_params;
+                    let mut resolved_generic_params = Vec::new();
+                    let mut unresolved_generic_params_sm = SmallVec::<[NameResolvedType; 4]>::new();
+
+                    for ugp in unresolved_generic_params {
+                        let mut local_had_error = ErrorSignal::new();
+                        ensure_structs_declared_in_type(
+                            stores,
+                            pass_manager,
+                            &mut local_had_error,
+                            ugp,
+                        );
+                        if local_had_error.into_err() {
+                            had_error.set();
+                            continue;
+                        }
+
+                        let type_info = match stores.types.resolve_type(stores.strings, ugp) {
+                            Ok(info) => info,
+                            Err(err_token) => {
+                                Diagnostic::type_error(stores, err_token);
+                                had_error.set();
+                                continue;
+                            }
+                        };
+
+                        resolved_generic_params.push(type_info.id);
+                        unresolved_generic_params_sm.push(ugp.clone());
+                    }
+
+                    let Ok(new_id) = stores.get_generic_function_instance(
+                        pass_manager,
+                        had_error,
+                        id,
+                        &resolved_generic_params,
+                    ) else {
+                        had_error.set();
+                        continue;
+                    };
+
+                    OpCode::Complex(TypeResolvedOp::FunctionPointer {
+                        id: new_id,
+                        generic_params: resolved_generic_params,
+                    })
+                }
+            }
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 OpCode::Complex(TypeResolvedOp::Const { id })
             }
