@@ -399,7 +399,13 @@ fn analyze_block(
                     }
                     Memory::Load => {
                         let mut local_had_error = ErrorSignal::new();
-                        eat_one_make_one(stores, &mut local_had_error, stack, item_id, op_id);
+                        stack_check::memory::load(
+                            stores,
+                            &mut local_had_error,
+                            stack,
+                            item_id,
+                            op_id,
+                        );
                         if local_had_error.is_ok() {
                             type_check::memory::load(stores, &mut local_had_error, item_id, op_id);
                         }

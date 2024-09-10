@@ -215,8 +215,8 @@ impl Float {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionPointerArgs {
-    inputs: SmallVec<[TypeId; 8]>,
-    outputs: SmallVec<[TypeId; 8]>,
+    pub inputs: SmallVec<[TypeId; 8]>,
+    pub outputs: SmallVec<[TypeId; 8]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1043,6 +1043,12 @@ impl TypeStore {
     #[inline]
     pub fn get_generic_base_def(&self, id: TypeId) -> &StructDef<PartiallyResolvedType> {
         &self.generic_struct_id_map[&id]
+    }
+
+    #[track_caller]
+    #[inline]
+    pub fn get_function_pointer_args(&self, id: TypeId) -> &FunctionPointerArgs {
+        &self.function_pointer_args[&id]
     }
 }
 
