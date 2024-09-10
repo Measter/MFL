@@ -2,15 +2,17 @@ use std::ops::ControlFlow;
 
 use intcast::IntCast;
 use lasso::Spur;
+use prettytable::{row, Table};
 use smallvec::SmallVec;
 use stores::{items::ItemId, source::Spanned};
 
 use crate::{
+    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
     n_ops::SliceNOps,
     pass_manager::{
-        static_analysis::{can_promote_int_unidirectional, failed_compare_stack_types},
+        static_analysis::{can_promote_float_unidirectional, can_promote_int_unidirectional},
         PassManager,
     },
     stores::{
@@ -768,16 +770,65 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
                 };
 
                 if expected_type_id != actual_type_id {
-                    let [value_header] = stores.values.values_headers([*ptr_id]);
-                    failed_compare_stack_types(
-                        stores,
-                        item_id,
-                        inputs,
-                        &function_args.inputs,
-                        value_header.source_location,
-                        stores.ops.get_token(op_id).location,
-                        "procedure call signature mismatch",
-                    );
+                    let actual_type_info = stores.types.get_type_info(actual_type_id);
+                    let expected_type_info = stores.types.get_type_info(expected_type_id);
+
+                    if !matches!((actual_type_info.kind, expected_type_info.kind),
+                        (
+                            TypeKind::Integer(actual),
+                            TypeKind::Integer(expected)
+                        ) if can_promote_int_unidirectional(actual, expected)
+                    ) && !matches!(
+                        (actual_type_info.kind, expected_type_info.kind),
+                        (TypeKind::Float(actual), TypeKind::Float(expected))
+                        if can_promote_float_unidirectional(actual, expected)
+                    ) {
+                        let function_type_name = stores.strings.resolve(ptr_info.friendly_name);
+
+                        let mut diag = Diagnostic::error(
+                            stores.ops.get_token(op_id).location,
+                            "procedure call signature mismatch",
+                        )
+                        .primary_label_message("called here")
+                        .with_label_chain(
+                            *ptr_id,
+                            op_data.inputs.len().to_u64() - 1,
+                            function_type_name,
+                        );
+
+                        let mut note = Table::new();
+                        note.set_format(*TABLE_FORMAT);
+                        note.set_titles(row!("Depth", "Expected", "Actual"));
+
+                        let pairs = function_args.inputs.iter().zip(inputs).enumerate().rev();
+                        for (idx, (expected, actual_id)) in pairs {
+                            let value_type =
+                                stores
+                                    .values
+                                    .value_types([*actual_id])
+                                    .map_or("Unknown", |[v]| {
+                                        let type_info = stores.types.get_type_info(v);
+                                        stores.strings.resolve(type_info.friendly_name)
+                                    });
+
+                            diag.add_label_chain(*actual_id, idx.to_u64(), value_type);
+
+                            let expected_type_info = stores.types.get_type_info(*expected);
+                            let expected_name =
+                                stores.strings.resolve(expected_type_info.friendly_name);
+                            note.add_row(row!(
+                                (inputs.len() - idx - 1).to_string(),
+                                expected_name,
+                                value_type
+                            ));
+                        }
+
+                        diag.with_note(note.to_string())
+                            .attached(stores.diags, item_id);
+
+                        had_error.set();
+                        break;
+                    }
                 }
             }
 
