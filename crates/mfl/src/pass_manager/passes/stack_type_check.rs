@@ -530,7 +530,19 @@ fn analyze_block(
 
                     had_error.merge_with(local_had_error);
                 }
-                TypeResolvedOp::FunctionPointer { .. } => todo!(),
+                TypeResolvedOp::FunctionPointer { id, generic_params } => {
+                    make_one(stores, stack, op_id);
+                    let mut local_had_error = ErrorSignal::new();
+                    type_check::stack_ops::function_pointer(
+                        stores,
+                        pass_manager,
+                        &mut local_had_error,
+                        op_id,
+                        id,
+                        &generic_params,
+                    );
+                    had_error.merge_with(local_had_error);
+                }
                 TypeResolvedOp::PackStruct { id } => {
                     let mut local_had_error = ErrorSignal::new();
                     stack_check::memory::pack_struct(

@@ -6,9 +6,11 @@ use stores::items::ItemId;
 use crate::{
     diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
-    pass_manager::static_analysis::generate_type_mismatch_diag,
+    ir::{OpCode, TypeResolvedOp},
+    pass_manager::{static_analysis::generate_type_mismatch_diag, PassManager},
     stores::{
         diagnostics::Diagnostic,
+        item::ItemKind,
         ops::OpId,
         types::{BuiltinTypes, FloatWidth, IntKind, TypeId, TypeKind},
         values::ValueId,
@@ -92,6 +94,67 @@ pub(crate) fn push_str(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let kind = stores.types.get_builtin(BuiltinTypes::String).id;
     stores.values.set_value_type(op_data.outputs[0], kind);
+}
+
+pub(crate) fn function_pointer(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+    callee_id: ItemId,
+    params: &[TypeId],
+) {
+    let callee_header = stores.items.get_item_header(callee_id);
+
+    let callee_id = if callee_header.kind == ItemKind::GenericFunction {
+        if pass_manager
+            .ensure_partially_resolve_types(stores, callee_id)
+            .is_err()
+        {
+            had_error.set();
+            return;
+        }
+
+        let Ok(new_id) =
+            stores.get_generic_function_instance(pass_manager, had_error, callee_id, params)
+        else {
+            had_error.set();
+            return;
+        };
+
+        // Need to overwrite to point at the correct new function ID.
+        stores.ops.overwrite_type_resolved(
+            op_id,
+            OpCode::Complex(TypeResolvedOp::FunctionPointer {
+                id: new_id,
+                generic_params: Vec::new(),
+            }),
+        );
+
+        new_id
+    } else {
+        callee_id
+    };
+
+    if pass_manager
+        .ensure_type_resolved_signature(stores, callee_id)
+        .is_err()
+    {
+        had_error.set();
+        return;
+    }
+
+    let callee_sig = stores.sigs.trir.get_item_signature(callee_id);
+    let function_pointer_type = stores.types.get_function_pointer(
+        stores.strings,
+        callee_sig.entry.clone(),
+        callee_sig.exit.clone(),
+    );
+
+    let output_value_id = stores.ops.get_op_io(op_id).outputs[0];
+    stores
+        .values
+        .set_value_type(output_value_id, function_pointer_type.id);
 }
 
 pub(crate) fn cast(
