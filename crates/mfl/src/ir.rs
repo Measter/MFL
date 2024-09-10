@@ -100,11 +100,17 @@ impl NameResolvedType {
 #[derive(Debug, Clone)]
 pub enum PartiallyResolvedType {
     Fixed(TypeId),
-    GenericParamSimple(Spanned<Spur>),    // T
+    GenericParamSimple(Spanned<Spur>), // T
+
+    // proc[T] to [], etc.
+    GenericParamFunctionPointer {
+        inputs: Vec<Self>,
+        outputs: Vec<Self>,
+    },
     GenericParamMultiPointer(Box<Self>),  // T*
     GenericParamSinglePointer(Box<Self>), // T&
     GenericParamArray(Box<Self>, usize),  // T[N]
-    GenericStruct(ItemId, Vec<Self>),     // Bar(u32), Bar(T), Bar(Baz(T))
+    GenericStruct(ItemId, Vec<Self>),     // Bar(T), Bar(Baz(T))
 }
 
 impl PartiallyResolvedType {
@@ -118,6 +124,28 @@ impl PartiallyResolvedType {
             (PartiallyResolvedType::GenericParamSimple(s), _) if s.inner == param => {
                 Some(input_type_info.id)
             }
+            (
+                PartiallyResolvedType::GenericParamFunctionPointer { inputs, outputs },
+                TypeKind::FunctionPointer,
+            ) => {
+                let function_args = stores.types.get_function_pointer_args(input_type_info.id);
+                if function_args.inputs.len() != inputs.len()
+                    || function_args.outputs.len() != outputs.len()
+                {
+                    return None;
+                }
+
+                inputs
+                    .iter()
+                    .zip(&function_args.inputs)
+                    .chain(outputs.iter().zip(&function_args.outputs))
+                    .flat_map(|(p, itp)| {
+                        let itp_info = stores.types.get_type_info(*itp);
+                        p.match_generic_type(stores, param, itp_info)
+                    })
+                    .next()
+            }
+
             (
                 PartiallyResolvedType::GenericParamMultiPointer(t),
                 TypeKind::MultiPointer(ptr_type),

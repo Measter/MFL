@@ -694,7 +694,24 @@ impl TypeStore {
             NameResolvedType::SimpleGenericParam(n) => {
                 PartiallyResolvedType::GenericParamSimple(*n)
             }
-            NameResolvedType::FunctionPointer { .. } => todo!(),
+            NameResolvedType::FunctionPointer { inputs, outputs } => {
+                let mut new_inputs = Vec::new();
+                for kind in inputs {
+                    let inner = self.partially_resolve_generic_type(string_store, kind)?;
+                    new_inputs.push(inner);
+                }
+
+                let mut new_outputs = Vec::new();
+                for kind in outputs {
+                    let inner = self.partially_resolve_generic_type(string_store, kind)?;
+                    new_outputs.push(inner);
+                }
+
+                PartiallyResolvedType::GenericParamFunctionPointer {
+                    inputs: new_inputs,
+                    outputs: new_outputs,
+                }
+            }
             NameResolvedType::Array(sub_type, length) => {
                 let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
                 PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
@@ -764,6 +781,19 @@ impl TypeStore {
         match kind {
             PartiallyResolvedType::Fixed(id) => *id,
             PartiallyResolvedType::GenericParamSimple(n) => type_params[&n.inner],
+            PartiallyResolvedType::GenericParamFunctionPointer { inputs, outputs } => {
+                let new_inputs = inputs
+                    .iter()
+                    .map(|sub_type| self.resolve_generic_type(string_store, sub_type, type_params))
+                    .collect();
+                let new_outputs = outputs
+                    .iter()
+                    .map(|sub_type| self.resolve_generic_type(string_store, sub_type, type_params))
+                    .collect();
+
+                self.get_function_pointer(string_store, new_inputs, new_outputs)
+                    .id
+            }
             PartiallyResolvedType::GenericParamMultiPointer(sub_type) => {
                 let pointee_id = self.resolve_generic_type(string_store, sub_type, type_params);
                 self.get_multi_pointer(string_store, pointee_id).id
