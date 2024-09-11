@@ -50,28 +50,38 @@ enum DiagKind {
     Advise,
 }
 
+const RED: Color = Color::Rgb(0xbd, 0x4e, 0x4a);
+const YELLOW: Color = Color::Rgb(0xd3, 0xc4, 0x8a);
+const GREEN: Color = Color::Rgb(0xaa, 0xcd, 0x7b);
+const CYAN: Color = Color::Rgb(0x7b, 0xcb, 0xcd);
+
 impl DiagKind {
     fn primary_label_color(self) -> Color {
         match self {
-            DiagKind::Error => Color::Red,
-            DiagKind::Warning => Color::Yellow,
-            DiagKind::Advise => Color::Green,
+            DiagKind::Error => RED,
+            DiagKind::Warning => YELLOW,
+            DiagKind::Advise => CYAN,
         }
     }
 
     fn help_label_color(&self) -> Color {
-        Color::Green
+        GREEN
     }
 
-    fn chain_label_root_color(&self) -> Color {
-        match self {
-            DiagKind::Error => Color::Yellow,
-            DiagKind::Warning | DiagKind::Advise => Color::Magenta,
-        }
+    fn chain_label_root_color(&self) -> [Color; 3] {
+        [
+            Color::Rgb(0xd3, 0x75, 0xb1),
+            Color::Rgb(0x9d, 0x75, 0xd3),
+            Color::Rgb(0x75, 0xa5, 0xd3),
+        ]
     }
 
-    fn chain_label_link_color(&self) -> Color {
-        Color::Blue
+    fn chain_label_link_color(&self) -> [Color; 3] {
+        [
+            Color::Rgb(0xbc, 0x8c, 0xad),
+            Color::Rgb(0x9e, 0x8c, 0xbc),
+            Color::Rgb(0x8c, 0xa7, 0xbc),
+        ]
     }
 }
 
@@ -398,11 +408,12 @@ fn build_label_chains(
             continue;
         }
 
-        let color = if is_root {
+        let colors = if is_root {
             diag_kind.chain_label_root_color()
         } else {
             diag_kind.chain_label_link_color()
         };
+        let color = colors[chain.idx.to_usize() % colors.len()];
         labels.push((
             Label::new(creator).with_color(color).with_message(&msg),
             creator,
