@@ -87,6 +87,11 @@ fn check_invalid_cyclic_refs_in_field_kind(
     match field_kind {
         NameResolvedType::SimpleCustom { id, .. }
         | NameResolvedType::GenericInstance { id, .. } => {
+            let referred_kind = stores.items.get_item_header(*id).kind;
+            if referred_kind != ItemKind::StructDef {
+                return;
+            }
+
             #[allow(clippy::bool_comparison)]
             if checked_items.insert(*id) == false {
                 return;
