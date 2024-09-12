@@ -68,6 +68,10 @@ impl DiagKind {
         GREEN
     }
 
+    fn secondary_label_color(&self) -> Color {
+        YELLOW
+    }
+
     fn chain_label_root_color(&self) -> [Color; 3] {
         [
             Color::Rgb(0xd3, 0x75, 0xb1),
@@ -98,6 +102,7 @@ impl From<DiagKind> for ReportKind<'_> {
 #[derive(Clone, Copy)]
 enum LabelKind {
     Help,
+    Secondary,
 }
 
 struct SimpleLabel {
@@ -165,12 +170,26 @@ impl Diagnostic {
         self
     }
 
+    pub(crate) fn add_primary_label_message(&mut self, message: impl Into<String>) -> &mut Self {
+        self.primary_label_message = Some(message.into());
+        self
+    }
+
     pub(crate) fn with_help_label<M, O>(mut self, location: SourceLocation, message: O) -> Self
     where
         O: Into<Option<M>>,
         M: Into<String>,
     {
         self.add_help_label(location, message);
+        self
+    }
+
+    pub(crate) fn with_secondary_label<M, O>(mut self, location: SourceLocation, message: O) -> Self
+    where
+        O: Into<Option<M>>,
+        M: Into<String>,
+    {
+        self.add_secondary_label(location, message);
         self
     }
 
@@ -182,6 +201,23 @@ impl Diagnostic {
         self.simple_labels.push(SimpleLabel {
             location,
             kind: LabelKind::Help,
+            message: message.into().map(Into::into),
+        });
+        self
+    }
+
+    pub(crate) fn add_secondary_label<M, O>(
+        &mut self,
+        location: SourceLocation,
+        message: O,
+    ) -> &mut Self
+    where
+        O: Into<Option<M>>,
+        M: Into<String>,
+    {
+        self.simple_labels.push(SimpleLabel {
+            location,
+            kind: LabelKind::Secondary,
             message: message.into().map(Into::into),
         });
         self
@@ -368,6 +404,7 @@ fn display_single_diag(value_store: &ValueStore, source_store: &SourceStore, dia
     for label in diag.simple_labels {
         let color = match label.kind {
             LabelKind::Help => diag.kind.help_label_color(),
+            LabelKind::Secondary => diag.kind.secondary_label_color(),
         };
 
         let mut ariadne_label = Label::new(label.location).with_color(color);
