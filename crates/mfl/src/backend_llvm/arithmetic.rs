@@ -427,6 +427,13 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder
                     .build_float_compare(pred, a_val, b_val, &output_name)?
             }
+            [TypeKind::Enum(_), TypeKind::Enum(_)] => {
+                let a_val = a_val.into_int_value();
+                let b_val = b_val.into_int_value();
+                let pred = op_code.get_int_predicate(IntSignedness::Unsigned);
+                self.builder
+                    .build_int_compare(pred, a_val, b_val, &output_name)?
+            }
             _ => unreachable!(),
         };
 

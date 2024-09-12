@@ -50,9 +50,9 @@ pub struct StructDefField<Kind> {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnumDef<T> {
+pub struct EnumDef {
     pub name: Spanned<Spur>,
-    pub variants: Vec<(Spanned<Spur>, T)>,
+    pub variants: Vec<(Spanned<Spur>, Option<u16>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -457,6 +457,9 @@ pub enum Basic {
     Memory(Memory),
 
     PushBool(bool),
+    // Looks odd being here, but when we construct these *after*
+    // declaring the enum's existance, so already have the TypeId.
+    PushEnum { id: TypeId, discrim: u16 },
     PushInt { width: IntWidth, value: Integer },
     PushFloat { width: FloatWidth, value: Float },
     PushStr { id: Spur },

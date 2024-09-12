@@ -240,26 +240,33 @@ fn check_generic_param_length(
 ) {
     match kind {
         NameResolvedType::SimpleCustom { id, .. } => {
-            let struct_def = stores.sigs.urir.get_struct(*id);
-            let kind_str = if struct_def.is_union {
-                "union"
-            } else {
-                "struct"
+            match stores.items.get_item_header(*id).kind {
+                ItemKind::StructDef => {
+                    let struct_def = stores.sigs.urir.get_struct(*id);
+                    let kind_str = if struct_def.is_union {
+                        "union"
+                    } else {
+                        "struct"
+                    };
+                    if !struct_def.generic_params.is_empty() && !can_infer {
+                        invalid_generic_count_diag(
+                            stores,
+                            cur_id,
+                            kind_span,
+                            struct_def.generic_params.len(),
+                            0,
+                            &[(
+                                struct_def.name.location,
+                                &format!("{kind_str} defined here"),
+                            )],
+                        );
+                        had_error.set();
+                    }
+                }
+                // Nothing to do here
+                ItemKind::Enum => {}
+                _ => unreachable!(),
             };
-            if !struct_def.generic_params.is_empty() && !can_infer {
-                invalid_generic_count_diag(
-                    stores,
-                    cur_id,
-                    kind_span,
-                    struct_def.generic_params.len(),
-                    0,
-                    &[(
-                        struct_def.name.location,
-                        &format!("{kind_str} defined here"),
-                    )],
-                );
-                had_error.set();
-            }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
             let struct_def = stores.sigs.urir.get_struct(*id);

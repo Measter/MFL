@@ -49,7 +49,7 @@ pub struct UnresolvedIr {
     item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
     variable_type: HashMap<ItemId, Spanned<UnresolvedType>>,
     structs: HashMap<ItemId, StructDef<UnresolvedType>>,
-    enums: HashMap<ItemId, EnumDef<Option<u16>>>,
+    enums: HashMap<ItemId, EnumDef>,
     scopes: HashMap<ItemId, UnresolvedScope>,
 }
 
@@ -105,10 +105,16 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
-    pub fn set_enum(&mut self, id: ItemId, def: EnumDef<Option<u16>>) {
+    pub fn set_enum(&mut self, id: ItemId, def: EnumDef) {
         self.enums
             .insert(id, def)
             .expect_none("ICE: Overwrote enum def")
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_enum(&self, id: ItemId) -> &EnumDef {
+        &self.enums[&id]
     }
 
     #[inline]

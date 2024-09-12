@@ -75,7 +75,6 @@ impl PassState {
         use PassState::*;
         match self {
             BuildNames
-            | DeclareEnums
             | IdentResolvedBody
             | IdentResolvedSignature
             | TerminalBlockCheckBody
@@ -83,6 +82,7 @@ impl PassState {
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
             CyclicRefCheckBody | TypeResolvedBody => &[IdentResolvedBody],
+            DeclareEnums => &[BuildNames],
             DeclareStructs => &[BuildNames, IdentResolvedSignature],
             SelfContainingStruct | TypeResolvedSignature => &[IdentResolvedSignature],
             DefineStructs => &[DeclareStructs],
@@ -142,7 +142,19 @@ impl PassManager {
         cur_item_state.passed |= state;
     }
 
-    pub fn add_new_item(&mut self, id: ItemId, base_id: ItemId, new_state: FlagSet<PassState>) {
+    pub fn add_new_item(&mut self, id: ItemId) {
+        self.queue.push_back(id);
+        self.states
+            .insert(id, ItemState::new())
+            .expect_none("ICE: Re-added existing item");
+    }
+
+    pub fn add_new_generic_item(
+        &mut self,
+        id: ItemId,
+        base_id: ItemId,
+        new_state: FlagSet<PassState>,
+    ) {
         self.queue.push_back(id);
         let mut new_state_info = self.states[&base_id];
         new_state_info.passed = new_state;
@@ -302,7 +314,26 @@ impl PassManager {
     }
 
     fn ensure_declare_enums(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
-        todo!()
+        const STATE: PassState = PassState::DeclareEnums;
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
+
+        let _span = debug_span!("DeclEnum").entered();
+        trace!(
+            name = stores.get_symbol_name(cur_item),
+            id = ?cur_item,
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::types::declare_enum(stores, self, &mut had_error, cur_item);
+        if had_error.into_err() {
+            self.set_error(cur_item, STATE);
+            Err(())
+        } else {
+            self.set_passed(cur_item, STATE);
+            Ok(())
+        }
     }
 
     pub fn ensure_declare_structs(
@@ -410,7 +441,7 @@ impl PassManager {
                                     kind: kind.cast(int),
                                 }
                             }
-                            SimulatorValue::Bool(_) => val,
+                            SimulatorValue::Bool(_) | SimulatorValue::EnumValue { .. } => val,
                         }
                     })
                     .collect();

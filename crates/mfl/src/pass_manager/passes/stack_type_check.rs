@@ -486,6 +486,10 @@ fn analyze_block(
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_float(stores, op_id, width)
                 }
+                Basic::PushEnum { id, .. } => {
+                    make_one(stores, stack, op_id);
+                    type_check::stack_ops::push_enum(stores, op_id, id)
+                }
                 Basic::PushStr { .. } => {
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_str(stores, op_id);

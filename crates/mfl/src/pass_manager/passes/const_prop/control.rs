@@ -89,6 +89,7 @@ pub(crate) fn cp_const(
         let output_const_value = match const_value {
             SimulatorValue::Int { kind, .. } => ConstVal::Int(*kind),
             SimulatorValue::Bool(b) => ConstVal::Bool(*b),
+            SimulatorValue::EnumValue { id, discrim } => ConstVal::Enum(*id, *discrim),
         };
 
         stores.values.set_value_const(value_id, output_const_value);

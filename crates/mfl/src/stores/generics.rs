@@ -252,7 +252,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
             self.sigs
                 .trir
                 .set_variable_type(new_alloc_id, new_variable_sig);
-            pass_manager.add_new_item(
+            pass_manager.add_new_generic_item(
                 new_alloc_id,
                 child_item_header.id,
                 PassState::IdentResolvedSignature | PassState::TypeResolvedSignature,
@@ -399,7 +399,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
             resolved_generic_params.into(),
             new_proc_id,
         );
-        pass_manager.add_new_item(
+        pass_manager.add_new_generic_item(
             new_proc_id,
             base_fn_id,
             PassState::IdentResolvedBody

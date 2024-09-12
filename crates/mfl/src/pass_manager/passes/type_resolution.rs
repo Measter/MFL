@@ -7,7 +7,7 @@ use crate::{
         Basic, Control, NameResolvedOp, NameResolvedType, OpCode, PartiallyResolvedOp,
         TypeResolvedOp,
     },
-    pass_manager::{static_analysis::ensure_structs_declared_in_type, PassManager},
+    pass_manager::{static_analysis::ensure_types_declared_in_type, PassManager},
     stores::{
         block::BlockId,
         diagnostics::Diagnostic,
@@ -46,7 +46,7 @@ pub fn resolve_signature(
             let mut process_sig = |kind: &NameResolvedType| {
                 {
                     let mut single_check_error = ErrorSignal::new();
-                    ensure_structs_declared_in_type(
+                    ensure_types_declared_in_type(
                         stores,
                         pass_manager,
                         &mut single_check_error,
@@ -112,7 +112,7 @@ pub fn resolve_signature(
             let mut process_sig = |kind: &NameResolvedType| {
                 {
                     let mut single_check_error = ErrorSignal::new();
-                    ensure_structs_declared_in_type(
+                    ensure_types_declared_in_type(
                         stores,
                         pass_manager,
                         &mut single_check_error,
@@ -251,7 +251,7 @@ fn fully_resolve_block(
 
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();
-                        ensure_structs_declared_in_type(
+                        ensure_types_declared_in_type(
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -305,7 +305,7 @@ fn fully_resolve_block(
 
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();
-                        ensure_structs_declared_in_type(
+                        ensure_types_declared_in_type(
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -361,7 +361,7 @@ fn fully_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(stores, pass_manager, &mut local_had_error, id);
+                ensure_types_declared_in_type(stores, pass_manager, &mut local_had_error, id);
                 if local_had_error.into_err() {
                     had_error.set();
                     continue;
@@ -453,7 +453,7 @@ fn partially_resolve_block(
 
                     for ugp in unresolved_generic_params {
                         let mut local_had_error = ErrorSignal::new();
-                        ensure_structs_declared_in_type(
+                        ensure_types_declared_in_type(
                             stores,
                             pass_manager,
                             &mut local_had_error,
@@ -507,7 +507,7 @@ fn partially_resolve_block(
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
                 let mut local_had_error = ErrorSignal::new();
-                ensure_structs_declared_in_type(stores, pass_manager, &mut local_had_error, id);
+                ensure_types_declared_in_type(stores, pass_manager, &mut local_had_error, id);
                 if local_had_error.into_err() {
                     had_error.set();
                     continue;

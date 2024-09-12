@@ -247,7 +247,9 @@ pub(crate) fn is_null(stores: &mut Stores, op_id: OpId) {
         }
         ConstVal::Uninitialized => ConstVal::Uninitialized,
         ConstVal::Unknown => ConstVal::Unknown,
-        ConstVal::Int(_) | ConstVal::Float(_) | ConstVal::Bool(_) => unreachable!(),
+        ConstVal::Int(_) | ConstVal::Enum(_, _) | ConstVal::Float(_) | ConstVal::Bool(_) => {
+            unreachable!()
+        }
     };
 
     stores

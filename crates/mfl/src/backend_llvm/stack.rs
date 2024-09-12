@@ -314,6 +314,10 @@ impl<'ctx> CodeGen<'ctx> {
                     let value = self.ctx.bool_type().const_int(*b as _, false).into();
                     value_store.store_value(self, out_id, value)?;
                 }
+                SimulatorValue::EnumValue { discrim, .. } => {
+                    let value = self.ctx.i16_type().const_int(*discrim as _, false).into();
+                    value_store.store_value(self, out_id, value)?;
+                }
             }
         }
 

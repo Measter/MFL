@@ -11,6 +11,7 @@ use crate::{
     ir::NameResolvedType,
     stores::{
         diagnostics::Diagnostic,
+        item::ItemKind,
         ops::OpId,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},
         values::ValueId,
@@ -87,7 +88,7 @@ fn promote_float_unidirectional(from: FloatWidth, to: FloatWidth) -> Option<Floa
     }
 }
 
-pub(super) fn ensure_structs_declared_in_type(
+pub(super) fn ensure_types_declared_in_type(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -95,8 +96,19 @@ pub(super) fn ensure_structs_declared_in_type(
 ) {
     match unresolved {
         NameResolvedType::SimpleCustom { id, .. } => {
-            if pass_manager.ensure_declare_structs(stores, *id).is_err() {
-                had_error.set();
+            let referred_kind = stores.items.get_item_header(*id).kind;
+            match referred_kind {
+                ItemKind::StructDef => {
+                    if pass_manager.ensure_declare_structs(stores, *id).is_err() {
+                        had_error.set();
+                    }
+                }
+                ItemKind::Enum => {
+                    if pass_manager.ensure_declare_enums(stores, *id).is_err() {
+                        had_error.set();
+                    }
+                }
+                _ => unreachable!(),
             }
         }
         NameResolvedType::GenericInstance { id, params, .. } => {
@@ -104,18 +116,18 @@ pub(super) fn ensure_structs_declared_in_type(
                 had_error.set();
             }
             for p in params {
-                ensure_structs_declared_in_type(stores, pass_manager, had_error, p);
+                ensure_types_declared_in_type(stores, pass_manager, had_error, p);
             }
         }
         NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
         NameResolvedType::Array(sub_type, _)
         | NameResolvedType::MultiPointer(sub_type)
         | NameResolvedType::SinglePointer(sub_type) => {
-            ensure_structs_declared_in_type(stores, pass_manager, had_error, sub_type);
+            ensure_types_declared_in_type(stores, pass_manager, had_error, sub_type);
         }
         NameResolvedType::FunctionPointer { inputs, outputs } => {
             inputs.iter().chain(outputs).for_each(|kind| {
-                ensure_structs_declared_in_type(stores, pass_manager, had_error, kind);
+                ensure_types_declared_in_type(stores, pass_manager, had_error, kind);
             });
         }
     };

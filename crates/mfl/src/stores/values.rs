@@ -35,6 +35,7 @@ pub struct ValueHeader {
 pub enum ConstVal {
     Uninitialized,
     Unknown,
+    Enum(TypeId, u16),
     Int(Integer),
     Float(Float),
     Bool(bool),

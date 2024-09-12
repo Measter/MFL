@@ -1,3 +1,5 @@
+use intcast::IntCast;
+
 use crate::{
     pass_manager::PassManager,
     stores::{
@@ -39,6 +41,13 @@ pub(crate) fn push_float(stores: &mut Stores, op_id: OpId, value: Float) {
     stores
         .values
         .set_value_const(op_data.outputs[0], ConstVal::Float(value));
+}
+
+pub(crate) fn push_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId, discrim: u16) {
+    let op_data = stores.ops.get_op_io(op_id);
+    stores
+        .values
+        .set_value_const(op_data.outputs[0], ConstVal::Enum(enum_id, discrim));
 }
 
 pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
@@ -113,6 +122,7 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
 
     let output_const_val = match input_const_val {
         ConstVal::Int(v) => ConstVal::Int(v.cast(int_kind)),
+        ConstVal::Enum(_, d) => ConstVal::Int(Integer::Unsigned(d.to_u64())),
         ConstVal::Float(_) => todo!(),
         ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(b as _)),
         ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(b as _)),
@@ -155,7 +165,10 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
                 }
             }
         }
-        ConstVal::Bool(_) | ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => {
+        ConstVal::Bool(_)
+        | ConstVal::Enum(_, _)
+        | ConstVal::MultiPtr { .. }
+        | ConstVal::SinglePtr { .. } => {
             unreachable!()
         }
         ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,

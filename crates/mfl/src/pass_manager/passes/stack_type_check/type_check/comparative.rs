@@ -36,6 +36,7 @@ pub(crate) fn equal(
         [TypeKind::Float(_), TypeKind::Float(_)] | [TypeKind::Bool, TypeKind::Bool] => {}
         [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
             if a == b => {}
+        [TypeKind::Enum(a), TypeKind::Enum(b)] if a == b => {}
         _ => {
             // Type mismatch.
             had_error.set();
@@ -67,6 +68,7 @@ pub(crate) fn compare(
         [TypeKind::Float(_), TypeKind::Float(_)] => {}
         [TypeKind::MultiPointer(a) | TypeKind::SinglePointer(a), TypeKind::MultiPointer(b) | TypeKind::SinglePointer(b)]
             if a == b => {}
+        [TypeKind::Enum(a), TypeKind::Enum(b)] if a == b => {}
         _ => {
             // Type mismatch.
             had_error.set();

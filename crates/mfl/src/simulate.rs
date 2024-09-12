@@ -9,7 +9,7 @@ use crate::{
     stores::{
         block::BlockId,
         diagnostics::Diagnostic,
-        types::{IntWidth, Integer},
+        types::{IntWidth, Integer, TypeId},
     },
     Stores,
 };
@@ -24,6 +24,7 @@ pub enum SimulationError {
 pub enum SimulatorValue {
     Int { width: IntWidth, kind: Integer },
     Bool(bool),
+    EnumValue { id: TypeId, discrim: u16 },
 }
 
 fn apply_int_op(
@@ -147,6 +148,7 @@ fn simulate_execute_program_block(
                             kind: Integer::Unsigned(v),
                         } => *v = !*v & width.mask(),
                         SimulatorValue::Bool(v) => *v = !*v,
+                        SimulatorValue::EnumValue { .. } => unreachable!(),
                     }
                 }
             },
@@ -213,6 +215,9 @@ fn simulate_execute_program_block(
                 value_stack.push(SimulatorValue::Int { width, kind: value })
             }
             OpCode::Basic(Basic::PushFloat { .. }) => todo!(),
+            OpCode::Basic(Basic::PushEnum { id, discrim }) => {
+                value_stack.push(SimulatorValue::EnumValue { id, discrim })
+            }
             OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
                 Stack::Dup { count } => {
                     let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();

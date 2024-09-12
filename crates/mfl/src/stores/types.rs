@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use tracing::{debug_span, trace};
 
 use crate::{
-    ir::{EnumDef, NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
+    ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
     stores::{self},
 };
 
@@ -329,14 +329,11 @@ pub struct TypeStore {
     builtins: [TypeId; 12],
 
     // Maps ItemIds to TypeIds of non-generic structs.
-    struct_id_map: HashMap<ItemId, TypeId>,
+    custom_id_map: HashMap<ItemId, TypeId>,
     lang_item_ids: HashMap<ItemId, LangItem>,
     fixed_struct_defs: HashMap<TypeId, StructDef<TypeId>>,
     generic_struct_id_map: HashMap<TypeId, StructDef<PartiallyResolvedType>>,
     generic_struct_instance_map: HashMap<(TypeId, Vec<TypeId>), TypeId>,
-
-    enum_id_map: HashMap<ItemId, TypeId>,
-    defined_enums: HashMap<TypeId, EnumDef<u16>>,
 
     type_sizes: HashMap<TypeId, TypeSize>,
 }
@@ -351,13 +348,11 @@ impl TypeStore {
             single_pointer_map: HashMap::new(),
             array_map: HashMap::new(),
             builtins: [TypeId(0); 12],
-            struct_id_map: HashMap::new(),
+            custom_id_map: HashMap::new(),
             lang_item_ids: HashMap::new(),
             fixed_struct_defs: HashMap::new(),
             generic_struct_id_map: HashMap::new(),
             generic_struct_instance_map: HashMap::new(),
-            enum_id_map: HashMap::new(),
-            defined_enums: HashMap::new(),
             type_sizes: HashMap::new(),
         };
         s.init_builtins(string_store);
@@ -450,10 +445,12 @@ impl TypeStore {
         );
 
         if let TypeKind::Struct(struct_id) | TypeKind::GenericStructBase(struct_id) = kind {
-            self.struct_id_map.insert(struct_id, id);
+            self.custom_id_map.insert(struct_id, id);
             if self.lang_item_ids.get(&struct_id) == Some(&LangItem::String) {
                 self.builtins[BuiltinTypes::String as usize] = id;
             }
+        } else if let TypeKind::Enum(enum_id) = kind {
+            self.custom_id_map.insert(enum_id, id);
         }
 
         id
@@ -466,7 +463,7 @@ impl TypeStore {
     ) -> Result<TypeInfo, Spanned<Spur>> {
         match tp {
             NameResolvedType::SimpleCustom { id, token } => self
-                .struct_id_map
+                .custom_id_map
                 .get(id)
                 .map(|id| self.kinds[id])
                 .ok_or(*token),
@@ -499,7 +496,7 @@ impl TypeStore {
                 Ok(self.get_single_pointer(string_store, pointee.id))
             }
             NameResolvedType::GenericInstance { id, params, .. } => {
-                let base_struct_id = self.struct_id_map[id];
+                let base_struct_id = self.custom_id_map[id];
                 let param_type_ids: Vec<_> = params
                     .iter()
                     .map(|p| self.resolve_type(string_store, p).map(|ti| ti.id))
@@ -772,7 +769,7 @@ impl TypeStore {
             is_union: def.is_union,
         };
 
-        let type_id = self.struct_id_map[&base_item_id];
+        let type_id = self.custom_id_map[&base_item_id];
 
         self.generic_struct_id_map.insert(type_id, generic_base);
     }
@@ -814,7 +811,7 @@ impl TypeStore {
                 self.get_array(string_store, content_type_id, *length).id
             }
             PartiallyResolvedType::GenericStruct(base_struct_id, sub_params) => {
-                let base_struct_type_id = self.struct_id_map[base_struct_id];
+                let base_struct_type_id = self.custom_id_map[base_struct_id];
 
                 let sub_params: Vec<_> = sub_params
                     .iter()
@@ -1065,7 +1062,7 @@ impl TypeStore {
             is_union: def.is_union,
         };
 
-        let type_id = self.struct_id_map[&struct_id];
+        let type_id = self.custom_id_map[&struct_id];
         self.fixed_struct_defs.insert(type_id, def);
 
         Ok(type_id)
