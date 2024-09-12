@@ -22,11 +22,13 @@ proc entry [var argc u64, var argv u8**] to [] {
     eval.sum@ term::write_si_ln
 }
 
-const Prec_None [u8] { 0 }
-const Prec_Term [u8] { 1 }
-const Prec_Factor [u8] { 2 }
-const Prec_Unary [u8] { 3 }
-const Prec_Group [u8] { 4 }
+enum Prec {
+    None,
+    Term,
+    Factor,
+    Unary,
+    Group
+}
 
 struct Eval {
     scanner Scanner,
@@ -37,11 +39,11 @@ struct Eval {
     struct Rule {
         prefix proc[Eval&] to [],
         infix proc[Eval&] to [],
-        prec u8
+        prec Prec
     }
 
     proc new [Scanner] to [Eval] {
-        TokenKind_Eof 0 "" Token dup 0 Eval
+        TokenKind::Eof 0 "" Token dup 0 Eval
     }
 
     proc advance [var this Eval&] to [] {
@@ -52,7 +54,7 @@ struct Eval {
             this@.current!
 
             cond {
-                this@.current.kind@ TokenKind_Unknown != {return}
+                this@.current.kind@ TokenKind::Unknown != {return}
                 else {
                     "Unknown input: " term::write this@.current.lexeme@ term::writeln
                 }
@@ -60,31 +62,34 @@ struct Eval {
         }
     }
 
-    proc get_rule [u8] to [Rule] {
+    proc get_rule [TokenKind] to [Rule] {
         cond {
-            TokenKind_LeftParen = { ^grouping ^null Prec_Group }
-            TokenKind_Plus = { ^null ^binary Prec_Term }
-            TokenKind_Minus = { ^unary ^binary Prec_Term }
-            TokenKind_Star = { ^null ^binary Prec_Factor }
-            TokenKind_Slash = { ^null ^binary Prec_Factor }
-            TokenKind_Number = { ^number ^null Prec_None }
-            else { drop ^null ^null Prec_None }
+            TokenKind::LeftParen = { ^grouping ^null Prec::Group }
+            TokenKind::Plus = { ^null ^binary Prec::Term }
+            TokenKind::Minus = { ^unary ^binary Prec::Term }
+            TokenKind::Star = { ^null ^binary Prec::Factor }
+            TokenKind::Slash = { ^null ^binary Prec::Factor }
+            TokenKind::Number = { ^number ^null Prec::None }
+            else { drop ^null ^null Prec::None }
         }
         Rule
     }
 
-    proc next_precedence [u8] to [u8] {
+    proc next_precedence [Prec] to [Prec] {
         cond {
-            Prec_Group = { Prec_Group }
-            else { 1+ }
+            Prec::None = { Prec::Term }
+            Prec::Term = { Prec::Factor }
+            Prec::Factor = { Prec::Unary }
+            Prec::Unary = { Prec::Group }
+            Prec::Group = { Prec::Group }
         }
     }
 
     proc parse_expression [Eval&] to [] {
-        Prec_Term Eval::parse_precedence
+        Prec::Term Eval::parse_precedence
     }
 
-    proc parse_precedence [var this Eval&, var prec u8] to [] {
+    proc parse_precedence [var this Eval&, var prec Prec] to [] {
         this@ advance
 
         // Parse our prefix.
@@ -102,7 +107,7 @@ struct Eval {
     proc grouping [var this Eval&] to [] {
         this@ parse_expression
         cond {
-            this@.current.kind@ TokenKind_RightParen = {
+            this@.current.kind@ TokenKind::RightParen = {
                 this@ advance
             }
             else {
@@ -115,17 +120,17 @@ struct Eval {
     proc binary [var this Eval&] to [] {
         var lhs s64
         this@.sum@ lhs!
-        var op_type u8
+        var op_type TokenKind
         this@.previous.kind@ op_type!
 
         op_type@ get_rule xtrd(prec) next_precedence this@ swap parse_precedence
  
         this@.sum dup @ lhs@
         cond {
-            op_type@ TokenKind_Plus = { + }
-            op_type@ TokenKind_Minus = { - }
-            op_type@ TokenKind_Star = { * }
-            op_type@ TokenKind_Slash = { / }
+            op_type@ TokenKind::Plus = { + }
+            op_type@ TokenKind::Minus = { - }
+            op_type@ TokenKind::Star = { * }
+            op_type@ TokenKind::Slash = { / }
             else {drop(3) return}
         }
         swap !
@@ -137,7 +142,7 @@ struct Eval {
 
     proc number [var this Eval&] to [] {
         cond {
-            this@.previous.kind@ TokenKind_Number != {
+            this@.previous.kind@ TokenKind::Number != {
                 "Expected Number, found " term::write this@.previous@ Token::print
                 exit(1)
             }
@@ -148,38 +153,39 @@ struct Eval {
     }
 
     proc unary [var this Eval&] to [] {
-        this@ Prec_Unary parse_precedence
+        this@ Prec::Unary parse_precedence
         this@.sum dup@ 0 swap - swap!
     }
 }
 
-
-const TokenKind_LeftParen [u8] { 0 }
-const TokenKind_RightParen [u8] { 1 }
-const TokenKind_Plus [u8] { 2 }
-const TokenKind_Minus [u8] { 3 }
-const TokenKind_Slash [u8] { 4 }
-const TokenKind_Star [u8] { 5 }
-const TokenKind_Number [u8] { 6 }
-const TokenKind_Eof [u8] { 7 }
-const TokenKind_Unknown [u8] { 8 }
+enum TokenKind {
+  LeftParen,
+  RightParen,
+  Plus,
+  Minus,
+  Slash,
+  Star,
+  Number,
+  Eof,
+  Unknown
+}
 
 struct Token {
-    kind u8,
+    kind TokenKind,
     number s64,
     lexeme String,
 
     proc print [Token] to [] {
         xtr(kind) cond {
-            TokenKind_Eof= {"Eof" term::writeln}
-            TokenKind_LeftParen= {"LeftParen" term::writeln}
-            TokenKind_RightParen= {"RightParen" term::writeln}
-            TokenKind_Plus= {"Plus" term::writeln}
-            TokenKind_Minus= {"Minus" term::writeln}
-            TokenKind_Star= {"Star" term::writeln}
-            TokenKind_Slash= {"Slash" term::writeln}
-            TokenKind_Number= {"Number: " term::write xtr(number) term::write_si_ln}
-            TokenKind_Unknown= {"Unknown: " term::write xtr(lexeme) term::writeln}
+            TokenKind::Eof= {"Eof" term::writeln}
+            TokenKind::LeftParen= {"LeftParen" term::writeln}
+            TokenKind::RightParen= {"RightParen" term::writeln}
+            TokenKind::Plus= {"Plus" term::writeln}
+            TokenKind::Minus= {"Minus" term::writeln}
+            TokenKind::Star= {"Star" term::writeln}
+            TokenKind::Slash= {"Slash" term::writeln}
+            TokenKind::Number= {"Number: " term::write xtr(number) term::write_si_ln}
+            TokenKind::Unknown= {"Unknown: " term::write xtr(lexeme) term::writeln}
             else {drop}
         }
         drop
@@ -213,7 +219,7 @@ struct Scanner {
         this@.start@ ins(length)
     }
 
-    proc make_token [u8, Scanner&] to [Token] {
+    proc make_token [TokenKind, Scanner&] to [Token] {
         lexeme 0 swap Token
     }
 
@@ -224,12 +230,12 @@ struct Scanner {
             this@ advance '0'- sum@ 10*+ sum!
         }
 
-        TokenKind_Number sum@ this@ lexeme Token
+        TokenKind::Number sum@ this@ lexeme Token
     }
 
     proc peek [Scanner&] to [u8] {
         cond {
-            dup is_at_end { drop TokenKind_Eof }
+            dup is_at_end { drop 0 }
             else { .current@ 0 xtrd }
         }
     }
@@ -239,26 +245,26 @@ struct Scanner {
         this@.current@ this@.start!
 
         cond {this@ is_at_end {
-            TokenKind_Eof this@ make_token return
+            TokenKind::Eof this@ make_token return
         }}
 
         this@ advance
         cond {
             dup is_digit { this@ number return }
-            '('= { TokenKind_LeftParen this@ make_token }
-            ')'= { TokenKind_RightParen this@ make_token }
-            '+'= { TokenKind_Plus this@ make_token }
-            '-'= { TokenKind_Minus this@ make_token }
-            '*'= { TokenKind_Star this@ make_token }
-            '/'= { TokenKind_Slash this@ make_token }
-            else { drop TokenKind_Unknown this@ make_token }
+            '('= { TokenKind::LeftParen this@ make_token }
+            ')'= { TokenKind::RightParen this@ make_token }
+            '+'= { TokenKind::Plus this@ make_token }
+            '-'= { TokenKind::Minus this@ make_token }
+            '*'= { TokenKind::Star this@ make_token }
+            '/'= { TokenKind::Slash this@ make_token }
+            else { drop TokenKind::Unknown this@ make_token }
         }
 
         return
     }
     
     proc skip_whitespace [var this Scanner&] to [] {
-        while this@ peek TokenKind_Eof != {
+        while this@ peek 0 != {
             cond {
                 this@ peek std::string::is_whitespace {
                     this@ advance drop
