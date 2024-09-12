@@ -262,8 +262,7 @@ fn cast_to_int(
     let input_type_info = stores.types.get_type_info(input_type_id);
 
     match input_type_info.kind {
-        TypeKind::Bool | TypeKind::Float(_) | TypeKind::Integer(_) => {}
-        TypeKind::Enum(_) => todo!(),
+        TypeKind::Bool | TypeKind::Float(_) | TypeKind::Integer(_) | TypeKind::Enum(_) => {}
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             if to_int != IntKind::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);

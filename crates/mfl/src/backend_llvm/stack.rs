@@ -39,7 +39,11 @@ impl<'ctx> CodeGen<'ctx> {
                         let target_type = output_int.width.get_int_type(self.ctx);
                         self.cast_int(val, target_type, input_int.signed)?
                     }
-                    TypeKind::Enum(_) => todo!(),
+                    TypeKind::Enum(_) => {
+                        let val = input_data.into_int_value();
+                        let target_type = output_int.width.get_int_type(self.ctx);
+                        self.cast_int(val, target_type, IntSignedness::Unsigned)?
+                    }
                     TypeKind::Float(_) => {
                         let val = input_data.into_float_value();
                         let target_type = output_int.width.get_int_type(self.ctx);
