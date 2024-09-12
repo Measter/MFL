@@ -161,11 +161,25 @@ pub fn resolve_signature(
         ItemKind::Variable => {
             let variable_type_unresolved = stores.sigs.nrir.get_variable_type(cur_id).clone();
             if let Some(type_item) = variable_type_unresolved.item_id() {
-                if pass_manager
-                    .ensure_declare_structs(stores, type_item)
-                    .is_err()
-                {
-                    had_error.set();
+                let kind = stores.items.get_item_header(type_item).kind;
+                match kind {
+                    ItemKind::StructDef => {
+                        if pass_manager
+                            .ensure_declare_structs(stores, type_item)
+                            .is_err()
+                        {
+                            had_error.set();
+                        }
+                    }
+                    ItemKind::Enum => {
+                        if pass_manager
+                            .ensure_declare_enums(stores, type_item)
+                            .is_err()
+                        {
+                            had_error.set();
+                        }
+                    }
+                    _ => unreachable!(),
                 }
             }
 
