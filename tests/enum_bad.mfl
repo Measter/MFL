@@ -1,0 +1,13 @@
+// CFG
+// [compile]
+// expected = "Error"
+// END
+
+enum Foo {
+    Bar,
+    Baz 3,
+    Qux,
+    A 1,
+    B,
+    C,
+}

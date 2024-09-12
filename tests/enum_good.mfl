@@ -1,0 +1,44 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+import std::term
+
+enum Foo {
+    Bar,
+    Baz 3,
+    Qux,
+    A 1,
+    B,
+}
+
+proc eq [Foo, Foo] to [bool] {
+    =
+}
+
+proc lt [Foo, Foo] to [bool] {
+    <
+}
+
+proc to_int [Foo] to [u16] {
+    cast(u16)
+}
+
+proc entry [] to [] {
+    Foo::Bar Foo::Bar eq term::write_bool_ln
+    Foo::Baz Foo::Bar eq term::write_bool_ln
+
+    Foo::Bar Foo::Baz lt term::write_bool_ln
+    Foo::Qux Foo::Baz lt term::write_bool_ln
+
+    Foo::Bar to_int term::write_ui_ln
+    Foo::Baz to_int term::write_ui_ln
+    Foo::Qux to_int term::write_ui_ln
+    Foo::A to_int term::write_ui_ln
+    Foo::B to_int term::write_ui_ln
+}
