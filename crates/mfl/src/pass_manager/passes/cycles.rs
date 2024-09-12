@@ -33,6 +33,7 @@ pub fn check_invalid_cycles(
         | ItemKind::Function { .. }
         | ItemKind::FunctionDecl
         | ItemKind::GenericFunction
+        | ItemKind::Enum
         | ItemKind::Module => {}
     }
 }

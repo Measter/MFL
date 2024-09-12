@@ -49,6 +49,12 @@ pub struct StructDefField<Kind> {
     pub kind: Spanned<Kind>,
 }
 
+#[derive(Debug, Clone)]
+pub struct EnumDef<T> {
+    pub name: Spanned<Spur>,
+    pub variants: Vec<(Spanned<Spur>, T)>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnresolvedType {
     Simple(UnresolvedIdent),

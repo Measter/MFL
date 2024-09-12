@@ -176,6 +176,7 @@ pub(crate) fn load(
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool
+        | TypeKind::Enum(_)
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_) => (0, 1),
@@ -319,6 +320,7 @@ pub(crate) fn pack_struct(
         | TypeKind::MultiPointer(_)
         | TypeKind::SinglePointer(_)
         | TypeKind::FunctionPointer
+        | TypeKind::Enum(_)
         | TypeKind::Bool => {
             unreachable!()
         }

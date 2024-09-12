@@ -471,6 +471,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .get_type(type_store, type_id)
                 .array_type(length.to_u32().unwrap())
                 .into(),
+            TypeKind::Enum(_) => self.ctx.i16_type().into(),
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = type_store.get_struct_def(kind);
 
@@ -797,6 +798,7 @@ impl<'ctx> CodeGen<'ctx> {
                     | TypeKind::SinglePointer(_)
                     | TypeKind::Bool
                     | TypeKind::Struct(_)
+                    | TypeKind::Enum(_)
                     | TypeKind::GenericStructBase(_)
                     | TypeKind::GenericStructInstance(_) => (alloc_type_id, 1, false),
                 };

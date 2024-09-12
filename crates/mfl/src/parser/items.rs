@@ -5,7 +5,7 @@ use stores::{items::ItemId, source::Spanned};
 use crate::{
     diagnostics,
     error_signal::ErrorSignal,
-    ir::{Basic, Control, OpCode, StructDef, StructDefField},
+    ir::{Basic, Control, EnumDef, OpCode, StructDef, StructDefField},
     lexer::{TokenTree, TreeGroup},
     stores::{
         diagnostics::Diagnostic,
@@ -461,6 +461,15 @@ pub fn parse_struct_or_union(
             if field_iter.peek().is_none() {
                 break;
             }
+        } else if field_iter.next_is(TokenKind::Enum) {
+            let keyword = field_iter.next().unwrap_single();
+            if parse_enum(stores, &mut field_iter, item_id, keyword).is_err() {
+                had_error.set();
+            }
+
+            if field_iter.peek().is_none() {
+                break;
+            }
         } else {
             let name_token = field_iter
                 .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
@@ -504,6 +513,85 @@ pub fn parse_struct_or_union(
     };
 
     stores.sigs.urir.set_struct(item_id, struct_def);
+
+    if had_error.into_err() {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn parse_enum(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    module_id: ItemId,
+    keyword: Spanned<Token>,
+) -> Result<(), ()> {
+    let mut had_error = ErrorSignal::new();
+
+    let attributes = try_get_attributes(stores, token_iter, module_id, keyword)
+        .recover(&mut had_error, ParsedAttributes::fallback(keyword));
+
+    let name_token = token_iter
+        .expect_single(
+            stores,
+            module_id,
+            TokenKind::Ident,
+            attributes.last_token.location,
+        )
+        .recover(&mut had_error, attributes.last_token);
+
+    let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);
+
+    let (item_id, prev_def) = stores.items.new_enum(
+        stores.sigs,
+        &mut had_error,
+        module_id,
+        name_token.map(|t| t.lexeme),
+        attributes.attributes,
+    );
+
+    diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
+
+    if let Some(lang_item_id) = attributes.lang_item {
+        stores.items.set_lang_item(lang_item_id, item_id);
+    }
+
+    let struct_body = token_iter
+        .expect_group(stores, module_id, BracketKind::Brace, name_token)
+        .recover(&mut had_error, &fallback);
+
+    let mut variant_iter = TokenIter::new(struct_body.tokens.iter());
+    let mut variants = Vec::new();
+    let mut prev_token = struct_body.first_token();
+
+    loop {
+        let name_token = variant_iter
+            .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+            .recover(&mut had_error, prev_token);
+
+        variants.push((name_token.map(|t| t.lexeme), None));
+        prev_token = name_token;
+
+        if TrailingCommaResult::Break
+            == validate_trailing_comma(
+                &mut variant_iter,
+                stores,
+                &mut had_error,
+                item_id,
+                "variants",
+            )
+        {
+            break;
+        }
+    }
+
+    let enum_def = EnumDef {
+        name: name_token.map(|t| t.lexeme),
+        variants,
+    };
+
+    stores.sigs.urir.set_enum(item_id, enum_def);
 
     if had_error.into_err() {
         Err(())

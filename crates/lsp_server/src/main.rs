@@ -226,6 +226,7 @@ impl Backend {
                         | TokenKind::Const
                         | TokenKind::Else
                         | TokenKind::EmitStack
+                        | TokenKind::Enum
                         | TokenKind::Exit
                         | TokenKind::Extern
                         | TokenKind::GoesTo

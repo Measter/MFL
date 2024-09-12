@@ -145,6 +145,9 @@ pub enum TokenKind {
     #[token("else")]
     Else,
 
+    #[token("enum")]
+    Enum,
+
     #[token("=")]
     Equal,
 
@@ -324,6 +327,7 @@ impl TokenKind {
             TokenKind::Drop => "drop",
             TokenKind::Dup => "dup",
             TokenKind::Else => "else",
+            TokenKind::Enum => "enum",
             TokenKind::Equal => "=",
             TokenKind::EmitStack => "emit",
             TokenKind::Exit => "exit",

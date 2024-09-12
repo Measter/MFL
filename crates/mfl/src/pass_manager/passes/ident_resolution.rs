@@ -101,7 +101,7 @@ fn resolved_single_ident(
     for sub_ident in rest {
         let current_item_header = stores.items.get_item_header(current_item);
         match current_item_header.kind {
-            ItemKind::StructDef | ItemKind::Module => {}
+            ItemKind::StructDef | ItemKind::Enum | ItemKind::Module => {}
 
             ItemKind::Assert
             | ItemKind::Const
@@ -465,6 +465,9 @@ pub fn resolve_signature(
         ItemKind::Module => {
             resolve_idents_in_module_imports(stores, had_error, cur_id);
         }
+        // Nothing to do here.
+        ItemKind::Enum => {}
+
         // These are all treated the same.
         ItemKind::Assert
         | ItemKind::Const
@@ -782,7 +785,7 @@ fn resolve_idents_in_block(
                             NameResolvedOp::PackStruct { id: new_ty }
                         }
 
-                        ItemKind::Assert | ItemKind::Module => {
+                        ItemKind::Assert | ItemKind::Module | ItemKind::Enum => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
                             let mut diag = Diagnostic::error(
@@ -883,6 +886,7 @@ fn resolve_idents_in_block(
                         | ItemKind::Const
                         | ItemKind::Variable
                         | ItemKind::StructDef
+                        | ItemKind::Enum
                         | ItemKind::Module => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
@@ -959,6 +963,7 @@ fn resolve_idents_in_block(
                         | ItemKind::FunctionDecl
                         | ItemKind::GenericFunction
                         | ItemKind::StructDef
+                        | ItemKind::Enum
                         | ItemKind::Module => {
                             Diagnostic::error(
                                 op_token.location,
@@ -988,7 +993,11 @@ pub fn resolve_body(
 ) {
     let header = stores.items.get_item_header(cur_id);
     match header.kind {
-        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef | ItemKind::FunctionDecl => {
+        ItemKind::Variable
+        | ItemKind::Module
+        | ItemKind::StructDef
+        | ItemKind::Enum
+        | ItemKind::FunctionDecl => {
             // Nothing to do.
         }
         ItemKind::Assert

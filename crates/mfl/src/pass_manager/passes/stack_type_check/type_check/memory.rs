@@ -145,6 +145,7 @@ pub(crate) fn extract_array(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
@@ -221,6 +222,7 @@ pub(crate) fn extract_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
@@ -321,6 +323,7 @@ pub(crate) fn field_access(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
@@ -456,6 +459,7 @@ pub(crate) fn index(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
@@ -566,6 +570,7 @@ pub(crate) fn insert_array(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             make_error_for_aggr(stores, None);
             return;
@@ -669,6 +674,7 @@ pub(crate) fn insert_struct(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             Diagnostic::not_a_struct(
                 stores,
@@ -843,6 +849,7 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
         | TypeKind::Bool
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::GenericStructInstance(_) => {
             let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;
@@ -1008,6 +1015,7 @@ pub(crate) fn unpack(
         | TypeKind::SinglePointer(_)
         | TypeKind::FunctionPointer
         | TypeKind::Bool
+        | TypeKind::Enum(_)
         | TypeKind::GenericStructBase(_) => {
             let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;

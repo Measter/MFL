@@ -8,9 +8,11 @@ use crate::{
 pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {
     let item_header = stores.items.get_item_header(cur_id);
     match item_header.kind {
-        ItemKind::StructDef | ItemKind::Variable | ItemKind::Module | ItemKind::FunctionDecl => {
-            return
-        }
+        ItemKind::StructDef
+        | ItemKind::Enum
+        | ItemKind::Variable
+        | ItemKind::Module
+        | ItemKind::FunctionDecl => return,
         ItemKind::Assert
         | ItemKind::Const
         | ItemKind::Function { .. }

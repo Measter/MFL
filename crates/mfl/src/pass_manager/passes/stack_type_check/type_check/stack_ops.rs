@@ -176,6 +176,7 @@ pub(crate) fn cast(
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
             let op_loc = stores.ops.get_token(op_id).location;
@@ -228,6 +229,7 @@ fn cast_to_ptr(
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();
@@ -256,6 +258,7 @@ fn cast_to_int(
 
     match input_type_info.kind {
         TypeKind::Bool | TypeKind::Float(_) | TypeKind::Integer(_) => {}
+        TypeKind::Enum(_) => todo!(),
         TypeKind::MultiPointer(_) | TypeKind::SinglePointer(_) => {
             if to_int != IntKind::U64 {
                 let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
@@ -312,6 +315,7 @@ fn cast_to_float(
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
             had_error.set();

@@ -27,7 +27,7 @@ pub fn resolve_signature(
 ) {
     let cur_item_header = stores.items.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::Module | ItemKind::StructDef => {
+        ItemKind::Enum | ItemKind::Module | ItemKind::StructDef => {
             panic!(
                 "ICE: Tried to resolve_signature on a {:?}",
                 cur_item_header.kind
@@ -553,7 +553,11 @@ pub fn resolve_body(
 ) {
     let cur_item_header = stores.items.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::Variable | ItemKind::Module | ItemKind::StructDef | ItemKind::FunctionDecl => {
+        ItemKind::Variable
+        | ItemKind::Module
+        | ItemKind::StructDef
+        | ItemKind::Enum
+        | ItemKind::FunctionDecl => {
             panic!(
                 "ICE: Tried to body type-resolve a {:?}",
                 cur_item_header.kind

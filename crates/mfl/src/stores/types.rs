@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use tracing::{debug_span, trace};
 
 use crate::{
-    ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
+    ir::{EnumDef, NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
     stores::{self},
 };
 
@@ -228,6 +228,7 @@ pub enum TypeKind {
     MultiPointer(TypeId),
     SinglePointer(TypeId),
     Bool,
+    Enum(ItemId),
     Struct(ItemId),
     GenericStructBase(ItemId),
     GenericStructInstance(ItemId),
@@ -334,6 +335,9 @@ pub struct TypeStore {
     generic_struct_id_map: HashMap<TypeId, StructDef<PartiallyResolvedType>>,
     generic_struct_instance_map: HashMap<(TypeId, Vec<TypeId>), TypeId>,
 
+    enum_id_map: HashMap<ItemId, TypeId>,
+    defined_enums: HashMap<TypeId, EnumDef<u16>>,
+
     type_sizes: HashMap<TypeId, TypeSize>,
 }
 
@@ -352,6 +356,8 @@ impl TypeStore {
             fixed_struct_defs: HashMap::new(),
             generic_struct_id_map: HashMap::new(),
             generic_struct_instance_map: HashMap::new(),
+            enum_id_map: HashMap::new(),
+            defined_enums: HashMap::new(),
             type_sizes: HashMap::new(),
         };
         s.init_builtins(string_store);
@@ -988,6 +994,11 @@ impl TypeStore {
             TypeKind::Bool => TypeSize {
                 byte_width: 1,
                 alignement: 1,
+            },
+            // Just represent as a u16 for now.
+            TypeKind::Enum(_) => TypeSize {
+                byte_width: 2,
+                alignement: 2,
             },
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let mut size_info = TypeSize {

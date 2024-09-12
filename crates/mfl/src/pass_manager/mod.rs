@@ -23,25 +23,27 @@ mod passes;
 pub mod static_analysis;
 
 flags! {
-    pub(crate) enum PassState: u16 {
+    pub(crate) enum PassState: u32 {
         BuildNames,
         CheckAsserts,
         ConstPropBody,
         CyclicRefCheckBody,
 
+        DeclareEnums,
         DeclareStructs,
         DefineStructs,
         EvaluatedConstsAsserts,
-        IdentResolvedBody,
 
+        IdentResolvedBody,
         IdentResolvedSignature,
         PartiallyTypeResolved,
         SelfContainingStruct,
-        StackAndTypeCheckedBody,
 
+        StackAndTypeCheckedBody,
         TerminalBlockCheckBody,
         TypeResolvedBody,
         TypeResolvedSignature,
+
         ValidAttributes,
     }
 }
@@ -53,6 +55,7 @@ impl PassState {
             PassState::IdentResolvedBody => PassManager::ensure_ident_resolved_body,
             PassState::DeclareStructs => PassManager::ensure_declare_structs,
             PassState::DefineStructs => PassManager::ensure_define_structs,
+            PassState::DeclareEnums => PassManager::ensure_declare_enums,
             PassState::SelfContainingStruct => PassManager::ensure_self_containing_structs,
             PassState::TypeResolvedSignature => PassManager::ensure_type_resolved_signature,
             PassState::TypeResolvedBody => PassManager::ensure_type_resolved_body,
@@ -72,6 +75,7 @@ impl PassState {
         use PassState::*;
         match self {
             BuildNames
+            | DeclareEnums
             | IdentResolvedBody
             | IdentResolvedSignature
             | TerminalBlockCheckBody
@@ -295,6 +299,10 @@ impl PassManager {
             self.set_passed(cur_item, STATE);
             Ok(())
         }
+    }
+
+    fn ensure_declare_enums(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
+        todo!()
     }
 
     pub fn ensure_declare_structs(
@@ -676,6 +684,7 @@ impl PassManager {
                 PassState::SelfContainingStruct,
                 PassState::DefineStructs,
             ],
+            ItemKind::Enum => &[PassState::ValidAttributes, PassState::DeclareEnums],
             ItemKind::Variable | ItemKind::FunctionDecl => &[
                 PassState::BuildNames,
                 PassState::ValidAttributes,

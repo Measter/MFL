@@ -59,6 +59,18 @@ pub(crate) fn validate_attributes(
             }
         }
 
+        ItemKind::Enum => {
+            if item_header.attributes.contains(ItemAttribute::Extern) {
+                Diagnostic::bad_extern(stores.diags, item_header);
+                had_error.set();
+            }
+
+            if let Some(lang_item @ (LangItem::Alloc | LangItem::Free)) = item_header.lang_item {
+                Diagnostic::bad_lang_item(stores.diags, item_header, lang_item);
+                had_error.set();
+            }
+        }
+
         ItemKind::Module => {}
     }
 }

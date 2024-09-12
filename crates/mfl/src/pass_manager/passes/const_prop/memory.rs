@@ -43,6 +43,7 @@ pub(crate) fn index(
                 | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
                 | TypeKind::GenericStructBase(_)
+                | TypeKind::Enum(_)
                 | TypeKind::FunctionPointer => unreachable!(),
             }
         }
@@ -53,6 +54,7 @@ pub(crate) fn index(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => unreachable!(),
     };
 
@@ -103,6 +105,7 @@ pub(crate) fn insert_extract_array(
                 | TypeKind::SinglePointer(_)
                 | TypeKind::Bool
                 | TypeKind::GenericStructBase(_)
+                | TypeKind::Enum(_)
                 | TypeKind::FunctionPointer => unreachable!(),
             }
         }
@@ -111,6 +114,7 @@ pub(crate) fn insert_extract_array(
         | TypeKind::Float(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => unreachable!(),
     };
 

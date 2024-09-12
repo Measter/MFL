@@ -61,6 +61,7 @@ pub enum ItemKind {
     GenericFunction,
     StructDef,
     Module,
+    Enum,
 }
 
 impl ItemKind {
@@ -74,6 +75,7 @@ impl ItemKind {
             ItemKind::GenericFunction => "generic function",
             ItemKind::StructDef => "struct",
             ItemKind::Module => "module",
+            ItemKind::Enum => "enum",
         }
     }
 }
@@ -496,6 +498,23 @@ impl ItemStore {
         if is_generic {
             self.generic_structs.push(header.id);
         }
+
+        (
+            header.id,
+            self.add_to_parent(sigs, had_error, module, name, header.id)
+                .err(),
+        )
+    }
+
+    pub fn new_enum(
+        &mut self,
+        sigs: &mut SigStore,
+        had_error: &mut ErrorSignal,
+        module: ItemId,
+        name: Spanned<Spur>,
+        attributes: FlagSet<ItemAttribute>,
+    ) -> (ItemId, Option<NameCollision>) {
+        let header = self.new_header(sigs, name, Some(module), ItemKind::Enum, attributes);
 
         (
             header.id,

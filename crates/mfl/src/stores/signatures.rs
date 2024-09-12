@@ -6,7 +6,10 @@ use stores::{
 };
 
 use crate::{
-    ir::{NameResolvedType, PartiallyResolvedType, StructDef, UnresolvedIdent, UnresolvedType},
+    ir::{
+        EnumDef, NameResolvedType, PartiallyResolvedType, StructDef, UnresolvedIdent,
+        UnresolvedType,
+    },
     option::OptionExt,
     stores::types::TypeId,
 };
@@ -46,6 +49,7 @@ pub struct UnresolvedIr {
     item_signatures: HashMap<ItemId, UnresolvedItemSignature>,
     variable_type: HashMap<ItemId, Spanned<UnresolvedType>>,
     structs: HashMap<ItemId, StructDef<UnresolvedType>>,
+    enums: HashMap<ItemId, EnumDef<Option<u16>>>,
     scopes: HashMap<ItemId, UnresolvedScope>,
 }
 
@@ -101,6 +105,14 @@ impl UnresolvedIr {
 
     #[inline]
     #[track_caller]
+    pub fn set_enum(&mut self, id: ItemId, def: EnumDef<Option<u16>>) {
+        self.enums
+            .insert(id, def)
+            .expect_none("ICE: Overwrote enum def")
+    }
+
+    #[inline]
+    #[track_caller]
     pub fn set_struct(&mut self, id: ItemId, def: StructDef<UnresolvedType>) {
         self.structs
             .insert(id, def)
@@ -120,6 +132,7 @@ impl UnresolvedIr {
             item_signatures: HashMap::new(),
             variable_type: HashMap::new(),
             structs: HashMap::new(),
+            enums: HashMap::new(),
             scopes: HashMap::new(),
         }
     }

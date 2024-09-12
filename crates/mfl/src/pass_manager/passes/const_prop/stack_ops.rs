@@ -53,6 +53,7 @@ pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
         | TypeKind::Struct(_)
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => unreachable!(),
     }
 }
@@ -190,6 +191,7 @@ pub(crate) fn size_of(
         | TypeKind::SinglePointer(_)
         | TypeKind::Bool
         | TypeKind::GenericStructBase(_)
+        | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {}
     }
 

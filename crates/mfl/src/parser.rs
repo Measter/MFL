@@ -270,6 +270,12 @@ pub(super) fn parse_module(
                         }
                     }
 
+                    TokenKind::Enum => {
+                        if items::parse_enum(stores, &mut token_iter, module_id, *token).is_err() {
+                            had_error.set();
+                        }
+                    }
+
                     TokenKind::Extract { .. }
                     | TokenKind::Insert { .. }
                     | TokenKind::Cond
