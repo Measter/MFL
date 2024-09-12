@@ -17,12 +17,12 @@ use crate::{
 };
 
 use super::{
-    matcher::{attribute_tokens, IsMatch, Matcher},
+    matcher::{attribute_tokens, integer_tokens, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
-        parse_ident, parse_proc_entry_stack_def, parse_stack_def, parse_unresolved_type,
-        try_parse_generic_pramas, validate_trailing_comma, TokenIter, TokenTreeOptionExt,
-        TrailingCommaResult, TreeGroupResultExt,
+        parse_ident, parse_integer_lexeme, parse_proc_entry_stack_def, parse_stack_def,
+        parse_unresolved_type, try_parse_generic_pramas, validate_trailing_comma, TokenIter,
+        TokenTreeOptionExt, TrailingCommaResult, TreeGroupResultExt,
     },
     Recover,
 };
@@ -566,12 +566,25 @@ pub fn parse_enum(
     let mut prev_token = struct_body.first_token();
 
     loop {
-        let name_token = variant_iter
-            .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
-            .recover(&mut had_error, prev_token);
+        let Ok(name_token) =
+            variant_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+        else {
+            // Invalid token.
+            variant_iter.next(); // Consume token so we can progress.
+            continue;
+        };
 
-        variants.push((name_token.map(|t| t.lexeme), None));
         prev_token = name_token;
+
+        let discriminant_value = if variant_iter.next_is(Matcher("integer literal", integer_tokens))
+        {
+            let int_token = variant_iter.next().unwrap_single();
+            parse_integer_lexeme(stores, item_id, int_token).ok()
+        } else {
+            None
+        };
+
+        variants.push((name_token.map(|t| t.lexeme), discriminant_value));
 
         if TrailingCommaResult::Break
             == validate_trailing_comma(

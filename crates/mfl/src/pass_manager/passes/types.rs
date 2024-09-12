@@ -42,8 +42,12 @@ pub fn declare_enum(
         let disc = val.unwrap_or(next_discriminant);
 
         if let Some(&prev_loc) = seen_disciminants.get(&disc) {
-            Diagnostic::error(prev_loc, "descriminant collision")
-                .primary_label_message("discriminant value previously used here")
+            let mut diag = Diagnostic::error(name.location, "descriminant collision");
+            if val.is_none() {
+                diag.add_primary_label_message(format!("variant's discriminant is {disc}",));
+            }
+
+            diag.with_secondary_label(prev_loc, "this variant has the same discriminant")
                 .attached(stores.diags, cur_id);
             had_error.set();
         } else {
