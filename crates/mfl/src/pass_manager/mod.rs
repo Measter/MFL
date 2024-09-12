@@ -322,7 +322,7 @@ impl PassManager {
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::declare_struct(stores, &mut had_error, cur_item);
+        passes::types::declare_struct(stores, &mut had_error, cur_item);
         if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -364,7 +364,7 @@ impl PassManager {
         }
 
         let mut had_error = ErrorSignal::new();
-        passes::structs::define_struct(stores, self, &mut had_error, cur_item);
+        passes::types::define_struct(stores, self, &mut had_error, cur_item);
         if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
