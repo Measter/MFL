@@ -9,8 +9,13 @@ struct SimpleResult {
 }
 
 struct Result(T, E) {
-    is_ok bool,
+    tag Tag,
     data Payload(T, E),
+
+    enum Tag {
+        Ok,
+        Err,
+    }
 
     union Payload(T, E) {
         t T,
@@ -18,17 +23,17 @@ struct Result(T, E) {
     }
 
     proc Ok(T, E) [T] to [Result(T, E)] {
-        true swap Payload(T, E) Result
+        Tag::Ok swap Payload(T, E) Result
     }
 
     proc Err(T, E) [E] to [Result(T, E)] {
-        false swap Payload(T, E) Result
+        Tag::Err swap Payload(T, E) Result
     }
 
     proc unwrap_ok(T, E) [Result(T, E)] to [T] {
         unpack swap
         cond {
-            { xtrd(t) }
+            Tag::Ok = { xtrd(t) }
             else {
                 drop
                 "Error: called unwrap on err" std::term::ewriteln
@@ -40,7 +45,7 @@ struct Result(T, E) {
     proc unwrap_err(T, E) [Result(T, E)] to [E] {
         unpack swap
         cond {
-            not { xtrd(e) }
+            Tag::Err = { xtrd(e) }
             else{
                 drop
                 "Error: called unwrap_err on ok" std::term::ewriteln

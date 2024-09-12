@@ -92,7 +92,7 @@ proc mmap_file [
 ] to [Result(MMap(u8), u64)] {
     over std::fs::fstat
     cond {
-        xtr(is_ok) not {
+        xtr(tag) Result::Tag::Err = {
             rot(3>1) drop(2)
             Result::unwrap_err
             Result::Err(MMap(u8), u64)
