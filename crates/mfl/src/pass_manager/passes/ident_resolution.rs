@@ -44,6 +44,7 @@ fn invalid_generic_count_diag(
 
 fn resolved_single_ident(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     ident: &UnresolvedIdent,
@@ -101,7 +102,11 @@ fn resolved_single_ident(
     for sub_ident in rest {
         let current_item_header = stores.items.get_item_header(current_item);
         match current_item_header.kind {
-            ItemKind::StructDef | ItemKind::Enum | ItemKind::Module => {}
+            ItemKind::StructDef | ItemKind::Module => {}
+            ItemKind::Enum => {
+                // If this fails, just make a best effort.
+                let _ = pass_manager.ensure_declare_enums(stores, current_item_header.id);
+            }
 
             ItemKind::Assert
             | ItemKind::Const
@@ -140,6 +145,7 @@ fn resolved_single_ident(
 
 fn resolve_idents_in_type(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     unresolved_type: &UnresolvedType,
@@ -175,12 +181,27 @@ fn resolve_idents_in_type(
             {
                 NameResolvedType::SimpleGenericParam(*item_name)
             } else {
-                let ident = resolved_single_ident(stores, had_error, cur_id, unresolved_ident)?;
+                let ident = resolved_single_ident(
+                    stores,
+                    pass_manager,
+                    had_error,
+                    cur_id,
+                    unresolved_ident,
+                )?;
 
                 let params = unresolved_ident
                     .generic_params
                     .iter()
-                    .map(|p| resolve_idents_in_type(stores, had_error, cur_id, p, generic_params))
+                    .map(|p| {
+                        resolve_idents_in_type(
+                            stores,
+                            pass_manager,
+                            had_error,
+                            cur_id,
+                            p,
+                            generic_params,
+                        )
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
 
                 if params.is_empty() {
@@ -200,29 +221,65 @@ fn resolve_idents_in_type(
         UnresolvedType::FunctionPointer { inputs, outputs } => {
             let inputs = inputs
                 .iter()
-                .map(|t| resolve_idents_in_type(stores, had_error, cur_id, t, generic_params))
+                .map(|t| {
+                    resolve_idents_in_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        cur_id,
+                        t,
+                        generic_params,
+                    )
+                })
                 .collect::<Result<_, _>>()?;
 
             let outputs = outputs
                 .iter()
-                .map(|t| resolve_idents_in_type(stores, had_error, cur_id, t, generic_params))
+                .map(|t| {
+                    resolve_idents_in_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        cur_id,
+                        t,
+                        generic_params,
+                    )
+                })
                 .collect::<Result<_, _>>()?;
 
             NameResolvedType::FunctionPointer { inputs, outputs }
         }
         UnresolvedType::Array(sub_type, length) => {
-            let sub_type =
-                resolve_idents_in_type(stores, had_error, cur_id, sub_type, generic_params)?;
+            let sub_type = resolve_idents_in_type(
+                stores,
+                pass_manager,
+                had_error,
+                cur_id,
+                sub_type,
+                generic_params,
+            )?;
             NameResolvedType::Array(Box::new(sub_type), *length)
         }
         UnresolvedType::MultiPointer(sub_type) => {
-            let sub_type =
-                resolve_idents_in_type(stores, had_error, cur_id, sub_type, generic_params)?;
+            let sub_type = resolve_idents_in_type(
+                stores,
+                pass_manager,
+                had_error,
+                cur_id,
+                sub_type,
+                generic_params,
+            )?;
             NameResolvedType::MultiPointer(Box::new(sub_type))
         }
         UnresolvedType::SinglePointer(sub_type) => {
-            let sub_type =
-                resolve_idents_in_type(stores, had_error, cur_id, sub_type, generic_params)?;
+            let sub_type = resolve_idents_in_type(
+                stores,
+                pass_manager,
+                had_error,
+                cur_id,
+                sub_type,
+                generic_params,
+            )?;
             NameResolvedType::SinglePointer(Box::new(sub_type))
         }
     };
@@ -308,6 +365,7 @@ fn check_generic_param_length(
 
 fn resolve_idents_in_struct_def(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     def: &StructDef<UnresolvedType>,
@@ -322,6 +380,7 @@ fn resolve_idents_in_struct_def(
     for field in &def.fields {
         let Ok(new_kind) = resolve_idents_in_type(
             stores,
+            pass_manager,
             had_error,
             cur_id,
             &field.kind.inner,
@@ -351,6 +410,7 @@ fn resolve_idents_in_struct_def(
 
 fn resolve_idents_in_module_imports(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
@@ -363,7 +423,9 @@ fn resolve_idents_in_module_imports(
             had_error.set();
         }
 
-        let Ok(resolved_item_id) = resolved_single_ident(stores, had_error, cur_id, &import) else {
+        let Ok(resolved_item_id) =
+            resolved_single_ident(stores, pass_manager, had_error, cur_id, &import)
+        else {
             had_error.set();
             continue;
         };
@@ -420,7 +482,8 @@ pub fn resolve_signature(
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);
 
             let def = stores.sigs.urir.get_struct(cur_id).clone();
-            let resolved = resolve_idents_in_struct_def(stores, had_error, cur_id, &def);
+            let resolved =
+                resolve_idents_in_struct_def(stores, pass_manager, had_error, cur_id, &def);
             stores.sigs.nrir.set_struct(cur_id, resolved);
         }
         ItemKind::Variable => {
@@ -449,6 +512,7 @@ pub fn resolve_signature(
 
             let Ok(new_kind) = resolve_idents_in_type(
                 stores,
+                pass_manager,
                 had_error,
                 cur_id,
                 &unresolved_variable_type.inner,
@@ -470,7 +534,7 @@ pub fn resolve_signature(
             stores.sigs.nrir.set_variable_type(cur_id, new_kind);
         }
         ItemKind::Module => {
-            resolve_idents_in_module_imports(stores, had_error, cur_id);
+            resolve_idents_in_module_imports(stores, pass_manager, had_error, cur_id);
         }
         // Nothing to do here.
         ItemKind::Enum => {}
@@ -501,26 +565,30 @@ pub fn resolve_signature(
 
             let mut local_had_error = ErrorSignal::new();
 
-            let mut process_sig_kind = |stores: &mut Stores,
-                                        kind: &Spanned<UnresolvedType>|
-             -> Option<NameResolvedType> {
-                let Ok(new_kind) =
-                    resolve_idents_in_type(stores, had_error, cur_id, &kind.inner, &generic_params)
-                else {
-                    local_had_error.set();
-                    return None;
-                };
+            let mut process_sig_kind =
+                |stores: &mut Stores, kind: &Spanned<UnresolvedType>| -> Option<NameResolvedType> {
+                    let Ok(new_kind) = resolve_idents_in_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        cur_id,
+                        &kind.inner,
+                        &generic_params,
+                    ) else {
+                        local_had_error.set();
+                        return None;
+                    };
 
-                check_generic_param_length(
-                    stores,
-                    had_error,
-                    cur_id,
-                    &new_kind,
-                    kind.location,
-                    false,
-                );
-                Some(new_kind)
-            };
+                    check_generic_param_length(
+                        stores,
+                        had_error,
+                        cur_id,
+                        &new_kind,
+                        kind.location,
+                        false,
+                    );
+                    Some(new_kind)
+                };
 
             for kind in &unresolved_sig.entry.inner {
                 let new_kind = match kind {
@@ -568,6 +636,7 @@ pub fn resolve_signature(
 
 fn resolve_idents_in_block(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
     block_id: BlockId,
@@ -586,6 +655,7 @@ fn resolve_idents_in_block(
                         for arm in &cond_op.arms {
                             resolve_idents_in_block(
                                 stores,
+                                pass_manager,
                                 had_error,
                                 cur_id,
                                 arm.condition,
@@ -593,6 +663,7 @@ fn resolve_idents_in_block(
                             );
                             resolve_idents_in_block(
                                 stores,
+                                pass_manager,
                                 had_error,
                                 cur_id,
                                 arm.block,
@@ -602,6 +673,7 @@ fn resolve_idents_in_block(
 
                         resolve_idents_in_block(
                             stores,
+                            pass_manager,
                             had_error,
                             cur_id,
                             cond_op.else_block,
@@ -611,6 +683,7 @@ fn resolve_idents_in_block(
                     Basic::Control(Control::While(while_op)) => {
                         resolve_idents_in_block(
                             stores,
+                            pass_manager,
                             had_error,
                             cur_id,
                             while_op.condition,
@@ -618,6 +691,7 @@ fn resolve_idents_in_block(
                         );
                         resolve_idents_in_block(
                             stores,
+                            pass_manager,
                             had_error,
                             cur_id,
                             while_op.body_block,
@@ -632,9 +706,14 @@ fn resolve_idents_in_block(
 
             OpCode::Complex(comp) => match comp {
                 UnresolvedOp::Cast { id } => {
-                    let Ok(new_ty) =
-                        resolve_idents_in_type(stores, had_error, cur_id, &id, generic_params)
-                    else {
+                    let Ok(new_ty) = resolve_idents_in_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        cur_id,
+                        &id,
+                        generic_params,
+                    ) else {
                         had_error.set();
                         continue;
                     };
@@ -651,9 +730,14 @@ fn resolve_idents_in_block(
                     OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
                 }
                 UnresolvedOp::SizeOf { id } => {
-                    let Ok(new_ty) =
-                        resolve_idents_in_type(stores, had_error, cur_id, &id, generic_params)
-                    else {
+                    let Ok(new_ty) = resolve_idents_in_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        cur_id,
+                        &id,
+                        generic_params,
+                    ) else {
                         had_error.set();
                         continue;
                     };
@@ -672,7 +756,7 @@ fn resolve_idents_in_block(
 
                 UnresolvedOp::Ident(ident) => {
                     let Ok(resolved_ident) =
-                        resolved_single_ident(stores, had_error, cur_id, &ident)
+                        resolved_single_ident(stores, pass_manager, had_error, cur_id, &ident)
                     else {
                         continue;
                     };
@@ -683,6 +767,7 @@ fn resolve_idents_in_block(
                         .filter_map(|param| {
                             let Ok(new_kind) = resolve_idents_in_type(
                                 stores,
+                                pass_manager,
                                 had_error,
                                 cur_id,
                                 param,
@@ -776,6 +861,7 @@ fn resolve_idents_in_block(
                             let ty = UnresolvedType::Simple(ident.clone());
                             let Ok(new_ty) = resolve_idents_in_type(
                                 stores,
+                                pass_manager,
                                 had_error,
                                 cur_id,
                                 &ty,
@@ -822,7 +908,7 @@ fn resolve_idents_in_block(
                 }
                 UnresolvedOp::FunctionPointer(ident) => {
                     let Ok(resolved_ident) =
-                        resolved_single_ident(stores, had_error, cur_id, &ident)
+                        resolved_single_ident(stores, pass_manager, had_error, cur_id, &ident)
                     else {
                         continue;
                     };
@@ -833,6 +919,7 @@ fn resolve_idents_in_block(
                         .filter_map(|param| {
                             let Ok(new_kind) = resolve_idents_in_type(
                                 stores,
+                                pass_manager,
                                 had_error,
                                 cur_id,
                                 param,
@@ -917,7 +1004,7 @@ fn resolve_idents_in_block(
                 }
                 UnresolvedOp::AssumeInit(ident) => {
                     let Ok(resolved_ident) =
-                        resolved_single_ident(stores, had_error, cur_id, &ident)
+                        resolved_single_ident(stores, pass_manager, had_error, cur_id, &ident)
                     else {
                         continue;
                     };
@@ -925,6 +1012,7 @@ fn resolve_idents_in_block(
                     ident.generic_params.iter().for_each(|param| {
                         let Ok(new_kind) = resolve_idents_in_type(
                             stores,
+                            pass_manager,
                             had_error,
                             cur_id,
                             param,
@@ -1020,7 +1108,14 @@ pub fn resolve_body(
                 .get_function_template_paramaters(cur_id)
                 .to_owned();
             let body = stores.items.get_item_body(cur_id);
-            resolve_idents_in_block(stores, had_error, cur_id, body, &generic_params);
+            resolve_idents_in_block(
+                stores,
+                pass_manager,
+                had_error,
+                cur_id,
+                body,
+                &generic_params,
+            );
         }
     }
 }
