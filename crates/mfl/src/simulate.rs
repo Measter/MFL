@@ -9,7 +9,7 @@ use crate::{
     stores::{
         block::BlockId,
         diagnostics::Diagnostic,
-        types::{IntWidth, Integer, TypeId},
+        types::{IntKind, IntSignedness, IntWidth, Integer, TypeId, TypeKind},
     },
     Stores,
 };
@@ -202,7 +202,6 @@ fn simulate_execute_program_block(
             OpCode::Basic(Basic::Memory(_) | Basic::PushStr { .. })
             | OpCode::Complex(
                 TypeResolvedOp::CallFunction { .. }
-                | TypeResolvedOp::Cast { .. }
                 | TypeResolvedOp::FunctionPointer { .. }
                 | TypeResolvedOp::Variable { .. }
                 | TypeResolvedOp::PackStruct { .. },
@@ -215,9 +214,6 @@ fn simulate_execute_program_block(
                 value_stack.push(SimulatorValue::Int { width, kind: value })
             }
             OpCode::Basic(Basic::PushFloat { .. }) => todo!(),
-            OpCode::Basic(Basic::PushEnum { id, discrim }) => {
-                value_stack.push(SimulatorValue::EnumValue { id, discrim })
-            }
             OpCode::Basic(Basic::Stack(stack_op)) => match stack_op {
                 Stack::Dup { count } => {
                     let range = (value_stack.len() - count.inner.to_usize())..value_stack.len();
@@ -264,6 +260,41 @@ fn simulate_execute_program_block(
                 }
             },
 
+            OpCode::Complex(TypeResolvedOp::Cast { id }) => {
+                let value = value_stack.pop().unwrap();
+                let target_type_info = stores.types.get_type_info(id);
+                // We ony add enough support for enums
+                match (value, target_type_info.kind) {
+                    (
+                        SimulatorValue::EnumValue { discrim, .. },
+                        TypeKind::Integer(IntKind { width, signed }),
+                    ) => {
+                        let kind = match signed {
+                            IntSignedness::Signed => Integer::Signed(discrim as _),
+                            IntSignedness::Unsigned => Integer::Unsigned(discrim as _),
+                        };
+                        value_stack.push(SimulatorValue::Int { width, kind });
+                    }
+                    _ => {
+                        Diagnostic::unsupported_sim_op(stores, item_id, op_id);
+                        return Err(SimulationError::UnsupportedOp);
+                    }
+                }
+            }
+            OpCode::Complex(TypeResolvedOp::PackEnum { id }) => {
+                let SimulatorValue::Int {
+                    kind: Integer::Unsigned(discrim),
+                    ..
+                } = value_stack.pop().unwrap()
+                else {
+                    unreachable!()
+                };
+
+                value_stack.push(SimulatorValue::EnumValue {
+                    id,
+                    discrim: discrim.to_u16().unwrap(),
+                });
+            }
             OpCode::Complex(TypeResolvedOp::SizeOf { id }) => {
                 let size = stores.types.get_size_info(id);
                 value_stack.push(SimulatorValue::Int {

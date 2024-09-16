@@ -96,11 +96,6 @@ pub(crate) fn push_str(stores: &mut Stores, op_id: OpId) {
     stores.values.set_value_type(op_data.outputs[0], kind);
 }
 
-pub(crate) fn push_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {
-    let op_data = stores.ops.get_op_io(op_id);
-    stores.values.set_value_type(op_data.outputs[0], enum_id)
-}
-
 pub(crate) fn function_pointer(
     stores: &mut Stores,
     pass_manager: &mut PassManager,

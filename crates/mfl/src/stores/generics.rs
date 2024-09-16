@@ -95,12 +95,16 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
                 },
                 OpCode::Complex(co) => match co {
                     ref op_code @ (PartiallyResolvedOp::Cast { ref id }
+                    | PartiallyResolvedOp::PackEnum { ref id }
                     | PartiallyResolvedOp::PackStruct { ref id }
                     | PartiallyResolvedOp::SizeOf { ref id }) => {
                         let new_id = self.types.resolve_generic_type(self.strings, id, param_map);
                         match op_code {
                             PartiallyResolvedOp::Cast { .. } => {
                                 OpCode::Complex(TypeResolvedOp::Cast { id: new_id })
+                            }
+                            PartiallyResolvedOp::PackEnum { .. } => {
+                                OpCode::Complex(TypeResolvedOp::PackEnum { id: new_id })
                             }
                             PartiallyResolvedOp::PackStruct { .. } => {
                                 OpCode::Complex(TypeResolvedOp::PackStruct { id: new_id })

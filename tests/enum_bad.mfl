@@ -3,11 +3,13 @@
 // expected = "Error"
 // END
 
+const N [u8] {2}
+
 enum Foo {
     Bar,
-    Baz 3,
+    Baz {N 1+},
     Qux,
-    A 1,
+    A {1},
     B,
     C,
 }

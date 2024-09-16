@@ -45,6 +45,7 @@ flags! {
         TypeResolvedSignature,
 
         ValidAttributes,
+        ValidEnumVariants,
     }
 }
 
@@ -68,6 +69,7 @@ impl PassState {
             PassState::CheckAsserts => PassManager::ensure_check_asserts,
             PassState::PartiallyTypeResolved => PassManager::ensure_partially_resolve_types,
             PassState::ValidAttributes => PassManager::ensure_valid_attributes,
+            PassState::ValidEnumVariants => PassManager::ensure_valid_enum_variants,
         }
     }
 
@@ -78,7 +80,8 @@ impl PassState {
             | IdentResolvedBody
             | IdentResolvedSignature
             | TerminalBlockCheckBody
-            | ValidAttributes => &[],
+            | ValidAttributes
+            | ValidEnumVariants => &[],
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
             CyclicRefCheckBody | TypeResolvedBody => &[IdentResolvedBody],
@@ -140,13 +143,6 @@ impl PassManager {
     fn set_passed(&mut self, cur_item: ItemId, state: PassState) {
         let cur_item_state = self.states.get_mut(&cur_item).unwrap();
         cur_item_state.passed |= state;
-    }
-
-    pub fn add_new_item(&mut self, id: ItemId) {
-        self.queue.push_back(id);
-        self.states
-            .insert(id, ItemState::new())
-            .expect_none("ICE: Re-added existing item");
     }
 
     pub fn add_new_generic_item(
@@ -325,15 +321,9 @@ impl PassManager {
             id = ?cur_item,
         );
 
-        let mut had_error = ErrorSignal::new();
-        passes::types::declare_enum(stores, self, &mut had_error, cur_item);
-        if had_error.into_err() {
-            self.set_error(cur_item, STATE);
-            Err(())
-        } else {
-            self.set_passed(cur_item, STATE);
-            Ok(())
-        }
+        passes::types::declare_enum(stores, cur_item);
+        self.set_passed(cur_item, STATE);
+        Ok(())
     }
 
     pub fn ensure_declare_structs(
@@ -702,6 +692,33 @@ impl PassManager {
         }
     }
 
+    fn ensure_valid_enum_variants(
+        &mut self,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        const STATE: PassState = PassState::ValidEnumVariants;
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
+
+        let _span = debug_span!("ValidEnumVar").entered();
+        trace!(
+            name = stores.get_symbol_name(cur_item),
+            id = ?cur_item,
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::types::validate_enum_variants(stores, self, &mut had_error, cur_item);
+        if had_error.into_err() {
+            self.set_error(cur_item, STATE);
+            Err(())
+        } else {
+            self.set_passed(cur_item, STATE);
+            Ok(())
+        }
+    }
+
     fn ensure_done(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         let needed_states = match stores.items.get_item_header(cur_item).kind {
             ItemKind::Module => [
@@ -715,7 +732,11 @@ impl PassManager {
                 PassState::SelfContainingStruct,
                 PassState::DefineStructs,
             ],
-            ItemKind::Enum => &[PassState::ValidAttributes, PassState::DeclareEnums],
+            ItemKind::Enum => &[
+                PassState::ValidAttributes,
+                PassState::DeclareEnums,
+                PassState::ValidEnumVariants,
+            ],
             ItemKind::Variable | ItemKind::FunctionDecl => &[
                 PassState::BuildNames,
                 PassState::ValidAttributes,

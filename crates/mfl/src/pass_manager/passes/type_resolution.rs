@@ -359,6 +359,7 @@ fn fully_resolve_block(
                     })
                 }
             }
+
             OpCode::Complex(NameResolvedOp::Const { id }) => {
                 OpCode::Complex(TypeResolvedOp::Const { id })
             }
@@ -371,6 +372,7 @@ fn fully_resolve_block(
 
             OpCode::Complex(
                 NameResolvedOp::Cast { ref id }
+                | NameResolvedOp::PackEnum { ref id }
                 | NameResolvedOp::PackStruct { ref id }
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
@@ -392,6 +394,9 @@ fn fully_resolve_block(
                 let new_code = match old_code {
                     OpCode::Complex(NameResolvedOp::Cast { .. }) => {
                         TypeResolvedOp::Cast { id: type_info.id }
+                    }
+                    OpCode::Complex(NameResolvedOp::PackEnum { .. }) => {
+                        TypeResolvedOp::PackEnum { id: type_info.id }
                     }
                     OpCode::Complex(NameResolvedOp::PackStruct { .. }) => {
                         TypeResolvedOp::PackStruct { id: type_info.id }
@@ -517,6 +522,7 @@ fn partially_resolve_block(
             }
             OpCode::Complex(
                 NameResolvedOp::Cast { ref id }
+                | NameResolvedOp::PackEnum { ref id }
                 | NameResolvedOp::PackStruct { ref id }
                 | NameResolvedOp::SizeOf { ref id },
             ) => {
@@ -541,6 +547,9 @@ fn partially_resolve_block(
                 let new_code = match old_code {
                     OpCode::Complex(NameResolvedOp::Cast { .. }) => {
                         PartiallyResolvedOp::Cast { id: resolved_type }
+                    }
+                    OpCode::Complex(NameResolvedOp::PackEnum { .. }) => {
+                        PartiallyResolvedOp::PackEnum { id: resolved_type }
                     }
                     OpCode::Complex(NameResolvedOp::PackStruct { .. }) => {
                         PartiallyResolvedOp::PackStruct { id: resolved_type }

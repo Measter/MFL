@@ -52,7 +52,7 @@ pub struct StructDefField<Kind> {
 #[derive(Debug, Clone)]
 pub struct EnumDef {
     pub name: Spanned<Spur>,
-    pub variants: Vec<(Spanned<Spur>, Option<u16>)>,
+    pub variants: Vec<(Spanned<Spur>, ItemId)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -457,9 +457,6 @@ pub enum Basic {
     Memory(Memory),
 
     PushBool(bool),
-    // Looks odd being here, but when we construct these *after*
-    // declaring the enum's existance, so already have the TypeId.
-    PushEnum { id: TypeId, discrim: u16 },
     PushInt { width: IntWidth, value: Integer },
     PushFloat { width: FloatWidth, value: Float },
     PushStr { id: Spur },
@@ -501,6 +498,7 @@ pub enum UnresolvedOp {
     Cast { id: UnresolvedType },
     FunctionPointer(UnresolvedIdent),
     Ident(UnresolvedIdent),
+    PackEnum(UnresolvedType),
     AssumeInit(UnresolvedIdent),
     SizeOf { id: UnresolvedType },
 }
@@ -513,6 +511,7 @@ pub enum NResolvedOp<T> {
     FunctionPointer { id: ItemId, generic_params: Vec<T> },
     AssumeInit { id: ItemId },
     PackStruct { id: T },
+    PackEnum { id: T },
     Variable { id: ItemId, is_global: bool },
     SizeOf { id: T },
 }

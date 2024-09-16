@@ -133,12 +133,12 @@ fn analyze_block(
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
                 Basic::PushFloat { value, .. } => stack_ops::push_float(stores, op_id, value),
-                Basic::PushEnum { id, discrim } => stack_ops::push_enum(stores, op_id, id, discrim),
                 Basic::PushStr { .. } => {}
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),
                 TypeResolvedOp::Const { id } => control::cp_const(stores, pass_manager, op_id, id),
+                TypeResolvedOp::PackEnum { id } => memory::pack_enum(stores, op_id, id),
                 TypeResolvedOp::Variable { id, .. } => control::variable(stores, op_id, id),
                 TypeResolvedOp::SizeOf { id } => {
                     stack_ops::size_of(stores, pass_manager, op_id, id)

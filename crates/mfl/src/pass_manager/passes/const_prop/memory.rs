@@ -8,7 +8,7 @@ use crate::{
     stores::{
         diagnostics::Diagnostic,
         ops::OpId,
-        types::{Integer, TypeKind},
+        types::{Integer, TypeId, TypeKind},
         values::ConstVal,
     },
     Stores,
@@ -186,6 +186,22 @@ pub(crate) fn store(
     };
 
     *state = data_const_val;
+}
+
+pub(crate) fn pack_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let discrim_value_id = op_data.inputs[0];
+    let [discrim_const_val] = stores.values.value_consts([discrim_value_id]);
+
+    let ConstVal::Int(Integer::Unsigned(i)) = discrim_const_val else {
+        return;
+    };
+
+    let op_data = stores.ops.get_op_io(op_id);
+    stores.values.set_value_const(
+        op_data.outputs[0],
+        ConstVal::Enum(enum_id, i.to_u16().unwrap()),
+    );
 }
 
 pub(crate) fn init_local(variable_state: &mut HashMap<ItemId, ConstVal>, variable_id: ItemId) {

@@ -665,7 +665,6 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushStr { id }) => {
                     self.build_push_str(ds, value_store, op_id, id)?
                 }
-                OpCode::Basic(Basic::PushEnum { .. }) => unreachable!(),
 
                 OpCode::Complex(cmp_op) => match cmp_op {
                     TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, id)?,
@@ -676,6 +675,8 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_function_pointer(ds, value_store, op_id, id)?
                     }
                     TypeResolvedOp::Const { id } => self.build_const(ds, value_store, op_id, id)?,
+                    // These are only found in consts, whichare compile-time evaluated.
+                    TypeResolvedOp::PackEnum { .. } => unreachable!(),
                     TypeResolvedOp::PackStruct { .. } => self.build_pack(ds, value_store, op_id)?,
                     TypeResolvedOp::Variable { id, is_global } => {
                         self.build_variable(ds, value_store, op_id, id, is_global)?

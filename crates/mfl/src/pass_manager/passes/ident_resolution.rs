@@ -705,13 +705,13 @@ fn resolve_idents_in_block(
             }
 
             OpCode::Complex(comp) => match comp {
-                UnresolvedOp::Cast { id } => {
+                ref cp @ (UnresolvedOp::PackEnum(ref id) | UnresolvedOp::Cast { ref id }) => {
                     let Ok(new_ty) = resolve_idents_in_type(
                         stores,
                         pass_manager,
                         had_error,
                         cur_id,
-                        &id,
+                        id,
                         generic_params,
                     ) else {
                         had_error.set();
@@ -727,7 +727,15 @@ fn resolve_idents_in_block(
                         false,
                     );
 
-                    OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
+                    match cp {
+                        UnresolvedOp::Cast { .. } => {
+                            OpCode::Complex(NameResolvedOp::Cast { id: new_ty })
+                        }
+                        UnresolvedOp::PackEnum(..) => {
+                            OpCode::Complex(NameResolvedOp::PackEnum { id: new_ty })
+                        }
+                        _ => unreachable!(),
+                    }
                 }
                 UnresolvedOp::SizeOf { id } => {
                     let Ok(new_ty) = resolve_idents_in_type(

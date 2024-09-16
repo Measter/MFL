@@ -43,13 +43,6 @@ pub(crate) fn push_float(stores: &mut Stores, op_id: OpId, value: Float) {
         .set_value_const(op_data.outputs[0], ConstVal::Float(value));
 }
 
-pub(crate) fn push_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId, discrim: u16) {
-    let op_data = stores.ops.get_op_io(op_id);
-    stores
-        .values
-        .set_value_const(op_data.outputs[0], ConstVal::Enum(enum_id, discrim));
-}
-
 pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
     let target_type_info = stores.types.get_type_info(target_type_id);
 

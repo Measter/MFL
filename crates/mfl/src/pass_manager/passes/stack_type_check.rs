@@ -486,10 +486,6 @@ fn analyze_block(
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_float(stores, op_id, width)
                 }
-                Basic::PushEnum { id, .. } => {
-                    make_one(stores, stack, op_id);
-                    type_check::stack_ops::push_enum(stores, op_id, id)
-                }
                 Basic::PushStr { .. } => {
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_str(stores, op_id);
@@ -501,6 +497,21 @@ fn analyze_block(
                     eat_one_make_one(stores, &mut local_had_error, stack, item_id, op_id);
                     if local_had_error.is_ok() {
                         type_check::stack_ops::cast(
+                            stores,
+                            &mut local_had_error,
+                            item_id,
+                            op_id,
+                            id,
+                        );
+                    }
+
+                    had_error.merge_with(local_had_error);
+                }
+                TypeResolvedOp::PackEnum { id } => {
+                    let mut local_had_error = ErrorSignal::new();
+                    eat_one_make_one(stores, &mut local_had_error, stack, item_id, op_id);
+                    if local_had_error.is_ok() {
+                        type_check::memory::pack_enum(
                             stores,
                             &mut local_had_error,
                             item_id,

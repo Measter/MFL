@@ -1,82 +1,62 @@
 use hashbrown::HashMap;
-use stores::{items::ItemId, source::WithSpan};
+use stores::items::ItemId;
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
-    ir::{Basic, IdentPathRoot, NameResolvedType, OpCode, UnresolvedIdent, UnresolvedType},
+    ir::NameResolvedType,
     pass_manager::{static_analysis::ensure_types_declared_in_type, PassManager},
+    simulate::SimulatorValue,
     stores::{diagnostics::Diagnostic, types::TypeKind},
     Stores,
 };
 
-pub fn declare_enum(
+pub fn declare_enum(stores: &mut Stores, cur_id: ItemId) {
+    let def = stores.sigs.urir.get_enum(cur_id).clone();
+    let friendly_name = stores.strings.try_get_friendly_name(cur_id).unwrap();
+    let mangled_name = stores.strings.try_get_mangled_name(cur_id).unwrap();
+
+    stores.types.add_type(
+        friendly_name,
+        mangled_name,
+        def.name.location,
+        TypeKind::Enum(cur_id),
+    );
+}
+
+pub fn validate_enum_variants(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
     let def = stores.sigs.urir.get_enum(cur_id).clone();
-    let friendly_name = stores.strings.try_get_friendly_name(cur_id).unwrap();
-    let mangled_name = stores.strings.try_get_mangled_name(cur_id).unwrap();
 
-    let type_id = stores.types.add_type(
-        friendly_name,
-        mangled_name,
-        def.name.location,
-        TypeKind::Enum(cur_id),
-    );
+    let mut seen_discriminants = HashMap::new();
 
-    let mut next_discriminant = 0;
-    let mut seen_disciminants = HashMap::new();
+    for &(name, const_item_id) in &def.variants {
+        if pass_manager
+            .ensure_evaluated_consts_asserts(stores, const_item_id)
+            .is_err()
+        {
+            had_error.set();
+            continue;
+        }
 
-    let const_exit_stack_type = UnresolvedType::Simple(UnresolvedIdent {
-        span: def.name.location,
-        path_root: IdentPathRoot::CurrentScope,
-        path: vec![def.name],
-        generic_params: Vec::new(),
-    });
+        let [SimulatorValue::EnumValue { discrim, .. }] =
+            stores.items.get_consts(const_item_id).unwrap()
+        else {
+            unreachable!()
+        };
 
-    // We construct new consts for each variant.
-    for (name, val) in def.variants {
-        let disc = val.unwrap_or(next_discriminant);
-
-        if let Some(&prev_loc) = seen_disciminants.get(&disc) {
+        if let Some(&prev_loc) = seen_discriminants.get(discrim) {
             let mut diag = Diagnostic::error(name.location, "descriminant collision");
-            if val.is_none() {
-                diag.add_primary_label_message(format!("variant's discriminant is {disc}",));
-            }
-
+            diag.add_primary_label_message(format!("variant's discriminant is {discrim}",));
             diag.with_secondary_label(prev_loc, "this variant has the same discriminant")
                 .attached(stores.diags, cur_id);
             had_error.set();
         } else {
-            seen_disciminants.insert(disc, name.location);
+            seen_discriminants.insert(*discrim, name.location);
         }
-
-        let exit_stack =
-            vec![const_exit_stack_type.clone().with_span(name.location)].with_span(name.location);
-
-        let (variant_id, prev_def) =
-            stores
-                .items
-                .new_const(stores.sigs, had_error, name, cur_id, exit_stack);
-        diagnostics::handle_symbol_redef_error(stores, had_error, variant_id, prev_def);
-
-        let body = vec![stores.ops.new_op(
-            OpCode::Basic(Basic::PushEnum {
-                id: type_id,
-                discrim: disc,
-            }),
-            name,
-        )];
-        let body_block_id = stores.blocks.new_block(body);
-        stores.items.set_item_body(variant_id, body_block_id);
-
-        // Must remember to enqueue it in the pass manager!
-        pass_manager.add_new_item(variant_id);
-
-        next_discriminant = disc + 1;
     }
 }
 

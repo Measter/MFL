@@ -18,7 +18,7 @@ use crate::{
     stores::{
         diagnostics::Diagnostic,
         ops::OpId,
-        types::{IntKind, TypeId, TypeInfo, TypeKind},
+        types::{IntKind, IntSignedness, IntWidth, TypeId, TypeInfo, TypeKind},
     },
     Stores,
 };
@@ -1029,6 +1029,55 @@ pub(crate) fn unpack(
 
             had_error.set();
         }
+    }
+}
+
+pub(crate) fn pack_enum(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    enum_id: TypeId,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    stores.values.set_value_type(op_data.outputs[0], enum_id);
+
+    let op_loc = stores.ops.get_token(op_id);
+    let discrim_value_id = op_data.inputs[0];
+    let Some([discrim_type_id]) = stores.values.value_types([discrim_value_id]) else {
+        return;
+    };
+
+    let discrim_type_info = stores.types.get_type_info(discrim_type_id);
+
+    let TypeKind::Integer(int_kind) = discrim_type_info.kind else {
+        let discrim_type_name = stores.strings.resolve(discrim_type_info.friendly_name);
+
+        Diagnostic::error(
+            op_loc.location,
+            format!("found `{discrim_type_name}` expected a u16"),
+        )
+        .with_label_chain(discrim_value_id, 1, discrim_type_name)
+        .attached(stores.diags, item_id);
+
+        had_error.set();
+        return;
+    };
+
+    if !can_promote_int_unidirectional(
+        int_kind,
+        IntKind {
+            width: IntWidth::I16,
+            signed: IntSignedness::Unsigned,
+        },
+    ) {
+        let discrim_type_name = stores.strings.resolve(discrim_type_info.friendly_name);
+
+        Diagnostic::error(op_loc.location, "value must be a `u16`")
+            .with_label_chain(discrim_value_id, 0, discrim_type_name)
+            .attached(stores.diags, item_id);
+
+        had_error.set();
     }
 }
 
