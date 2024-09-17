@@ -1,9 +1,11 @@
+use hashbrown::HashMap;
 use lasso::Spur;
 use stores::source::{SourceLocation, Spanned};
 
 use crate::stores::{
     block::BlockId,
     types::{BuiltinTypes, Float, FloatWidth, IntWidth, Integer, TypeId, TypeInfo, TypeKind},
+    values::ValueId,
     Stores,
 };
 
@@ -187,6 +189,74 @@ impl PartiallyResolvedType {
                 // None
             }
             _ => None,
+        }
+    }
+
+    pub fn match_generic_type_new(
+        &self,
+        stores: &Stores,
+        params: &mut HashMap<Spur, Vec<(ValueId, TypeId)>>,
+        input_type_info: TypeInfo,
+        input_value_id: ValueId,
+    ) {
+        match (self, input_type_info.kind) {
+            (PartiallyResolvedType::GenericParamSimple(s), _) => {
+                params
+                    .entry(s.inner)
+                    .or_default()
+                    .push((input_value_id, input_type_info.id));
+            }
+            (
+                PartiallyResolvedType::GenericParamFunctionPointer { inputs, outputs },
+                TypeKind::FunctionPointer,
+            ) => {
+                let function_args = stores.types.get_function_pointer_args(input_type_info.id);
+                if function_args.inputs.len() != inputs.len()
+                    || function_args.outputs.len() != outputs.len()
+                {
+                    return;
+                }
+
+                for (p, itp) in inputs
+                    .iter()
+                    .zip(&function_args.inputs)
+                    .chain(outputs.iter().zip(&function_args.outputs))
+                {
+                    let itp_info = stores.types.get_type_info(*itp);
+                    p.match_generic_type_new(stores, params, itp_info, input_value_id);
+                }
+            }
+
+            (
+                PartiallyResolvedType::GenericParamMultiPointer(t),
+                TypeKind::MultiPointer(ptr_type),
+            )
+            | (
+                PartiallyResolvedType::GenericParamSinglePointer(t),
+                TypeKind::SinglePointer(ptr_type),
+            ) => {
+                let inner_info = stores.types.get_type_info(ptr_type);
+                t.match_generic_type_new(stores, params, inner_info, input_value_id);
+            }
+
+            (PartiallyResolvedType::GenericParamArray(t, ..), TypeKind::Array { type_id, .. }) => {
+                let inner_info = stores.types.get_type_info(type_id);
+                t.match_generic_type_new(stores, params, inner_info, input_value_id);
+            }
+
+            (
+                PartiallyResolvedType::GenericStruct(struct_id, instance_params),
+                TypeKind::GenericStructInstance(input_struct_id),
+            ) if input_struct_id == *struct_id => {
+                // We know the input struct is the same as the field struct.
+
+                let input_struct_def = stores.types.get_struct_def(input_type_info.id);
+                for (p, itp) in instance_params.iter().zip(&input_struct_def.generic_params) {
+                    let itp_info = stores.types.get_type_info(*itp);
+                    p.match_generic_type_new(stores, params, itp_info, input_value_id);
+                }
+            }
+            _ => {}
         }
     }
 }

@@ -226,41 +226,85 @@ fn call_generic_function_infer_params(
     let inputs = &op_data.inputs;
     let generic_params = stores.items.get_function_template_paramaters(callee_id);
 
+    let mut inferred_params = generic_params
+        .iter()
+        .map(|i| (i.inner, Vec::new()))
+        .collect();
+
+    // We first iterate over all the input parameters and values, and try to infer
+    // all uses of type paramaters. We may end up collecting multiple instances of
+    // the same type ID for each parameter, which we handle later.
+    for (sig_type, &input_value_id) in generic_sig.entry.iter().zip(inputs) {
+        let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
+            continue;
+        };
+        let input_type_info = stores.types.get_type_info(input_type_id);
+
+        sig_type.match_generic_type_new(
+            stores,
+            &mut inferred_params,
+            input_type_info,
+            input_value_id,
+        );
+    }
+
+    // Now we check that we managed to infer one, and only one, type ID for each parameter.
     let mut param_types = Vec::new();
-
-    // Essentially, iterate over each parameter, then search the signature looking for
-    // a type we can pattern match against to infer the generic type parameter.
-    // If we find one, break and search for the next parameter.
     let mut local_had_error = ErrorSignal::new();
-
     for param in generic_params {
-        let mut found_param = false;
-        let sig_iter = generic_sig.entry.iter().chain(&generic_sig.exit);
-        for (sig_type, &input_value_id) in sig_iter.zip(inputs) {
-            let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
-                continue;
-            };
-            let input_type_info = stores.types.get_type_info(input_type_id);
+        let inferred_types: &mut Vec<_> = inferred_params.get_mut(&param.inner).unwrap();
+        inferred_types.sort_by_key(|f| f.1);
+        inferred_types.dedup_by_key(|f| f.1);
 
-            let Some(inferred_type_id) =
-                sig_type.match_generic_type(stores, param.inner, input_type_info)
-            else {
-                // Not an inferreable pattern.
-                continue;
-            };
+        match inferred_types.len() {
+            1 => param_types.push(inferred_types[0].1),
+            0 => {
+                let op_loc = stores.ops.get_token(op_id).location;
+                Diagnostic::error(op_loc, "unable to infer type parameter")
+                    .primary_label_message("this call")
+                    .with_help_label(param.location, "this parameter")
+                    .attached(stores.diags, item_id);
 
-            param_types.push(inferred_type_id);
-            found_param = true;
-            break;
-        }
+                local_had_error.set();
+            }
+            _ => {
+                let op_loc = stores.ops.get_token(op_id).location;
+                let param_name = stores.strings.resolve(param.inner);
+                let mut diag = Diagnostic::error(
+                    op_loc,
+                    format!(
+                        "unable to infer type parameter `{param_name}` due to conflicting inputs",
+                    ),
+                )
+                .primary_label_message("this call")
+                .with_secondary_label(param.location, "this parameter");
 
-        if !found_param {
-            let op_loc = stores.ops.get_token(op_id).location;
-            Diagnostic::error(op_loc, "unable to infer type paramater")
-                .with_help_label(param.location, "this parameter")
-                .attached(stores.diags, item_id);
+                for (idx, &(input_value_id, inferred_type_id)) in inferred_types.iter().enumerate()
+                {
+                    let inferred_type_info = stores.types.get_type_info(inferred_type_id);
+                    let inferred_type_name =
+                        stores.strings.resolve(inferred_type_info.friendly_name);
 
-            local_had_error.set();
+                    let [input_value_location] = stores.values.values_headers([input_value_id]);
+                    let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
+                        continue;
+                    };
+                    let input_type_info = stores.types.get_type_info(input_type_id);
+                    let input_type_name = stores.strings.resolve(input_type_info.friendly_name);
+
+                    diag.add_label_chain(input_value_id, idx.to_u64(), input_type_name);
+                    diag.add_help_label(
+                        input_value_location.source_location,
+                        format!("inferred `{inferred_type_name}` from this value"),
+                    );
+                }
+
+                diag.attached(stores.diags, item_id);
+                local_had_error.set();
+
+                // Just so we can continue, just assume the first one.
+                param_types.push(inferred_types[0].1)
+            }
         }
     }
 

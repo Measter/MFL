@@ -18,7 +18,7 @@ use crate::{
 
 use super::item::LangItem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId(u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
