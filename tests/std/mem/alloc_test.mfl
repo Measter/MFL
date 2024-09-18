@@ -14,11 +14,5 @@ proc entry[] to [] {
     3 alloc(u32)
     std::Result::unwrap_ok
 
-    free(u32)
-    cond {
-        xtrd(errno) 0!= {
-            "Free failed" std::term::writeln
-        }
-        else {drop}
-    }
+    free
 }

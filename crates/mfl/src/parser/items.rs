@@ -592,115 +592,132 @@ pub fn parse_enum(
     )));
 
     loop {
-        let Ok(name_token) =
-            variant_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
-        else {
-            // Invalid token.
-            // Consume token so we can progress.
-            if variant_iter.next().is_none() {
-                break;
+        if variant_iter.next_is(TokenKind::Proc) {
+            let keyword = variant_iter.next().unwrap_single();
+            if parse_function(stores, &mut variant_iter, keyword, item_id).is_err() {
+                had_error.set();
             }
 
-            continue;
-        };
-
-        prev_token = name_token;
-
-        let exit_stack = vec![const_exit_stack_type.clone().with_span(name_token.location)]
-            .with_span(name_token.location);
-
-        let (variant_const_id, prev_def) = stores.items.new_const(
-            stores.sigs,
-            &mut had_error,
-            name_token.map(|t| t.lexeme),
-            item_id,
-            exit_stack,
-        );
-        diagnostics::handle_symbol_redef_error(stores, &mut had_error, variant_const_id, prev_def);
-
-        let const_body_id = if variant_iter.next_is_group(BracketKind::Brace) {
-            let body_block = variant_iter.next().unwrap_group();
-            let mut body = parse_item_body_contents(
-                stores,
-                &mut TokenIter::new(body_block.tokens.iter()),
-                variant_const_id,
-            )
-            .recover(&mut had_error, Vec::new());
-
-            body.push(
-                stores
-                    .ops
-                    .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
-            );
-
-            stores.blocks.new_block(body)
-        } else if let Some(prev_ident) = prev_variant_ident {
-            // Build up the body `<PREV> cast(u8) 1+`
-
-            let prev_op = OpCode::Complex(UnresolvedOp::Ident(UnresolvedIdent {
-                span: name_token.location,
-                path_root: IdentPathRoot::CurrentScope,
-                path: vec![prev_ident],
-                generic_params: Vec::new(),
-            }));
-
-            let cast_op = OpCode::Complex(UnresolvedOp::Cast {
-                id: UnresolvedType::Simple(UnresolvedIdent {
-                    span: name_token.location,
-                    path_root: IdentPathRoot::CurrentScope,
-                    path: vec![u8_token.with_span(name_token.location)],
-                    generic_params: Vec::new(),
-                }),
-            });
-
-            let int_op = OpCode::Basic(Basic::PushInt {
-                width: IntWidth::I8,
-                value: Integer::Unsigned(1),
-            });
-
-            let plus_op = OpCode::Basic(Basic::Arithmetic(Arithmetic::Add));
-
-            let body = vec![
-                stores.ops.new_op(prev_op, name_token.map(|t| t.lexeme)),
-                stores.ops.new_op(cast_op, name_token.map(|t| t.lexeme)),
-                stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
-                stores.ops.new_op(plus_op, name_token.map(|t| t.lexeme)),
-                stores
-                    .ops
-                    .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
-            ];
-            stores.blocks.new_block(body)
+            if variant_iter.peek().is_none() {
+                break;
+            }
         } else {
-            // We don't have a previous variant, so we just start at 0.
-            let int_op = OpCode::Basic(Basic::PushInt {
-                width: IntWidth::I8,
-                value: Integer::Unsigned(0),
-            });
+            // Parse a variant.
+            let Ok(name_token) =
+                variant_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+            else {
+                // Invalid token.
+                // Consume token so we can progress.
+                if variant_iter.next().is_none() {
+                    break;
+                }
 
-            let body = vec![
-                stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
-                stores
-                    .ops
-                    .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
-            ];
-            stores.blocks.new_block(body)
-        };
+                continue;
+            };
 
-        stores.items.set_item_body(variant_const_id, const_body_id);
+            prev_token = name_token;
 
-        prev_variant_ident = Some(name_token.map(|t| t.lexeme));
-        variants.push((name_token.map(|t| t.lexeme), variant_const_id));
+            let exit_stack = vec![const_exit_stack_type.clone().with_span(name_token.location)]
+                .with_span(name_token.location);
 
-        if TrailingCommaResult::Break
-            == validate_trailing_comma(
-                &mut variant_iter,
+            let (variant_const_id, prev_def) = stores.items.new_const(
+                stores.sigs,
+                &mut had_error,
+                name_token.map(|t| t.lexeme),
+                item_id,
+                exit_stack,
+            );
+            diagnostics::handle_symbol_redef_error(
                 stores,
                 &mut had_error,
-                item_id,
-                "variants",
-            )
-        {
-            break;
+                variant_const_id,
+                prev_def,
+            );
+
+            let const_body_id = if variant_iter.next_is_group(BracketKind::Brace) {
+                let body_block = variant_iter.next().unwrap_group();
+                let mut body = parse_item_body_contents(
+                    stores,
+                    &mut TokenIter::new(body_block.tokens.iter()),
+                    variant_const_id,
+                )
+                .recover(&mut had_error, Vec::new());
+
+                body.push(
+                    stores
+                        .ops
+                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
+                );
+
+                stores.blocks.new_block(body)
+            } else if let Some(prev_ident) = prev_variant_ident {
+                // Build up the body `<PREV> cast(u8) 1+`
+
+                let prev_op = OpCode::Complex(UnresolvedOp::Ident(UnresolvedIdent {
+                    span: name_token.location,
+                    path_root: IdentPathRoot::CurrentScope,
+                    path: vec![prev_ident],
+                    generic_params: Vec::new(),
+                }));
+
+                let cast_op = OpCode::Complex(UnresolvedOp::Cast {
+                    id: UnresolvedType::Simple(UnresolvedIdent {
+                        span: name_token.location,
+                        path_root: IdentPathRoot::CurrentScope,
+                        path: vec![u8_token.with_span(name_token.location)],
+                        generic_params: Vec::new(),
+                    }),
+                });
+
+                let int_op = OpCode::Basic(Basic::PushInt {
+                    width: IntWidth::I8,
+                    value: Integer::Unsigned(1),
+                });
+
+                let plus_op = OpCode::Basic(Basic::Arithmetic(Arithmetic::Add));
+
+                let body = vec![
+                    stores.ops.new_op(prev_op, name_token.map(|t| t.lexeme)),
+                    stores.ops.new_op(cast_op, name_token.map(|t| t.lexeme)),
+                    stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
+                    stores.ops.new_op(plus_op, name_token.map(|t| t.lexeme)),
+                    stores
+                        .ops
+                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
+                ];
+                stores.blocks.new_block(body)
+            } else {
+                // We don't have a previous variant, so we just start at 0.
+                let int_op = OpCode::Basic(Basic::PushInt {
+                    width: IntWidth::I8,
+                    value: Integer::Unsigned(0),
+                });
+
+                let body = vec![
+                    stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
+                    stores
+                        .ops
+                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
+                ];
+                stores.blocks.new_block(body)
+            };
+
+            stores.items.set_item_body(variant_const_id, const_body_id);
+
+            prev_variant_ident = Some(name_token.map(|t| t.lexeme));
+            variants.push((name_token.map(|t| t.lexeme), variant_const_id));
+
+            if TrailingCommaResult::Break
+                == validate_trailing_comma(
+                    &mut variant_iter,
+                    stores,
+                    &mut had_error,
+                    item_id,
+                    "variants",
+                )
+            {
+                break;
+            }
         }
     }
 

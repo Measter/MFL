@@ -1,4 +1,5 @@
 import std::Result
+import std::ErrNo
 import std::SimpleResult
 
 const PROT_READ [u64] { 0x01 }
@@ -9,6 +10,12 @@ const MAP_PRIVATE [u64] { 0x02 }
 const SYS_MMAP [u64] { 0x09 }
 const SYS_MUNMAP [u64] { 0x0B }
 
+module c {
+    proc(extern) malloc [u64] to [u8*]
+    proc(extern) free [u8*] to []
+    proc(extern) get_errno [] to [s32]
+}
+
 struct MMap(T) {
     pointer T*,
     length u64,
@@ -16,43 +23,22 @@ struct MMap(T) {
 
 proc(lang(alloc)) alloc(T) [
     u64 // Number of Ts to allocate for
-] to [Result(MMap(T), u64)] {
-    dup
+] to [Result(MMap(T), ErrNo)] {
+    dup sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
+    c::malloc
 
-    sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
-    SYS_MMAP 0 rot(3<1)
-    PROT_READ PROT_WRITE or
-    MAP_ANONYMOUS MAP_PRIVATE or
-    0 // File descriptor
-    0 // File offset
-    syscall(7)
-    dup cast(s64)
-
-    // [len ptr errcode]
     cond {
-        dup 0< {
-            // Some kind of failure
-            0 swap - cast(u64)
-            // Drop the len and pointer
-            rot(3>1) drop(2)
-
-            Result::Err(MMap(T), u64)
+        isnull {
+            drop c::get_errno ErrNo::from_int
+            Result::Err(MMap(T), ErrNo)
             return
         }
-        else { drop }
+        else { cast(T*) swap MMap Result::Ok(MMap(T), ErrNo) return }
     }
-    // [len ptr]
-    cast(T*) swap
-    MMap Result::Ok(MMap(T), u64)
 }
 
-proc(lang(free)) free(T) [MMap(T)] to [SimpleResult] {
-    unpack
-    // [ptr len]
-    sizeof(T) *
-    SYS_MUNMAP rot(3>1) syscall(3)
-    cast(s64) 0 swap - cast(u64)
-    SimpleResult
+proc(lang(free)) free(T) [MMap(T)] to [] {
+    xtrd(pointer) cast(u8*) c::free
 }
 
 proc fill(T) [

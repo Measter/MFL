@@ -44,6 +44,7 @@ mod memory;
 mod stack;
 
 const SYSCALLS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/syscalls.o"));
+const GET_ERRNO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/get_errno.o"));
 
 const CALL_CONV_COLD: u32 = 9;
 
@@ -927,8 +928,8 @@ pub(crate) fn compile(
     let mut output_obj = args.obj_dir.clone();
     output_obj.push(args.file.file_stem().unwrap());
     output_obj.set_extension("o");
-    // let mut bootstrap_obj = args.obj_dir.clone();
-    // bootstrap_obj.push("bootstrap.o");
+    let mut get_errno_obj = args.obj_dir.clone();
+    get_errno_obj.push("get_errno.o");
     let mut syscalls_obj = args.obj_dir.clone();
     syscalls_obj.push("syscalls.o");
 
@@ -1012,5 +1013,11 @@ pub(crate) fn compile(
             .map_err(|e| eyre!("Error writing syscall wrappers: {e}"))?;
     }
 
-    Ok(vec![output_obj, syscalls_obj])
+    {
+        let _span = trace_span!("Writing get_errno").entered();
+        std::fs::write(&get_errno_obj, GET_ERRNO)
+            .map_err(|e| eyre!("Error writing errno wrapper: {e}"))?;
+    }
+
+    Ok(vec![output_obj, syscalls_obj, get_errno_obj])
 }

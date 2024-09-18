@@ -16,5 +16,21 @@ fn main() {
         .status()
         .unwrap()
         .success());
+
+    let file = "get_errno.c";
+    println!("cargo:rerun-if-changed=./src/builtins/{file}");
+    let mut dest_dir = Path::new(&out_dir).join(file);
+    dest_dir.set_extension("o");
+
+    assert!(Command::new("gcc")
+        .arg("-O3")
+        .arg("-c")
+        .arg("-o")
+        .arg(&dest_dir)
+        .arg(format!("./src/builtins/{file}"))
+        .status()
+        .unwrap()
+        .success());
+
     println!("cargo:rerun-if-changed=build.rs");
 }
