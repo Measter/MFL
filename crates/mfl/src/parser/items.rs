@@ -596,7 +596,11 @@ pub fn parse_enum(
             variant_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
         else {
             // Invalid token.
-            variant_iter.next(); // Consume token so we can progress.
+            // Consume token so we can progress.
+            if variant_iter.next().is_none() {
+                break;
+            }
+
             continue;
         };
 
