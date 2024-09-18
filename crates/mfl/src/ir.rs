@@ -297,8 +297,9 @@ impl Cond {
     pub fn is_all_terminal(&self, stores: &Stores) -> bool {
         let mut is_all_terminal = stores.blocks.is_terminal(self.else_block);
         for arm in &self.arms {
-            is_all_terminal &= stores.blocks.is_terminal(arm.block);
-            is_all_terminal &= stores.blocks.is_terminal(arm.condition);
+            let is_arm_terminal =
+                stores.blocks.is_terminal(arm.condition) | stores.blocks.is_terminal(arm.block);
+            is_all_terminal &= is_arm_terminal;
         }
 
         is_all_terminal
