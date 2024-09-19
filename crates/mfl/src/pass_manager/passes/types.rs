@@ -1,11 +1,9 @@
-use hashbrown::HashMap;
 use stores::items::ItemId;
 
 use crate::{
     error_signal::ErrorSignal,
     ir::NameResolvedType,
     pass_manager::{static_analysis::ensure_types_declared_in_type, PassManager},
-    simulate::SimulatorValue,
     stores::{diagnostics::Diagnostic, types::TypeKind},
     Stores,
 };
@@ -21,43 +19,6 @@ pub fn declare_enum(stores: &mut Stores, cur_id: ItemId) {
         def.name.location,
         TypeKind::Enum(cur_id),
     );
-}
-
-pub fn validate_enum_variants(
-    stores: &mut Stores,
-    pass_manager: &mut PassManager,
-    had_error: &mut ErrorSignal,
-    cur_id: ItemId,
-) {
-    let def = stores.sigs.urir.get_enum(cur_id).clone();
-
-    let mut seen_discriminants = HashMap::new();
-
-    for &(name, const_item_id) in &def.variants {
-        if pass_manager
-            .ensure_evaluated_consts_asserts(stores, const_item_id)
-            .is_err()
-        {
-            had_error.set();
-            continue;
-        }
-
-        let [SimulatorValue::EnumValue { discrim, .. }] =
-            stores.items.get_consts(const_item_id).unwrap()
-        else {
-            unreachable!()
-        };
-
-        if let Some(&prev_loc) = seen_discriminants.get(discrim) {
-            let mut diag = Diagnostic::error(name.location, "descriminant collision");
-            diag.add_primary_label_message(format!("variant's discriminant is {discrim}",));
-            diag.with_secondary_label(prev_loc, "this variant has the same discriminant")
-                .attached(stores.diags, cur_id);
-            had_error.set();
-        } else {
-            seen_discriminants.insert(*discrim, name.location);
-        }
-    }
 }
 
 pub fn declare_struct(stores: &mut Stores, had_error: &mut ErrorSignal, cur_id: ItemId) {
