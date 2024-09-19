@@ -1,0 +1,11 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+proc foo(T, U, T) [] to [] {}
+
+struct Bar(T, U, T) {
+    a s32
+}
