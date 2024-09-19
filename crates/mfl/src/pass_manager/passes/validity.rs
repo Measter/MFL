@@ -32,12 +32,12 @@ pub(crate) fn validity_check(
             }
             validate_attributes(stores, had_error, cur_id);
         }
-        ItemKind::Variable
-        | ItemKind::Function
-        | ItemKind::FunctionDecl
-        | ItemKind::GenericFunction
-        | ItemKind::Module => {
+        ItemKind::Variable | ItemKind::Function | ItemKind::FunctionDecl | ItemKind::Module => {
             validate_attributes(stores, had_error, cur_id);
+        }
+        ItemKind::GenericFunction => {
+            validate_attributes(stores, had_error, cur_id);
+            validate_unique_generic_params(stores, had_error, cur_id);
         }
         ItemKind::StructDef => {
             if pass_manager
@@ -48,6 +48,7 @@ pub(crate) fn validity_check(
             }
 
             validate_attributes(stores, had_error, cur_id);
+            validate_unique_generic_params(stores, had_error, cur_id);
         }
         ItemKind::Enum => {
             validate_enum_variants(stores, pass_manager, had_error, cur_id);
@@ -56,7 +57,7 @@ pub(crate) fn validity_check(
     }
 }
 
-pub fn validate_attributes(stores: &mut Stores, had_error: &mut ErrorSignal, cur_item: ItemId) {
+fn validate_attributes(stores: &mut Stores, had_error: &mut ErrorSignal, cur_item: ItemId) {
     let item_header = stores.items.get_item_header(cur_item);
 
     match item_header.kind {
@@ -118,7 +119,7 @@ pub fn validate_attributes(stores: &mut Stores, had_error: &mut ErrorSignal, cur
     }
 }
 
-pub fn validate_enum_variants(
+fn validate_enum_variants(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
@@ -152,5 +153,46 @@ pub fn validate_enum_variants(
         } else {
             seen_discriminants.insert(*discrim, name.location);
         }
+    }
+}
+
+fn validate_unique_generic_params(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    cur_id: ItemId,
+) {
+    let item_header = stores.items.get_item_header(cur_id);
+    let generic_params = match item_header.kind {
+        ItemKind::GenericFunction => stores.items.get_function_template_paramaters(cur_id),
+        ItemKind::StructDef => {
+            let struct_def = stores.sigs.nrir.get_struct(cur_id);
+            &struct_def.generic_params
+        }
+        _ => unreachable!(),
+    };
+
+    let mut param_bundles: HashMap<_, Vec<_>> = HashMap::new();
+    generic_params.iter().for_each(|p| {
+        param_bundles.entry(p.inner).or_default().push(p.location);
+    });
+
+    for (name, locations) in param_bundles {
+        if locations.len() == 1 {
+            continue;
+        }
+
+        let param_name = stores.strings.resolve(name);
+        let mut diag = Diagnostic::error(
+            locations[0],
+            format!("generic parameter `{param_name}` is not unique"),
+        )
+        .primary_label_message("this parameter");
+
+        for loc in &locations[1..] {
+            diag.add_secondary_label(*loc, "has the same name");
+        }
+
+        diag.attached(stores.diags, cur_id);
+        had_error.set();
     }
 }
