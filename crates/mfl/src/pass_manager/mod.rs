@@ -27,25 +27,21 @@ flags! {
         BuildNames,
         CheckAsserts,
         ConstPropBody,
-        CyclicRefCheckBody,
-
         DeclareEnums,
+
         DeclareStructs,
         DefineStructs,
         EvaluatedConstsAsserts,
-
         IdentResolvedBody,
+
         IdentResolvedSignature,
         PartiallyTypeResolved,
-        SelfContainingStruct,
-
         StackAndTypeCheckedBody,
         TerminalBlockCheckBody,
+
         TypeResolvedBody,
         TypeResolvedSignature,
-
-        ValidAttributes,
-        ValidEnumVariants,
+        ValidityCheck,
     }
 }
 
@@ -57,19 +53,16 @@ impl PassState {
             PassState::DeclareStructs => PassManager::ensure_declare_structs,
             PassState::DefineStructs => PassManager::ensure_define_structs,
             PassState::DeclareEnums => PassManager::ensure_declare_enums,
-            PassState::SelfContainingStruct => PassManager::ensure_self_containing_structs,
             PassState::TypeResolvedSignature => PassManager::ensure_type_resolved_signature,
             PassState::TypeResolvedBody => PassManager::ensure_type_resolved_body,
             PassState::BuildNames => PassManager::ensure_build_names,
-            PassState::CyclicRefCheckBody => PassManager::ensure_cyclic_ref_check_body,
             PassState::TerminalBlockCheckBody => PassManager::ensure_terminal_block_check_body,
             PassState::StackAndTypeCheckedBody => PassManager::ensure_stack_and_type_checked_body,
             PassState::ConstPropBody => PassManager::ensure_const_prop_body,
             PassState::EvaluatedConstsAsserts => PassManager::ensure_evaluated_consts_asserts,
             PassState::CheckAsserts => PassManager::ensure_check_asserts,
             PassState::PartiallyTypeResolved => PassManager::ensure_partially_resolve_types,
-            PassState::ValidAttributes => PassManager::ensure_valid_attributes,
-            PassState::ValidEnumVariants => PassManager::ensure_valid_enum_variants,
+            PassState::ValidityCheck => PassManager::ensure_validity_check,
         }
     }
 
@@ -80,16 +73,15 @@ impl PassState {
             | IdentResolvedBody
             | IdentResolvedSignature
             | TerminalBlockCheckBody
-            | ValidAttributes
-            | ValidEnumVariants => &[],
+            | ValidityCheck => &[],
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
-            CyclicRefCheckBody | TypeResolvedBody => &[IdentResolvedBody],
+            TypeResolvedBody => &[IdentResolvedBody],
             DeclareEnums => &[BuildNames],
             DeclareStructs => &[BuildNames, IdentResolvedSignature],
-            SelfContainingStruct | TypeResolvedSignature => &[IdentResolvedSignature],
+            TypeResolvedSignature => &[IdentResolvedSignature],
             DefineStructs => &[DeclareStructs],
-            EvaluatedConstsAsserts => &[CyclicRefCheckBody, ConstPropBody],
+            EvaluatedConstsAsserts => &[ValidityCheck, ConstPropBody],
             PartiallyTypeResolved => &[IdentResolvedBody, IdentResolvedSignature],
             StackAndTypeCheckedBody => &[
                 TypeResolvedSignature,
@@ -273,33 +265,6 @@ impl PassManager {
         let mut had_error = ErrorSignal::new();
         passes::const_prop::analyze_item(stores, self, &mut had_error, cur_item);
 
-        if had_error.into_err() {
-            self.set_error(cur_item, STATE);
-            Err(())
-        } else {
-            self.set_passed(cur_item, STATE);
-            Ok(())
-        }
-    }
-
-    fn ensure_cyclic_ref_check_body(
-        &mut self,
-        stores: &mut Stores,
-        cur_item: ItemId,
-    ) -> Result<(), ()> {
-        const STATE: PassState = PassState::CyclicRefCheckBody;
-        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
-            return Ok(());
-        };
-
-        let _span = debug_span!("CycleCheck").entered();
-        trace!(
-            name = stores.get_symbol_name(cur_item),
-            id = ?cur_item,
-        );
-
-        let mut had_error = ErrorSignal::new();
-        passes::cycles::check_invalid_cycles(stores, self, &mut had_error, cur_item);
         if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -530,33 +495,6 @@ impl PassManager {
         }
     }
 
-    fn ensure_self_containing_structs(
-        &mut self,
-        stores: &mut Stores,
-        cur_item: ItemId,
-    ) -> Result<(), ()> {
-        const STATE: PassState = PassState::SelfContainingStruct;
-        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
-            return Ok(());
-        };
-
-        let _span = debug_span!("SelfContainingStruct").entered();
-        trace!(
-            name = stores.get_symbol_name(cur_item),
-            id = ?cur_item,
-        );
-
-        let mut had_error = ErrorSignal::new();
-        passes::cycles::check_invalid_cycles(stores, self, &mut had_error, cur_item);
-        if had_error.into_err() {
-            self.set_error(cur_item, STATE);
-            Err(())
-        } else {
-            self.set_passed(cur_item, STATE);
-            Ok(())
-        }
-    }
-
     fn ensure_stack_and_type_checked_body(
         &mut self,
         stores: &mut Stores,
@@ -665,51 +603,20 @@ impl PassManager {
         }
     }
 
-    pub fn ensure_valid_attributes(
-        &mut self,
-        stores: &mut Stores,
-        cur_item: ItemId,
-    ) -> Result<(), ()> {
-        const STATE: PassState = PassState::ValidAttributes;
+    fn ensure_validity_check(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
+        const STATE: PassState = PassState::ValidityCheck;
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
 
-        let _span = debug_span!("ValidAttrib").entered();
+        let _span = debug_span!("ValidityCheck").entered();
         trace!(
             name = stores.get_symbol_name(cur_item),
             id = ?cur_item,
         );
 
         let mut had_error = ErrorSignal::new();
-        passes::attributes::validate_attributes(stores, &mut had_error, cur_item);
-        if had_error.into_err() {
-            self.set_error(cur_item, STATE);
-            Err(())
-        } else {
-            self.set_passed(cur_item, STATE);
-            Ok(())
-        }
-    }
-
-    fn ensure_valid_enum_variants(
-        &mut self,
-        stores: &mut Stores,
-        cur_item: ItemId,
-    ) -> Result<(), ()> {
-        const STATE: PassState = PassState::ValidEnumVariants;
-        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
-            return Ok(());
-        };
-
-        let _span = debug_span!("ValidEnumVar").entered();
-        trace!(
-            name = stores.get_symbol_name(cur_item),
-            id = ?cur_item,
-        );
-
-        let mut had_error = ErrorSignal::new();
-        passes::types::validate_enum_variants(stores, self, &mut had_error, cur_item);
+        passes::validity::validity_check(stores, self, &mut had_error, cur_item);
         if had_error.into_err() {
             self.set_error(cur_item, STATE);
             Err(())
@@ -723,37 +630,26 @@ impl PassManager {
         let needed_states = match stores.items.get_item_header(cur_item).kind {
             ItemKind::Module => [
                 PassState::BuildNames,
-                PassState::ValidAttributes,
+                PassState::ValidityCheck,
                 PassState::IdentResolvedSignature,
             ]
             .as_slice(),
-            ItemKind::StructDef => &[
-                PassState::ValidAttributes,
-                PassState::SelfContainingStruct,
-                PassState::DefineStructs,
-            ],
-            ItemKind::Enum => &[
-                PassState::ValidAttributes,
-                PassState::DeclareEnums,
-                PassState::ValidEnumVariants,
-            ],
+            ItemKind::StructDef => &[PassState::ValidityCheck, PassState::DefineStructs],
+            ItemKind::Enum => &[PassState::ValidityCheck, PassState::DeclareEnums],
             ItemKind::Variable | ItemKind::FunctionDecl => &[
                 PassState::BuildNames,
-                PassState::ValidAttributes,
+                PassState::ValidityCheck,
                 PassState::TypeResolvedSignature,
             ],
             // Type resolution happens after the generic function is instantiated.
             ItemKind::GenericFunction => {
-                &[PassState::ValidAttributes, PassState::PartiallyTypeResolved]
+                &[PassState::ValidityCheck, PassState::PartiallyTypeResolved]
             }
-            ItemKind::Assert => &[PassState::ValidAttributes, PassState::CheckAsserts],
-            ItemKind::Const => &[
-                PassState::ValidAttributes,
-                PassState::EvaluatedConstsAsserts,
-            ],
+            ItemKind::Assert => &[PassState::ValidityCheck, PassState::CheckAsserts],
+            ItemKind::Const => &[PassState::ValidityCheck, PassState::EvaluatedConstsAsserts],
             ItemKind::Function { .. } => &[
                 PassState::BuildNames,
-                PassState::ValidAttributes,
+                PassState::ValidityCheck,
                 PassState::ConstPropBody,
             ],
         };
