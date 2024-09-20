@@ -1,4 +1,4 @@
-import std::term
+import lib::term
 
 
 struct SplitResult {
@@ -119,10 +119,10 @@ struct(lang(string)) String {
     proc remove_start[String, u64] to [String] {
         cond {
             over xtrd(length) over< {
-                "Cannot trim " std::term::ewrite
-                std::term::ewrite_ui
+                "Cannot trim " lib::term::ewrite
+                lib::term::ewrite_ui
                 " from string of length "
-                xtr(length) std::term::ewrite_ui_ln
+                xtr(length) lib::term::ewrite_ui_ln
                 exit(1)
             }
         }

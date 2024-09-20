@@ -1,8 +1,8 @@
 import core::String
-import std::io::FD
-import std::Result
-import std::SimpleResult
-import std::time::Timespec
+import lib::io::FD
+import lib::Result
+import lib::SimpleResult
+import lib::time::Timespec
 
 const SYS_OPEN [u64] { 0x02 }
 const SYS_CLOSE [u64] { 0x03 }

@@ -1,5 +1,5 @@
 import core::String
-import std::io
+import lib::io
 
 // Standard stream descriptor IDs
 proc STDIN  [] to [io::FD] { 0x00 io::FD }

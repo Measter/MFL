@@ -1,6 +1,6 @@
 module c {
     const CLOCK_REALTIME [s32] {0}
-    proc(extern) clock_gettime [s32, std::time::Timespec*] to [s32]
+    proc(extern) clock_gettime [s32, lib::time::Timespec*] to [s32]
 }
 
 struct Timespec {
@@ -24,7 +24,7 @@ struct Instant {
                 time@ Instant return
             }
             else {
-                "Error: failed in call to clock_gettime" std::term::ewriteln
+                "Error: failed in call to clock_gettime" lib::term::ewriteln
                 exit(1)
             }
         }

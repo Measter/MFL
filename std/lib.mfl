@@ -37,7 +37,7 @@ struct Result(T, E) {
             Tag::Ok = { xtrd(t) }
             else {
                 drop
-                "Error: called unwrap on err" std::term::ewriteln
+                "Error: called unwrap on err" lib::term::ewriteln
                 exit(1)
             }
         }
@@ -49,7 +49,7 @@ struct Result(T, E) {
             Tag::Err = { xtrd(e) }
             else{
                 drop
-                "Error: called unwrap_err on ok" std::term::ewriteln
+                "Error: called unwrap_err on ok" lib::term::ewriteln
                 exit(1)
             }
         }

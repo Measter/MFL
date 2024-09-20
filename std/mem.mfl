@@ -1,6 +1,6 @@
-import std::Result
-import std::ErrNo
-import std::SimpleResult
+import lib::Result
+import lib::ErrNo
+import lib::SimpleResult
 
 const PROT_READ [u64] { 0x01 }
 const PROT_WRITE [u64] { 0x02 }
@@ -57,10 +57,10 @@ proc copy(T) [
 ] to [] {
     cond {
         src.length@ dst.length@ != {
-            "Mismatched length in copy - src: " std::term::ewrite
-            src.length@ std::term::ewrite_ui
-            " dst: " std::term::ewrite
-            dst.length@ std::term::ewrite_ui_ln
+            "Mismatched length in copy - src: " lib::term::ewrite
+            src.length@ lib::term::ewrite_ui
+            " dst: " lib::term::ewrite
+            dst.length@ lib::term::ewrite_ui_ln
             exit(1)
         }
     }
@@ -73,10 +73,10 @@ proc copy(T) [
 }
 
 proc mmap_file [
-    std::io::FD,
+    lib::io::FD,
     u64 // Protection flags. Must match the FD.
 ] to [Result(MMap(u8), u64)] {
-    over std::fs::fstat
+    over lib::fs::fstat
     cond {
         xtr(tag) Result::Tag::Err = {
             rot(3>1) drop(2)
