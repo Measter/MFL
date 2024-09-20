@@ -212,7 +212,7 @@ pub fn parse_function(
 
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
-    if !has_body {
+    if attributes.attributes.contains(ItemAttribute::Extern) && !has_body {
         let (item_id, prev_def) = stores.items.new_function_decl(
             stores.sigs,
             &mut had_error,
@@ -269,9 +269,15 @@ pub fn parse_function(
             stores.items.set_lang_item(lang_item_id, item_id);
         }
 
-        let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
-        let body_block_id = stores.blocks.new_block(body);
-        stores.items.set_item_body(item_id, body_block_id);
+        if !attributes.attributes.contains(ItemAttribute::Extern) && !has_body {
+            Diagnostic::error(name_token.location, "non-extern functions must have a body")
+                .attached(stores.diags, item_id);
+            had_error.set();
+        } else {
+            let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
+            let body_block_id = stores.blocks.new_block(body);
+            stores.items.set_item_body(item_id, body_block_id);
+        }
     }
 
     if had_error.into_err() {
