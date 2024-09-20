@@ -224,7 +224,7 @@ pub fn parse_simple_op(
             value: Integer::Unsigned((ch as u8).to_u64()),
         }),
 
-        TokenKind::Ident | TokenKind::ColonColon | TokenKind::SelfKw => {
+        TokenKind::Ident | TokenKind::ColonColon | TokenKind::Lib | TokenKind::SelfKw => {
             return parse_ident_op(stores, token_iter, item_id, token)
         }
         TokenKind::Integer { .. } => {

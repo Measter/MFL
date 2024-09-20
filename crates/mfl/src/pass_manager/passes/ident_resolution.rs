@@ -73,6 +73,20 @@ fn resolved_single_ident(
             };
             (start_item, rest)
         }
+        IdentPathRoot::CurrentLib => {
+            let mut current_item = cur_id;
+            // Go up the tree until we find we have no parent. This will get us to the root of the library.
+            loop {
+                let cur_header = stores.items.get_item_header(current_item);
+                if let Some(parent) = cur_header.parent {
+                    current_item = parent;
+                } else {
+                    break;
+                }
+            }
+
+            (current_item, ident.path.as_slice())
+        }
         IdentPathRoot::Root => {
             let Some(tlm) = stores.items.get_top_level_module(first_ident.inner) else {
                 let item_name = stores.strings.resolve(first_ident.inner);

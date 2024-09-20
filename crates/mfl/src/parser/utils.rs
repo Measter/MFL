@@ -545,6 +545,7 @@ pub fn parse_ident(
 
             (IdentPathRoot::Root, vec![ident.map(|t| t.lexeme)])
         }
+        TokenKind::Lib => (IdentPathRoot::CurrentLib, Vec::new()),
         TokenKind::Ident => (IdentPathRoot::CurrentScope, vec![token.map(|t| t.lexeme)]),
         TokenKind::SelfKw => (IdentPathRoot::CurrentModule, Vec::new()),
         _ => unreachable!(),

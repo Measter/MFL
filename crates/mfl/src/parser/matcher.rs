@@ -123,9 +123,11 @@ impl ExpectedTokenMatcher<Spanned<TokenKind>> for IdentPathMatch {
 
     fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
         match tk.inner {
-            TokenKind::ColonColon | TokenKind::SelfKw | TokenKind::Super | TokenKind::Ident => {
-                IsMatch::Yes
-            }
+            TokenKind::ColonColon
+            | TokenKind::Lib
+            | TokenKind::SelfKw
+            | TokenKind::Super
+            | TokenKind::Ident => IsMatch::Yes,
             _ => IsMatch::No(tk.inner.kind_str(), tk.location),
         }
     }

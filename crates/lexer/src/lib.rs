@@ -210,6 +210,9 @@ pub enum TokenKind {
     #[token("<=")]
     LessEqual,
 
+    #[token("lib")]
+    Lib,
+
     #[token("@")]
     Load,
 
@@ -349,6 +352,7 @@ impl TokenKind {
             TokenKind::LangItem => "lang",
             TokenKind::Less => "<",
             TokenKind::LessEqual => "<=",
+            TokenKind::Lib => "lib",
             TokenKind::Load => "@",
             TokenKind::Minus => "-",
             TokenKind::Module => "module",

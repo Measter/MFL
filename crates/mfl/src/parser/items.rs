@@ -25,7 +25,7 @@ use crate::{
 };
 
 use super::{
-    matcher::{attribute_tokens, IsMatch, Matcher},
+    matcher::{attribute_tokens, IdentPathMatch, IsMatch, Matcher},
     parse_item_body_contents,
     utils::{
         parse_ident, parse_proc_entry_stack_def, parse_stack_def, parse_unresolved_type,
@@ -748,18 +748,7 @@ pub fn parse_import(
     token: Spanned<Token>,
     module_id: ItemId,
 ) -> Result<(), ()> {
-    let root_name = token_iter.expect_single(
-        stores,
-        module_id,
-        Matcher("ident", |t: Spanned<TokenKind>| {
-            if matches!(t.inner, TokenKind::Ident | TokenKind::ColonColon) {
-                IsMatch::Yes
-            } else {
-                IsMatch::No(t.inner.kind_str(), t.location)
-            }
-        }),
-        token.location,
-    )?;
+    let root_name = token_iter.expect_single(stores, module_id, IdentPathMatch, token.location)?;
 
     let Ok((path, _)) = parse_ident(stores, had_error, module_id, token_iter, root_name) else {
         had_error.set();

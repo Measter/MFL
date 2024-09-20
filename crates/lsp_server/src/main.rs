@@ -233,6 +233,7 @@ impl Backend {
                         | TokenKind::AssumeInit
                         | TokenKind::Import
                         | TokenKind::LangItem
+                        | TokenKind::Lib
                         | TokenKind::Module
                         | TokenKind::Proc
                         | TokenKind::Return

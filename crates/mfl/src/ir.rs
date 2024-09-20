@@ -537,6 +537,7 @@ pub enum Basic {
 pub enum IdentPathRoot {
     CurrentScope,
     Root,
+    CurrentLib,
     CurrentModule,
 }
 
