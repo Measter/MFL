@@ -3,6 +3,7 @@ module io
 module mem
 module string
 module term
+module time
 
 struct SimpleResult {
     errno u64,

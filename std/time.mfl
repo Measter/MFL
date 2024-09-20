@@ -1,0 +1,55 @@
+module c {
+    const CLOCK_REALTIME [s32] {0}
+    proc(extern) clock_gettime [s32, std::time::Timespec*] to [s32]
+}
+
+struct Timespec {
+    tv_sec u64,
+    tv_nsec u64,
+}
+
+const NS_PER_S [u64] {1_000_000_000}
+const US_PER_S [u64] {1_000_000}
+const NS_PER_US [u64] {1_000}
+
+struct Instant {
+    t Timespec,
+
+    proc now [] to [Instant] {
+        var time Timespec
+        c::CLOCK_REALTIME time cast(Timespec*) c::clock_gettime
+        cond {
+            0= {
+                assumeinit(time)
+                time@ Instant return
+            }
+            else {
+                "Error: failed in call to clock_gettime" std::term::ewriteln
+                exit(1)
+            }
+        }
+    }
+
+    proc elapsed_us [var earlier Instant] to [u64] {
+        var now Instant
+        Instant::now now!
+
+        cond {
+            // The simple case
+            now.t.tv_nsec@ earlier.t.tv_nsec@ >= {
+                now.t.tv_sec@ earlier.t.tv_sec@ -
+                now.t.tv_nsec@ earlier.t.tv_nsec@ -
+            }
+            // Case where we need to borrow
+            else {
+                now.t.tv_sec@ earlier.t.tv_sec@ 1 - -
+                now.t.tv_nsec@ NS_PER_S + earlier.t.tv_nsec@ -
+            }
+        }
+
+        // [sec nanosec]
+        // We'll just assume the times are short
+        NS_PER_US /
+        swap US_PER_S * +
+    }
+}
