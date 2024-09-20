@@ -152,6 +152,10 @@ pub(super) fn valid_type_token(tt: &TokenTree) -> IsMatch {
                     | TokenKind::Ampersand
                     | TokenKind::Star
                     | TokenKind::Comma
+                    | TokenKind::Proc
+                    | TokenKind::GoesTo
+                    | TokenKind::Lib
+                    | TokenKind::SelfKw
             ) =>
         {
             IsMatch::Yes
@@ -199,6 +203,8 @@ pub(super) fn stack_def_tokens(tt: &TokenTree) -> IsMatch {
                     | TokenKind::Variable
                     | TokenKind::Proc
                     | TokenKind::GoesTo
+                    | TokenKind::Lib
+                    | TokenKind::SelfKw
             ) =>
         {
             IsMatch::Yes
