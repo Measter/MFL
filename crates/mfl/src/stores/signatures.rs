@@ -354,16 +354,30 @@ impl UnresolvedScope {
     }
 }
 
+// Defines how strongly an item is imported.
+// A weak import can be overwritten by later imports, while a strong one cannot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportStrength {
+    Strong,
+    Weak,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Import {
+    id: Spanned<ItemId>,
+    strength: ImportStrength,
+}
+
 #[derive(Clone)]
 pub struct NameResolvedScope {
     child_items: HashMap<Spur, Spanned<ItemId>>,
-    visible_symbols: HashMap<Spur, Spanned<ItemId>>,
+    visible_symbols: HashMap<Spur, Import>,
 }
 
 impl NameResolvedScope {
     #[inline]
     pub fn get_symbol(&self, name: Spur) -> Option<ItemId> {
-        self.visible_symbols.get(&name).map(|id| id.inner)
+        self.visible_symbols.get(&name).map(|id| id.id.inner)
     }
 
     #[inline]
@@ -380,7 +394,13 @@ impl NameResolvedScope {
 
         // Children are added before imports are resolved, so this should never fail.
         self.visible_symbols
-            .insert(name.inner, id.with_span(name.location))
+            .insert(
+                name.inner,
+                Import {
+                    id: id.with_span(name.location),
+                    strength: ImportStrength::Strong,
+                },
+            )
             .expect_none("ICE: Name collision when adding child");
         Ok(())
     }
@@ -389,12 +409,26 @@ impl NameResolvedScope {
         &mut self,
         symbol: Spanned<Spur>,
         id: ItemId,
+        strength: ImportStrength,
     ) -> Result<(), SourceLocation> {
         use hashbrown::hash_map::Entry;
+
         match self.visible_symbols.entry(symbol.inner) {
-            Entry::Occupied(a) => return Err(a.get().location),
-            Entry::Vacant(a) => a.insert(id.with_span(symbol.location)),
-        };
+            Entry::Occupied(mut a) => {
+                if a.get().strength == ImportStrength::Weak {
+                    a.get_mut().id = id.with_span(symbol.location);
+                } else {
+                    return Err(a.get().id.location);
+                }
+            }
+            Entry::Vacant(a) => {
+                a.insert(Import {
+                    id: id.with_span(symbol.location),
+                    strength,
+                });
+            }
+        }
+
         Ok(())
     }
 

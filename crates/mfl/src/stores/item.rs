@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     block::BlockId,
-    signatures::{SigStore, StackDefItemUnresolved, UnresolvedItemSignature},
+    signatures::{ImportStrength, SigStore, StackDefItemUnresolved, UnresolvedItemSignature},
     types::TypeId,
 };
 
@@ -134,7 +134,7 @@ impl ItemStore {
         let string_item_id = self.lang_items[&LangItem::String];
         let string_header = self.headers[string_item_id.to_usize()];
         core_scope
-            .add_visible_symbol(string_header.name, string_item_id)
+            .add_visible_symbol(string_header.name, string_item_id, ImportStrength::Strong)
             .expect("ICE: Core already contains String");
     }
 

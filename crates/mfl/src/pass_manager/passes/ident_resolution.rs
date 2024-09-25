@@ -16,7 +16,10 @@ use crate::{
         block::BlockId,
         diagnostics::Diagnostic,
         item::{ItemKind, ItemStore},
-        signatures::{NameResolvedItemSignature, StackDefItemNameResolved, StackDefItemUnresolved},
+        signatures::{
+            ImportStrength, NameResolvedItemSignature, StackDefItemNameResolved,
+            StackDefItemUnresolved,
+        },
         types::BuiltinTypes,
     },
     Stores,
@@ -446,9 +449,11 @@ fn resolve_idents_in_module_imports(
 
         let item_name = stores.items.get_item_header(resolved_item_id).name;
         let resolved_scope = stores.sigs.nrir.get_scope_mut(cur_id);
-        match resolved_scope
-            .add_visible_symbol(item_name.inner.with_span(import.span), resolved_item_id)
-        {
+        match resolved_scope.add_visible_symbol(
+            item_name.inner.with_span(import.span),
+            resolved_item_id,
+            ImportStrength::Strong,
+        ) {
             Ok(_) => {}
             Err(prev_loc) => {
                 had_error.set();
