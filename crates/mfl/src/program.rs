@@ -9,9 +9,7 @@ use stores::{
 };
 use tracing::debug_span;
 
-use crate::{
-    diagnostics, error_signal::ErrorSignal, lexer, stores::diagnostics::Diagnostic, Args, Stores,
-};
+use crate::{error_signal::ErrorSignal, lexer, stores::diagnostics::Diagnostic, Args, Stores};
 
 // mod passes;
 
@@ -28,25 +26,21 @@ pub fn load_program(stores: &mut Stores, args: &Args) -> Result<ItemId> {
     let mut had_error = ErrorSignal::new();
 
     let core_module_name = stores.strings.intern("core");
-    let (core_module, prev_def_loc) = stores.items.new_module(
+    let core_module = stores.items.new_module(
         stores.sigs,
-        &mut had_error,
         core_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
         None,
         true,
     );
-    assert!(prev_def_loc.is_none());
     stores.items.set_core_module(core_module);
 
     let builtin_structs_module_name = stores.strings.intern("builtins");
-    let (builtin_module, prev_def_loc) = stores.items.new_module(
+    let builtin_module = stores.items.new_module(
         stores.sigs,
-        &mut had_error,
         builtin_structs_module_name.with_span(SourceLocation::new(FileId::dud(), 0..0)),
         None,
         true,
     );
-    assert!(prev_def_loc.is_none());
 
     if let Err(e) = load_module(
         stores,
@@ -162,14 +156,12 @@ fn load_library(
             }
         };
 
-        let (module_id, prev_def_loc) = stores.items.new_module(
+        let module_id = stores.items.new_module(
             stores.sigs,
-            had_error,
             module_name,
             parent,
             module == ModuleQueueType::Root,
         );
-        diagnostics::handle_symbol_redef_error(stores, had_error, parent, prev_def_loc);
 
         first_module = first_module.or(Some(module_id));
         let res = load_module(stores, module_id, &root, &contents, &mut module_queue);

@@ -7,7 +7,6 @@ use stores::{
 };
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     ir::{
         Arithmetic, Basic, Control, EnumDef, IdentPathRoot, OpCode, StructDef, StructDefField,
@@ -213,21 +212,18 @@ pub fn parse_function(
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
     if attributes.attributes.contains(ItemAttribute::Extern) && !has_body {
-        let (item_id, prev_def) = stores.items.new_function_decl(
+        stores.items.new_function_decl(
             stores.sigs,
-            &mut had_error,
             name_token.map(|t| t.lexeme),
             parent_id,
             attributes.attributes,
             entry_stack,
             exit_stack,
         );
-        diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
     } else {
-        let (item_id, prev_def) = if generic_params.is_empty() {
+        let item_id = if generic_params.is_empty() {
             stores.items.new_function(
                 stores.sigs,
-                &mut had_error,
                 name_token.map(|t| t.lexeme),
                 parent_id,
                 attributes.attributes,
@@ -237,7 +233,6 @@ pub fn parse_function(
         } else {
             stores.items.new_generic_function(
                 stores.sigs,
-                &mut had_error,
                 name_token.map(|t| t.lexeme),
                 parent_id,
                 attributes.attributes,
@@ -247,22 +242,14 @@ pub fn parse_function(
             )
         };
 
-        diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
-
         for stack_def in entry_stack.inner {
             let StackDefItemUnresolved::Var { name, kind } = stack_def else {
                 continue;
             };
 
-            let (var_item_id, prev_def) = stores.items.new_variable(
-                stores.sigs,
-                &mut had_error,
-                name,
-                item_id,
-                FlagSet::default(),
-                kind,
-            );
-            diagnostics::handle_symbol_redef_error(stores, &mut had_error, var_item_id, prev_def);
+            stores
+                .items
+                .new_variable(stores.sigs, name, item_id, FlagSet::default(), kind);
         }
 
         if let Some(lang_item_id) = attributes.lang_item {
@@ -299,13 +286,9 @@ pub fn parse_assert(
         .expect_single(stores, parent_id, TokenKind::Ident, keyword.location)
         .recover(&mut had_error, keyword);
 
-    let (item_id, prev_def) = stores.items.new_assert(
-        stores.sigs,
-        &mut had_error,
-        name_token.map(|t| t.lexeme),
-        parent_id,
-    );
-    diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
+    let item_id = stores
+        .items
+        .new_assert(stores.sigs, name_token.map(|t| t.lexeme), parent_id);
 
     let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
     let body_block_id = stores.blocks.new_block(body);
@@ -332,14 +315,12 @@ pub fn parse_const(
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, parent_id, name_token);
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
 
-    let (item_id, prev_def) = stores.items.new_const(
+    let item_id = stores.items.new_const(
         stores.sigs,
-        &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
         exit_stack,
     );
-    diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
 
     let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
     let body_block_id = stores.blocks.new_block(body);
@@ -383,15 +364,13 @@ pub fn parse_variable(
         return Err(());
     };
 
-    let (var_item_id, prev_def) = stores.items.new_variable(
+    stores.items.new_variable(
         stores.sigs,
-        &mut had_error,
         name_token.map(|t| t.lexeme),
         parent_id,
         attributes.attributes,
         variable_type,
     );
-    diagnostics::handle_symbol_redef_error(stores, &mut had_error, var_item_id, prev_def);
 
     if had_error.into_err() {
         Err(())
@@ -426,16 +405,13 @@ pub fn parse_struct_or_union(
 
     let fallback = TreeGroup::fallback(BracketKind::Brace, last_token);
 
-    let (item_id, prev_def) = stores.items.new_struct(
+    let item_id = stores.items.new_struct(
         stores.sigs,
-        &mut had_error,
         module_id,
         name_token.map(|t| t.lexeme),
         !generic_params.is_empty(),
         attributes.attributes,
     );
-
-    diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
 
     if let Some(lang_item_id) = attributes.lang_item {
         stores.items.set_lang_item(lang_item_id, item_id);
@@ -557,15 +533,12 @@ pub fn parse_enum(
 
     let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);
 
-    let (item_id, prev_def) = stores.items.new_enum(
+    let item_id = stores.items.new_enum(
         stores.sigs,
-        &mut had_error,
         module_id,
         name_token.map(|t| t.lexeme),
         attributes.attributes,
     );
-
-    diagnostics::handle_symbol_redef_error(stores, &mut had_error, item_id, prev_def);
 
     if let Some(lang_item_id) = attributes.lang_item {
         stores.items.set_lang_item(lang_item_id, item_id);
@@ -626,18 +599,11 @@ pub fn parse_enum(
             let exit_stack = vec![const_exit_stack_type.clone().with_span(name_token.location)]
                 .with_span(name_token.location);
 
-            let (variant_const_id, prev_def) = stores.items.new_const(
+            let variant_const_id = stores.items.new_const(
                 stores.sigs,
-                &mut had_error,
                 name_token.map(|t| t.lexeme),
                 item_id,
                 exit_stack,
-            );
-            diagnostics::handle_symbol_redef_error(
-                stores,
-                &mut had_error,
-                variant_const_id,
-                prev_def,
             );
 
             let const_body_id = if variant_iter.next_is_group(BracketKind::Brace) {
@@ -662,7 +628,7 @@ pub fn parse_enum(
                 let prev_op = OpCode::Complex(UnresolvedOp::Ident(UnresolvedIdent {
                     span: name_token.location,
                     path_root: IdentPathRoot::CurrentScope,
-                    path: vec![prev_ident],
+                    path: vec![prev_ident.inner.with_span(name_token.location)],
                     generic_params: Vec::new(),
                 }));
 

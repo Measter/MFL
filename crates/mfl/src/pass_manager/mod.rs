@@ -34,11 +34,12 @@ flags! {
         EvaluatedConstsAsserts,
         IdentResolvedBody,
 
+        IdentResolvedScope,
         IdentResolvedSignature,
         PartiallyTypeResolved,
         StackAndTypeCheckedBody,
-        TerminalBlockCheckBody,
 
+        TerminalBlockCheckBody,
         TypeResolvedBody,
         TypeResolvedSignature,
         ValidityCheck,
@@ -48,6 +49,7 @@ flags! {
 impl PassState {
     fn get_function(self) -> fn(&mut PassManager, &mut Stores, ItemId) -> Result<(), ()> {
         match self {
+            PassState::IdentResolvedScope => PassManager::ensure_ident_resolved_scope,
             PassState::IdentResolvedSignature => PassManager::ensure_ident_resolved_signature,
             PassState::IdentResolvedBody => PassManager::ensure_ident_resolved_body,
             PassState::DeclareStructs => PassManager::ensure_declare_structs,
@@ -69,11 +71,8 @@ impl PassState {
     fn get_deps(self) -> &'static [PassState] {
         use PassState::*;
         match self {
-            BuildNames
-            | IdentResolvedBody
-            | IdentResolvedSignature
-            | TerminalBlockCheckBody
-            | ValidityCheck => &[],
+            BuildNames | IdentResolvedScope | TerminalBlockCheckBody | ValidityCheck => &[],
+            IdentResolvedBody | IdentResolvedSignature => &[IdentResolvedScope],
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
             TypeResolvedBody => &[IdentResolvedBody],
@@ -440,6 +439,33 @@ impl PassManager {
         }
     }
 
+    pub fn ensure_ident_resolved_scope(
+        &mut self,
+        stores: &mut Stores,
+        cur_item: ItemId,
+    ) -> Result<(), ()> {
+        const STATE: PassState = PassState::IdentResolvedScope;
+        if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
+            return Ok(());
+        };
+
+        let _span = debug_span!("IdentScope").entered();
+        trace!(
+            name = stores.get_symbol_name(cur_item),
+            id = ?cur_item,
+        );
+
+        let mut had_error = ErrorSignal::new();
+        passes::ident_resolution::resolve_idents_in_scope(stores, self, &mut had_error, cur_item);
+        if had_error.into_err() {
+            self.set_error(cur_item, STATE);
+            Err(())
+        } else {
+            self.set_passed(cur_item, STATE);
+            Ok(())
+        }
+    }
+
     pub fn ensure_ident_resolved_signature(
         &mut self,
         stores: &mut Stores,
@@ -631,11 +657,19 @@ impl PassManager {
             ItemKind::Module => [
                 PassState::BuildNames,
                 PassState::ValidityCheck,
-                PassState::IdentResolvedSignature,
+                PassState::IdentResolvedScope,
             ]
             .as_slice(),
-            ItemKind::StructDef => &[PassState::ValidityCheck, PassState::DefineStructs],
-            ItemKind::Enum => &[PassState::ValidityCheck, PassState::DeclareEnums],
+            ItemKind::StructDef => &[
+                PassState::ValidityCheck,
+                PassState::IdentResolvedScope,
+                PassState::DefineStructs,
+            ],
+            ItemKind::Enum => &[
+                PassState::ValidityCheck,
+                PassState::IdentResolvedScope,
+                PassState::DeclareEnums,
+            ],
             ItemKind::Variable | ItemKind::FunctionDecl => &[
                 PassState::BuildNames,
                 PassState::ValidityCheck,

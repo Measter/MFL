@@ -123,12 +123,12 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
 
     if args.is_library {
         let entry_scope = stores.sigs.nrir.get_scope(entry_module_id);
-        for &item_id in entry_scope.get_child_items().values() {
-            let item_header = stores.items.get_item_header(item_id.inner);
+        for &item_id in entry_scope.get_child_items() {
+            let item_header = stores.items.get_item_header(item_id);
             if item_header.kind == ItemKind::Function
                 && item_header.attributes.contains(ItemAttribute::Extern)
             {
-                top_level_symbols.push(item_id.inner);
+                top_level_symbols.push(item_id);
             }
         }
     } else {

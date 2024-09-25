@@ -368,9 +368,9 @@ struct Import {
     strength: ImportStrength,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct NameResolvedScope {
-    child_items: HashMap<Spur, Spanned<ItemId>>,
+    child_items: Vec<ItemId>,
     visible_symbols: HashMap<Spur, Import>,
 }
 
@@ -381,28 +381,12 @@ impl NameResolvedScope {
     }
 
     #[inline]
-    pub fn get_child_items(&self) -> &HashMap<Spur, Spanned<ItemId>> {
+    pub fn get_child_items(&self) -> &[ItemId] {
         &self.child_items
     }
 
-    pub fn add_child(&mut self, name: Spanned<Spur>, id: ItemId) -> Result<(), SourceLocation> {
-        use hashbrown::hash_map::Entry;
-        match self.child_items.entry(name.inner) {
-            Entry::Occupied(a) => return Err(a.get().location),
-            Entry::Vacant(a) => a.insert(id.with_span(name.location)),
-        };
-
-        // Children are added before imports are resolved, so this should never fail.
-        self.visible_symbols
-            .insert(
-                name.inner,
-                Import {
-                    id: id.with_span(name.location),
-                    strength: ImportStrength::Strong,
-                },
-            )
-            .expect_none("ICE: Name collision when adding child");
-        Ok(())
+    pub fn add_child(&mut self, id: ItemId) {
+        self.child_items.push(id);
     }
 
     pub fn add_visible_symbol(
@@ -434,7 +418,7 @@ impl NameResolvedScope {
 
     pub fn new() -> NameResolvedScope {
         NameResolvedScope {
-            child_items: HashMap::new(),
+            child_items: Vec::new(),
             visible_symbols: HashMap::new(),
         }
     }

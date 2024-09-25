@@ -15,7 +15,7 @@ use crate::{
     stores::{
         block::BlockId,
         diagnostics::Diagnostic,
-        item::{ItemKind, ItemStore},
+        item::{ItemHeader, ItemKind, ItemStore, LangItem},
         signatures::{
             ImportStrength, NameResolvedItemSignature, StackDefItemNameResolved,
             StackDefItemUnresolved,
@@ -45,6 +45,47 @@ fn invalid_generic_count_diag(
     diag.attached(stores.diags, item_id);
 }
 
+fn get_visible_symbol(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    from: ItemHeader,
+    symbol: Spur,
+) -> Option<ItemId> {
+    // 1. Check ourselves
+    if from.name.inner == symbol {
+        return Some(from.id);
+    }
+
+    // 2. Check our children
+    let own_scope = stores.sigs.nrir.get_scope(from.id);
+    if let Some(child) = own_scope.get_symbol(symbol) {
+        return Some(child);
+    }
+
+    // 3. If we're not a module traverse up the tree checking siblings until we hit a module.
+    if from.kind != ItemKind::Module {
+        let mut parent = from.parent;
+        while let Some(parent_id) = parent {
+            // We can just let this fail and fail ident resolution.
+            let _ = pass_manager.ensure_ident_resolved_scope(stores, parent_id);
+
+            let parent_scope = stores.sigs.nrir.get_scope(parent_id);
+            if let Some(child) = parent_scope.get_symbol(symbol) {
+                return Some(child);
+            }
+
+            let parent_header = stores.items.get_item_header(parent_id);
+            if parent_header.kind == ItemKind::Module {
+                break;
+            }
+            parent = parent_header.parent;
+        }
+    }
+
+    // 4. Check top level modules
+    stores.items.get_top_level_module(symbol)
+}
+
 fn resolved_single_ident(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
@@ -60,14 +101,12 @@ fn resolved_single_ident(
         IdentPathRoot::CurrentScope => {
             let header = stores.items.get_item_header(cur_id);
             let Some(start_item) =
-                stores
-                    .items
-                    .get_visible_symbol(stores.sigs, header, first_ident.inner)
+                get_visible_symbol(stores, pass_manager, header, first_ident.inner)
             else {
                 let item_name = stores.strings.resolve(first_ident.inner);
                 Diagnostic::error(
                     first_ident.location,
-                    format!("symbol `{item_name}` not found"),
+                    format!("symbol `{item_name}`  not found"),
                 )
                 .attached(stores.diags, cur_id);
 
@@ -118,6 +157,9 @@ fn resolved_single_ident(
     let mut last_ident = *first_ident;
     for sub_ident in rest {
         let current_item_header = stores.items.get_item_header(current_item);
+        // Nothing to do if this fails.
+        let _ = pass_manager.ensure_ident_resolved_scope(stores, current_item);
+
         match current_item_header.kind {
             ItemKind::StructDef | ItemKind::Module => {}
             ItemKind::Enum => {
@@ -425,12 +467,23 @@ fn resolve_idents_in_struct_def(
     resolved
 }
 
-fn resolve_idents_in_module_imports(
+pub fn resolve_idents_in_scope(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
     cur_id: ItemId,
 ) {
+    {
+        // Let's first weakly import the builtin types (ints, float, bool, string).
+        let string_lang_item = stores.items.get_lang_items()[&LangItem::String];
+        let string_header = stores.items.get_item_header(string_lang_item);
+
+        let resolved_scope = stores.sigs.nrir.get_scope_mut(cur_id);
+        resolved_scope
+            .add_visible_symbol(string_header.name, string_lang_item, ImportStrength::Weak)
+            .expect("ICE: builtin import failed");
+    }
+
     let unresolved_imports = stores.sigs.urir.get_scope(cur_id).imports().to_owned();
 
     for import in unresolved_imports {
@@ -467,6 +520,36 @@ fn resolve_idents_in_module_imports(
                     }),
                 );
             }
+        }
+    }
+
+    // Now we add our children to our visible symbols. Doing it this way lets children
+    // overwrite weak imports.
+
+    // Ugh..
+    let child_items = stores
+        .sigs
+        .nrir
+        .get_scope_mut(cur_id)
+        .get_child_items()
+        .to_owned();
+
+    for child_id in child_items {
+        let resolved_scope = stores.sigs.nrir.get_scope_mut(cur_id);
+        let child_header = stores.items.get_item_header(child_id);
+        if let Err(prev_loc) =
+            resolved_scope.add_visible_symbol(child_header.name, child_id, ImportStrength::Strong)
+        {
+            had_error.set();
+            diagnostics::handle_symbol_redef_error(
+                stores,
+                had_error,
+                cur_id,
+                Some(NameCollision {
+                    prev: prev_loc,
+                    new: child_header.name.location,
+                }),
+            );
         }
     }
 }
@@ -552,11 +635,9 @@ pub fn resolve_signature(
 
             stores.sigs.nrir.set_variable_type(cur_id, new_kind);
         }
-        ItemKind::Module => {
-            resolve_idents_in_module_imports(stores, pass_manager, had_error, cur_id);
-        }
+
         // Nothing to do here.
-        ItemKind::Enum => {}
+        ItemKind::Module | ItemKind::Enum => {}
 
         // These are all treated the same.
         ItemKind::Assert

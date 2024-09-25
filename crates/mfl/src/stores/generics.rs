@@ -215,14 +215,12 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
     ) -> HashMap<ItemId, ItemId> {
         let base_scope = self.sigs.nrir.get_scope(base_fn_id).clone();
         let mut old_alloc_map = HashMap::new();
-        for (&child_name, &child_item) in base_scope.get_child_items() {
-            let child_item_header = self.items.get_item_header(child_item.inner);
+        for &child_item in base_scope.get_child_items() {
+            let child_item_header = self.items.get_item_header(child_item);
             if child_item_header.kind != ItemKind::Variable {
                 // We just reuse the existing item, so we need to add it manually.
                 let new_scope = self.sigs.nrir.get_scope_mut(new_proc_id);
-                new_scope
-                    .add_child(child_name.with_span(child_item.location), child_item.inner)
-                    .unwrap();
+                new_scope.add_child(child_item);
                 continue;
             }
 
@@ -235,16 +233,13 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
             }
 
             let alloc_type_unresolved = self.sigs.urir.get_variable_type(child_item_header.id);
-            let (new_alloc_id, redef_err_loc) = self.items.new_variable(
+            let new_alloc_id = self.items.new_variable(
                 self.sigs,
-                had_error,
                 child_item_header.name,
                 new_proc_id,
                 child_item_header.attributes,
                 alloc_type_unresolved.map(|i| i.clone()),
             );
-            // This should be been picked up by the base def.
-            assert!(redef_err_loc.is_none());
 
             let alloc_type = self
                 .sigs

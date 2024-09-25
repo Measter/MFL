@@ -163,10 +163,10 @@ pub fn analyze_item(
     item_id: ItemId,
 ) {
     let mut variable_state = HashMap::new();
-    for (_, &child_id) in stores.sigs.nrir.get_scope(item_id).get_child_items() {
-        let child_header = stores.items.get_item_header(child_id.inner);
+    for &child_id in stores.sigs.nrir.get_scope(item_id).get_child_items() {
+        let child_header = stores.items.get_item_header(child_id);
         if child_header.kind == ItemKind::Variable {
-            variable_state.insert(child_id.inner, ConstVal::Uninitialized);
+            variable_state.insert(child_id, ConstVal::Uninitialized);
         }
     }
 

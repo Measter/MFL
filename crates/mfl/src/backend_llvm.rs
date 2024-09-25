@@ -781,8 +781,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         trace!("Defining local allocations");
         let scope = stores.sigs.nrir.get_scope(id);
-        for &item_id in scope.get_child_items().values() {
-            let item_id = item_id.inner;
+        for &item_id in scope.get_child_items() {
             let item_header = stores.items.get_item_header(item_id);
             if item_header.kind != ItemKind::Variable {
                 continue;

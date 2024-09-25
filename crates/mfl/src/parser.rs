@@ -6,7 +6,6 @@ use tracing::debug_span;
 use utils::{TokenIter, TokenTreeOptionExt};
 
 use crate::{
-    diagnostics,
     error_signal::ErrorSignal,
     lexer::TokenTree,
     program::ModuleQueueType,
@@ -228,18 +227,11 @@ pub(super) fn parse_module(
                         )?;
 
                         if token_iter.next_is_group(BracketKind::Brace) {
-                            let (new_module_id, prev_def_loc) = stores.items.new_module(
+                            let new_module_id = stores.items.new_module(
                                 stores.sigs,
-                                &mut had_error,
                                 module_ident.map(|t| t.lexeme),
                                 Some(module_id),
                                 false,
-                            );
-                            diagnostics::handle_symbol_redef_error(
-                                stores,
-                                &mut had_error,
-                                module_id,
-                                prev_def_loc,
                             );
 
                             let sub_tokens = token_iter.next().unwrap_group();
