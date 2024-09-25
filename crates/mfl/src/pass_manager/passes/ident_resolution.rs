@@ -106,7 +106,7 @@ fn resolved_single_ident(
                 let item_name = stores.strings.resolve(first_ident.inner);
                 Diagnostic::error(
                     first_ident.location,
-                    format!("symbol `{item_name}`  not found"),
+                    format!("symbol `{item_name}` not found"),
                 )
                 .attached(stores.diags, cur_id);
 
