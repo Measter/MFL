@@ -76,10 +76,9 @@ impl PassState {
             ConstPropBody => &[StackAndTypeCheckedBody],
             CheckAsserts => &[EvaluatedConstsAsserts],
             TypeResolvedBody => &[IdentResolvedBody],
-            DeclareEnums => &[BuildNames],
-            DeclareStructs => &[BuildNames, IdentResolvedSignature],
+            DeclareEnums | DeclareStructs => &[BuildNames],
             TypeResolvedSignature => &[IdentResolvedSignature],
-            DefineStructs => &[DeclareStructs],
+            DefineStructs => &[IdentResolvedSignature, DeclareStructs],
             EvaluatedConstsAsserts => &[ValidityCheck, ConstPropBody],
             PartiallyTypeResolved => &[IdentResolvedBody, IdentResolvedSignature],
             StackAndTypeCheckedBody => &[
@@ -686,7 +685,7 @@ impl PassManager {
                 PassState::ValidityCheck,
                 PassState::ConstPropBody,
             ],
-            ItemKind::Builtin(_) => &[PassState::BuildNames, PassState::IdentResolvedScope],
+            ItemKind::Primitive(_) => &[PassState::BuildNames, PassState::IdentResolvedScope],
         };
 
         let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);

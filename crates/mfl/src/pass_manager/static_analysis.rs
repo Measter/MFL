@@ -108,6 +108,8 @@ pub(super) fn ensure_types_declared_in_type(
                         had_error.set();
                     }
                 }
+                // Nothing to do
+                ItemKind::Primitive(_) => {}
                 _ => unreachable!(),
             }
         }
@@ -119,7 +121,7 @@ pub(super) fn ensure_types_declared_in_type(
                 ensure_types_declared_in_type(stores, pass_manager, had_error, p);
             }
         }
-        NameResolvedType::SimpleBuiltin(_) | NameResolvedType::SimpleGenericParam(_) => {}
+        NameResolvedType::SimpleGenericParam(_) => {}
         NameResolvedType::Array(sub_type, _)
         | NameResolvedType::MultiPointer(sub_type)
         | NameResolvedType::SinglePointer(sub_type) => {

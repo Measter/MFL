@@ -60,7 +60,7 @@ pub enum ItemKind {
     StructDef,
     Module,
     Enum,
-    Builtin(TypeId),
+    Primitive(TypeId),
 }
 
 impl ItemKind {
@@ -75,7 +75,7 @@ impl ItemKind {
             ItemKind::StructDef => "struct",
             ItemKind::Module => "module",
             ItemKind::Enum => "enum",
-            ItemKind::Builtin(_) => "builtin",
+            ItemKind::Primitive(_) => "builtin",
         }
     }
 }
@@ -98,7 +98,7 @@ pub struct ItemHeader {
 
 pub struct ItemStore {
     bool_spur: Spur,
-    builtins: Vec<ItemId>,
+    primitives: Vec<ItemId>,
     core_module_id: Option<ItemId>,
     top_level_modules: HashMap<Spur, ItemId>,
     lang_items: HashMap<LangItem, ItemId>,
@@ -121,6 +121,10 @@ impl ItemStore {
 
     pub fn get_lang_items(&self) -> &HashMap<LangItem, ItemId> {
         &self.lang_items
+    }
+
+    pub fn get_primitives(&self) -> &[ItemId] {
+        &self.primitives
     }
 
     pub fn set_core_module(&mut self, id: ItemId) {
@@ -219,7 +223,7 @@ impl ItemStore {
         let bool_spur = strings.intern("bool");
         let mut item_store = ItemStore {
             bool_spur,
-            builtins: Vec::new(),
+            primitives: Vec::new(),
             core_module_id: None,
             top_level_modules: HashMap::new(),
             lang_items: HashMap::new(),
@@ -231,7 +235,7 @@ impl ItemStore {
             generic_template_parameters: HashMap::new(),
         };
 
-        let builtins = [
+        let primitives = [
             BuiltinTypes::U8,
             BuiltinTypes::U16,
             BuiltinTypes::U32,
@@ -243,19 +247,19 @@ impl ItemStore {
             BuiltinTypes::F32,
             BuiltinTypes::F64,
             BuiltinTypes::Bool,
-            BuiltinTypes::String,
         ];
 
         let dud_loc = SourceLocation::new(FileId::dud(), 0..0);
-        for bt in builtins {
+        for bt in primitives {
             let type_info = types.get_builtin(bt);
-            item_store.new_header(
+            let header = item_store.new_header(
                 sigs,
                 type_info.friendly_name.with_span(dud_loc),
                 None,
-                ItemKind::Builtin(type_info.id),
+                ItemKind::Primitive(type_info.id),
                 FlagSet::default(),
             );
+            item_store.primitives.push(header.id);
         }
 
         item_store

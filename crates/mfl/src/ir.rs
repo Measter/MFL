@@ -4,7 +4,7 @@ use stores::source::{SourceLocation, Spanned};
 
 use crate::stores::{
     block::BlockId,
-    types::{BuiltinTypes, Float, FloatWidth, IntWidth, Integer, TypeId, TypeInfo, TypeKind},
+    types::{Float, FloatWidth, IntWidth, Integer, TypeId, TypeInfo, TypeKind},
     values::ValueId,
     Stores,
 };
@@ -75,7 +75,6 @@ pub enum NameResolvedType {
         id: ItemId,
         token: Spanned<Spur>,
     },
-    SimpleBuiltin(BuiltinTypes),
     SimpleGenericParam(Spanned<Spur>),
     FunctionPointer {
         inputs: Vec<NameResolvedType>,
@@ -96,9 +95,9 @@ impl NameResolvedType {
         match self {
             NameResolvedType::SimpleCustom { id, .. }
             | NameResolvedType::GenericInstance { id, .. } => Some(*id),
-            NameResolvedType::SimpleBuiltin(_)
-            | NameResolvedType::SimpleGenericParam(_)
-            | NameResolvedType::FunctionPointer { .. } => None,
+            NameResolvedType::SimpleGenericParam(_) | NameResolvedType::FunctionPointer { .. } => {
+                None
+            }
             NameResolvedType::Array(sub_type, _)
             | NameResolvedType::MultiPointer(sub_type)
             | NameResolvedType::SinglePointer(sub_type) => sub_type.item_id(),

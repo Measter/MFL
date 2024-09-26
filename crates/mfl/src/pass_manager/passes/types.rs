@@ -22,16 +22,13 @@ pub fn declare_enum(stores: &mut Stores, cur_id: ItemId) {
 }
 
 pub fn declare_struct(stores: &mut Stores, had_error: &mut ErrorSignal, cur_id: ItemId) {
-    let def = stores.sigs.nrir.get_struct(cur_id).clone();
+    let def = stores.sigs.urir.get_struct(cur_id).clone();
     // We check if the name already exists by trying to resolve it.
     // TODO: This is just checking if we've already declared this struct?
-    if let Ok(existing_info) = stores.types.resolve_type(
-        stores.strings,
-        &NameResolvedType::SimpleCustom {
-            id: cur_id,
-            token: def.name,
-        },
-    ) {
+    if let Ok(existing_info) = stores.resolve_type(&NameResolvedType::SimpleCustom {
+        id: cur_id,
+        token: def.name,
+    }) {
         if let Some(loc) = existing_info.location {
             // The user defined the type.
             Diagnostic::error(def.name.location, "type with this name already exists")
@@ -85,14 +82,8 @@ pub fn define_struct(
     }
 
     if !def.generic_params.is_empty() {
-        stores
-            .types
-            .partially_resolve_generic_struct(stores.strings, cur_id, &def);
-    } else if let Err(missing_token) =
-        stores
-            .types
-            .define_fixed_struct(stores.strings, cur_id, &def)
-    {
+        stores.partially_resolve_generic_struct(cur_id, &def);
+    } else if let Err(missing_token) = stores.define_fixed_struct(cur_id, &def) {
         // The type that failed to resolve is us.
         Diagnostic::error(missing_token.location, "undefined field type")
             .with_help_label(def.name.location, "in this struct")

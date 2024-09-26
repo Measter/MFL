@@ -20,7 +20,6 @@ use crate::{
             ImportStrength, NameResolvedItemSignature, StackDefItemNameResolved,
             StackDefItemUnresolved,
         },
-        types::BuiltinTypes,
     },
     Stores,
 };
@@ -161,7 +160,7 @@ fn resolved_single_ident(
         let _ = pass_manager.ensure_ident_resolved_scope(stores, current_item);
 
         match current_item_header.kind {
-            ItemKind::StructDef | ItemKind::Module | ItemKind::Builtin(_) => {}
+            ItemKind::StructDef | ItemKind::Module | ItemKind::Primitive(_) => {}
             ItemKind::Enum => {
                 // If this fails, just make a best effort.
                 let _ = pass_manager.ensure_declare_enums(stores, current_item_header.id);
@@ -217,23 +216,7 @@ fn resolve_idents_in_type(
                 .last()
                 .expect("ICE: empty unresolved ident");
 
-            let name = stores.strings.resolve(item_name.inner);
-            let builtin_name = BuiltinTypes::from_name(name);
-
-            if (unresolved_ident.path.len() > 1
-                || unresolved_ident.path_root != IdentPathRoot::CurrentScope
-                || !unresolved_ident.generic_params.is_empty())
-                && builtin_name.is_some()
-            {
-                Diagnostic::error(unresolved_ident.span, "cannot name builtin with a path")
-                    .attached(stores.diags, cur_id);
-                had_error.set();
-                return Err(());
-            }
-
-            if let Some(builtin) = builtin_name {
-                NameResolvedType::SimpleBuiltin(builtin)
-            } else if unresolved_ident.path.len() == 1
+            if unresolved_ident.path.len() == 1
                 && unresolved_ident.path_root == IdentPathRoot::CurrentScope
                 && unresolved_ident.generic_params.is_empty()
                 && generic_params.iter().any(|tp| tp.inner == item_name.inner)
@@ -380,7 +363,7 @@ fn check_generic_param_length(
                     }
                 }
                 // Nothing to do here
-                ItemKind::Enum => {}
+                ItemKind::Enum | ItemKind::Primitive(_) => {}
                 _ => unreachable!(),
             };
         }
@@ -418,7 +401,7 @@ fn check_generic_param_length(
         }
 
         // Nothing to do here.
-        NameResolvedType::SimpleGenericParam(_) | NameResolvedType::SimpleBuiltin(_) => {}
+        NameResolvedType::SimpleGenericParam(_) => {}
     }
 }
 
@@ -482,6 +465,13 @@ pub fn resolve_idents_in_scope(
         resolved_scope
             .add_visible_symbol(string_header.name, string_lang_item, ImportStrength::Weak)
             .expect("ICE: builtin import failed");
+
+        for &builtin_id in stores.items.get_primitives() {
+            let builtin_header = stores.items.get_item_header(builtin_id);
+            resolved_scope
+                .add_visible_symbol(builtin_header.name, builtin_id, ImportStrength::Weak)
+                .expect("ICE: builtin import failed");
+        }
     }
 
     let unresolved_imports = stores.sigs.urir.get_scope(cur_id).imports().to_owned();
@@ -637,7 +627,7 @@ pub fn resolve_signature(
         }
 
         // Nothing to do here.
-        ItemKind::Module | ItemKind::Enum | ItemKind::Builtin(_) => {}
+        ItemKind::Module | ItemKind::Enum | ItemKind::Primitive(_) => {}
 
         // These are all treated the same.
         ItemKind::Assert
@@ -986,15 +976,28 @@ fn resolve_idents_in_block(
                             NameResolvedOp::PackStruct { id: new_ty }
                         }
 
-                        ItemKind::Assert
-                        | ItemKind::Module
-                        | ItemKind::Enum
-                        | ItemKind::Builtin(_) => {
+                        ItemKind::Primitive(_) | ItemKind::Enum => {
+                            had_error.set();
+                            let op_loc = stores.ops.get_token(op_id).location;
+                            let name = stores.strings.resolve(found_item_header.name.inner);
+                            Diagnostic::error(
+                                op_loc,
+                                format!("{name} cannot be used in an expression context"),
+                            )
+                            .attached(stores.diags, cur_id);
+
+                            continue;
+                        }
+
+                        ItemKind::Assert | ItemKind::Module => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
                             let mut diag = Diagnostic::error(
                                 op_loc,
-                                format!("cannot refer to a {:?} here", found_item_header.kind),
+                                format!(
+                                    "cannot refer to a {} here",
+                                    found_item_header.kind.kind_str()
+                                ),
                             );
 
                             // This would be the case if the item was a top-level mmodule.
@@ -1093,7 +1096,7 @@ fn resolve_idents_in_block(
                         | ItemKind::StructDef
                         | ItemKind::Enum
                         | ItemKind::Module
-                        | ItemKind::Builtin(_) => {
+                        | ItemKind::Primitive(_) => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
                             Diagnostic::error(
@@ -1172,7 +1175,7 @@ fn resolve_idents_in_block(
                         | ItemKind::StructDef
                         | ItemKind::Enum
                         | ItemKind::Module
-                        | ItemKind::Builtin(_) => {
+                        | ItemKind::Primitive(_) => {
                             Diagnostic::error(
                                 op_token.location,
                                 "`init` only supports local variables",
@@ -1206,7 +1209,7 @@ pub fn resolve_body(
         | ItemKind::StructDef
         | ItemKind::Enum
         | ItemKind::FunctionDecl
-        | ItemKind::Builtin(_) => {
+        | ItemKind::Primitive(_) => {
             // Nothing to do.
         }
         ItemKind::Assert

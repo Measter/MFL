@@ -13,10 +13,10 @@ use tracing::{debug_span, trace};
 
 use crate::{
     ir::{NameResolvedType, PartiallyResolvedType, StructDef, StructDefField},
-    stores::{self},
+    stores::{self, item::ItemKind},
 };
 
-use super::item::LangItem;
+use super::{item::LangItem, Stores};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId(u16);
@@ -259,26 +259,6 @@ pub enum BuiltinTypes {
     String,
 }
 
-impl BuiltinTypes {
-    pub fn from_name(name: &str) -> Option<Self> {
-        let builtin = match name {
-            "u8" => BuiltinTypes::U8,
-            "s8" => BuiltinTypes::S8,
-            "u16" => BuiltinTypes::U16,
-            "s16" => BuiltinTypes::S16,
-            "u32" => BuiltinTypes::U32,
-            "s32" => BuiltinTypes::S32,
-            "u64" => BuiltinTypes::U64,
-            "s64" => BuiltinTypes::S64,
-            "f32" => BuiltinTypes::F32,
-            "f64" => BuiltinTypes::F64,
-            "bool" => BuiltinTypes::Bool,
-            _ => return None,
-        };
-        Some(builtin)
-    }
-}
-
 impl From<IntKind> for BuiltinTypes {
     fn from(value: IntKind) -> Self {
         match (value.signed, value.width) {
@@ -300,6 +280,202 @@ impl From<FloatWidth> for BuiltinTypes {
             FloatWidth::F32 => BuiltinTypes::F32,
             FloatWidth::F64 => BuiltinTypes::F64,
         }
+    }
+}
+
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
+    pub fn define_fixed_struct(
+        &mut self,
+        struct_id: ItemId,
+        def: &StructDef<NameResolvedType>,
+    ) -> Result<TypeId, Spanned<Spur>> {
+        if !def.generic_params.is_empty() {
+            panic!("ICE: Tried to define fixed struct for a generic definition");
+        }
+
+        let mut resolved_fields = Vec::new();
+
+        for field in &def.fields {
+            let kind = self
+                .resolve_type(&field.kind.inner)
+                .map_err(|_| field.name)?
+                .id;
+            resolved_fields.push(StructDefField {
+                name: field.name,
+                kind: kind.with_span(field.kind.location),
+            });
+        }
+
+        let def = StructDef {
+            name: def.name,
+            fields: resolved_fields,
+            generic_params: Vec::new(),
+            is_union: def.is_union,
+        };
+
+        let type_id = self.types.custom_id_map[&struct_id];
+        self.types.fixed_struct_defs.insert(type_id, def);
+
+        Ok(type_id)
+    }
+
+    pub fn resolve_type(&mut self, tp: &NameResolvedType) -> Result<TypeInfo, Spanned<Spur>> {
+        match tp {
+            NameResolvedType::SimpleCustom { id, token } => {
+                let item_header = self.items.get_item_header(*id);
+                match item_header.kind {
+                    ItemKind::StructDef | ItemKind::Enum => self
+                        .types
+                        .custom_id_map
+                        .get(id)
+                        .map(|id| self.types.kinds[id])
+                        .ok_or(*token),
+                    ItemKind::Primitive(type_id) => Ok(self.types.get_type_info(type_id)),
+
+                    ItemKind::Assert
+                    | ItemKind::Const
+                    | ItemKind::Variable
+                    | ItemKind::Function
+                    | ItemKind::FunctionDecl
+                    | ItemKind::GenericFunction
+                    | ItemKind::Module => unreachable!(),
+                }
+            }
+            NameResolvedType::FunctionPointer { inputs, outputs } => {
+                let mut new_inputs = Vec::new();
+                for kind in inputs {
+                    let inner = self.resolve_type(kind)?;
+                    new_inputs.push(inner.id);
+                }
+
+                let mut new_outputs = Vec::new();
+                for kind in outputs {
+                    let inner = self.resolve_type(kind)?;
+                    new_outputs.push(inner.id);
+                }
+
+                Ok(self
+                    .types
+                    .get_function_pointer(self.strings, new_inputs, new_outputs))
+            }
+            NameResolvedType::Array(at, length) => {
+                let inner = self.resolve_type(at)?;
+                Ok(self.types.get_array(self.strings, inner.id, *length))
+            }
+            NameResolvedType::MultiPointer(pt) => {
+                let pointee = self.resolve_type(pt)?;
+                Ok(self.types.get_multi_pointer(self.strings, pointee.id))
+            }
+            NameResolvedType::SinglePointer(pt) => {
+                let pointee = self.resolve_type(pt)?;
+                Ok(self.types.get_single_pointer(self.strings, pointee.id))
+            }
+            NameResolvedType::GenericInstance { id, params, .. } => {
+                let base_struct_id = self.types.custom_id_map[id];
+                let param_type_ids: Vec<_> = params
+                    .iter()
+                    .map(|p| self.resolve_type(p).map(|ti| ti.id))
+                    .collect::<Result<_, _>>()?;
+
+                Ok(self.types.instantiate_generic_struct(
+                    self.strings,
+                    *id,
+                    base_struct_id,
+                    param_type_ids,
+                ))
+            }
+            NameResolvedType::SimpleGenericParam(f) => Err(*f),
+        }
+    }
+
+    pub fn partially_resolve_generic_type(
+        &mut self,
+        kind: &NameResolvedType,
+    ) -> Result<PartiallyResolvedType, Spanned<Spur>> {
+        let res = match kind {
+            NameResolvedType::SimpleCustom { .. } => {
+                let resolved = self.resolve_type(kind)?;
+                PartiallyResolvedType::Fixed(resolved.id)
+            }
+            NameResolvedType::SimpleGenericParam(n) => {
+                PartiallyResolvedType::GenericParamSimple(*n)
+            }
+            NameResolvedType::FunctionPointer { inputs, outputs } => {
+                let mut new_inputs = Vec::new();
+                for kind in inputs {
+                    let inner = self.partially_resolve_generic_type(kind)?;
+                    new_inputs.push(inner);
+                }
+
+                let mut new_outputs = Vec::new();
+                for kind in outputs {
+                    let inner = self.partially_resolve_generic_type(kind)?;
+                    new_outputs.push(inner);
+                }
+
+                PartiallyResolvedType::GenericParamFunctionPointer {
+                    inputs: new_inputs,
+                    outputs: new_outputs,
+                }
+            }
+            NameResolvedType::Array(sub_type, length) => {
+                let inner_kind = self.partially_resolve_generic_type(sub_type)?;
+                PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
+            }
+            NameResolvedType::MultiPointer(sub_type) => {
+                let inner_kind = self.partially_resolve_generic_type(sub_type)?;
+                PartiallyResolvedType::GenericParamMultiPointer(Box::new(inner_kind))
+            }
+            NameResolvedType::SinglePointer(sub_type) => {
+                let inner_kind = self.partially_resolve_generic_type(sub_type)?;
+                PartiallyResolvedType::GenericParamSinglePointer(Box::new(inner_kind))
+            }
+            NameResolvedType::GenericInstance { id, params, .. } => {
+                let generic_params = params
+                    .iter()
+                    .map(|gp| self.partially_resolve_generic_type(gp))
+                    .collect::<Result<_, _>>()?;
+                PartiallyResolvedType::GenericStruct(*id, generic_params)
+            }
+        };
+
+        Ok(res)
+    }
+
+    pub fn partially_resolve_generic_struct(
+        &mut self,
+        base_item_id: ItemId,
+        def: &StructDef<NameResolvedType>,
+    ) {
+        if def.generic_params.is_empty() {
+            panic!("ICE: Tried to define generic struct for a non-generic definition");
+        };
+
+        let mut resolved_fields = Vec::new();
+
+        for field in &def.fields {
+            let field_kind = self
+                .partially_resolve_generic_type(&field.kind.inner)
+                .unwrap();
+
+            resolved_fields.push(StructDefField {
+                name: field.name,
+                kind: field_kind.with_span(field.kind.location),
+            });
+        }
+
+        let generic_base = StructDef {
+            name: def.name,
+            fields: resolved_fields,
+            generic_params: def.generic_params.clone(),
+            is_union: def.is_union,
+        };
+
+        let type_id = self.types.custom_id_map[&base_item_id];
+
+        self.types
+            .generic_struct_id_map
+            .insert(type_id, generic_base);
     }
 }
 
@@ -454,63 +630,6 @@ impl TypeStore {
         }
 
         id
-    }
-
-    pub fn resolve_type(
-        &mut self,
-        string_store: &mut StringStore,
-        tp: &NameResolvedType,
-    ) -> Result<TypeInfo, Spanned<Spur>> {
-        match tp {
-            NameResolvedType::SimpleCustom { id, token } => self
-                .custom_id_map
-                .get(id)
-                .map(|id| self.kinds[id])
-                .ok_or(*token),
-            NameResolvedType::SimpleBuiltin(builtin) => Ok(self.get_builtin(*builtin)),
-            NameResolvedType::FunctionPointer { inputs, outputs } => {
-                let mut new_inputs = Vec::new();
-                for kind in inputs {
-                    let inner = self.resolve_type(string_store, kind)?;
-                    new_inputs.push(inner.id);
-                }
-
-                let mut new_outputs = Vec::new();
-                for kind in outputs {
-                    let inner = self.resolve_type(string_store, kind)?;
-                    new_outputs.push(inner.id);
-                }
-
-                Ok(self.get_function_pointer(string_store, new_inputs, new_outputs))
-            }
-            NameResolvedType::Array(at, length) => {
-                let inner = self.resolve_type(string_store, at)?;
-                Ok(self.get_array(string_store, inner.id, *length))
-            }
-            NameResolvedType::MultiPointer(pt) => {
-                let pointee = self.resolve_type(string_store, pt)?;
-                Ok(self.get_multi_pointer(string_store, pointee.id))
-            }
-            NameResolvedType::SinglePointer(pt) => {
-                let pointee = self.resolve_type(string_store, pt)?;
-                Ok(self.get_single_pointer(string_store, pointee.id))
-            }
-            NameResolvedType::GenericInstance { id, params, .. } => {
-                let base_struct_id = self.custom_id_map[id];
-                let param_type_ids: Vec<_> = params
-                    .iter()
-                    .map(|p| self.resolve_type(string_store, p).map(|ti| ti.id))
-                    .collect::<Result<_, _>>()?;
-
-                Ok(self.instantiate_generic_struct(
-                    string_store,
-                    *id,
-                    base_struct_id,
-                    param_type_ids,
-                ))
-            }
-            NameResolvedType::SimpleGenericParam(f) => Err(*f),
-        }
     }
 
     pub fn get_function_pointer(
@@ -679,99 +798,6 @@ impl TypeStore {
 
             self.kinds[&array_info]
         }
-    }
-
-    pub fn partially_resolve_generic_type(
-        &mut self,
-        string_store: &mut StringStore,
-        kind: &NameResolvedType,
-    ) -> Result<PartiallyResolvedType, Spanned<Spur>> {
-        let res = match kind {
-            NameResolvedType::SimpleCustom { .. } => {
-                let resolved = self.resolve_type(string_store, kind)?;
-                PartiallyResolvedType::Fixed(resolved.id)
-            }
-            NameResolvedType::SimpleBuiltin(bi) => {
-                PartiallyResolvedType::Fixed(self.get_builtin(*bi).id)
-            }
-            NameResolvedType::SimpleGenericParam(n) => {
-                PartiallyResolvedType::GenericParamSimple(*n)
-            }
-            NameResolvedType::FunctionPointer { inputs, outputs } => {
-                let mut new_inputs = Vec::new();
-                for kind in inputs {
-                    let inner = self.partially_resolve_generic_type(string_store, kind)?;
-                    new_inputs.push(inner);
-                }
-
-                let mut new_outputs = Vec::new();
-                for kind in outputs {
-                    let inner = self.partially_resolve_generic_type(string_store, kind)?;
-                    new_outputs.push(inner);
-                }
-
-                PartiallyResolvedType::GenericParamFunctionPointer {
-                    inputs: new_inputs,
-                    outputs: new_outputs,
-                }
-            }
-            NameResolvedType::Array(sub_type, length) => {
-                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
-                PartiallyResolvedType::GenericParamArray(Box::new(inner_kind), *length)
-            }
-            NameResolvedType::MultiPointer(sub_type) => {
-                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
-                PartiallyResolvedType::GenericParamMultiPointer(Box::new(inner_kind))
-            }
-            NameResolvedType::SinglePointer(sub_type) => {
-                let inner_kind = self.partially_resolve_generic_type(string_store, sub_type)?;
-                PartiallyResolvedType::GenericParamSinglePointer(Box::new(inner_kind))
-            }
-            NameResolvedType::GenericInstance { id, params, .. } => {
-                let generic_params = params
-                    .iter()
-                    .map(|gp| self.partially_resolve_generic_type(string_store, gp))
-                    .collect::<Result<_, _>>()?;
-                PartiallyResolvedType::GenericStruct(*id, generic_params)
-            }
-        };
-
-        Ok(res)
-    }
-
-    pub fn partially_resolve_generic_struct(
-        &mut self,
-        string_store: &mut StringStore,
-        base_item_id: ItemId,
-        def: &StructDef<NameResolvedType>,
-    ) {
-        if def.generic_params.is_empty() {
-            panic!("ICE: Tried to define generic struct for a non-generic definition");
-        };
-
-        let mut resolved_fields = Vec::new();
-
-        for field in &def.fields {
-            let field_kind = self
-                .partially_resolve_generic_type(string_store, &field.kind.inner)
-                .unwrap();
-
-            resolved_fields.push(StructDefField {
-                name: field.name,
-                kind: field_kind.with_span(field.kind.location),
-            });
-        }
-
-        let generic_base = StructDef {
-            name: def.name,
-            fields: resolved_fields,
-            generic_params: def.generic_params.clone(),
-            is_union: def.is_union,
-        };
-
-        let type_id = self.custom_id_map[&base_item_id];
-
-        self.generic_struct_id_map.insert(type_id, generic_base);
     }
 
     // FIXME: This sholud return Option.
@@ -1030,42 +1056,6 @@ impl TypeStore {
 
         self.type_sizes.insert(id, size_info);
         size_info
-    }
-
-    pub fn define_fixed_struct(
-        &mut self,
-        string_store: &mut StringStore,
-        struct_id: ItemId,
-        def: &StructDef<NameResolvedType>,
-    ) -> Result<TypeId, Spanned<Spur>> {
-        if !def.generic_params.is_empty() {
-            panic!("ICE: Tried to define fixed struct for a generic definition");
-        }
-
-        let mut resolved_fields = Vec::new();
-
-        for field in &def.fields {
-            let kind = self
-                .resolve_type(string_store, &field.kind.inner)
-                .map_err(|_| field.name)?
-                .id;
-            resolved_fields.push(StructDefField {
-                name: field.name,
-                kind: kind.with_span(field.kind.location),
-            });
-        }
-
-        let def = StructDef {
-            name: def.name,
-            fields: resolved_fields,
-            generic_params: Vec::new(),
-            is_union: def.is_union,
-        };
-
-        let type_id = self.custom_id_map[&struct_id];
-        self.fixed_struct_defs.insert(type_id, def);
-
-        Ok(type_id)
     }
 
     #[track_caller]

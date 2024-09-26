@@ -35,7 +35,7 @@ pub fn check_invalid_cycles(
         | ItemKind::GenericFunction
         | ItemKind::Enum
         | ItemKind::Module
-        | ItemKind::Builtin(_) => {}
+        | ItemKind::Primitive(_) => {}
     }
 }
 
@@ -132,7 +132,6 @@ fn check_invalid_cyclic_refs_in_field_kind(
         NameResolvedType::MultiPointer(_)
         | NameResolvedType::SinglePointer(_)
         | NameResolvedType::FunctionPointer { .. }
-        | NameResolvedType::SimpleBuiltin(_)
         | NameResolvedType::SimpleGenericParam(_) => {}
     }
 }

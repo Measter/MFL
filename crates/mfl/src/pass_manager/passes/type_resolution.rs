@@ -27,7 +27,7 @@ pub fn resolve_signature(
 ) {
     let cur_item_header = stores.items.get_item_header(cur_id);
     match cur_item_header.kind {
-        ItemKind::Enum | ItemKind::Module | ItemKind::StructDef | ItemKind::Builtin(_) => {
+        ItemKind::Enum | ItemKind::Module | ItemKind::StructDef | ItemKind::Primitive(_) => {
             panic!(
                 "ICE: Tried to resolve_signature on a {:?}",
                 cur_item_header.kind
@@ -58,10 +58,7 @@ pub fn resolve_signature(
                     }
                 }
 
-                let partial_type = match stores
-                    .types
-                    .partially_resolve_generic_type(stores.strings, kind)
-                {
+                let partial_type = match stores.partially_resolve_generic_type(kind) {
                     Ok(info) => info,
                     Err(tk) => {
                         local_had_error.set();
@@ -124,7 +121,7 @@ pub fn resolve_signature(
                     }
                 }
 
-                let info = match stores.types.resolve_type(stores.strings, kind) {
+                let info = match stores.resolve_type(kind) {
                     Ok(info) => info,
                     Err(tk) => {
                         local_had_error.set();
@@ -179,6 +176,7 @@ pub fn resolve_signature(
                             had_error.set();
                         }
                     }
+                    ItemKind::Primitive(_) => {}
                     _ => unreachable!(),
                 }
             }
@@ -187,27 +185,22 @@ pub fn resolve_signature(
             let parent_header = stores.items.get_item_header(parent_id);
 
             if parent_header.kind == ItemKind::GenericFunction {
-                let partial_type = match stores
-                    .types
-                    .partially_resolve_generic_type(stores.strings, &variable_type_unresolved)
-                {
-                    Ok(pt) => pt,
-                    Err(tk) => {
-                        had_error.set();
-                        Diagnostic::type_error(stores, tk);
-                        return;
-                    }
-                };
+                let partial_type =
+                    match stores.partially_resolve_generic_type(&variable_type_unresolved) {
+                        Ok(pt) => pt,
+                        Err(tk) => {
+                            had_error.set();
+                            Diagnostic::type_error(stores, tk);
+                            return;
+                        }
+                    };
 
                 stores
                     .sigs
                     .trir
                     .set_partial_variable_type(cur_id, partial_type);
             } else {
-                let info = match stores
-                    .types
-                    .resolve_type(stores.strings, &variable_type_unresolved)
-                {
+                let info = match stores.resolve_type(&variable_type_unresolved) {
                     Ok(info) => info,
                     Err(tk) => {
                         had_error.set();
@@ -276,7 +269,7 @@ fn fully_resolve_block(
                             continue;
                         }
 
-                        let type_info = match stores.types.resolve_type(stores.strings, ugp) {
+                        let type_info = match stores.resolve_type(ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
                                 Diagnostic::type_error(stores, err_token);
@@ -330,7 +323,7 @@ fn fully_resolve_block(
                             continue;
                         }
 
-                        let type_info = match stores.types.resolve_type(stores.strings, ugp) {
+                        let type_info = match stores.resolve_type(ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
                                 Diagnostic::type_error(stores, err_token);
@@ -383,7 +376,7 @@ fn fully_resolve_block(
                     continue;
                 }
 
-                let type_info = match stores.types.resolve_type(stores.strings, id) {
+                let type_info = match stores.resolve_type(id) {
                     Ok(info) => info,
                     Err(err_token) => {
                         Diagnostic::type_error(stores, err_token);
@@ -483,10 +476,7 @@ fn partially_resolve_block(
                             continue;
                         }
 
-                        let type_info = match stores
-                            .types
-                            .partially_resolve_generic_type(stores.strings, ugp)
-                        {
+                        let type_info = match stores.partially_resolve_generic_type(ugp) {
                             Ok(info) => info,
                             Err(err_token) => {
                                 Diagnostic::type_error(stores, err_token);
@@ -533,10 +523,7 @@ fn partially_resolve_block(
                     continue;
                 }
 
-                let resolved_type = match stores
-                    .types
-                    .partially_resolve_generic_type(stores.strings, id)
-                {
+                let resolved_type = match stores.partially_resolve_generic_type(id) {
                     Ok(info) => info,
                     Err(err_token) => {
                         Diagnostic::type_error(stores, err_token);
@@ -581,7 +568,7 @@ pub fn resolve_body(
         | ItemKind::StructDef
         | ItemKind::Enum
         | ItemKind::FunctionDecl
-        | ItemKind::Builtin(_) => {
+        | ItemKind::Primitive(_) => {
             panic!(
                 "ICE: Tried to body type-resolve a {:?}",
                 cur_item_header.kind

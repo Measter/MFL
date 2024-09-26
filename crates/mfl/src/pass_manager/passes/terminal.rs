@@ -13,7 +13,7 @@ pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {
         | ItemKind::Variable
         | ItemKind::Module
         | ItemKind::FunctionDecl
-        | ItemKind::Builtin(_) => return,
+        | ItemKind::Primitive(_) => return,
         ItemKind::Assert
         | ItemKind::Const
         | ItemKind::Function { .. }
