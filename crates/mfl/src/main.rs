@@ -180,8 +180,8 @@ fn run_compile(args: &Args) -> Result<()> {
     let mut op_store = OpStore::new();
     let mut block_store = BlockStore::new();
     let mut value_store = ValueStore::new();
-    let mut item_store = ItemStore::new(&mut string_store);
     let mut sig_store = SigStore::new();
+    let mut item_store = ItemStore::new(&mut string_store, &mut sig_store, &mut type_store);
     let mut diag_store = DiagnosticStore::new();
 
     let mut stores = Stores {

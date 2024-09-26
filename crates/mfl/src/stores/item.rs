@@ -5,7 +5,7 @@ use lasso::Spur;
 use smallvec::SmallVec;
 use stores::{
     items::ItemId,
-    source::{Spanned, WithSpan},
+    source::{FileId, SourceLocation, Spanned, WithSpan},
     strings::StringStore,
 };
 
@@ -18,7 +18,7 @@ use crate::{
 use super::{
     block::BlockId,
     signatures::{ImportStrength, SigStore, StackDefItemUnresolved, UnresolvedItemSignature},
-    types::TypeId,
+    types::{BuiltinTypes, TypeId, TypeStore},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -60,6 +60,7 @@ pub enum ItemKind {
     StructDef,
     Module,
     Enum,
+    Builtin(TypeId),
 }
 
 impl ItemKind {
@@ -74,6 +75,7 @@ impl ItemKind {
             ItemKind::StructDef => "struct",
             ItemKind::Module => "module",
             ItemKind::Enum => "enum",
+            ItemKind::Builtin(_) => "builtin",
         }
     }
 }
@@ -96,6 +98,7 @@ pub struct ItemHeader {
 
 pub struct ItemStore {
     bool_spur: Spur,
+    builtins: Vec<ItemId>,
     core_module_id: Option<ItemId>,
     top_level_modules: HashMap<Spur, ItemId>,
     lang_items: HashMap<LangItem, ItemId>,
@@ -212,10 +215,11 @@ impl ItemStore {
 }
 
 impl ItemStore {
-    pub fn new(strings: &mut StringStore) -> Self {
+    pub fn new(strings: &mut StringStore, sigs: &mut SigStore, types: &mut TypeStore) -> Self {
         let bool_spur = strings.intern("bool");
-        ItemStore {
+        let mut item_store = ItemStore {
             bool_spur,
+            builtins: Vec::new(),
             core_module_id: None,
             top_level_modules: HashMap::new(),
             lang_items: HashMap::new(),
@@ -225,7 +229,36 @@ impl ItemStore {
             generic_structs: Vec::new(),
             generic_function_cache: HashMap::new(),
             generic_template_parameters: HashMap::new(),
+        };
+
+        let builtins = [
+            BuiltinTypes::U8,
+            BuiltinTypes::U16,
+            BuiltinTypes::U32,
+            BuiltinTypes::U64,
+            BuiltinTypes::S8,
+            BuiltinTypes::S16,
+            BuiltinTypes::S32,
+            BuiltinTypes::S64,
+            BuiltinTypes::F32,
+            BuiltinTypes::F64,
+            BuiltinTypes::Bool,
+            BuiltinTypes::String,
+        ];
+
+        let dud_loc = SourceLocation::new(FileId::dud(), 0..0);
+        for bt in builtins {
+            let type_info = types.get_builtin(bt);
+            item_store.new_header(
+                sigs,
+                type_info.friendly_name.with_span(dud_loc),
+                None,
+                ItemKind::Builtin(type_info.id),
+                FlagSet::default(),
+            );
         }
+
+        item_store
     }
 
     fn add_to_parent(&mut self, sigs: &mut SigStore, parent_id: ItemId, child_id: ItemId) {

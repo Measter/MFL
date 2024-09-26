@@ -686,6 +686,7 @@ impl PassManager {
                 PassState::ValidityCheck,
                 PassState::ConstPropBody,
             ],
+            ItemKind::Builtin(_) => &[PassState::BuildNames, PassState::IdentResolvedScope],
         };
 
         let as_flags = needed_states.iter().fold(FlagSet::default(), |a, b| a | *b);

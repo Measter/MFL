@@ -12,7 +12,8 @@ pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {
         | ItemKind::Enum
         | ItemKind::Variable
         | ItemKind::Module
-        | ItemKind::FunctionDecl => return,
+        | ItemKind::FunctionDecl
+        | ItemKind::Builtin(_) => return,
         ItemKind::Assert
         | ItemKind::Const
         | ItemKind::Function { .. }

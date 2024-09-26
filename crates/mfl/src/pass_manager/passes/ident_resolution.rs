@@ -161,7 +161,7 @@ fn resolved_single_ident(
         let _ = pass_manager.ensure_ident_resolved_scope(stores, current_item);
 
         match current_item_header.kind {
-            ItemKind::StructDef | ItemKind::Module => {}
+            ItemKind::StructDef | ItemKind::Module | ItemKind::Builtin(_) => {}
             ItemKind::Enum => {
                 // If this fails, just make a best effort.
                 let _ = pass_manager.ensure_declare_enums(stores, current_item_header.id);
@@ -637,7 +637,7 @@ pub fn resolve_signature(
         }
 
         // Nothing to do here.
-        ItemKind::Module | ItemKind::Enum => {}
+        ItemKind::Module | ItemKind::Enum | ItemKind::Builtin(_) => {}
 
         // These are all treated the same.
         ItemKind::Assert
@@ -986,7 +986,10 @@ fn resolve_idents_in_block(
                             NameResolvedOp::PackStruct { id: new_ty }
                         }
 
-                        ItemKind::Assert | ItemKind::Module | ItemKind::Enum => {
+                        ItemKind::Assert
+                        | ItemKind::Module
+                        | ItemKind::Enum
+                        | ItemKind::Builtin(_) => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
                             let mut diag = Diagnostic::error(
@@ -1089,7 +1092,8 @@ fn resolve_idents_in_block(
                         | ItemKind::Variable
                         | ItemKind::StructDef
                         | ItemKind::Enum
-                        | ItemKind::Module => {
+                        | ItemKind::Module
+                        | ItemKind::Builtin(_) => {
                             had_error.set();
                             let op_loc = stores.ops.get_token(op_id).location;
                             Diagnostic::error(
@@ -1167,7 +1171,8 @@ fn resolve_idents_in_block(
                         | ItemKind::GenericFunction
                         | ItemKind::StructDef
                         | ItemKind::Enum
-                        | ItemKind::Module => {
+                        | ItemKind::Module
+                        | ItemKind::Builtin(_) => {
                             Diagnostic::error(
                                 op_token.location,
                                 "`init` only supports local variables",
@@ -1200,7 +1205,8 @@ pub fn resolve_body(
         | ItemKind::Module
         | ItemKind::StructDef
         | ItemKind::Enum
-        | ItemKind::FunctionDecl => {
+        | ItemKind::FunctionDecl
+        | ItemKind::Builtin(_) => {
             // Nothing to do.
         }
         ItemKind::Assert

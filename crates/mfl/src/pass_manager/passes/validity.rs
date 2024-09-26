@@ -54,6 +54,9 @@ pub(crate) fn validity_check(
             validate_enum_variants(stores, pass_manager, had_error, cur_id);
             validate_attributes(stores, had_error, cur_id);
         }
+        ItemKind::Builtin(_) => {
+            // No checks to be done here.
+        }
     }
 }
 
@@ -115,7 +118,7 @@ fn validate_attributes(stores: &mut Stores, had_error: &mut ErrorSignal, cur_ite
             }
         }
 
-        ItemKind::Module => {}
+        ItemKind::Module | ItemKind::Builtin(_) => {}
     }
 }
 
