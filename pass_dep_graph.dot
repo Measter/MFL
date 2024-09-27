@@ -5,22 +5,22 @@ strict digraph {
         BuildNames,
         CheckAsserts,
         ConstPropBody,
-        CyclicRefCheckBody,
+        DeclareEnums,
 
         DeclareStructs,
         DefineStructs,
         EvaluatedConstsAsserts,
         IdentResolvedBody,
 
+        IdentResolvedScope,
         IdentResolvedSignature,
         PartiallyTypeResolved,
-        SelfContainingStruct,
         StackAndTypeCheckedBody,
 
         TerminalBlockCheckBody,
         TypeResolvedBody,
         TypeResolvedSignature,
-        ValidAttributes
+        ValidityCheck
     }
 
     subgraph items {
@@ -30,48 +30,58 @@ strict digraph {
 
         Module;
         StructDef;
+        Enum;
         Variable;
+        FunctionDecl;
         GenericFunction;
         Assert;
         Const;
         Function;
+        Primitive;
     }
 
-    CheckAsserts -> EvaluatedConstsAsserts;
     ConstPropBody -> StackAndTypeCheckedBody;
-    CyclicRefCheckBody -> IdentResolvedBody;
-
-    DeclareStructs -> IdentResolvedSignature;
+    CheckAsserts -> EvaluatedConstsAsserts;
+    DeclareEnums -> BuildNames;
+    DeclareStructs -> BuildNames;
+    DefineStructs -> IdentResolvedSignature;
     DefineStructs -> DeclareStructs;
-    EvaluatedConstsAsserts -> CyclicRefCheckBody;
+    EvaluatedConstsAsserts -> ValidityCheck;
     EvaluatedConstsAsserts -> ConstPropBody;
-
+    IdentResolvedBody -> IdentResolvedScope;
+    IdentResolvedSignature -> IdentResolvedScope;
     PartiallyTypeResolved -> IdentResolvedBody;
     PartiallyTypeResolved -> IdentResolvedSignature;
-    SelfContainingStruct -> IdentResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedSignature;
     StackAndTypeCheckedBody -> TypeResolvedBody;
     StackAndTypeCheckedBody -> TerminalBlockCheckBody;
-
     TypeResolvedBody -> IdentResolvedBody;
     TypeResolvedSignature -> IdentResolvedSignature;
 
     Module -> BuildNames;
-    Module -> ValidAttributes;
-    Module -> IdentResolvedSignature;
-    StructDef -> ValidAttributes;
-    StructDef -> SelfContainingStruct;
+    Module -> ValidityCheck;
+    Module -> IdentResolvedScope;
+    StructDef -> ValidityCheck;
+    StructDef -> IdentResolvedScope;
     StructDef -> DefineStructs;
+    Enum -> ValidityCheck;
+    Enum -> IdentResolvedScope;
+    Enum -> DeclareEnums;
     Variable -> BuildNames;
-    Variable -> ValidAttributes;
+    Variable -> ValidityCheck;
     Variable -> TypeResolvedSignature;
-    GenericFunction -> ValidAttributes;
+    FunctionDecl -> BuildNames;
+    FunctionDecl -> ValidityCheck;
+    FunctionDecl -> TypeResolvedSignature;
+    GenericFunction -> ValidityCheck;
     GenericFunction -> PartiallyTypeResolved;
-    Assert -> ValidAttributes;
+    Assert -> ValidityCheck;
     Assert -> CheckAsserts;
-    Const -> ValidAttributes;
+    Const -> ValidityCheck;
     Const -> EvaluatedConstsAsserts;
     Function -> BuildNames;
-    Function -> ValidAttributes;
+    Function -> ValidityCheck;
     Function -> ConstPropBody;
+    Primitive -> BuildNames;
+    Primitive -> IdentResolvedScope;
 }
