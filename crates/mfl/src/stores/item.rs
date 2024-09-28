@@ -82,7 +82,17 @@ impl ItemKind {
 
 flags! {
     pub enum ItemAttribute: u8 {
-        Extern
+        Extern,
+        TrackCaller,
+    }
+}
+
+impl ItemAttribute {
+    pub fn from_str(s: &str) -> Option<ItemAttribute> {
+        match s {
+            "track_caller" => Some(ItemAttribute::TrackCaller),
+            _ => None,
+        }
     }
 }
 

@@ -15,14 +15,14 @@ use inkwell::{
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FloatType, IntType},
     values::{
-        BasicValueEnum, FloatMathValue, FunctionValue, GlobalValue, IntMathValue, IntValue,
-        PointerValue,
+        BasicValue, BasicValueEnum, FloatMathValue, FunctionValue, GlobalValue, IntMathValue,
+        IntValue, PointerValue,
     },
     AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel,
 };
 use intcast::IntCast;
 use lasso::Spur;
-use stores::{items::ItemId, strings::StringStore};
+use stores::{items::ItemId, source::SourceLocation, strings::StringStore};
 use tracing::{debug, debug_span, trace, trace_span};
 
 use crate::{
@@ -340,11 +340,18 @@ impl<'ctx> CodeGen<'ctx> {
             let name = ds.strings.get_mangled_name(item.id);
             trace!(name, "Building prototype");
 
-            let entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
+            let mut entry_stack: Vec<BasicMetadataTypeEnum> = item_sig
                 .entry
                 .iter()
                 .map(|t| self.get_type(ds.types, *t).into())
                 .collect();
+
+            if item.attributes.contains(ItemAttribute::TrackCaller) {
+                entry_stack.push(
+                    self.get_type(ds.types, ds.types.get_builtin(BuiltinTypes::String).id)
+                        .into(),
+                );
+            }
 
             let function_type = if item_sig.exit.is_empty() {
                 self.ctx.void_type().fn_type(&entry_stack, false)
@@ -448,6 +455,35 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         Ok(widened)
+    }
+
+    fn get_here_string(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        loc: SourceLocation,
+    ) -> InkwellResult<BasicValueEnum<'ctx>> {
+        let source_info = ds.source.source_location_info(loc);
+        let formatted = format!(
+            "{}:{}:{}",
+            source_info.name, source_info.line, source_info.col
+        );
+        let spur = ds.strings.intern(&formatted);
+        let str_ptr = value_store.get_string_literal(self, ds.strings, spur)?;
+        let len_value = self
+            .ctx
+            .i64_type()
+            .const_int(formatted.len().to_u64(), false);
+        let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
+        let struct_type = self.get_type(ds.types, type_id);
+        let store_value = struct_type
+            .into_struct_type()
+            .const_named_struct(&[
+                len_value.as_basic_value_enum(),
+                str_ptr.as_basic_value_enum(),
+            ])
+            .as_basic_value_enum();
+        Ok(store_value)
     }
 
     fn get_type(&mut self, type_store: &mut TypeStore, kind: TypeId) -> BasicTypeEnum<'ctx> {
@@ -666,12 +702,14 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushStr { id }) => {
                     self.build_push_str(ds, value_store, op_id, id)?
                 }
-                OpCode::Basic(Basic::Here) => self.build_here(ds, value_store, op_id)?,
+                OpCode::Basic(Basic::Here) => {
+                    self.build_here(ds, value_store, id, function, op_id)?
+                }
 
                 OpCode::Complex(cmp_op) => match cmp_op {
                     TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, id)?,
                     TypeResolvedOp::CallFunction { id: callee_id, .. } => {
-                        self.build_function_call(ds, value_store, op_id, callee_id)?
+                        self.build_function_call(ds, value_store, op_id, id, function, callee_id)?
                     }
                     TypeResolvedOp::FunctionPointer { id, .. } => {
                         self.build_function_pointer(ds, value_store, op_id, id)?

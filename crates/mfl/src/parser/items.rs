@@ -88,9 +88,23 @@ fn try_get_attributes(
                     prev_token = *tk;
                 }
                 TokenKind::Ident => {
-                    Diagnostic::error(tk.location, "unknown attribute")
-                        .attached(stores.diags, item_id);
-                    had_error.set();
+                    let lexeme = stores.strings.resolve(tk.inner.lexeme);
+                    match ItemAttribute::from_str(lexeme) {
+                        Some(i) => {
+                            if attributes.contains(i) {
+                                Diagnostic::warning(tk.location, "item already has this attribute")
+                                    .attached(stores.diags, item_id);
+                            }
+                            attributes |= i;
+                        }
+                        None => {
+                            Diagnostic::error(tk.location, "unknown attribute")
+                                .attached(stores.diags, item_id);
+                            had_error.set();
+                        }
+                    }
+
+                    prev_token = *tk;
                 }
                 TokenKind::LangItem => {
                     let Ok(group) = token_iter

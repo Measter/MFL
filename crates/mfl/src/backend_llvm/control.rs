@@ -7,7 +7,11 @@ use crate::{
     ir::{Cond, While},
     n_ops::SliceNOps,
     stores::{
-        item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved, types::TypeKind, Stores,
+        item::{ItemAttribute, ItemKind},
+        ops::OpId,
+        signatures::StackDefItemNameResolved,
+        types::TypeKind,
+        Stores,
     },
 };
 
@@ -37,11 +41,13 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
+        item_id: ItemId,
+        function: FunctionValue<'ctx>,
         callee_id: ItemId,
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
 
-        let args: Vec<BasicMetadataValueEnum> = op_io
+        let mut args: Vec<BasicMetadataValueEnum> = op_io
             .inputs()
             .iter()
             .zip(&ds.sigs.trir.get_item_signature(callee_id).entry)
@@ -75,6 +81,22 @@ impl<'ctx> CodeGen<'ctx> {
             .map(|p| p.map(Into::into))
             .collect::<InkwellResult<_>>()?;
 
+        let callee_header = ds.items.get_item_header(callee_id);
+        if callee_header
+            .attributes
+            .contains(ItemAttribute::TrackCaller)
+        {
+            let this_header = ds.items.get_item_header(item_id);
+            let here_string = if this_header.attributes.contains(ItemAttribute::TrackCaller) {
+                function.get_last_param().unwrap()
+            } else {
+                let op_loc = ds.ops.get_token(op_id).location;
+                self.get_here_string(ds, value_store, op_loc)?
+            };
+
+            args.push(here_string.into());
+        }
+
         let callee_name = ds.strings.get_mangled_name(callee_id);
         let callee_value = self.item_function_map[&callee_id];
 
@@ -92,6 +114,7 @@ impl<'ctx> CodeGen<'ctx> {
             return Ok(());
         };
 
+        let op_io = ds.ops.get_op_io(op_id);
         for (&id, idx) in op_io.outputs().iter().zip(0..) {
             let output_name = format!("{id}");
 

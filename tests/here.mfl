@@ -1,0 +1,26 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["-L./std"]
+
+// [run.run]
+// expected = "Ok"
+// END
+
+proc(track_caller) foo [] to [] {
+    here std::term::writeln
+}
+
+proc(track_caller) qux [] to [] {
+    foo
+}
+
+proc bar [] to [] {
+    here std::term::writeln
+}
+
+proc entry [] to [] {
+    foo
+    bar
+    qux
+}

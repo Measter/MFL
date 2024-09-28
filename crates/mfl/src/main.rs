@@ -25,7 +25,7 @@ use stores::{
     diagnostics::{Diagnostic, DiagnosticStore},
     item::{ItemAttribute, ItemKind, ItemStore},
     ops::OpStore,
-    signatures::{SigStore, TypeResolvedItemSignature},
+    signatures::SigStore,
     types::{BuiltinTypes, TypeStore},
     values::ValueStore,
     Stores,
@@ -89,7 +89,13 @@ pub struct Args {
     emit_llir: bool,
 }
 
-fn is_valid_entry_sig(stores: &mut Stores, entry_sig: &TypeResolvedItemSignature) -> bool {
+fn is_valid_entry_sig(stores: &mut Stores, item_id: ItemId) -> bool {
+    let header = stores.items.get_item_header(item_id);
+    if header.attributes.contains(ItemAttribute::TrackCaller) {
+        return false;
+    }
+
+    let entry_sig = stores.sigs.trir.get_item_signature(item_id);
     if !entry_sig.exit.is_empty() {
         return false;
     }
@@ -153,16 +159,11 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
             return Err(eyre!("invalid `entry` procedure type"));
         }
 
-        let entry_sig = stores
-            .sigs
-            .trir
-            .get_item_signature(entry_function_id)
-            .clone();
-        if !is_valid_entry_sig(stores, &entry_sig) {
+        if !is_valid_entry_sig(stores, entry_function_id) {
             let name = entry_item.name;
             Diagnostic::error(
                 name.location,
-                "`entry` must have the signature `[] to []` or `[u64 u8&&] to []`",
+                "`entry` must have the signature `[] to []` or `[u64 u8&&] to []`, and cannot track_caller",
             )
             .attached(stores.diags, entry_item.id);
 

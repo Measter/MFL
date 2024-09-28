@@ -1,9 +1,13 @@
-use inkwell::{values::BasicValue, AddressSpace};
+use inkwell::{
+    values::{BasicValue, FunctionValue},
+    AddressSpace,
+};
 use intcast::IntCast;
 use lasso::Spur;
 use stores::items::ItemId;
 
 use crate::stores::{
+    item::ItemAttribute,
     ops::OpId,
     types::{
         BuiltinTypes, Float, FloatWidth, IntKind, IntSignedness, IntWidth, Integer, TypeId,
@@ -284,35 +288,20 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
+        item_id: ItemId,
+        function: FunctionValue<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_io = ds.ops.get_op_io(op_id);
         let op_loc = ds.ops.get_token(op_id).location;
+        let this_header = ds.items.get_item_header(item_id);
 
-        let source_info = ds.source.source_location_info(op_loc);
-        let formatted = format!(
-            "{}:{}:{}",
-            source_info.name, source_info.line, source_info.col
-        );
+        let store_value = if this_header.attributes.contains(ItemAttribute::TrackCaller) {
+            function.get_last_param().unwrap()
+        } else {
+            self.get_here_string(ds, value_store, op_loc)?
+        };
 
-        let spur = ds.strings.intern(&formatted);
-        let str_ptr = value_store.get_string_literal(self, ds.strings, spur)?;
-        let len_value = self
-            .ctx
-            .i64_type()
-            .const_int(formatted.len().to_u64(), false);
-
-        let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
-        let struct_type = self.get_type(ds.types, type_id);
-
-        let store_value = struct_type
-            .into_struct_type()
-            .const_named_struct(&[
-                len_value.as_basic_value_enum(),
-                str_ptr.as_basic_value_enum(),
-            ])
-            .as_basic_value_enum();
-
+        let op_io = ds.ops.get_op_io(op_id);
         value_store.store_value(self, op_io.outputs()[0], store_value)?;
 
         Ok(())

@@ -92,6 +92,16 @@ fn validate_attributes(stores: &mut Stores, had_error: &mut ErrorSignal, cur_ite
                 Diagnostic::bad_lang_item(stores.diags, item_header, lang_item);
                 had_error.set();
             }
+
+            if item_header.attributes.contains(ItemAttribute::Extern)
+                && item_header.attributes.contains(ItemAttribute::TrackCaller)
+            {
+                Diagnostic::error(
+                    item_header.name.location,
+                    "extern functions cannot be track_caller",
+                )
+                .attached(stores.diags, item_header.id);
+            }
         }
 
         ItemKind::StructDef => {
