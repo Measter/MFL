@@ -116,7 +116,7 @@ struct(lang(string)) String {
         trim_start trim_end
     }
 
-    proc remove_start[String, u64] to [String] {
+    proc(track_caller) remove_start[String, u64] to [String] {
         cond {
             over xtrd(length) over< {
                 "Cannot trim " lib::term::ewrite

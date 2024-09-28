@@ -51,7 +51,7 @@ proc fill(T) [
     } drop
 }
 
-proc copy(T) [
+proc(track_caller) copy(T) [
     var src MMap(T),
     var dst MMap(T),
 ] to [] {

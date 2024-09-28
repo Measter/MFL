@@ -31,7 +31,7 @@ struct Result(T, E) {
         Tag::Err swap Payload(T, E) Result
     }
 
-    proc unwrap_ok(T, E) [Result(T, E)] to [T] {
+    proc(track_caller) unwrap_ok(T, E) [Result(T, E)] to [T] {
         unpack swap
         cond {
             Tag::Ok = { xtrd(t) }
@@ -43,7 +43,7 @@ struct Result(T, E) {
         }
     }
 
-    proc unwrap_err(T, E) [Result(T, E)] to [E] {
+    proc(track_caller) unwrap_err(T, E) [Result(T, E)] to [E] {
         unpack swap
         cond {
             Tag::Err = { xtrd(e) }
