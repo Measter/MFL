@@ -108,6 +108,13 @@ struct LoadedSource {
     source: Source,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LineCol<'a> {
+    pub name: &'a str,
+    pub line: usize,
+    pub col: usize,
+}
+
 #[derive(Default)]
 pub struct SourceStore {
     files: Vec<LoadedSource>,
@@ -137,6 +144,20 @@ impl SourceStore {
     #[inline]
     pub fn source(&self, id: FileId) -> &Source {
         &self.files[id.0.to_usize()].source
+    }
+
+    #[inline]
+    pub fn source_location_info(&self, loc: SourceLocation) -> LineCol {
+        let source = self.source(loc.file_id);
+        let name = self.name(loc.file_id);
+        source
+            .get_byte_line(loc.source_start.to_usize())
+            .map(|(_, line, col)| LineCol {
+                name,
+                line: line + 1,
+                col: col + 1,
+            })
+            .unwrap_or_default()
     }
 
     #[inline]

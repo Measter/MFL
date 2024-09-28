@@ -202,7 +202,7 @@ impl Backend {
 
         let file_id = source_store.add(Path::new(&uri.to_string()), &text);
 
-        let tokens = lexer::lex(source_store, string_store, &text, file_id);
+        let tokens = lexer::lex(string_store, &text, file_id);
         let mut sem_toks = Vec::new();
         for token in tokens {
             match token {
@@ -215,7 +215,7 @@ impl Backend {
                         TokenKind::Comment => Legend::Comment,
 
                         // String
-                        TokenKind::Char(_) | TokenKind::String(_) | TokenKind::Here(_) => {
+                        TokenKind::Char(_) | TokenKind::String(_) | TokenKind::Here => {
                             Legend::String
                         }
 

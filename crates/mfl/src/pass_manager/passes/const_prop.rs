@@ -133,7 +133,7 @@ fn analyze_block(
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
                 Basic::PushFloat { value, .. } => stack_ops::push_float(stores, op_id, value),
-                Basic::PushStr { .. } => {}
+                Basic::PushStr { .. } | Basic::Here => {}
             },
             OpCode::Complex(co) => match co {
                 TypeResolvedOp::Cast { id } => stack_ops::cast(stores, op_id, id),

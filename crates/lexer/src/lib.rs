@@ -4,7 +4,7 @@ use intcast::IntCast;
 use lasso::Spur;
 use logos::{Lexer, Logos};
 use stores::{
-    source::{FileId, SourceLocation, SourceStore, Spanned, WithSpan},
+    source::{FileId, SourceLocation, Spanned, WithSpan},
     strings::StringStore,
 };
 use tracing::debug_span;
@@ -179,8 +179,8 @@ pub enum TokenKind {
     #[token("#")]
     Hash,
 
-    #[token("here", |_| Spur::default())]
-    Here(Spur),
+    #[token("here")]
+    Here,
 
     #[regex("[_a-zA-Z][_a-zA-Z0-9]*")]
     Ident,
@@ -342,7 +342,7 @@ impl TokenKind {
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",
             TokenKind::Hash => "#",
-            TokenKind::Here(_) => "here",
+            TokenKind::Here => "here",
             TokenKind::Ident => "Ident",
             TokenKind::Insert(Insert { emit_struct: true }) => "ins",
             TokenKind::Insert(Insert { emit_struct: false }) => "insd",
@@ -443,7 +443,6 @@ fn process_string(interner: &mut StringStore, string: &str) -> Spur {
 }
 
 pub fn lex<'a>(
-    sources: &'a mut SourceStore,
     interner: &'a mut StringStore,
     contents: &'a str,
     file_id: FileId,
@@ -485,15 +484,6 @@ pub fn lex<'a>(
                     continue;
                 }
                 *ch = escaped.chars().next().unwrap();
-            }
-            TokenKind::Here(id) => {
-                let filename = sources.name(file_id);
-                let here_msg = format!(
-                    "{filename}:{}:{}",
-                    lexer.extras.line,
-                    span.start - lexer.extras.line_start_idx.to_u32().unwrap()
-                );
-                *id = interner.intern(&here_msg);
             }
             _ => (),
         }

@@ -231,9 +231,8 @@ pub fn parse_simple_op(
             return parse_integer_op(stores, token_iter, item_id, token, false)
         }
         TokenKind::Float => return parse_float_op(stores, token_iter, item_id, token, false),
-        TokenKind::String(StringToken { id }) | TokenKind::Here(id) => {
-            OpCode::Basic(Basic::PushStr { id })
-        }
+        TokenKind::String(StringToken { id }) => OpCode::Basic(Basic::PushStr { id }),
+        TokenKind::Here => OpCode::Basic(Basic::Here),
         TokenKind::EmitStack => return parse_emit_stack(stores, token_iter, item_id, token),
 
         TokenKind::Minus => return parse_minus(stores, token_iter, item_id, token),

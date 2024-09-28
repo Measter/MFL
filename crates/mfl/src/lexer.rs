@@ -98,7 +98,7 @@ pub(crate) fn lex_file(
     let mut token_tree_group_stack = Vec::<TreeGroup>::new();
     let mut token_tree_stream = Vec::<TokenTree>::new();
 
-    let tokens = lexer::lex(stores.source, stores.strings, contents, file_id).into_iter();
+    let tokens = lexer::lex(stores.strings, contents, file_id).into_iter();
 
     for tk in tokens {
         let token = match tk {

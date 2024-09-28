@@ -666,6 +666,7 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushStr { id }) => {
                     self.build_push_str(ds, value_store, op_id, id)?
                 }
+                OpCode::Basic(Basic::Here) => self.build_here(ds, value_store, op_id)?,
 
                 OpCode::Complex(cmp_op) => match cmp_op {
                     TypeResolvedOp::Cast { id } => self.build_cast(ds, value_store, op_id, id)?,

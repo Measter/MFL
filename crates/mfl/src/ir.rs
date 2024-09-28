@@ -526,6 +526,7 @@ pub enum Basic {
     Control(Control),
     Memory(Memory),
 
+    Here,
     PushBool(bool),
     PushInt { width: IntWidth, value: Integer },
     PushFloat { width: FloatWidth, value: Float },

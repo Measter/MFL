@@ -199,7 +199,7 @@ fn simulate_execute_program_block(
                     )?;
                 },
             },
-            OpCode::Basic(Basic::Memory(_) | Basic::PushStr { .. })
+            OpCode::Basic(Basic::Memory(_) | Basic::PushStr { .. } | Basic::Here)
             | OpCode::Complex(
                 TypeResolvedOp::CallFunction { .. }
                 | TypeResolvedOp::FunctionPointer { .. }
