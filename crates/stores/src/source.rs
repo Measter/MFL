@@ -6,8 +6,14 @@ use std::{ops::Range, path::Path};
 use ariadne::{Cache, Source, Span};
 use intcast::IntCast;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u16);
+
+impl std::fmt::Debug for FileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FileId({})", self.0)
+    }
+}
 impl FileId {
     pub fn dud() -> Self {
         Self(u16::MAX)
