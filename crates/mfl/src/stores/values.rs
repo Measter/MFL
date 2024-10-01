@@ -31,7 +31,7 @@ pub struct ValueHeader {
     pub parent_values: SmallVec<[ValueId; 4]>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum ConstVal {
     Uninitialized,
     Unknown,
@@ -48,6 +48,32 @@ pub enum ConstVal {
     Aggregate {
         sub_values: Vec<ConstVal>,
     },
+}
+
+impl std::fmt::Debug for ConstVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Uninitialized => write!(f, "Uninitialized"),
+            Self::Unknown => write!(f, "Unknown"),
+            Self::Enum(arg0, arg1) => write!(f, "Enum({arg0:?}, {arg1})"),
+            Self::Int(arg0) => write!(f, "Int({arg0:?})"),
+            Self::Float(arg0) => write!(f, "Float({})", arg0.0),
+            Self::Bool(arg0) => write!(f, "Bool({arg0})"),
+
+            Self::Pointer {
+                source_variable,
+                offsets,
+            } => f
+                .debug_struct("Pointer")
+                .field("source_variable", source_variable)
+                .field("offsets", offsets)
+                .finish(),
+            Self::Aggregate { sub_values } => f
+                .debug_struct("Aggregate")
+                .field("sub_values", sub_values)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
