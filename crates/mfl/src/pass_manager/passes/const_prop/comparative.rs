@@ -67,7 +67,7 @@ pub(crate) fn equal(
         }
 
         [ConstVal::Bool(a), ConstVal::Bool(b)] => {
-            let res = comp_code.get_bool_binary_op()(a, b);
+            let res = comp_code.get_bool_binary_op()(*a, *b);
             ConstVal::Bool(res)
         }
 
@@ -107,7 +107,7 @@ pub(crate) fn equal(
                 .with_label_chain(input_value_ids[0], 0, "... and this")
                 .attached(stores.diags, item_id);
 
-            let res = comp_code.get_unsigned_binary_op()(offset1, offset2) != 0;
+            let res = comp_code.get_unsigned_binary_op()(*offset1, *offset2) != 0;
             ConstVal::Bool(res)
         }
 
@@ -201,7 +201,7 @@ pub(crate) fn compare(
             offset: Some(offset2),
             ..
         }] => {
-            let res = comp_code.get_unsigned_binary_op()(offset1, offset2) != 0;
+            let res = comp_code.get_unsigned_binary_op()(*offset1, *offset2) != 0;
             ConstVal::Bool(res)
         }
 
@@ -229,7 +229,11 @@ pub(crate) fn is_null(stores: &mut Stores, op_id: OpId) {
         }
         ConstVal::Uninitialized => ConstVal::Uninitialized,
         ConstVal::Unknown => ConstVal::Unknown,
-        ConstVal::Int(_) | ConstVal::Enum(_, _) | ConstVal::Float(_) | ConstVal::Bool(_) => {
+        ConstVal::Int(_)
+        | ConstVal::Enum(_, _)
+        | ConstVal::Float(_)
+        | ConstVal::Bool(_)
+        | ConstVal::Aggregate { .. } => {
             unreachable!()
         }
     };

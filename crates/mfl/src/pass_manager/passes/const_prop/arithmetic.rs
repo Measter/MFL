@@ -67,7 +67,7 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             source_variable: id,
             offset: Some(offset),
         }] => ConstVal::Pointer {
-            source_variable: id,
+            source_variable: *id,
             offset: Some(offset + v),
         },
 
@@ -112,7 +112,7 @@ pub(crate) fn bitand_bitor_bitxor(stores: &mut Stores, op_id: OpId, arith_code: 
             ConstVal::Int(kind)
         }
         [ConstVal::Bool(a), ConstVal::Bool(b)] => {
-            ConstVal::Bool(arith_code.get_bool_binary_op()(a, b))
+            ConstVal::Bool(arith_code.get_bool_binary_op()(*a, *b))
         }
 
         [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
@@ -191,10 +191,10 @@ pub(crate) fn multiply_div_rem_shift(
             };
 
             let (is_out_of_range, shift_value_string) = match b_const_val {
-                Integer::Signed(v @ 0..) if v < output_int.width.bit_width() as _ => {
+                Integer::Signed(v @ 0..) if *v < output_int.width.bit_width() as _ => {
                     (false, String::new())
                 }
-                Integer::Unsigned(v @ 0..) if v < output_int.width.bit_width() as _ => {
+                Integer::Unsigned(v @ 0..) if *v < output_int.width.bit_width() as _ => {
                     (false, String::new())
                 }
 
@@ -341,7 +341,7 @@ pub(crate) fn subtract(
             source_variable: id,
             offset,
         }, ConstVal::Int(Integer::Unsigned(v))] => ConstVal::Pointer {
-            source_variable: id,
+            source_variable: *id,
             offset: offset.map(|off| off - v),
         },
 
@@ -393,7 +393,7 @@ pub(crate) fn subtract(
             source_variable: id,
             ..
         }, ConstVal::Pointer { .. }] => ConstVal::Pointer {
-            source_variable: id,
+            source_variable: *id,
             offset: None,
         },
 

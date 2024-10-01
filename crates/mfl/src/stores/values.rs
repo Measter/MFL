@@ -31,7 +31,7 @@ pub struct ValueHeader {
     pub parent_values: SmallVec<[ValueId; 4]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConstVal {
     Uninitialized,
     Unknown,
@@ -42,6 +42,11 @@ pub enum ConstVal {
     Pointer {
         source_variable: ItemId,
         offset: Option<u64>,
+    },
+
+    // Will handle structs, unions, and arrays.
+    Aggregate {
+        sub_values: Vec<ConstVal>,
     },
 }
 
@@ -135,8 +140,8 @@ impl ValueStore {
             .expect_none("ICE: Tried to set a value type twice");
     }
 
-    pub fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> [ConstVal; N] {
-        ids.map(|i| self.value_consts[i.0.to_usize()])
+    pub fn value_consts<const N: usize>(&self, ids: [ValueId; N]) -> [&ConstVal; N] {
+        ids.map(|i| &self.value_consts[i.0.to_usize()])
     }
 
     pub fn set_value_const(&mut self, id: ValueId, const_val: ConstVal) {

@@ -18,7 +18,7 @@ pub(crate) fn dup_over_rotate_swap_reverse(stores: &mut Stores, op_id: OpId) {
 
         stores
             .values
-            .set_value_const(output_value_id, input_const_val);
+            .set_value_const(output_value_id, input_const_val.clone());
     }
 }
 
@@ -77,13 +77,13 @@ fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
         | [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)]
             if matches!(input_const_val, ConstVal::Pointer { .. }) =>
         {
-            input_const_val
+            input_const_val.clone()
         }
 
         // Just echo the previous const val
-        _ if input_type_id == output_type_id => input_const_val,
+        _ if input_type_id == output_type_id => input_const_val.clone(),
 
-        _ if input_const_val == ConstVal::Uninitialized => ConstVal::Uninitialized,
+        _ if input_const_val == &ConstVal::Uninitialized => ConstVal::Uninitialized,
         _ => ConstVal::Unknown,
     };
 
@@ -101,10 +101,10 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
         ConstVal::Int(v) => ConstVal::Int(v.cast(int_kind)),
         ConstVal::Enum(_, d) => ConstVal::Int(Integer::Unsigned(d.to_u64())),
         ConstVal::Float(_) => todo!(),
-        ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(b as _)),
-        ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(b as _)),
-        ConstVal::Pointer { .. } => unreachable!(),
-        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,
+        ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(*b as _)),
+        ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(*b as _)),
+        ConstVal::Pointer { .. } | ConstVal::Aggregate { .. } => unreachable!(),
+        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val.clone(),
     };
 
     stores
@@ -120,10 +120,10 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
     let output_const_value = match input_const_val {
         ConstVal::Int(v) => {
             let float = match (to_width, v) {
-                (FloatWidth::F32, Integer::Signed(v)) => Float(v as f32 as f64),
-                (FloatWidth::F32, Integer::Unsigned(v)) => Float(v as f32 as f64),
-                (FloatWidth::F64, Integer::Signed(v)) => Float(v as f64),
-                (FloatWidth::F64, Integer::Unsigned(v)) => Float(v as f64),
+                (FloatWidth::F32, Integer::Signed(v)) => Float(*v as f32 as f64),
+                (FloatWidth::F32, Integer::Unsigned(v)) => Float(*v as f32 as f64),
+                (FloatWidth::F64, Integer::Signed(v)) => Float(*v as f64),
+                (FloatWidth::F64, Integer::Unsigned(v)) => Float(*v as f64),
             };
 
             ConstVal::Float(float)
@@ -136,16 +136,21 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
             };
 
             match (input_width, to_width) {
-                (FloatWidth::F32, _) | (FloatWidth::F64, FloatWidth::F64) => input_const_val,
+                (FloatWidth::F32, _) | (FloatWidth::F64, FloatWidth::F64) => {
+                    input_const_val.clone()
+                }
                 (FloatWidth::F64, FloatWidth::F32) => {
-                    ConstVal::Float(Float(input_float as f32 as f64))
+                    ConstVal::Float(Float(*input_float as f32 as f64))
                 }
             }
         }
-        ConstVal::Bool(_) | ConstVal::Enum(_, _) | ConstVal::Pointer { .. } => {
+        ConstVal::Bool(_)
+        | ConstVal::Enum(_, _)
+        | ConstVal::Pointer { .. }
+        | ConstVal::Aggregate { .. } => {
             unreachable!()
         }
-        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,
+        ConstVal::Uninitialized | ConstVal::Unknown => input_const_val.clone(),
     };
 
     stores

@@ -30,7 +30,7 @@ pub(crate) fn epilogue_return(
             continue;
         };
 
-        let variable_header = stores.items.get_item_header(variable_item_id);
+        let variable_header = stores.items.get_item_header(*variable_item_id);
         // We only care about local memories, not globals.
         let parent_id = variable_header.parent.unwrap(); // Only top-level-modules don't have a parent.
         if stores.items.get_item_header(parent_id).kind == ItemKind::Module {
@@ -140,16 +140,16 @@ pub(crate) fn analyze_cond(
             final_variable_state.clone_from(variable_state);
         } else {
             for (var_id, final_state) in &mut final_variable_state {
-                let post_block_state = variable_state[var_id];
+                let post_block_state = &variable_state[var_id];
 
-                match (post_block_state, *final_state) {
+                match (post_block_state, &final_state) {
                     (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
                         *final_state = ConstVal::Uninitialized
                     }
                     (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => {
                         *final_state = ConstVal::Unknown
                     }
-                    _ if post_block_state == *final_state => {}
+                    _ if post_block_state == final_state => {}
                     _ => *final_state = ConstVal::Unknown,
                 }
             }
@@ -168,14 +168,14 @@ pub(crate) fn analyze_cond(
     );
 
     for (var_id, final_state) in &mut final_variable_state {
-        let post_block_state = variable_state[var_id];
+        let post_block_state = &variable_state[var_id];
 
-        match (post_block_state, *final_state) {
+        match (post_block_state, &final_state) {
             (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
                 *final_state = ConstVal::Uninitialized
             }
             (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *final_state = ConstVal::Unknown,
-            _ if post_block_state == *final_state => {}
+            _ if post_block_state == final_state => {}
             _ => *final_state = ConstVal::Unknown,
         }
     }

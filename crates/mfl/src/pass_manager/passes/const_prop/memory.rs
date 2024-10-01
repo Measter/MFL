@@ -152,13 +152,13 @@ pub(crate) fn load(
         return;
     };
 
-    let Some(state) = variable_state.get(&source_variable) else {
+    let Some(state) = variable_state.get(source_variable) else {
         // It's a global variable, we can't handle those.
         return;
     };
 
     if matches!(state, ConstVal::Uninitialized) {
-        let var_header = stores.items.get_item_header(source_variable);
+        let var_header = stores.items.get_item_header(*source_variable);
         let op_loc = stores.ops.get_token(op_id);
 
         Diagnostic::error(op_loc.location, "read from unitialized variable")
@@ -186,12 +186,12 @@ pub(crate) fn store(
         return;
     };
 
-    let Some(state) = variable_state.get_mut(&source_variable) else {
+    let Some(state) = variable_state.get_mut(source_variable) else {
         // It's a global variable, we can't handle those.
         return;
     };
 
-    *state = data_const_val;
+    *state = data_const_val.clone();
 }
 
 pub(crate) fn pack_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {
