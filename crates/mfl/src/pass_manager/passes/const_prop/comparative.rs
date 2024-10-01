@@ -88,12 +88,12 @@ pub(crate) fn equal(
             ConstVal::Bool(false)
         }
 
-        // Multi-Pointers with same IDs
+        // Multi-Pointers with same IDs, and known indices.
         [ConstVal::Pointer {
-            offset: Some(offset1),
+            offsets: Some(offset1),
             ..
         }, ConstVal::Pointer {
-            offset: Some(offset2),
+            offsets: Some(offset2),
             ..
         }] => {
             let msg = if offset1 == offset2 {
@@ -107,11 +107,22 @@ pub(crate) fn equal(
                 .with_label_chain(input_value_ids[0], 0, "... and this")
                 .attached(stores.diags, item_id);
 
-            let res = comp_code.get_unsigned_binary_op()(*offset1, *offset2) != 0;
+            let res = match (&**offset1, &**offset2) {
+                ([], []) => true,
+                ([a_s @ .., a], [b_s @ .., b]) if a_s == b_s => {
+                    comp_code.get_unsigned_binary_op()(*a, *b) != 0
+                }
+                _ => false,
+            };
+
             ConstVal::Bool(res)
         }
 
+        // Different IDs, one or both with unknown indices.
+        [ConstVal::Pointer { .. }, ConstVal::Pointer { .. }] => ConstVal::Unknown,
         [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+
+        #[expect(clippy::match_same_arms)]
         [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };
@@ -193,19 +204,29 @@ pub(crate) fn compare(
             ConstVal::Bool(false)
         }
 
-        // Pointers with same IDs, but different static offsets.
+        // Pointers with same IDs, and with known indices.
         [ConstVal::Pointer {
-            offset: Some(offset1),
+            offsets: Some(offset1),
             ..
         }, ConstVal::Pointer {
-            offset: Some(offset2),
+            offsets: Some(offset2),
             ..
         }] => {
-            let res = comp_code.get_unsigned_binary_op()(*offset1, *offset2) != 0;
+            let res = match (&**offset1, &**offset2) {
+                ([], []) => true,
+                ([a_s @ .., a], [b_s @ .., b]) if a_s == b_s => {
+                    comp_code.get_unsigned_binary_op()(*a, *b) != 0
+                }
+                _ => false,
+            };
             ConstVal::Bool(res)
         }
 
+        // Different IDs, one or both with unknown indices.
+        [ConstVal::Pointer { .. }, ConstVal::Pointer { .. }] => ConstVal::Unknown,
         [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+
+        #[expect(clippy::match_same_arms)]
         [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
     };

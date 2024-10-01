@@ -41,7 +41,7 @@ pub enum ConstVal {
     Bool(bool),
     Pointer {
         source_variable: ItemId,
-        offset: Option<u64>,
+        offsets: Option<Vec<u64>>,
     },
 
     // Will handle structs, unions, and arrays.

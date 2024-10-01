@@ -13,6 +13,8 @@ use crate::{
     Stores,
 };
 
+use super::{new_const_val_for_type, ConstFieldInitState};
+
 pub(crate) fn epilogue_return(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,
@@ -49,16 +51,25 @@ pub(crate) fn epilogue_return(
 
 pub(crate) fn prologue(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
     variable_state: &mut HashMap<ItemId, ConstVal>,
     item_id: ItemId,
 ) {
-    let sig = stores.sigs.nrir.get_item_signature(item_id);
-    for param in &sig.entry {
+    let nr_sig = stores.sigs.nrir.get_item_signature(item_id).clone();
+    let tr_sig = stores.sigs.trir.get_item_signature(item_id).clone();
+    for (param, param_type_id) in nr_sig.entry.iter().zip(&tr_sig.entry) {
         let StackDefItemNameResolved::Var { name, .. } = param else {
             continue;
         };
 
-        *variable_state.get_mut(name).unwrap() = ConstVal::Unknown;
+        *variable_state.get_mut(name).unwrap() = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            *param_type_id,
+            ConstFieldInitState::Unknown,
+        );
     }
 }
 
@@ -98,7 +109,7 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
         op_data.outputs[0],
         ConstVal::Pointer {
             source_variable: variable_item_id,
-            offset: Some(0),
+            offsets: Some(Vec::new()),
         },
     );
 }

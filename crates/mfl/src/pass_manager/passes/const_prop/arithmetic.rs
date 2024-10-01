@@ -58,19 +58,19 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
             ConstVal::Float(output_kind.cast(output_float))
         }
 
-        // Pointer offset.
+        // Pointer offsetting. Only MultiPtr supports this, but this is in no way bounds checked.
+        // Due to this we will assume that the resulting index is invalid.
         [ConstVal::Pointer {
             source_variable: id,
-            offset: Some(offset),
-        }, ConstVal::Int(Integer::Unsigned(v))]
-        | [ConstVal::Int(Integer::Unsigned(v)), ConstVal::Pointer {
+            ..
+        }, ConstVal::Int(Integer::Unsigned(_))]
+        | [ConstVal::Int(Integer::Unsigned(_)), ConstVal::Pointer {
             source_variable: id,
-            offset: Some(offset),
+            ..
         }] => ConstVal::Pointer {
             source_variable: *id,
-            offset: Some(offset + v),
+            offsets: None,
         },
-
         [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
         [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => return,
@@ -337,12 +337,13 @@ pub(crate) fn subtract(
         }
 
         // Known pointer, constant offset.
+        // Because the resulting pointer isn't bounds checked, we should assume the index is uncheckable
         [ConstVal::Pointer {
             source_variable: id,
-            offset,
-        }, ConstVal::Int(Integer::Unsigned(v))] => ConstVal::Pointer {
+            ..
+        }, ConstVal::Int(Integer::Unsigned(_))] => ConstVal::Pointer {
             source_variable: *id,
-            offset: offset.map(|off| off - v),
+            offsets: None,
         },
 
         // Pointers with different known sources.
@@ -363,41 +364,53 @@ pub(crate) fn subtract(
             return;
         }
 
-        // Pointers to the same known source, with known offsets.
+        // Pointers with the same ID, both with known offsets.
         [ConstVal::Pointer {
-            offset: Some(offset1),
+            offsets: Some(heads),
             ..
         }, ConstVal::Pointer {
-            offset: Some(offset2),
+            offsets: Some(tails),
             ..
         }] => {
-            if offset2 > offset1 {
-                // Subtracting the end from the start.
-                let offset1_label = format!("...from this offset: {offset1}");
-                let offset2_label = format!("subtracting offset {offset2}...");
-
-                Diagnostic::error(op_loc, "subtracting later pointer from earlier")
-                    .with_label_chain(input_value_ids[0], 0, offset1_label)
-                    .with_label_chain(input_value_ids[1], 1, offset2_label)
+            if heads.len() != tails.len() {
+                Diagnostic::error(op_loc, "subtracting pointers of different sources")
+                    .with_label_chain(input_value_ids[1], 1, "subtracting this...")
+                    .with_label_chain(input_value_ids[0], 0, "... from this")
                     .attached(stores.diags, item_id);
 
                 had_error.set();
                 return;
             }
 
-            ConstVal::Int(Integer::Unsigned(offset2 - offset1))
+            if !heads.is_empty() {
+                let [.., head_last] = &**heads else {
+                    unreachable!()
+                };
+                let [.., tails_last] = &**tails else {
+                    unreachable!()
+                };
+                if head_last < tails_last {
+                    Diagnostic::error(op_loc, "subtracting end pointer from start pointer")
+                        .with_label_chain(input_value_ids[1], 1, "end pointer")
+                        .with_label_chain(input_value_ids[0], 0, "start pointer")
+                        .attached(stores.diags, item_id);
+
+                    had_error.set();
+                    return;
+                }
+
+                ConstVal::Int(Integer::Unsigned(head_last - tails_last))
+            } else {
+                ConstVal::Unknown
+            }
         }
 
-        // Pointers with the same ID, but one or both have runtime offsets.
-        [ConstVal::Pointer {
-            source_variable: id,
-            ..
-        }, ConstVal::Pointer { .. }] => ConstVal::Pointer {
-            source_variable: *id,
-            offset: None,
-        },
+        // Just subtracting two unknown pointers.
+        [ConstVal::Pointer { .. }, ConstVal::Pointer { .. }] => ConstVal::Unknown,
 
         [ConstVal::Uninitialized, _] | [_, ConstVal::Uninitialized] => ConstVal::Uninitialized,
+
+        #[expect(clippy::match_same_arms)]
         [ConstVal::Unknown, _] | [_, ConstVal::Unknown] => ConstVal::Unknown,
         _ => unreachable!(),
     };
