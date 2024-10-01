@@ -5,7 +5,12 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::{block::BlockId, item::ItemKind, values::ConstVal},
+    stores::{
+        block::BlockId,
+        item::ItemKind,
+        types::{TypeId, TypeKind},
+        values::ConstVal,
+    },
     Stores,
 };
 
@@ -76,7 +81,7 @@ fn analyze_block(
                     }
 
                     Control::Prologue => {
-                        control::prologue(stores, variable_state, item_id);
+                        control::prologue(stores, pass_manager, had_error, variable_state, item_id);
                     }
                     Control::Exit(_) => {
                         // We're terminating the current block, so don't process any remaning ops.
@@ -156,6 +161,77 @@ fn analyze_block(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConstFieldInitState {
+    Unknown,
+    Uninitialized,
+}
+
+impl From<ConstFieldInitState> for ConstVal {
+    fn from(value: ConstFieldInitState) -> Self {
+        match value {
+            ConstFieldInitState::Unknown => ConstVal::Unknown,
+            ConstFieldInitState::Uninitialized => ConstVal::Uninitialized,
+        }
+    }
+}
+
+fn new_const_val_for_type(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    type_id: TypeId,
+    initial_value: ConstFieldInitState,
+) -> ConstVal {
+    let type_info = stores.types.get_type_info(type_id);
+    match type_info.kind {
+        TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::FunctionPointer
+        | TypeKind::MultiPointer(_)
+        | TypeKind::SinglePointer(_)
+        | TypeKind::Bool
+        | TypeKind::Enum(_) => initial_value.into(),
+
+        TypeKind::Array { type_id, length } => {
+            let elems = (0..length)
+                .map(|_| {
+                    new_const_val_for_type(stores, pass_manager, had_error, type_id, initial_value)
+                })
+                .collect();
+            ConstVal::Aggregate { sub_values: elems }
+        }
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            // Generic instances are always defined, so we should only handle non-generic structs for this
+            if let TypeKind::Struct(struct_id) = type_info.kind {
+                if pass_manager
+                    .ensure_define_structs(stores, struct_id)
+                    .is_err()
+                {
+                    had_error.set();
+                    return initial_value.into();
+                }
+            }
+
+            let mut elems = Vec::new();
+            let struct_def = stores.types.get_struct_def(type_id).clone();
+            for field in &struct_def.fields {
+                elems.push(new_const_val_for_type(
+                    stores,
+                    pass_manager,
+                    had_error,
+                    field.kind.inner,
+                    initial_value,
+                ));
+            }
+
+            ConstVal::Aggregate { sub_values: elems }
+        }
+
+        TypeKind::GenericStructBase(_) => unreachable!(),
+    }
+}
+
 pub fn analyze_item(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
@@ -163,10 +239,37 @@ pub fn analyze_item(
     item_id: ItemId,
 ) {
     let mut variable_state = HashMap::new();
-    for &child_id in stores.sigs.nrir.get_scope(item_id).get_child_items() {
+    let function_children = stores
+        .sigs
+        .nrir
+        .get_scope(item_id)
+        .get_child_items()
+        .to_owned();
+
+    for child_id in function_children {
+        if pass_manager
+            .ensure_type_resolved_signature(stores, child_id)
+            .is_err()
+        {
+            variable_state.insert(child_id, ConstVal::Uninitialized);
+            had_error.set();
+            continue;
+        }
+
         let child_header = stores.items.get_item_header(child_id);
         if child_header.kind == ItemKind::Variable {
-            variable_state.insert(child_id, ConstVal::Uninitialized);
+            let var_type = stores.sigs.trir.get_variable_type(child_id);
+
+            variable_state.insert(
+                child_id,
+                new_const_val_for_type(
+                    stores,
+                    pass_manager,
+                    had_error,
+                    var_type,
+                    ConstFieldInitState::Uninitialized,
+                ),
+            );
         }
     }
 
@@ -179,4 +282,6 @@ pub fn analyze_item(
         item_id,
         block_id,
     );
+
+    dbg!(&variable_state);
 }
