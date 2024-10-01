@@ -103,6 +103,29 @@ pub(crate) fn cp_const(
     }
 }
 
+pub(crate) fn call_function(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+) {
+    let outputs = stores.ops.get_op_io(op_id).outputs.clone();
+
+    for value_id in outputs {
+        let [output_type_id] = stores.values.value_types([value_id]).unwrap();
+
+        let new_value = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            output_type_id,
+            ConstFieldInitState::Unknown,
+        );
+
+        stores.values.set_value_const(value_id, new_value);
+    }
+}
+
 pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemId) {
     let op_data = stores.ops.get_op_io(op_id);
     stores.values.set_value_const(

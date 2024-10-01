@@ -118,6 +118,9 @@ fn analyze_block(
                 },
                 Basic::Memory(mo) => match mo {
                     Memory::Index => memory::index(stores, had_error, item_id, op_id),
+                    Memory::FieldAccess { field_name } => {
+                        memory::field_access(stores, field_name.inner, op_id)
+                    }
                     Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
                         memory::insert_extract_array(stores, had_error, item_id, op_id)
                     }
@@ -131,7 +134,6 @@ fn analyze_block(
                     // Nothing to do here.
                     Memory::ExtractStruct { .. }
                     | Memory::InsertStruct { .. }
-                    | Memory::FieldAccess { .. }
                     | Memory::PackArray { .. }
                     | Memory::Unpack => {}
                 },
@@ -149,13 +151,14 @@ fn analyze_block(
                     stack_ops::size_of(stores, pass_manager, op_id, id)
                 }
                 TypeResolvedOp::AssumeInit { id } => {
-                    memory::init_local(variable_state, id);
+                    memory::init_local(stores, pass_manager, had_error, variable_state, id);
                 }
-
+                TypeResolvedOp::CallFunction { .. } => {
+                    control::call_function(stores, pass_manager, had_error, op_id)
+                }
+                TypeResolvedOp::PackStruct { .. } => memory::pack_struct(stores, op_id),
                 // Nothing to do here.
-                TypeResolvedOp::CallFunction { .. }
-                | TypeResolvedOp::FunctionPointer { .. }
-                | TypeResolvedOp::PackStruct { .. } => {}
+                TypeResolvedOp::FunctionPointer { .. } => {}
             },
         }
     }
@@ -215,14 +218,18 @@ fn new_const_val_for_type(
 
             let mut elems = Vec::new();
             let struct_def = stores.types.get_struct_def(type_id).clone();
-            for field in &struct_def.fields {
-                elems.push(new_const_val_for_type(
-                    stores,
-                    pass_manager,
-                    had_error,
-                    field.kind.inner,
-                    initial_value,
-                ));
+            if struct_def.is_union {
+                elems.push(initial_value.into());
+            } else {
+                for field in &struct_def.fields {
+                    elems.push(new_const_val_for_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        field.kind.inner,
+                        initial_value,
+                    ));
+                }
             }
 
             ConstVal::Aggregate { sub_values: elems }
