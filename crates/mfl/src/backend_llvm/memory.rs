@@ -914,18 +914,23 @@ impl<'ctx> CodeGen<'ctx> {
         };
         let ptee_llvm_type = self.get_type(ds.types, ptee_struct_type_id);
         let struct_def = ds.types.get_struct_def(ptee_struct_type_id);
-        let field_index = struct_def
-            .fields
-            .iter()
-            .position(|f| f.name.inner == field_name.inner)
-            .unwrap();
 
-        let output_ptr = self.builder.build_struct_gep(
-            ptee_llvm_type,
-            input_struct_ptr.into_pointer_value(),
-            field_index.to_u32().unwrap(),
-            "",
-        )?;
+        let output_ptr = if struct_def.is_union {
+            input_struct_ptr.into_pointer_value()
+        } else {
+            let field_index = struct_def
+                .fields
+                .iter()
+                .position(|f| f.name.inner == field_name.inner)
+                .unwrap();
+
+            self.builder.build_struct_gep(
+                ptee_llvm_type,
+                input_struct_ptr.into_pointer_value(),
+                field_index.to_u32().unwrap(),
+                "",
+            )?
+        };
 
         value_store.store_value(self, op_io.outputs[0], output_ptr.into())?;
 
