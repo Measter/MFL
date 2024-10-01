@@ -72,17 +72,10 @@ pub(crate) fn equal(
         }
 
         // Static pointers with different IDs.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id1,
             ..
-        }, ConstVal::MultiPtr {
-            source_variable: id2,
-            ..
-        }]
-        | [ConstVal::SinglePtr {
-            source_variable: id1,
-            ..
-        }, ConstVal::SinglePtr {
+        }, ConstVal::Pointer {
             source_variable: id2,
             ..
         }] if id1 != id2 => {
@@ -95,22 +88,11 @@ pub(crate) fn equal(
             ConstVal::Bool(false)
         }
 
-        // Single-Pointers with same IDs
-        [ConstVal::SinglePtr { .. }, ConstVal::SinglePtr { .. }] => {
-            Diagnostic::warning(op_loc, "pointers always equal")
-                .with_label_chain(input_value_ids[1], 1, "comparing this...")
-                .with_label_chain(input_value_ids[0], 0, "... and this")
-                .attached(stores.diags, item_id);
-
-            let res = comp_code.get_unsigned_binary_op()(1, 1) != 0;
-            ConstVal::Bool(res)
-        }
-
         // Multi-Pointers with same IDs
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             offset: Some(offset1),
             ..
-        }, ConstVal::MultiPtr {
+        }, ConstVal::Pointer {
             offset: Some(offset2),
             ..
         }] => {
@@ -194,10 +176,10 @@ pub(crate) fn compare(
         }
 
         // Static pointers with different IDs.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id1,
             ..
-        }, ConstVal::MultiPtr {
+        }, ConstVal::Pointer {
             source_variable: id2,
             ..
         }] if id1 != id2 => {
@@ -212,10 +194,10 @@ pub(crate) fn compare(
         }
 
         // Pointers with same IDs, but different static offsets.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             offset: Some(offset1),
             ..
-        }, ConstVal::MultiPtr {
+        }, ConstVal::Pointer {
             offset: Some(offset2),
             ..
         }] => {
@@ -241,7 +223,7 @@ pub(crate) fn is_null(stores: &mut Stores, op_id: OpId) {
     let output_value_id = op_data.outputs[0];
 
     let new_output_const_val = match input_const_val {
-        ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => {
+        ConstVal::Pointer { .. } => {
             // We have a const value from a statically known pointer, so it can't be null.
             ConstVal::Bool(false)
         }

@@ -73,27 +73,11 @@ fn cast_to_ptr(stores: &mut Stores, op_id: OpId) {
     let type_kinds = type_ids.map(|id| stores.types.get_type_info(id).kind);
 
     let new_output_const_val = match type_kinds {
-        [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)]
-            if matches!(input_const_val, ConstVal::MultiPtr { .. }) =>
-        {
-            let ConstVal::MultiPtr {
-                source_variable, ..
-            } = input_const_val
-            else {
-                unreachable!()
-            };
-            ConstVal::SinglePtr { source_variable }
-        }
         [TypeKind::SinglePointer(_), TypeKind::MultiPointer(_)]
-            if matches!(input_const_val, ConstVal::SinglePtr { .. }) =>
+        | [TypeKind::MultiPointer(_), TypeKind::SinglePointer(_)]
+            if matches!(input_const_val, ConstVal::Pointer { .. }) =>
         {
-            let ConstVal::SinglePtr { source_variable } = input_const_val else {
-                unreachable!()
-            };
-            ConstVal::MultiPtr {
-                source_variable,
-                offset: Some(0),
-            }
+            input_const_val
         }
 
         // Just echo the previous const val
@@ -119,7 +103,7 @@ fn cast_to_int(stores: &mut Stores, op_id: OpId, int_kind: IntKind) {
         ConstVal::Float(_) => todo!(),
         ConstVal::Bool(b) if int_kind.is_unsigned() => ConstVal::Int(Integer::Unsigned(b as _)),
         ConstVal::Bool(b) => ConstVal::Int(Integer::Signed(b as _)),
-        ConstVal::MultiPtr { .. } | ConstVal::SinglePtr { .. } => unreachable!(),
+        ConstVal::Pointer { .. } => unreachable!(),
         ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,
     };
 
@@ -158,10 +142,7 @@ fn cast_to_float(stores: &mut Stores, op_id: OpId, to_width: FloatWidth) {
                 }
             }
         }
-        ConstVal::Bool(_)
-        | ConstVal::Enum(_, _)
-        | ConstVal::MultiPtr { .. }
-        | ConstVal::SinglePtr { .. } => {
+        ConstVal::Bool(_) | ConstVal::Enum(_, _) | ConstVal::Pointer { .. } => {
             unreachable!()
         }
         ConstVal::Uninitialized | ConstVal::Unknown => input_const_val,

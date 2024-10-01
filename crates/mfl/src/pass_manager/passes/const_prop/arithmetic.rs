@@ -59,14 +59,14 @@ pub(crate) fn add(stores: &mut Stores, op_id: OpId, arith_code: Arithmetic) {
         }
 
         // Pointer offset.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id,
             offset: Some(offset),
         }, ConstVal::Int(Integer::Unsigned(v))]
-        | [ConstVal::Int(Integer::Unsigned(v)), ConstVal::MultiPtr {
+        | [ConstVal::Int(Integer::Unsigned(v)), ConstVal::Pointer {
             source_variable: id,
             offset: Some(offset),
-        }] => ConstVal::MultiPtr {
+        }] => ConstVal::Pointer {
             source_variable: id,
             offset: Some(offset + v),
         },
@@ -337,20 +337,20 @@ pub(crate) fn subtract(
         }
 
         // Known pointer, constant offset.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id,
             offset,
-        }, ConstVal::Int(Integer::Unsigned(v))] => ConstVal::MultiPtr {
+        }, ConstVal::Int(Integer::Unsigned(v))] => ConstVal::Pointer {
             source_variable: id,
             offset: offset.map(|off| off - v),
         },
 
         // Pointers with different known sources.
         // Clearly an error.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id1,
             ..
-        }, ConstVal::MultiPtr {
+        }, ConstVal::Pointer {
             source_variable: id2,
             ..
         }] if id1 != id2 => {
@@ -364,10 +364,10 @@ pub(crate) fn subtract(
         }
 
         // Pointers to the same known source, with known offsets.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             offset: Some(offset1),
             ..
-        }, ConstVal::MultiPtr {
+        }, ConstVal::Pointer {
             offset: Some(offset2),
             ..
         }] => {
@@ -389,10 +389,10 @@ pub(crate) fn subtract(
         }
 
         // Pointers with the same ID, but one or both have runtime offsets.
-        [ConstVal::MultiPtr {
+        [ConstVal::Pointer {
             source_variable: id,
             ..
-        }, ConstVal::MultiPtr { .. }] => ConstVal::MultiPtr {
+        }, ConstVal::Pointer { .. }] => ConstVal::Pointer {
             source_variable: id,
             offset: None,
         },

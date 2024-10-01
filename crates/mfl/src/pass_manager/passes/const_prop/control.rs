@@ -22,11 +22,7 @@ pub(crate) fn epilogue_return(
     let op_data = stores.ops.get_op_io(op_id);
 
     for &input_value_id in &op_data.inputs {
-        let [ConstVal::MultiPtr {
-            source_variable: variable_item_id,
-            ..
-        }
-        | ConstVal::SinglePtr {
+        let [ConstVal::Pointer {
             source_variable: variable_item_id,
             ..
         }] = stores.values.value_consts([input_value_id])
@@ -100,8 +96,9 @@ pub(crate) fn variable(stores: &mut Stores, op_id: OpId, variable_item_id: ItemI
     let op_data = stores.ops.get_op_io(op_id);
     stores.values.set_value_const(
         op_data.outputs[0],
-        ConstVal::SinglePtr {
+        ConstVal::Pointer {
             source_variable: variable_item_id,
+            offset: Some(0),
         },
     );
 }

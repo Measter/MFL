@@ -145,7 +145,10 @@ pub(crate) fn load(
     let var_value_id = op_data.inputs[0];
     let [var_const_value] = stores.values.value_consts([var_value_id]);
 
-    let ConstVal::SinglePtr { source_variable } = var_const_value else {
+    let ConstVal::Pointer {
+        source_variable, ..
+    } = var_const_value
+    else {
         return;
     };
 
@@ -176,7 +179,10 @@ pub(crate) fn store(
     let input_value_ids = *op_data.inputs.as_arr();
     let [data_const_val, var_const_value] = stores.values.value_consts(input_value_ids);
 
-    let ConstVal::SinglePtr { source_variable } = var_const_value else {
+    let ConstVal::Pointer {
+        source_variable, ..
+    } = var_const_value
+    else {
         return;
     };
 

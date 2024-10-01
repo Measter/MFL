@@ -39,12 +39,9 @@ pub enum ConstVal {
     Int(Integer),
     Float(Float),
     Bool(bool),
-    MultiPtr {
+    Pointer {
         source_variable: ItemId,
         offset: Option<u64>,
-    },
-    SinglePtr {
-        source_variable: ItemId,
     },
 }
 
