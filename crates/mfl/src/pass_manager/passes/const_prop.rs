@@ -282,6 +282,4 @@ pub fn analyze_item(
         item_id,
         block_id,
     );
-
-    dbg!(&variable_state);
 }
