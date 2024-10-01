@@ -2,17 +2,12 @@ use std::fmt::{Display, Write};
 
 use intcast::IntCast;
 use lasso::Spur;
-use logos::{Lexer, Logos};
+use logos::Logos;
 use stores::{
     source::{FileId, SourceLocation, Spanned, WithSpan},
     strings::StringStore,
 };
 use tracing::debug_span;
-
-pub struct Context {
-    line: usize,
-    line_start_idx: usize,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Insert {
@@ -54,22 +49,9 @@ impl Display for BracketKind {
     }
 }
 
-fn is_newline(lex: &mut Lexer<'_, TokenKind>) {
-    let ch = lex.slice().chars().next().unwrap();
-
-    if ch == '\n' {
-        lex.extras.line += 1;
-        lex.extras.line_start_idx = lex.span().end;
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
-#[logos(extras = Context)]
+#[logos(skip "[\t\n\r ]+")]
 pub enum TokenKind {
-    #[regex("[\t\n\r ]", is_newline)]
-    // Never actually emitted, but we need it for the match logic.
-    Whitespace,
-
     #[token("&")]
     Ampersand,
 
@@ -302,7 +284,6 @@ pub enum TokenKind {
 impl TokenKind {
     pub fn kind_str(self) -> &'static str {
         match self {
-            TokenKind::Whitespace => "Whitespace",
             TokenKind::Ampersand => "&",
             TokenKind::Assert => "assert",
             TokenKind::AssumeInit => "init",
@@ -449,13 +430,8 @@ pub fn lex<'a>(
 ) -> Vec<Result<Spanned<Token>, LexerError>> {
     let _span = debug_span!("lex").entered();
 
-    let context = Context {
-        line: 1,
-        line_start_idx: 0,
-    };
-
     let mut tokens = Vec::new();
-    let mut lexer = TokenKind::lexer_with_extras(contents, context).spanned();
+    let mut lexer = TokenKind::lexer(contents).spanned();
 
     while let Some((kind, span)) = lexer.next() {
         let span = span.start.to_u32().unwrap()..span.end.to_u32().unwrap();
@@ -465,10 +441,6 @@ pub fn lex<'a>(
             tokens.push(Err(LexerError::UnexpectedChar(location)));
             continue;
         };
-
-        if kind == TokenKind::Whitespace {
-            continue;
-        }
 
         match &mut kind {
             TokenKind::String(string_token) => {

@@ -298,8 +298,7 @@ impl Backend {
                         | TokenKind::ColonColon
                         | TokenKind::Comma
                         | TokenKind::Dot
-                        | TokenKind::Ident
-                        | TokenKind::Whitespace => continue,
+                        | TokenKind::Ident => continue,
                     };
 
                     sem_toks.push(IncompleteSemanticToken {
