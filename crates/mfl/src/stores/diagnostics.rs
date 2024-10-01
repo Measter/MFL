@@ -265,6 +265,10 @@ impl Diagnostic {
     pub(crate) fn detached(self, diags: &mut DiagnosticStore) {
         diags.add_detached(self);
     }
+
+    pub(crate) fn immediate(self, stores: &mut Stores) {
+        display_single_diag(stores.values, stores.source, self);
+    }
 }
 
 impl Diagnostic {
