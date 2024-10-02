@@ -125,7 +125,14 @@ fn analyze_block(
                         memory::insert_extract_array(stores, had_error, item_id, op_id)
                     }
                     Memory::Load => {
-                        memory::load(stores, variable_state, had_error, item_id, op_id);
+                        memory::load(
+                            stores,
+                            pass_manager,
+                            variable_state,
+                            had_error,
+                            item_id,
+                            op_id,
+                        );
                     }
                     Memory::Store => {
                         memory::store(stores, variable_state, op_id);

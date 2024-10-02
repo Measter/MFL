@@ -12,8 +12,8 @@ use crate::{
     stores::{
         diagnostics::Diagnostic,
         ops::OpId,
-        types::{Integer, TypeId, TypeKind},
-        values::{ConstVal, InitState},
+        types::{Integer, TypeId, TypeKind, TypeStore},
+        values::{ConstVal, InitState, Offset},
     },
     Stores,
 };
@@ -33,14 +33,18 @@ pub(crate) fn index(
         // as we no longer know where it's pointing.
 
         if let [ConstVal::Pointer {
-            source_variable, ..
+            source_variable,
+            offsets: Some(offsets),
         }] = stores.values.value_consts([array_value_id])
         {
+            let mut new_offsets = offsets.clone();
+            new_offsets.push(Offset::Unknown);
+
             stores.values.set_value_const(
-                array_value_id,
+                op_data.outputs[0],
                 ConstVal::Pointer {
                     source_variable: *source_variable,
-                    offsets: None,
+                    offsets: Some(new_offsets),
                 },
             );
         }
@@ -114,7 +118,7 @@ pub(crate) fn index(
     }] = stores.values.value_consts([array_value_id])
     {
         let mut new_offsets = offsets.clone();
-        new_offsets.push(*idx);
+        new_offsets.push(Offset::Known(*idx));
         stores.values.set_value_const(
             op_data.outputs[0],
             ConstVal::Pointer {
@@ -159,7 +163,7 @@ pub(crate) fn field_access(stores: &mut Stores, field_name: Spur, op_id: OpId) {
     };
 
     let mut new_offsets = offsets.clone();
-    new_offsets.push(new_idx);
+    new_offsets.push(Offset::Known(new_idx));
     let new_const_val = ConstVal::Pointer {
         source_variable: *source_variable,
         offsets: Some(new_offsets),
@@ -233,12 +237,14 @@ pub(crate) fn insert_extract_array(
 
 pub(crate) fn load(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
     item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
+    let output_value_id = op_data.outputs[0];
     let var_value_id = op_data.inputs[0];
     let [var_const_value] = stores.values.value_consts([var_value_id]);
 
@@ -261,6 +267,27 @@ pub(crate) fn load(
     let mut cur_state = var_state;
     let mut note_location = String::new();
     for &offset in offsets {
+        let Offset::Known(offset) = offset else {
+            // We hit an unknown offset, which means we don't know which element of an array we're going into.
+            // We'll just magic out a new unknown state for the final type.
+            // Might be worth pursuing a merging of sub-states in the array?
+            let [output_type_id] = stores.values.value_types([output_value_id]).unwrap();
+
+            let new_const_val = new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                output_type_id,
+                ConstFieldInitState::Unknown,
+            );
+
+            stores
+                .values
+                .set_value_const(output_value_id, new_const_val);
+
+            return;
+        };
+
         let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
         match var_type_info.kind {
             TypeKind::Integer(_)
@@ -334,7 +361,7 @@ pub(crate) fn load(
 
     stores
         .values
-        .set_value_const(op_data.outputs[0], cur_state.clone());
+        .set_value_const(output_value_id, cur_state.clone());
 }
 
 pub(crate) fn store(
@@ -354,49 +381,85 @@ pub(crate) fn store(
         return;
     };
 
-    let Some(mut state) = variable_state.get_mut(source_variable) else {
+    let Some(state) = variable_state.get_mut(source_variable) else {
         // It's a global variable, we can't handle those.
         return;
     };
 
-    let mut cur_pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
-    for &offset in offsets {
-        let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
-        match var_type_info.kind {
-            TypeKind::Integer(_)
-            | TypeKind::Float(_)
-            | TypeKind::FunctionPointer
-            | TypeKind::MultiPointer(_)
-            | TypeKind::SinglePointer(_)
-            | TypeKind::Bool
-            | TypeKind::Enum(_) => unreachable!(),
+    fn write_const_val(
+        type_store: &mut TypeStore,
+        state: &mut ConstVal,
+        to_store_value: &ConstVal,
+        cur_pointed_at_type: TypeId,
+        mut offsets: std::slice::Iter<'_, Offset>,
+    ) {
+        if let Some(next) = offsets.next() {
+            let var_type_info = type_store.get_type_info(cur_pointed_at_type);
+            match var_type_info.kind {
+                TypeKind::Array { type_id, .. } => {
+                    let ConstVal::Aggregate { sub_values } = state else {
+                        unreachable!()
+                    };
 
-            TypeKind::Array { type_id, .. } => {
-                cur_pointed_at_type = type_id;
-                let ConstVal::Aggregate { sub_values } = state else {
-                    unreachable!()
-                };
+                    match next {
+                        Offset::Unknown => {
+                            // We are in an array, but don't know where in the array we are writing to.
+                            // We should iterate over each index in the array, and write a final ConstVal::Unknown.
+                            for sv in sub_values {
+                                write_const_val(
+                                    type_store,
+                                    sv,
+                                    &ConstVal::Unknown,
+                                    type_id,
+                                    offsets.clone(),
+                                );
+                            }
+                        }
+                        Offset::Known(offset) => {
+                            write_const_val(
+                                type_store,
+                                &mut sub_values[offset.to_usize()],
+                                to_store_value,
+                                type_id,
+                                offsets,
+                            );
+                        }
+                    }
+                }
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                    let ConstVal::Aggregate { sub_values } = state else {
+                        unreachable!()
+                    };
 
-                state = &mut sub_values[offset.to_usize()];
+                    let struct_def = type_store.get_struct_def(cur_pointed_at_type);
+                    let Offset::Known(offset) = next else {
+                        panic!("ICE: struct field offset is unknown")
+                    };
+                    write_const_val(
+                        type_store,
+                        &mut sub_values[offset.to_usize()],
+                        to_store_value,
+                        struct_def.fields[offset.to_usize()].kind.inner,
+                        offsets,
+                    );
+                }
+
+                _ => unreachable!(),
             }
-            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                let struct_def = stores.types.get_struct_def(cur_pointed_at_type);
-                cur_pointed_at_type = struct_def.fields[offset.to_usize()].kind.inner;
-                let ConstVal::Aggregate { sub_values } = state else {
-                    unreachable!()
-                };
-
-                state = &mut sub_values[offset.to_usize()];
-            }
-
-            TypeKind::GenericStructBase(_) => {
-                unreachable!()
-            }
+        } else {
+            // No more offsets to go, we've reached the final destination
+            *state = to_store_value.clone();
         }
     }
 
-    // Once we get to this point, we should be pointing at the final type.
-    *state = data_const_val.clone();
+    let cur_pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
+    write_const_val(
+        stores.types,
+        state,
+        data_const_val,
+        cur_pointed_at_type,
+        offsets.iter(),
+    );
 }
 
 pub(crate) fn pack_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {

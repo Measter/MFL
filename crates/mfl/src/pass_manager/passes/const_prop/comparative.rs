@@ -1,3 +1,4 @@
+use intcast::IntCast;
 use stores::items::ItemId;
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
         diagnostics::Diagnostic,
         ops::OpId,
         types::{Integer, TypeKind},
-        values::ConstVal,
+        values::{ConstVal, Offset},
     },
     Stores,
 };
@@ -90,32 +91,92 @@ pub(crate) fn equal(
 
         // Multi-Pointers with same IDs, and known indices.
         [ConstVal::Pointer {
+            source_variable,
             offsets: Some(offset1),
             ..
         }, ConstVal::Pointer {
             offsets: Some(offset2),
             ..
         }] => {
-            let msg = if offset1 == offset2 {
-                "pointers always equal"
+            if offset1.len() != offset2.len() {
+                // User tried to compare pointers at different depths within a variable.
+                Diagnostic::error(op_loc, "pointers have different sources")
+                    .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                    .with_label_chain(input_value_ids[0], 0, "... and this")
+                    .attached(stores.diags, item_id);
+
+                had_error.set();
+                ConstVal::Bool(false)
+            } else if offset1.is_empty() {
+                // Both pointers point at the head of the variable.
+                ConstVal::Bool(true)
             } else {
-                "pointers never equal"
-            };
+                let [head_front @ .., head_last] = &**offset1 else {
+                    unreachable!()
+                };
+                let [tail_front @ .., tails_last] = &**offset2 else {
+                    unreachable!()
+                };
 
-            Diagnostic::warning(op_loc, msg)
-                .with_label_chain(input_value_ids[1], 1, "comparing this...")
-                .with_label_chain(input_value_ids[0], 0, "... and this")
-                .attached(stores.diags, item_id);
+                let mut const_val = ConstVal::Unknown;
+                let mut early_break = false;
+                let mut pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
+                for (head, tail) in head_front.iter().zip(tail_front) {
+                    match (head, tail) {
+                        (Offset::Known(h), Offset::Known(t)) => {
+                            if h != t {
+                                Diagnostic::error(op_loc, "pointers have different sources")
+                                    .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                                    .with_label_chain(input_value_ids[0], 0, "... and this")
+                                    .attached(stores.diags, item_id);
 
-            let res = match (&**offset1, &**offset2) {
-                ([], []) => true,
-                ([a_s @ .., a], [b_s @ .., b]) if a_s == b_s => {
-                    comp_code.get_unsigned_binary_op()(*a, *b) != 0
+                                had_error.set();
+                                early_break = true;
+                                break;
+                            }
+
+                            let var_type_info = stores.types.get_type_info(pointed_at_type);
+                            match var_type_info.kind {
+                                TypeKind::Array { type_id, .. } => {
+                                    pointed_at_type = type_id;
+                                }
+                                TypeKind::Struct(_) => {
+                                    let struct_def = stores.types.get_struct_def(pointed_at_type);
+                                    pointed_at_type = struct_def.fields[h.to_usize()].kind.inner;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => {
+                            const_val = ConstVal::Unknown;
+                            early_break = true;
+                            break;
+                        }
+                    }
                 }
-                _ => false,
-            };
 
-            ConstVal::Bool(res)
+                if !early_break {
+                    let pointed_type_info = stores.types.get_type_info(pointed_at_type);
+                    if !matches!(pointed_type_info.kind, TypeKind::Array { .. }) {
+                        // The last type we're indexing into is not an array, which means the user
+                        // is trying to subtract pointers to different fields of the same struct.
+                        Diagnostic::error(op_loc, "cannot compare field pointers")
+                            .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                            .with_label_chain(input_value_ids[0], 0, "... and this")
+                            .attached(stores.diags, item_id);
+
+                        had_error.set();
+                    } else {
+                        // We know the user is comparing pointers within an array.
+                        if let (Offset::Known(h), Offset::Known(t)) = (head_last, tails_last) {
+                            let res = comp_code.get_unsigned_binary_op()(*h, *t);
+                            const_val = ConstVal::Bool(res != 0);
+                        }
+                    }
+                }
+
+                const_val
+            }
         }
 
         // Different IDs, one or both with unknown indices.
@@ -141,6 +202,7 @@ pub(crate) fn compare(
     comp_code: Compare,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
+    let op_loc = stores.ops.get_token(op_id).location;
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
     let input_const_vals = stores.values.value_consts(input_value_ids);
@@ -206,20 +268,92 @@ pub(crate) fn compare(
 
         // Pointers with same IDs, and with known indices.
         [ConstVal::Pointer {
+            source_variable,
             offsets: Some(offset1),
             ..
         }, ConstVal::Pointer {
             offsets: Some(offset2),
             ..
         }] => {
-            let res = match (&**offset1, &**offset2) {
-                ([], []) => true,
-                ([a_s @ .., a], [b_s @ .., b]) if a_s == b_s => {
-                    comp_code.get_unsigned_binary_op()(*a, *b) != 0
+            if offset1.len() != offset2.len() {
+                // User tried to compare pointers at different depths within a variable.
+                Diagnostic::error(op_loc, "pointers have different sources")
+                    .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                    .with_label_chain(input_value_ids[0], 0, "... and this")
+                    .attached(stores.diags, item_id);
+
+                had_error.set();
+                ConstVal::Bool(false)
+            } else if offset1.is_empty() {
+                // Both pointers point at the head of the variable.
+                ConstVal::Bool(true)
+            } else {
+                let [head_front @ .., head_last] = &**offset1 else {
+                    unreachable!()
+                };
+                let [tail_front @ .., tails_last] = &**offset2 else {
+                    unreachable!()
+                };
+
+                let mut const_val = ConstVal::Unknown;
+                let mut early_break = false;
+                let mut pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
+                for (head, tail) in head_front.iter().zip(tail_front) {
+                    match (head, tail) {
+                        (Offset::Known(h), Offset::Known(t)) => {
+                            if h != t {
+                                Diagnostic::error(op_loc, "pointers have different sources")
+                                    .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                                    .with_label_chain(input_value_ids[0], 0, "... and this")
+                                    .attached(stores.diags, item_id);
+
+                                had_error.set();
+                                early_break = true;
+                                break;
+                            }
+
+                            let var_type_info = stores.types.get_type_info(pointed_at_type);
+                            match var_type_info.kind {
+                                TypeKind::Array { type_id, .. } => {
+                                    pointed_at_type = type_id;
+                                }
+                                TypeKind::Struct(_) => {
+                                    let struct_def = stores.types.get_struct_def(pointed_at_type);
+                                    pointed_at_type = struct_def.fields[h.to_usize()].kind.inner;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => {
+                            const_val = ConstVal::Unknown;
+                            early_break = true;
+                            break;
+                        }
+                    }
                 }
-                _ => false,
-            };
-            ConstVal::Bool(res)
+
+                if !early_break {
+                    let pointed_type_info = stores.types.get_type_info(pointed_at_type);
+                    if !matches!(pointed_type_info.kind, TypeKind::Array { .. }) {
+                        // The last type we're indexing into is not an array, which means the user
+                        // is trying to subtract pointers to different fields of the same struct.
+                        Diagnostic::error(op_loc, "cannot compare field pointers")
+                            .with_label_chain(input_value_ids[1], 1, "comparing this...")
+                            .with_label_chain(input_value_ids[0], 0, "... and this")
+                            .attached(stores.diags, item_id);
+
+                        had_error.set();
+                    } else {
+                        // We know the user is comparing pointers within an array.
+                        if let (Offset::Known(h), Offset::Known(t)) = (head_last, tails_last) {
+                            let res = comp_code.get_unsigned_binary_op()(*h, *t);
+                            const_val = ConstVal::Bool(res != 0);
+                        }
+                    }
+                }
+
+                const_val
+            }
         }
 
         // Different IDs, one or both with unknown indices.

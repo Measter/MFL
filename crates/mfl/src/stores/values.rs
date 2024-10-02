@@ -48,6 +48,12 @@ impl InitState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offset {
+    Unknown,
+    Known(u64),
+}
+
 #[derive(Clone, PartialEq)]
 pub enum ConstVal {
     Uninitialized,
@@ -58,7 +64,7 @@ pub enum ConstVal {
     Bool(bool),
     Pointer {
         source_variable: ItemId,
-        offsets: Option<Vec<u64>>,
+        offsets: Option<Vec<Offset>>,
     },
 
     // Will handle structs, unions, and arrays.

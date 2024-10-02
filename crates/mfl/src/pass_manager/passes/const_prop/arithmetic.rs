@@ -1,3 +1,4 @@
+use intcast::IntCast;
 use num_traits::Zero;
 use stores::items::ItemId;
 
@@ -9,7 +10,7 @@ use crate::{
         diagnostics::Diagnostic,
         ops::OpId,
         types::{Float, Integer, TypeKind},
-        values::ConstVal,
+        values::{ConstVal, Offset},
     },
     Stores,
 };
@@ -366,6 +367,7 @@ pub(crate) fn subtract(
 
         // Pointers with the same ID, both with known offsets.
         [ConstVal::Pointer {
+            source_variable,
             offsets: Some(heads),
             ..
         }, ConstVal::Pointer {
@@ -382,26 +384,91 @@ pub(crate) fn subtract(
                 return;
             }
 
-            if !heads.is_empty() {
-                let [.., head_last] = &**heads else {
+            if heads.is_empty() {
+                // Both pointers point at the head of the variable.
+                ConstVal::Int(Integer::Unsigned(0))
+            } else {
+                let [head_front @ .., head_last] = &**heads else {
                     unreachable!()
                 };
-                let [.., tails_last] = &**tails else {
+                let [tail_front @ .., tails_last] = &**tails else {
                     unreachable!()
                 };
-                if head_last < tails_last {
-                    Diagnostic::error(op_loc, "subtracting end pointer from start pointer")
-                        .with_label_chain(input_value_ids[1], 1, "end pointer")
-                        .with_label_chain(input_value_ids[0], 0, "start pointer")
-                        .attached(stores.diags, item_id);
 
-                    had_error.set();
-                    return;
+                let mut const_val = ConstVal::Unknown;
+                let mut early_break = false;
+                let mut pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
+                for (head, tail) in head_front.iter().zip(tail_front) {
+                    match (head, tail) {
+                        (Offset::Known(h), Offset::Known(t)) => {
+                            if h != t {
+                                Diagnostic::error(
+                                    op_loc,
+                                    "subtracting pointers of different sources",
+                                )
+                                .with_label_chain(input_value_ids[1], 1, "subtracting this...")
+                                .with_label_chain(input_value_ids[0], 0, "... from this")
+                                .attached(stores.diags, item_id);
+
+                                had_error.set();
+                                early_break = true;
+                                break;
+                            }
+
+                            let var_type_info = stores.types.get_type_info(pointed_at_type);
+                            match var_type_info.kind {
+                                TypeKind::Array { type_id, .. } => {
+                                    pointed_at_type = type_id;
+                                }
+                                TypeKind::Struct(_) => {
+                                    let struct_def = stores.types.get_struct_def(pointed_at_type);
+                                    pointed_at_type = struct_def.fields[h.to_usize()].kind.inner;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => {
+                            const_val = ConstVal::Unknown;
+                            early_break = true;
+                            break;
+                        }
+                    }
                 }
 
-                ConstVal::Int(Integer::Unsigned(head_last - tails_last))
-            } else {
-                ConstVal::Unknown
+                if !early_break {
+                    let pointed_type_info = stores.types.get_type_info(pointed_at_type);
+                    if !matches!(pointed_type_info.kind, TypeKind::Array { .. }) {
+                        // The last type we're indexing into is not an array, which means the user
+                        // is trying to subtract pointers to different fields of the same struct.
+                        Diagnostic::error(op_loc, "cannot subtract field pointers")
+                            .with_label_chain(input_value_ids[1], 1, "subtracting this...")
+                            .with_label_chain(input_value_ids[0], 0, "... from this")
+                            .attached(stores.diags, item_id);
+
+                        had_error.set();
+                    } else {
+                        // We know the user is subtracting pointers within an array.
+                        match (head_last, tails_last) {
+                            (Offset::Known(h), Offset::Known(t)) if h < t => {
+                                Diagnostic::error(
+                                    op_loc,
+                                    "subtracting end pointer from start pointer",
+                                )
+                                .with_label_chain(input_value_ids[1], 1, "subtracting this...")
+                                .with_label_chain(input_value_ids[0], 0, "... from this")
+                                .attached(stores.diags, item_id);
+
+                                had_error.set();
+                            }
+                            (Offset::Known(h), Offset::Known(t)) => {
+                                const_val = ConstVal::Int(Integer::Unsigned(h - t));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                const_val
             }
         }
 
