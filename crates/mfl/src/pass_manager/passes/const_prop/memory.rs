@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use hashbrown::HashMap;
 use intcast::IntCast;
 use lasso::Spur;
@@ -250,12 +252,14 @@ pub(crate) fn load(
 
     let source_variable = *source_variable;
 
-    let Some(mut state) = variable_state.get(&source_variable) else {
+    let Some(var_state) = variable_state.get(&source_variable) else {
         // It's a global variable, we can't handle those.
         return;
     };
 
     let mut cur_pointed_at_type = stores.sigs.trir.get_variable_type(source_variable);
+    let mut cur_state = var_state;
+    let mut note_location = String::new();
     for &offset in offsets {
         let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
         match var_type_info.kind {
@@ -269,22 +273,24 @@ pub(crate) fn load(
 
             TypeKind::Array { type_id, .. } => {
                 cur_pointed_at_type = type_id;
-                let ConstVal::Aggregate { sub_values } = state else {
+                let ConstVal::Aggregate { sub_values } = cur_state else {
                     unreachable!()
                 };
 
-                state = &sub_values[offset.to_usize()];
+                write!(&mut note_location, "[{offset}]").unwrap();
+                cur_state = &sub_values[offset.to_usize()];
             }
             TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
                 let struct_def = stores.types.get_struct_def(cur_pointed_at_type);
-                cur_pointed_at_type = struct_def.fields[offset.to_usize()].kind.inner;
-                let ConstVal::Aggregate { sub_values } = state else {
-                    let op_token = stores.ops.get_token(op_id);
-                    Diagnostic::error(op_token.location, "here").immediate(stores);
+                let field = &struct_def.fields[offset.to_usize()];
+                cur_pointed_at_type = field.kind.inner;
+                let ConstVal::Aggregate { sub_values } = cur_state else {
                     unreachable!()
                 };
 
-                state = &sub_values[offset.to_usize()];
+                let field_name = stores.strings.resolve(field.name.inner);
+                write!(&mut note_location, ".{field_name}").unwrap();
+                cur_state = &sub_values[offset.to_usize()];
             }
 
             TypeKind::GenericStructBase(_) => {
@@ -293,21 +299,32 @@ pub(crate) fn load(
         }
     }
 
-    stores
-        .values
-        .set_value_const(op_data.outputs[0], state.clone());
-
-    if matches!(state, ConstVal::Uninitialized) {
+    if matches!(cur_state, ConstVal::Uninitialized) {
         let var_header = stores.items.get_item_header(source_variable);
         let op_loc = stores.ops.get_token(op_id);
 
-        Diagnostic::error(op_loc.location, "read from unitialized variable")
+        let mut diag = Diagnostic::error(op_loc.location, "read from unitialized memory")
+            .primary_label_message("read occurred here")
             .with_label_chain(var_value_id, 0, "variable pointer")
-            .with_help_label(var_header.name.location, "variable defined here")
-            .attached(stores.diags, item_id);
+            .with_help_label(var_header.name.location, "variable defined here");
+
+        if !offsets.is_empty() {
+            // We're pointing into sub-sections of the aggregate.
+            let item_header = stores.items.get_item_header(source_variable);
+            let var_name = stores.strings.resolve(item_header.name.inner);
+            diag.set_note(format!(
+                "Tried to access sub-element {var_name}{note_location} which is not initialized"
+            ));
+        }
+
+        diag.attached(stores.diags, item_id);
 
         had_error.set();
     }
+
+    stores
+        .values
+        .set_value_const(op_data.outputs[0], cur_state.clone());
 }
 
 pub(crate) fn store(
