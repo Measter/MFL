@@ -175,17 +175,7 @@ pub(crate) fn analyze_cond(
         } else {
             for (var_id, final_state) in &mut final_variable_state {
                 let post_block_state = &variable_state[var_id];
-
-                match (post_block_state, &final_state) {
-                    (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
-                        *final_state = ConstVal::Uninitialized
-                    }
-                    (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => {
-                        *final_state = ConstVal::Unknown
-                    }
-                    _ if post_block_state == final_state => {}
-                    _ => *final_state = ConstVal::Unknown,
-                }
+                merge_branched_const_val(post_block_state, final_state);
             }
         }
 
@@ -203,18 +193,35 @@ pub(crate) fn analyze_cond(
 
     for (var_id, final_state) in &mut final_variable_state {
         let post_block_state = &variable_state[var_id];
-
-        match (post_block_state, &final_state) {
-            (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
-                *final_state = ConstVal::Uninitialized
-            }
-            (ConstVal::Unknown, _) | (_, ConstVal::Unknown) => *final_state = ConstVal::Unknown,
-            _ if post_block_state == final_state => {}
-            _ => *final_state = ConstVal::Unknown,
-        }
+        merge_branched_const_val(post_block_state, final_state);
     }
 
     *variable_state = final_variable_state;
+}
+
+fn merge_branched_const_val(post_block_state: &ConstVal, final_state: &mut ConstVal) {
+    if post_block_state == final_state {
+        return;
+    }
+
+    match (post_block_state, &mut *final_state) {
+        (ConstVal::Uninitialized, _) | (_, ConstVal::Uninitialized) => {
+            *final_state = ConstVal::Uninitialized
+        }
+        (
+            ConstVal::Aggregate {
+                sub_values: pb_substates,
+            },
+            ConstVal::Aggregate {
+                sub_values: final_substates,
+            },
+        ) => {
+            for (pbss, fss) in pb_substates.iter().zip(final_substates) {
+                merge_branched_const_val(pbss, fss);
+            }
+        }
+        _ => *final_state = ConstVal::Unknown,
+    }
 }
 
 pub(crate) fn analyze_while(
