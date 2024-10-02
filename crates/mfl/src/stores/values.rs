@@ -31,6 +31,23 @@ pub struct ValueHeader {
     pub parent_values: SmallVec<[ValueId; 4]>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitState {
+    Full,
+    Partial,
+    None,
+}
+
+impl InitState {
+    fn merge(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (InitState::None, InitState::None) => InitState::None,
+            (InitState::Full, InitState::Full) => InitState::Full,
+            _ => InitState::Partial,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub enum ConstVal {
     Uninitialized,
@@ -72,6 +89,23 @@ impl std::fmt::Debug for ConstVal {
                 .debug_struct("Aggregate")
                 .field("sub_values", sub_values)
                 .finish(),
+        }
+    }
+}
+
+impl ConstVal {
+    pub fn get_init_state(&self) -> InitState {
+        match self {
+            ConstVal::Uninitialized => InitState::None,
+            ConstVal::Unknown
+            | ConstVal::Enum(_, _)
+            | ConstVal::Int(_)
+            | ConstVal::Float(_)
+            | ConstVal::Bool(_)
+            | ConstVal::Pointer { .. } => InitState::Full,
+            ConstVal::Aggregate { sub_values } => sub_values
+                .iter()
+                .fold(InitState::Full, |acc, sv| acc.merge(sv.get_init_state())),
         }
     }
 }

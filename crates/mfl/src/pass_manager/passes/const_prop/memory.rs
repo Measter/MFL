@@ -13,7 +13,7 @@ use crate::{
         diagnostics::Diagnostic,
         ops::OpId,
         types::{Integer, TypeId, TypeKind},
-        values::ConstVal,
+        values::{ConstVal, InitState},
     },
     Stores,
 };
@@ -299,21 +299,31 @@ pub(crate) fn load(
         }
     }
 
-    if matches!(cur_state, ConstVal::Uninitialized) {
+    let init_state = cur_state.get_init_state();
+    if init_state != InitState::Full {
         let var_header = stores.items.get_item_header(source_variable);
         let op_loc = stores.ops.get_token(op_id);
 
-        let mut diag = Diagnostic::error(op_loc.location, "read from unitialized memory")
-            .primary_label_message("read occurred here")
-            .with_label_chain(var_value_id, 0, "variable pointer")
-            .with_help_label(var_header.name.location, "variable defined here");
+        let (primary_msg_chunk, note_msg_chunk) = match init_state {
+            InitState::Full => unreachable!(),
+            InitState::Partial => ("partially ", "fully "),
+            InitState::None => ("un", ""),
+        };
+
+        let mut diag = Diagnostic::error(
+            op_loc.location,
+            format!("read from {primary_msg_chunk}initialized memory"),
+        )
+        .primary_label_message("read occurred here")
+        .with_label_chain(var_value_id, 0, "variable pointer")
+        .with_help_label(var_header.name.location, "variable defined here");
 
         if !offsets.is_empty() {
             // We're pointing into sub-sections of the aggregate.
             let item_header = stores.items.get_item_header(source_variable);
             let var_name = stores.strings.resolve(item_header.name.inner);
             diag.set_note(format!(
-                "Tried to access sub-element {var_name}{note_location} which is not initialized"
+                "Tried to access sub-element {var_name}{note_location} which is not {note_msg_chunk}initialized"
             ));
         }
 
