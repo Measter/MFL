@@ -290,14 +290,6 @@ pub(crate) fn load(
 
         let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
         match var_type_info.kind {
-            TypeKind::Integer(_)
-            | TypeKind::Float(_)
-            | TypeKind::FunctionPointer
-            | TypeKind::MultiPointer(_)
-            | TypeKind::SinglePointer(_)
-            | TypeKind::Bool
-            | TypeKind::Enum(_) => unreachable!(),
-
             TypeKind::Array { type_id, .. } => {
                 cur_pointed_at_type = type_id;
                 let ConstVal::Aggregate { sub_values } = cur_state else {
@@ -320,9 +312,7 @@ pub(crate) fn load(
                 cur_state = &sub_values[offset.to_usize()];
             }
 
-            TypeKind::GenericStructBase(_) => {
-                unreachable!()
-            }
+            _ => unreachable!(),
         }
     }
 
