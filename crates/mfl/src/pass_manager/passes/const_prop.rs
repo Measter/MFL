@@ -137,12 +137,11 @@ fn analyze_block(
                     Memory::Store => {
                         memory::store(stores, variable_state, op_id);
                     }
+                    Memory::PackArray { .. } => memory::pack_struct_and_array(stores, op_id),
 
                     // Nothing to do here.
-                    Memory::ExtractStruct { .. }
-                    | Memory::InsertStruct { .. }
-                    | Memory::PackArray { .. }
-                    | Memory::Unpack => {}
+                    Memory::ExtractStruct { .. } | Memory::InsertStruct { .. } | Memory::Unpack => {
+                    }
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
@@ -163,7 +162,7 @@ fn analyze_block(
                 TypeResolvedOp::CallFunction { .. } => {
                     control::call_function(stores, pass_manager, had_error, op_id)
                 }
-                TypeResolvedOp::PackStruct { .. } => memory::pack_struct(stores, op_id),
+                TypeResolvedOp::PackStruct { .. } => memory::pack_struct_and_array(stores, op_id),
                 // Nothing to do here.
                 TypeResolvedOp::FunctionPointer { .. } => {}
             },

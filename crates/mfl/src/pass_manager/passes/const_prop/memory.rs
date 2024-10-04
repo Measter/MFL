@@ -482,7 +482,7 @@ pub(crate) fn pack_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {
     );
 }
 
-pub(crate) fn pack_struct(stores: &mut Stores, op_id: OpId) {
+pub(crate) fn pack_struct_and_array(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let mut values = Vec::new();
 
