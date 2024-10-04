@@ -970,7 +970,8 @@ pub(crate) fn store(
 
     if data_type_id != ptee_type_id && !can_promote_int {
         let data_type_name = stores.strings.resolve(data_type_info.friendly_name);
-        let ptee_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
+        let ptee_type_info = stores.types.get_type_info(ptee_type_id);
+        let ptee_type_name = stores.strings.resolve(ptee_type_info.friendly_name);
 
         Diagnostic::error(op_loc, format!("value must be a `{ptee_type_name}`"))
             .with_label_chain(data_value_id, 0, data_type_name)
