@@ -121,8 +121,18 @@ fn analyze_block(
                     Memory::FieldAccess { field_name } => {
                         memory::field_access(stores, field_name.inner, op_id)
                     }
-                    Memory::ExtractArray { .. } | Memory::InsertArray { .. } => {
-                        memory::insert_extract_array(stores, had_error, item_id, op_id)
+                    Memory::InsertArray { .. } => {
+                        memory::insert_array(
+                            stores,
+                            pass_manager,
+                            had_error,
+                            variable_state,
+                            item_id,
+                            op_id,
+                        );
+                    }
+                    Memory::ExtractArray { .. } => {
+                        memory::extract_array(stores, had_error, item_id, op_id)
                     }
                     Memory::Load => {
                         memory::load(
