@@ -425,29 +425,95 @@ pub(crate) fn insert_array(
 
 pub(crate) fn extract_array(
     stores: &mut Stores,
+    pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
     item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let &[.., array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
+    // We might be outputting the array.
+
+    let &[input_array_value_id, idx_value_id] = op_data.inputs.as_slice() else {
         unreachable!()
     };
+
+    let extracted_value_id = match op_data.outputs() {
+        [v] => *v,
+        [output_array_value_id, extracted_value_id] => {
+            let [input_array_const_val] = stores.values.value_consts([input_array_value_id]);
+            stores
+                .values
+                .set_value_const(*output_array_value_id, input_array_const_val.clone());
+
+            *extracted_value_id
+        }
+        _ => unreachable!(),
+    };
+
     let [ConstVal::Int(Integer::Unsigned(idx))] = stores.values.value_consts([idx_value_id]) else {
-        // We're only doing bounds checking here, so nothing to do if we don't know the index.
+        // We don't know the index, so magic up an unknown const value.
+        let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+        let extracted_const_value = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            extracted_type_id,
+            ConstFieldInitState::Unknown,
+        );
+
+        stores
+            .values
+            .set_value_const(extracted_value_id, extracted_const_value);
         return;
     };
 
-    let [array_type_id] = stores.values.value_types([array_value_id]).unwrap();
-    let array_type_info = stores.types.get_type_info(array_type_id);
+    let [input_array_type_id] = stores.values.value_types([input_array_value_id]).unwrap();
+    let input_array_type_info = stores.types.get_type_info(input_array_type_id);
 
-    let array_length = match array_type_info.kind {
-        TypeKind::Array { length, .. } => length,
+    let (array_length, is_ptr) = match input_array_type_info.kind {
+        TypeKind::Array { length, .. } => (length, false),
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+            // We don't know where we're extracting from, so magic up an unknown const.
+            let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+            let extracted_const_value = new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                extracted_type_id,
+                ConstFieldInitState::Unknown,
+            );
+
+            stores
+                .values
+                .set_value_const(extracted_value_id, extracted_const_value);
+
+            return;
+        }
+
         TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id) => {
             let info = stores.types.get_type_info(ptee_id);
             match info.kind {
-                TypeKind::Array { length, .. } => length,
-                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
+                TypeKind::Array { length, .. } => (length, true),
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                    // We don't know where we're extracting from, so magic up an unknown const.
+                    let [extracted_type_id] =
+                        stores.values.value_types([extracted_value_id]).unwrap();
+                    let extracted_const_value = new_const_val_for_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        extracted_type_id,
+                        ConstFieldInitState::Unknown,
+                    );
+
+                    stores
+                        .values
+                        .set_value_const(extracted_value_id, extracted_const_value);
+
+                    return;
+                }
+
                 TypeKind::Integer(_)
                 | TypeKind::Float(_)
                 | TypeKind::MultiPointer(_)
@@ -458,7 +524,7 @@ pub(crate) fn extract_array(
                 | TypeKind::FunctionPointer => unreachable!(),
             }
         }
-        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => return,
+
         TypeKind::Integer(_)
         | TypeKind::Float(_)
         | TypeKind::Bool
@@ -467,22 +533,117 @@ pub(crate) fn extract_array(
         | TypeKind::FunctionPointer => unreachable!(),
     };
 
-    if idx.to_usize() < array_length {
-        return;
-    }
+    let [input_array_const] = stores.values.value_consts([input_array_value_id]);
+    let extracted_const_value = 'get_const_val: {
+        if idx.to_usize() >= array_length {
+            let array_type_name = stores.strings.resolve(input_array_type_info.friendly_name);
+            let idx_value = idx.to_string();
+            let op_loc = stores.ops.get_token(op_id).location;
 
-    let array_type_name = stores.strings.resolve(array_type_info.friendly_name);
-    let idx_value = idx.to_string();
-    let op_loc = stores.ops.get_token(op_id).location;
+            Diagnostic::error(op_loc, "index out of bounds")
+                .with_label_chain(input_array_value_id, 0, array_type_name)
+                .with_label_chain(idx_value_id, 1, idx_value)
+                .attached(stores.diags, item_id);
 
-    Diagnostic::error(op_loc, "index out of bounds")
-        .with_label_chain(array_value_id, 0, array_type_name)
-        .with_label_chain(idx_value_id, 1, idx_value)
-        .attached(stores.diags, item_id);
+            had_error.set();
 
-    // ! TODO get value out of local variable
+            // Magic up an unknown const value for later evaluation.
+            let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+            new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                extracted_type_id,
+                ConstFieldInitState::Unknown,
+            )
+        } else if is_ptr {
+            let ConstVal::Pointer {
+                source_variable,
+                offsets: Some(offsets),
+            } = input_array_const
+            else {
+                // Pointer has invalid offsets, nothing else to do.
+                let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+                break 'get_const_val new_const_val_for_type(
+                    stores,
+                    pass_manager,
+                    had_error,
+                    extracted_type_id,
+                    ConstFieldInitState::Unknown,
+                );
+            };
 
-    had_error.set();
+            let Some(mut cur_state) = variable_state.get(source_variable) else {
+                // It's a global variable, so magic up an unknown value.
+                let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+                break 'get_const_val new_const_val_for_type(
+                    stores,
+                    pass_manager,
+                    had_error,
+                    extracted_type_id,
+                    ConstFieldInitState::Unknown,
+                );
+            };
+
+            let mut cur_pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
+            let mut offsets = offsets.to_owned();
+            offsets.push(Offset::Known(*idx));
+            for offset in offsets {
+                let Offset::Known(offset) = offset else {
+                    // We hit an unknown offset, which means we don't know which element of an array we're going into.
+                    // We'll just magic out a new unknown state for the final type.
+                    let [output_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+
+                    let new_const_val = new_const_val_for_type(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        output_type_id,
+                        ConstFieldInitState::Unknown,
+                    );
+
+                    break 'get_const_val new_const_val;
+                };
+
+                let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
+                match var_type_info.kind {
+                    TypeKind::Array { type_id, .. } => {
+                        cur_pointed_at_type = type_id;
+                        let ConstVal::Aggregate { sub_values } = cur_state else {
+                            unreachable!()
+                        };
+
+                        cur_state = &sub_values[offset.to_usize()];
+                    }
+                    TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                        let struct_def = stores.types.get_struct_def(cur_pointed_at_type);
+                        let field = &struct_def.fields[offset.to_usize()];
+                        cur_pointed_at_type = field.kind.inner;
+                        let ConstVal::Aggregate { sub_values } = cur_state else {
+                            unreachable!()
+                        };
+
+                        cur_state = &sub_values[offset.to_usize()];
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+
+            cur_state.clone()
+        } else {
+            // We're dealing with an array on the value stack.
+            let ConstVal::Aggregate { sub_values } = input_array_const else {
+                unreachable!()
+            };
+
+            sub_values[idx.to_usize()].clone()
+        }
+    };
+
+    stores
+        .values
+        .set_value_const(extracted_value_id, extracted_const_value);
 }
 
 pub(crate) fn load(

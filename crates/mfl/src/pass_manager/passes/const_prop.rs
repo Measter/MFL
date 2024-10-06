@@ -131,9 +131,14 @@ fn analyze_block(
                             op_id,
                         );
                     }
-                    Memory::ExtractArray { .. } => {
-                        memory::extract_array(stores, had_error, item_id, op_id)
-                    }
+                    Memory::ExtractArray { .. } => memory::extract_array(
+                        stores,
+                        pass_manager,
+                        had_error,
+                        variable_state,
+                        item_id,
+                        op_id,
+                    ),
                     Memory::Load => {
                         memory::load(
                             stores,
