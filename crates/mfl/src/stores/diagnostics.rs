@@ -266,6 +266,7 @@ impl Diagnostic {
         diags.add_detached(self);
     }
 
+    #[allow(unused)] // This function exists mostly for debugging the compiler.
     pub(crate) fn immediate(self, stores: &mut Stores) {
         display_single_diag(stores.values, stores.source, self);
     }
