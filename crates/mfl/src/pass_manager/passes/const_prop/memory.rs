@@ -546,16 +546,7 @@ pub(crate) fn extract_array(
                 .attached(stores.diags, item_id);
 
             had_error.set();
-
-            // Magic up an unknown const value for later evaluation.
-            let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
-            new_const_val_for_type(
-                stores,
-                pass_manager,
-                had_error,
-                extracted_type_id,
-                ConstFieldInitState::Unknown,
-            )
+            None
         } else if is_ptr {
             let ConstVal::Pointer {
                 source_variable,
@@ -563,26 +554,12 @@ pub(crate) fn extract_array(
             } = input_array_const
             else {
                 // Pointer has invalid offsets, nothing else to do.
-                let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
-                break 'get_const_val new_const_val_for_type(
-                    stores,
-                    pass_manager,
-                    had_error,
-                    extracted_type_id,
-                    ConstFieldInitState::Unknown,
-                );
+                break 'get_const_val None;
             };
 
             let Some(mut cur_state) = variable_state.get(source_variable) else {
                 // It's a global variable, so magic up an unknown value.
-                let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
-                break 'get_const_val new_const_val_for_type(
-                    stores,
-                    pass_manager,
-                    had_error,
-                    extracted_type_id,
-                    ConstFieldInitState::Unknown,
-                );
+                break 'get_const_val None;
             };
 
             let mut cur_pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
@@ -592,17 +569,7 @@ pub(crate) fn extract_array(
                 let Offset::Known(offset) = offset else {
                     // We hit an unknown offset, which means we don't know which element of an array we're going into.
                     // We'll just magic out a new unknown state for the final type.
-                    let [output_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
-
-                    let new_const_val = new_const_val_for_type(
-                        stores,
-                        pass_manager,
-                        had_error,
-                        output_type_id,
-                        ConstFieldInitState::Unknown,
-                    );
-
-                    break 'get_const_val new_const_val;
+                    break 'get_const_val None;
                 };
 
                 let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
@@ -630,16 +597,28 @@ pub(crate) fn extract_array(
                 }
             }
 
-            cur_state.clone()
+            Some(cur_state.clone())
         } else {
             // We're dealing with an array on the value stack.
             let ConstVal::Aggregate { sub_values } = input_array_const else {
                 unreachable!()
             };
 
-            sub_values[idx.to_usize()].clone()
+            Some(sub_values[idx.to_usize()].clone())
         }
     };
+
+    let extracted_const_value = extracted_const_value.unwrap_or_else(|| {
+        // If we couldn't extract a valid one, magic up an Unknown
+        let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+        new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            extracted_type_id,
+            ConstFieldInitState::Unknown,
+        )
+    });
 
     stores
         .values
