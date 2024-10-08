@@ -1,6 +1,7 @@
 use intcast::IntCast;
 
 use crate::{
+    error_signal::ErrorSignal,
     pass_manager::PassManager,
     stores::{
         ops::OpId,
@@ -9,6 +10,8 @@ use crate::{
     },
     Stores,
 };
+
+use super::{new_const_val_for_type, ConstFieldInitState};
 
 pub(crate) fn dup_over_rotate_swap_reverse(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id).clone();
@@ -41,6 +44,29 @@ pub(crate) fn push_float(stores: &mut Stores, op_id: OpId, value: Float) {
     stores
         .values
         .set_value_const(op_data.outputs[0], ConstVal::Float(value));
+}
+
+pub(crate) fn push_str(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    op_id: OpId,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let output_value_id = op_data.outputs[0];
+    let [output_type_id] = stores.values.value_types([output_value_id]).unwrap();
+
+    let new_const_value = new_const_val_for_type(
+        stores,
+        pass_manager,
+        had_error,
+        output_type_id,
+        ConstFieldInitState::Unknown,
+    );
+
+    stores
+        .values
+        .set_value_const(output_value_id, new_const_value);
 }
 
 pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {
