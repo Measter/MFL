@@ -343,9 +343,11 @@ impl Diagnostic {
 
         let diag = Diagnostic::error(
             op_loc,
-            format!("cannot {error_str} field from a `{value_type_name}`"),
+            format!("cannot {error_str} field of type `{value_type_name}`"),
         )
-        .with_label_chain(input_struct_value_id, 1, value_type_name);
+        .with_label_chain(input_struct_value_id, 1, value_type_name)
+        .with_note(format!("`{value_type_name}` is not a struct"));
+
         stores.diags.add_attached(item_id, diag)
     }
 
