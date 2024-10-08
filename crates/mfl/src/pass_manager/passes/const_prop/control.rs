@@ -55,21 +55,31 @@ pub(crate) fn prologue(
     had_error: &mut ErrorSignal,
     variable_state: &mut HashMap<ItemId, ConstVal>,
     item_id: ItemId,
+    op_id: OpId,
 ) {
     let nr_sig = stores.sigs.nrir.get_item_signature(item_id).clone();
     let tr_sig = stores.sigs.trir.get_item_signature(item_id).clone();
+    let mut stack_value_ids = stores.ops.get_op_io(op_id).outputs.clone().into_iter();
     for (param, param_type_id) in nr_sig.entry.iter().zip(&tr_sig.entry) {
-        let StackDefItemNameResolved::Var { name, .. } = param else {
-            continue;
-        };
-
-        *variable_state.get_mut(name).unwrap() = new_const_val_for_type(
+        let new_const_value = new_const_val_for_type(
             stores,
             pass_manager,
             had_error,
             *param_type_id,
             ConstFieldInitState::Unknown,
         );
+
+        match param {
+            StackDefItemNameResolved::Var { name, .. } => {
+                *variable_state.get_mut(name).unwrap() = new_const_value;
+            }
+            StackDefItemNameResolved::Stack(_) => {
+                let next_value_id = stack_value_ids.next().unwrap();
+                stores
+                    .values
+                    .set_value_const(next_value_id, new_const_value);
+            }
+        }
     }
 }
 
