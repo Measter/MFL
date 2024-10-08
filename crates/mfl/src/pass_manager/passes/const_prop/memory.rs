@@ -740,6 +740,105 @@ pub(crate) fn insert_struct(
     }
 }
 
+pub(crate) fn extract_struct(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
+    op_id: OpId,
+    field_name: Spur,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let (output_struct_value_id, extracted_value_id) = match op_data.outputs() {
+        [v] => (None, *v),
+        [s, v] => (Some(*s), *v),
+        _ => unreachable!(),
+    };
+    let &[input_struct_value_id] = op_data.inputs.as_slice() else {
+        unreachable!()
+    };
+
+    let [input_struct_type_id] = stores.values.value_types([input_struct_value_id]).unwrap();
+    let input_struct_type_info = stores.types.get_type_info(input_struct_type_id);
+
+    let (struct_type_id, is_ptr) = match input_struct_type_info.kind {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => (input_struct_type_id, false),
+
+        TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id) => {
+            let info = stores.types.get_type_info(ptee_id);
+            match info.kind {
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => (ptee_id, true),
+
+                TypeKind::Array { .. }
+                | TypeKind::Integer(_)
+                | TypeKind::Float(_)
+                | TypeKind::MultiPointer(_)
+                | TypeKind::SinglePointer(_)
+                | TypeKind::Bool
+                | TypeKind::GenericStructBase(_)
+                | TypeKind::Enum(_)
+                | TypeKind::FunctionPointer => unreachable!(),
+            }
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::FunctionPointer
+        | TypeKind::Bool
+        | TypeKind::Enum(_)
+        | TypeKind::GenericStructBase(_) => {
+            unreachable!()
+        }
+    };
+
+    let struct_def = stores.types.get_struct_def(struct_type_id);
+    let field_idx = struct_def
+        .fields
+        .iter()
+        .position(|f| f.name.inner == field_name)
+        .unwrap();
+
+    let [input_struct_const_value] = stores.values.value_consts([input_struct_value_id]);
+    let extracted_const_value = if is_ptr {
+        try_extract_from_pointer(
+            stores.types,
+            stores.sigs,
+            variable_state,
+            input_struct_const_value,
+            field_idx.to_u64(),
+        )
+    } else {
+        let ConstVal::Aggregate { sub_values } = input_struct_const_value else {
+            unreachable!()
+        };
+
+        Some(sub_values[field_idx].clone())
+    };
+
+    if let Some(output_struct_value_id) = output_struct_value_id {
+        stores
+            .values
+            .set_value_const(output_struct_value_id, input_struct_const_value.clone());
+    }
+
+    let extracted_const_value = extracted_const_value.unwrap_or_else(|| {
+        // If we couldn't extract a valid one, magic up an Unknown
+        let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+        new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            extracted_type_id,
+            ConstFieldInitState::Unknown,
+        )
+    });
+
+    stores
+        .values
+        .set_value_const(extracted_value_id, extracted_const_value);
+}
+
 pub(crate) fn load(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
