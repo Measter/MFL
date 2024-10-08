@@ -712,6 +712,8 @@ pub(crate) fn insert_struct(
             input_struct_value_id,
         );
 
+        had_error.set();
+
         return;
     };
 
