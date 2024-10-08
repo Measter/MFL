@@ -625,6 +625,106 @@ pub(crate) fn extract_array(
         .set_value_const(extracted_value_id, extracted_const_value);
 }
 
+pub(crate) fn insert_struct(
+    stores: &mut Stores,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
+    op_id: OpId,
+    field_name: Spur,
+) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let output_value_id = op_data.outputs.first().copied();
+    let &[inserted_value_id, input_struct_value_id] = op_data.inputs.as_slice() else {
+        unreachable!()
+    };
+
+    let [input_struct_type_id] = stores.values.value_types([input_struct_value_id]).unwrap();
+    let input_struct_type_info = stores.types.get_type_info(input_struct_type_id);
+
+    let (struct_type_id, is_ptr) = match input_struct_type_info.kind {
+        TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => (input_struct_type_id, false),
+
+        TypeKind::MultiPointer(ptee_id) | TypeKind::SinglePointer(ptee_id) => {
+            let info = stores.types.get_type_info(ptee_id);
+            match info.kind {
+                TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => (ptee_id, true),
+
+                TypeKind::Array { .. }
+                | TypeKind::Integer(_)
+                | TypeKind::Float(_)
+                | TypeKind::MultiPointer(_)
+                | TypeKind::SinglePointer(_)
+                | TypeKind::Bool
+                | TypeKind::GenericStructBase(_)
+                | TypeKind::Enum(_)
+                | TypeKind::FunctionPointer => unreachable!(),
+            }
+        }
+
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::FunctionPointer
+        | TypeKind::Bool
+        | TypeKind::Enum(_)
+        | TypeKind::GenericStructBase(_) => {
+            unreachable!()
+        }
+    };
+
+    let struct_def = stores.types.get_struct_def(struct_type_id);
+    let field_idx = struct_def
+        .fields
+        .iter()
+        .position(|f| f.name.inner == field_name)
+        .unwrap();
+
+    let [inserted_value_const_value, input_struct_const_value] = stores
+        .values
+        .value_consts([inserted_value_id, input_struct_value_id]);
+
+    let output_const_value = if is_ptr {
+        let ConstVal::Pointer {
+            source_variable,
+            offsets: Some(offsets),
+        } = input_struct_const_value
+        else {
+            // Nothing we can do here.
+            return;
+        };
+
+        let Some(variable_state) = variable_state.get_mut(source_variable) else {
+            // It's a global variable, nothing to do.
+            return;
+        };
+
+        let mut offsets = offsets.clone();
+        offsets.push(Offset::Known(field_idx.to_u64()));
+
+        write_const_val_to_variable(
+            stores.types,
+            variable_state,
+            inserted_value_const_value,
+            struct_type_id,
+            offsets.iter(),
+        );
+
+        input_struct_const_value.clone()
+    } else {
+        let ConstVal::Aggregate { mut sub_values } = input_struct_const_value.clone() else {
+            unreachable!()
+        };
+
+        sub_values[field_idx] = inserted_value_const_value.clone();
+        ConstVal::Aggregate { sub_values }
+    };
+
+    if let Some(output_value_id) = output_value_id {
+        stores
+            .values
+            .set_value_const(output_value_id, output_const_value);
+    }
+}
+
 pub(crate) fn load(
     stores: &mut Stores,
     pass_manager: &mut PassManager,

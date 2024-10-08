@@ -153,10 +153,11 @@ fn analyze_block(
                         memory::store(stores, variable_state, op_id);
                     }
                     Memory::PackArray { .. } => memory::pack_struct_and_array(stores, op_id),
-
-                    // Nothing to do here.
-                    Memory::ExtractStruct { .. } | Memory::InsertStruct { .. } | Memory::Unpack => {
+                    Memory::InsertStruct { field_name, .. } => {
+                        memory::insert_struct(stores, variable_state, op_id, field_name.inner)
                     }
+                    // Nothing to do here.
+                    Memory::ExtractStruct { .. } | Memory::Unpack => {}
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
