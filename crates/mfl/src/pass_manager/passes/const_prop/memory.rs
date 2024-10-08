@@ -12,6 +12,7 @@ use crate::{
     stores::{
         diagnostics::Diagnostic,
         ops::OpId,
+        signatures::SigStore,
         types::{Integer, TypeId, TypeKind, TypeStore},
         values::{ConstVal, InitState, Offset},
     },
@@ -84,6 +85,65 @@ fn write_const_val_to_variable(
         // No more offsets to go, we've reached the final destination
         *state = to_store_value.clone();
     }
+}
+
+fn try_extract_from_pointer(
+    type_store: &mut TypeStore,
+    sig_store: &mut SigStore,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
+    input_pointer_const: &ConstVal,
+    new_idx: u64,
+) -> Option<ConstVal> {
+    let ConstVal::Pointer {
+        source_variable,
+        offsets: Some(offsets),
+    } = input_pointer_const
+    else {
+        // Pointer has invalid offsets, nothing else to do.
+        return None;
+    };
+
+    let Some(mut cur_state) = variable_state.get(source_variable) else {
+        // It's a global variable, so magic up an unknown value.
+        return None;
+    };
+
+    let mut cur_pointed_at_type = sig_store.trir.get_variable_type(*source_variable);
+    let mut offsets = offsets.to_owned();
+    offsets.push(Offset::Known(new_idx));
+    for offset in offsets {
+        let Offset::Known(offset) = offset else {
+            // We hit an unknown offset, which means we don't know which element of an array we're going into.
+            // We'll just magic out a new unknown state for the final type.
+            return None;
+        };
+
+        let var_type_info = type_store.get_type_info(cur_pointed_at_type);
+        match var_type_info.kind {
+            TypeKind::Array { type_id, .. } => {
+                cur_pointed_at_type = type_id;
+                let ConstVal::Aggregate { sub_values } = cur_state else {
+                    unreachable!()
+                };
+
+                cur_state = &sub_values[offset.to_usize()];
+            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                let struct_def = type_store.get_struct_def(cur_pointed_at_type);
+                let field = &struct_def.fields[offset.to_usize()];
+                cur_pointed_at_type = field.kind.inner;
+                let ConstVal::Aggregate { sub_values } = cur_state else {
+                    unreachable!()
+                };
+
+                cur_state = &sub_values[offset.to_usize()];
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    Some(cur_state.clone())
 }
 
 pub(crate) fn index(
@@ -534,78 +594,33 @@ pub(crate) fn extract_array(
     };
 
     let [input_array_const] = stores.values.value_consts([input_array_value_id]);
-    let extracted_const_value = 'get_const_val: {
-        if idx.to_usize() >= array_length {
-            let array_type_name = stores.strings.resolve(input_array_type_info.friendly_name);
-            let idx_value = idx.to_string();
-            let op_loc = stores.ops.get_token(op_id).location;
+    let extracted_const_value = if idx.to_usize() >= array_length {
+        let array_type_name = stores.strings.resolve(input_array_type_info.friendly_name);
+        let idx_value = idx.to_string();
+        let op_loc = stores.ops.get_token(op_id).location;
 
-            Diagnostic::error(op_loc, "index out of bounds")
-                .with_label_chain(input_array_value_id, 0, array_type_name)
-                .with_label_chain(idx_value_id, 1, idx_value)
-                .attached(stores.diags, item_id);
+        Diagnostic::error(op_loc, "index out of bounds")
+            .with_label_chain(input_array_value_id, 0, array_type_name)
+            .with_label_chain(idx_value_id, 1, idx_value)
+            .attached(stores.diags, item_id);
 
-            had_error.set();
-            None
-        } else if is_ptr {
-            let ConstVal::Pointer {
-                source_variable,
-                offsets: Some(offsets),
-            } = input_array_const
-            else {
-                // Pointer has invalid offsets, nothing else to do.
-                break 'get_const_val None;
-            };
+        had_error.set();
+        None
+    } else if is_ptr {
+        try_extract_from_pointer(
+            stores.types,
+            stores.sigs,
+            variable_state,
+            input_array_const,
+            *idx,
+        )
+    } else {
+        // We're dealing with an array on the value stack.
+        let ConstVal::Aggregate { sub_values } = input_array_const else {
+            unreachable!()
+        };
 
-            let Some(mut cur_state) = variable_state.get(source_variable) else {
-                // It's a global variable, so magic up an unknown value.
-                break 'get_const_val None;
-            };
-
-            let mut cur_pointed_at_type = stores.sigs.trir.get_variable_type(*source_variable);
-            let mut offsets = offsets.to_owned();
-            offsets.push(Offset::Known(*idx));
-            for offset in offsets {
-                let Offset::Known(offset) = offset else {
-                    // We hit an unknown offset, which means we don't know which element of an array we're going into.
-                    // We'll just magic out a new unknown state for the final type.
-                    break 'get_const_val None;
-                };
-
-                let var_type_info = stores.types.get_type_info(cur_pointed_at_type);
-                match var_type_info.kind {
-                    TypeKind::Array { type_id, .. } => {
-                        cur_pointed_at_type = type_id;
-                        let ConstVal::Aggregate { sub_values } = cur_state else {
-                            unreachable!()
-                        };
-
-                        cur_state = &sub_values[offset.to_usize()];
-                    }
-                    TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-                        let struct_def = stores.types.get_struct_def(cur_pointed_at_type);
-                        let field = &struct_def.fields[offset.to_usize()];
-                        cur_pointed_at_type = field.kind.inner;
-                        let ConstVal::Aggregate { sub_values } = cur_state else {
-                            unreachable!()
-                        };
-
-                        cur_state = &sub_values[offset.to_usize()];
-                    }
-
-                    _ => unreachable!(),
-                }
-            }
-
-            Some(cur_state.clone())
-        } else {
-            // We're dealing with an array on the value stack.
-            let ConstVal::Aggregate { sub_values } = input_array_const else {
-                unreachable!()
-            };
-
-            Some(sub_values[idx.to_usize()].clone())
-        }
+        Some(sub_values[idx.to_usize()].clone())
     };
 
     let extracted_const_value = extracted_const_value.unwrap_or_else(|| {
