@@ -687,11 +687,15 @@ pub(crate) fn insert_struct(
     };
 
     let struct_def = stores.types.get_struct_def(struct_type_id);
-    let field_idx = struct_def
-        .fields
-        .iter()
-        .position(|f| f.name.inner == field_name)
-        .unwrap();
+    let field_idx = if struct_def.is_union {
+        0
+    } else {
+        struct_def
+            .fields
+            .iter()
+            .position(|f| f.name.inner == field_name)
+            .unwrap()
+    };
 
     let [inserted_value_const_value, input_struct_const_value] = stores
         .values
@@ -793,11 +797,28 @@ pub(crate) fn extract_struct(
     };
 
     let struct_def = stores.types.get_struct_def(struct_type_id);
-    let field_idx = struct_def
-        .fields
-        .iter()
-        .position(|f| f.name.inner == field_name)
-        .unwrap();
+    let field_idx = if struct_def.is_union {
+        // We may be doing type punning. We'll assume for now that this is what's happening.
+        // If we couldn't extract a valid one, magic up an Unknown
+        let [extracted_type_id] = stores.values.value_types([extracted_value_id]).unwrap();
+        let extracted_const_value = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            extracted_type_id,
+            ConstFieldInitState::Unknown,
+        );
+        stores
+            .values
+            .set_value_const(extracted_value_id, extracted_const_value);
+        return;
+    } else {
+        struct_def
+            .fields
+            .iter()
+            .position(|f| f.name.inner == field_name)
+            .unwrap()
+    };
 
     let [input_struct_const_value] = stores.values.value_consts([input_struct_value_id]);
     let extracted_const_value = if is_ptr {
