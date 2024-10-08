@@ -171,7 +171,7 @@ fn analyze_block(
                         op_id,
                         field_name.inner,
                     ),
-                    Memory::Unpack => {}
+                    Memory::Unpack => memory::unpack(stores, op_id),
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),

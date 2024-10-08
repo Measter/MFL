@@ -1035,6 +1035,26 @@ pub(crate) fn pack_struct_and_array(stores: &mut Stores, op_id: OpId) {
     );
 }
 
+pub(crate) fn unpack(stores: &mut Stores, op_id: OpId) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let input_value_id = op_data.inputs[0];
+    let output_value_ids = op_data.outputs();
+
+    let [input_const_value] = stores.values.value_consts([input_value_id]);
+    let ConstVal::Aggregate {
+        sub_values: input_sub_values,
+    } = input_const_value.clone()
+    else {
+        unreachable!()
+    };
+
+    for (output_value_id, input_const_value) in output_value_ids.iter().zip(input_sub_values) {
+        stores
+            .values
+            .set_value_const(*output_value_id, input_const_value.clone());
+    }
+}
+
 pub(crate) fn init_local(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
