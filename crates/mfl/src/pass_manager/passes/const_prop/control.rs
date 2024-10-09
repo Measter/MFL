@@ -153,6 +153,7 @@ pub(crate) fn analyze_cond(
     variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
     proc_item_id: ItemId,
+    op_id: OpId,
     cond_op: Cond,
 ) {
     let pre_cond_variable_state = variable_state.clone();
@@ -204,6 +205,24 @@ pub(crate) fn analyze_cond(
     for (var_id, final_state) in &mut final_variable_state {
         let post_block_state = &variable_state[var_id];
         merge_branched_const_val(post_block_state, final_state);
+    }
+
+    let merge_values = stores.values.get_merge_values(op_id).unwrap().clone();
+    for merge in merge_values {
+        let [(_, first), rest @ ..] = merge.inputs.as_slice() else {
+            unreachable!()
+        };
+
+        let [first_const_val] = stores.values.value_consts([*first]);
+        let first_const_val = first_const_val.clone();
+
+        let new_const_value = rest.iter().fold(first_const_val, |mut current_cv, (_, b)| {
+            let [next_cv] = stores.values.value_consts([*b]);
+            merge_branched_const_val(next_cv, &mut current_cv);
+            current_cv
+        });
+
+        stores.values.set_value_const(merge.output, new_const_value);
     }
 
     *variable_state = final_variable_state;
