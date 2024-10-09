@@ -869,6 +869,31 @@ pub(crate) fn load(
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
+
+    // Load also calls function pointers. In that case, we should behave like a function call.
+    let input_value_id = *op_data.inputs.last().unwrap();
+    let [input_type_id] = stores.values.value_types([input_value_id]).unwrap();
+    let input_type_info = stores.types.get_type_info(input_type_id);
+    if let TypeKind::FunctionPointer = input_type_info.kind {
+        let outputs = op_data.outputs.to_owned();
+        for output_value_id in outputs {
+            let [output_type_id] = stores.values.value_types([output_value_id]).unwrap();
+            let new_const_value = new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                output_type_id,
+                ConstFieldInitState::Unknown,
+            );
+
+            stores
+                .values
+                .set_value_const(output_value_id, new_const_value);
+        }
+
+        return;
+    }
+
     let output_value_id = op_data.outputs[0];
     let var_value_id = op_data.inputs[0];
     let [var_const_value] = stores.values.value_consts([var_value_id]);
