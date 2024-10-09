@@ -903,6 +903,21 @@ pub(crate) fn load(
         offsets: Some(offsets),
     } = var_const_value
     else {
+        // We have an invalid/unknown pointer.
+        // We'll just assume the value is initialized with Unknown.
+        let [output_type_id] = stores.values.value_types([output_value_id]).unwrap();
+        let new_const_val = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            output_type_id,
+            ConstFieldInitState::Unknown,
+        );
+
+        stores
+            .values
+            .set_value_const(output_value_id, new_const_val);
+
         return;
     };
 
