@@ -119,6 +119,7 @@ fn analyze_block(
                             variable_state,
                             had_error,
                             item_id,
+                            op_id,
                             while_op,
                         );
                     }

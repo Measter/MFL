@@ -240,6 +240,7 @@ pub(crate) fn analyze_while(
     variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
     proc_item_id: ItemId,
+    op_id: OpId,
     while_op: While,
 ) {
     super::analyze_block(
@@ -252,6 +253,21 @@ pub(crate) fn analyze_while(
     );
 
     let post_condition_var_state = variable_state.clone();
+    let merge_values = stores.values.get_merge_values(op_id).unwrap().clone();
+    for merge in merge_values {
+        let [output_type_id] = stores.values.value_types([merge.output]).unwrap();
+
+        let new_const_value = new_const_val_for_type(
+            stores,
+            pass_manager,
+            had_error,
+            output_type_id,
+            ConstFieldInitState::Unknown,
+        );
+
+        stores.values.set_value_const(merge.output, new_const_value);
+    }
+
     super::analyze_block(
         stores,
         pass_manager,
@@ -260,5 +276,9 @@ pub(crate) fn analyze_while(
         proc_item_id,
         while_op.body_block,
     );
-    variable_state.clone_from(&post_condition_var_state);
+
+    for (var_id, final_state) in variable_state {
+        let post_condition_state = &post_condition_var_state[var_id];
+        merge_branched_const_val(post_condition_state, final_state);
+    }
 }
