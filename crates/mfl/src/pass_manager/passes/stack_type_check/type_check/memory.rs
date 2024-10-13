@@ -865,6 +865,35 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
     }
 }
 
+pub(crate) fn init_array(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    count: u32,
+) {
+    let op_loc = stores.ops.get_token(op_id).location;
+
+    if count == 0 {
+        Diagnostic::error(op_loc, "cannot init an array of length 0")
+            .attached(stores.diags, item_id);
+
+        had_error.set();
+        return;
+    }
+
+    let op_data = stores.ops.get_op_io(op_id);
+    let init_value_id = op_data.inputs[0];
+    let Some([init_type_id]) = stores.values.value_types([init_value_id]) else {
+        return;
+    };
+    let array_type = stores
+        .types
+        .get_array(stores.strings, init_type_id, count.to_usize());
+    let output_value_id = op_data.outputs[0];
+    stores.values.set_value_type(output_value_id, array_type.id);
+}
+
 pub(crate) fn pack_array(
     stores: &mut Stores,
     had_error: &mut ErrorSignal,

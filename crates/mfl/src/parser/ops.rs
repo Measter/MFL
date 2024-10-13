@@ -194,6 +194,7 @@ pub fn parse_simple_op(
             return parse_drop_dup_over_reverse_swap_syscall(stores, token_iter, item_id, token);
         }
 
+        TokenKind::Array => return parse_init_array(stores, token_iter, item_id, token),
         TokenKind::Pack => return parse_pack(stores, token_iter, item_id, token),
         TokenKind::Unpack => OpCode::Basic(Basic::Memory(Memory::Unpack)),
         TokenKind::Rot => return parse_rot(stores, token_iter, item_id, token),
@@ -771,6 +772,29 @@ fn parse_float_op(
             value: Float(value),
         }),
         overall_location,
+    ))
+}
+
+pub fn parse_init_array(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    token: Spanned<Token>,
+) -> ParseOpResult {
+    let (count, op_end) = if token_iter.next_is_group(BracketKind::Paren) {
+        parse_integer_param(stores, token_iter, item_id, token)?
+    } else {
+        let default_amount = if token.inner.kind == TokenKind::Reverse {
+            2
+        } else {
+            1
+        };
+        (default_amount.with_span(token.location), token.location)
+    };
+
+    Ok((
+        OpCode::Basic(Basic::Memory(Memory::InitArray { count: count.inner })),
+        op_end,
     ))
 }
 

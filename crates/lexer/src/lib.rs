@@ -55,6 +55,9 @@ pub enum TokenKind {
     #[token("&")]
     Ampersand,
 
+    #[token("array")]
+    Array,
+
     #[token("assert")]
     Assert,
 
@@ -285,6 +288,7 @@ impl TokenKind {
     pub fn kind_str(self) -> &'static str {
         match self {
             TokenKind::Ampersand => "&",
+            TokenKind::Array => "array",
             TokenKind::Assert => "assert",
             TokenKind::AssumeInit => "init",
             TokenKind::BitAnd => "and",

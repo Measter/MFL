@@ -674,19 +674,22 @@ where
     Ok(int)
 }
 
-pub fn parse_integer_param(
+pub fn parse_integer_param<T>(
     stores: &mut Stores,
     token_iter: &mut TokenIter,
     item_id: ItemId,
     token: Spanned<Token>,
-) -> Result<(Spanned<u8>, SourceLocation), ()> {
+) -> Result<(Spanned<T>, SourceLocation), ()>
+where
+    T: PrimInt + Unsigned + FromStr + Display,
+{
     let delim = token_iter
         .expect_group(stores, item_id, BracketKind::Paren, token)
         .with_kinds(stores, item_id, Matcher("integer", integer_tokens))
         .with_length(stores, item_id, 1)?;
 
     let count_token = delim.tokens[0].unwrap_single();
-    let count: u8 = parse_integer_lexeme(stores, item_id, count_token)?;
+    let count: T = parse_integer_lexeme(stores, item_id, count_token)?;
     Ok((count.with_span(count_token.location), delim.span()))
 }
 

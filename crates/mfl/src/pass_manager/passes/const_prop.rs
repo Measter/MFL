@@ -130,6 +130,7 @@ fn analyze_block(
                     Memory::FieldAccess { field_name } => {
                         memory::field_access(stores, field_name.inner, op_id)
                     }
+                    Memory::InitArray { count } => memory::init_array(stores, op_id, count),
                     Memory::InsertArray { .. } => {
                         memory::insert_array(
                             stores,

@@ -275,7 +275,8 @@ impl Backend {
                         TokenKind::Ident if is_primitive(string_store, token) => Legend::Type,
 
                         // Function
-                        TokenKind::Drop
+                        TokenKind::Array
+                        | TokenKind::Drop
                         | TokenKind::Dup
                         | TokenKind::Extract(_)
                         | TokenKind::Hash

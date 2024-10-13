@@ -660,6 +660,9 @@ impl<'ctx> CodeGen<'ctx> {
                         self.build_field_access(ds, value_store, op_id, field_name)?
                     }
                     Memory::Index => self.build_index(ds, value_store, function, op_id)?,
+                    Memory::InitArray { count } => {
+                        self.build_init_array(ds, value_store, op_id, count)?
+                    }
                     Memory::InsertArray { emit_array } => {
                         self.build_insert_array(ds, value_store, function, op_id, emit_array)?
                     }

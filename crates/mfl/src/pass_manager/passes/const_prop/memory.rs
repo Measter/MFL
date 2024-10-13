@@ -1081,6 +1081,17 @@ pub(crate) fn pack_enum(stores: &mut Stores, op_id: OpId, enum_id: TypeId) {
     );
 }
 
+pub(crate) fn init_array(stores: &mut Stores, op_id: OpId, count: u32) {
+    let op_data = stores.ops.get_op_io(op_id);
+    let [input_const] = stores.values.value_consts([op_data.inputs[0]]);
+
+    let values = (0..count).map(|_| input_const.clone()).collect();
+    stores.values.set_value_const(
+        op_data.outputs[0],
+        ConstVal::Aggregate { sub_values: values },
+    );
+}
+
 pub(crate) fn pack_struct_and_array(stores: &mut Stores, op_id: OpId) {
     let op_data = stores.ops.get_op_io(op_id);
     let mut values = Vec::new();

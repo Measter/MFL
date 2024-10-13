@@ -15,12 +15,8 @@ proc entry [] to [] {
 
     var memory State
     0 memory.ptr!
-    0(u64) while dup 512< {
-        0 over memory.tape#!
-        1+
-    } drop
+    0(u8) array(512) memory.tape!
     1 memory.counter!
-    assumeinit(memory) // ConstProp is a little dumb.
 
     0(u64) while dup input.length@ < {
         dup input#@

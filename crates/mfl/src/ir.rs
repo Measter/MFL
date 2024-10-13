@@ -502,6 +502,10 @@ pub enum Memory {
     FieldAccess {
         field_name: Spanned<Spur>,
     },
+    // Takes 1 item off the stack and spreads it out over a `T[count]`.
+    InitArray {
+        count: u32,
+    },
     Index,
     InsertArray {
         emit_array: bool,
@@ -511,6 +515,7 @@ pub enum Memory {
         field_name: Spanned<Spur>,
     },
     Load,
+    /// Takes `count` items off the stack, and packs them into an array.
     PackArray {
         count: u8,
     },

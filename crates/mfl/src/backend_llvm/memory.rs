@@ -49,6 +49,35 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
+    pub(super) fn build_init_array(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        count: u32,
+    ) -> InkwellResult {
+        let op_io = ds.ops.get_op_io(op_id);
+        let output_value_id = op_io.outputs()[0];
+        let [output_type_id] = ds.values.value_types([output_value_id]).unwrap();
+
+        let aggr_llvm_type = self.get_type(ds.types, output_type_id);
+        let aggr_value = aggr_llvm_type
+            .const_zero()
+            .into_array_value()
+            .as_aggregate_value_enum();
+        let input_value = value_store.load_value(self, op_io.inputs[0], ds.values, ds.types)?;
+
+        let array = (0..count).fold(aggr_value, |aggr, idx| {
+            self.builder
+                .build_insert_value(aggr, input_value, idx, "")
+                .unwrap()
+        });
+
+        value_store.store_value(self, output_value_id, array.as_basic_value_enum())?;
+
+        Ok(())
+    }
+
     fn build_pack_aggregate(
         &mut self,
         ds: &mut Stores,
