@@ -1,4 +1,5 @@
 use hashbrown::HashMap;
+use intcast::IntCast;
 use stores::items::ItemId;
 
 use crate::{
@@ -8,8 +9,8 @@ use crate::{
     stores::{
         block::BlockId,
         item::ItemKind,
-        types::{TypeId, TypeKind},
-        values::ConstVal,
+        types::{TypeId, TypeKind, TypeStore},
+        values::{ConstVal, Offset},
     },
     Stores,
 };
@@ -19,6 +20,72 @@ mod comparative;
 mod control;
 mod memory;
 mod stack_ops;
+
+fn write_const_val_to_variable(
+    type_store: &mut TypeStore,
+    state: &mut ConstVal,
+    to_store_value: &ConstVal,
+    cur_pointed_at_type: TypeId,
+    mut offsets: std::slice::Iter<'_, Offset>,
+) {
+    if let Some(next) = offsets.next() {
+        let var_type_info = type_store.get_type_info(cur_pointed_at_type);
+        match var_type_info.kind {
+            TypeKind::Array { type_id, .. } => {
+                let ConstVal::Aggregate { sub_values } = state else {
+                    unreachable!()
+                };
+
+                match next {
+                    Offset::Unknown => {
+                        // We are in an array, but don't know where in the array we are writing to.
+                        // We should iterate over each index in the array, and write a final ConstVal::Unknown.
+                        for sv in sub_values {
+                            write_const_val_to_variable(
+                                type_store,
+                                sv,
+                                &ConstVal::Unknown,
+                                type_id,
+                                offsets.clone(),
+                            );
+                        }
+                    }
+                    Offset::Known(offset) => {
+                        write_const_val_to_variable(
+                            type_store,
+                            &mut sub_values[offset.to_usize()],
+                            to_store_value,
+                            type_id,
+                            offsets,
+                        );
+                    }
+                }
+            }
+            TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
+                let ConstVal::Aggregate { sub_values } = state else {
+                    unreachable!()
+                };
+
+                let struct_def = type_store.get_struct_def(cur_pointed_at_type);
+                let Offset::Known(offset) = next else {
+                    panic!("ICE: struct field offset is unknown")
+                };
+                write_const_val_to_variable(
+                    type_store,
+                    &mut sub_values[offset.to_usize()],
+                    to_store_value,
+                    struct_def.fields[offset.to_usize()].kind.inner,
+                    offsets,
+                );
+            }
+
+            _ => unreachable!(),
+        }
+    } else {
+        // No more offsets to go, we've reached the final destination
+        *state = to_store_value.clone();
+    }
+}
 
 fn analyze_block(
     stores: &mut Stores,
@@ -195,7 +262,7 @@ fn analyze_block(
                     memory::init_local(stores, pass_manager, had_error, variable_state, id);
                 }
                 TypeResolvedOp::CallFunction { .. } => {
-                    control::call_function(stores, pass_manager, had_error, op_id)
+                    control::call_function(stores, pass_manager, variable_state, had_error, op_id)
                 }
                 TypeResolvedOp::PackStruct { .. } => memory::pack_struct_and_array(stores, op_id),
                 // Nothing to do here.

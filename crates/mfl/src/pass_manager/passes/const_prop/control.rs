@@ -8,12 +8,12 @@ use crate::{
     simulate::SimulatorValue,
     stores::{
         diagnostics::Diagnostic, item::ItemKind, ops::OpId, signatures::StackDefItemNameResolved,
-        values::ConstVal,
+        types::TypeKind, values::ConstVal,
     },
     Stores,
 };
 
-use super::{new_const_val_for_type, ConstFieldInitState};
+use super::{new_const_val_for_type, write_const_val_to_variable, ConstFieldInitState};
 
 pub(crate) fn epilogue_return(
     stores: &mut Stores,
@@ -116,12 +116,77 @@ pub(crate) fn cp_const(
 pub(crate) fn call_function(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
+    variable_state: &mut HashMap<ItemId, ConstVal>,
     had_error: &mut ErrorSignal,
     op_id: OpId,
 ) {
-    let outputs = stores.ops.get_op_io(op_id).outputs.clone();
+    let op_data = stores.ops.get_op_io(op_id).clone();
 
-    for value_id in outputs {
+    // If any of our inputs are pointers to local variables, we must assume that the function
+    // will change it.
+
+    for value_id in op_data.inputs {
+        let [ConstVal::Pointer {
+            source_variable,
+            offsets,
+        }] = stores.values.value_consts([value_id])
+        else {
+            continue;
+        };
+        let source_variable = *source_variable;
+
+        if !variable_state.contains_key(&source_variable) {
+            continue;
+        }
+
+        let variable_type = stores.sigs.trir.get_variable_type(source_variable);
+        if let Some(offsets) = offsets {
+            let [input_type_id] = stores.values.value_types([value_id]).unwrap();
+            let input_type_info = stores.types.get_type_info(input_type_id);
+            let (TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id)) =
+                input_type_info.kind
+            else {
+                unreachable!()
+            };
+
+            let offsets = offsets.clone();
+
+            let new_value = new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                ptee_type_id,
+                ConstFieldInitState::Unknown,
+            );
+
+            let Some(state) = variable_state.get_mut(&source_variable) else {
+                unreachable!()
+            };
+
+            write_const_val_to_variable(
+                stores.types,
+                state,
+                &new_value,
+                variable_type,
+                offsets.iter(),
+            );
+        } else {
+            // Clobber the entire variable.
+            let variable_type = stores.sigs.trir.get_variable_type(source_variable);
+
+            let new_value = new_const_val_for_type(
+                stores,
+                pass_manager,
+                had_error,
+                variable_type,
+                ConstFieldInitState::Unknown,
+            );
+
+            variable_state.insert(source_variable, new_value);
+        }
+    }
+
+    for value_id in op_data.outputs {
         let [output_type_id] = stores.values.value_types([value_id]).unwrap();
 
         let new_value = new_const_val_for_type(
