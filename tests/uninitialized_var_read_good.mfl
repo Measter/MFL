@@ -5,29 +5,29 @@
 // END
 
 proc good_read [] to [u8] {
-    var yay u8
+    var yay: u8
     1 yay!
     yay@
 }
 
-proc good_read_var_param [var yay u8] to [u8] {
+proc good_read_var_param [var yay: u8] to [u8] {
     yay@
 }
 
-proc good_read_var_param2 [var yay u8] to [u8] {
-    var bar u8
+proc good_read_var_param2 [var yay: u8] to [u8] {
+    var bar: u8
     yay@ bar!
     bar@
 }
 
 proc good_read_param [u8] to [u8] {
-    var yay u8
+    var yay: u8
     yay!
     yay@
 }
 
 proc good_read_cond_condition [] to [] {
-    var yay u8
+    var yay: u8
 
     cond {
         6 yay! true { yay@ drop }
@@ -36,7 +36,7 @@ proc good_read_cond_condition [] to [] {
 }
 
 proc good_read_after_cond_arms [] to [u8] {
-    var yay u8
+    var yay: u8
 
     cond {
         true { 7 yay! }
@@ -47,7 +47,7 @@ proc good_read_after_cond_arms [] to [u8] {
 }
 
 proc good_read_after_cond_arm_conditions [] to [u8] {
-    var yay u8
+    var yay: u8
 
     cond {
         9 yay! true { }
@@ -59,7 +59,7 @@ proc good_read_after_cond_arm_conditions [] to [u8] {
 }
 
 proc good_read_while_condition [] to [u8] {
-    var yay u8
+    var yay: u8
 
     while 12 yay! true {}
 
@@ -67,7 +67,7 @@ proc good_read_while_condition [] to [u8] {
 }
 
 proc good_read_in_while_body [] to [] {
-    var yay u8
+    var yay: u8
 
     while 13 yay! true {
         yay@ drop

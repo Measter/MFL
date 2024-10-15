@@ -1,7 +1,7 @@
 import std::term
 import core::String
 
-proc entry [var argc u64, var argv u8**] to [] {
+proc entry [var argc: u64, var argv: u8**] to [] {
     cond {
         argc@ 2 != {
             "USAGE: " term::write argv@@ String::from_cstr term::write
@@ -14,7 +14,7 @@ proc entry [var argc u64, var argv u8**] to [] {
     term::write " = " term::write
     Scanner::new Eval::new
 
-    var eval Eval
+    var eval: Eval
     eval!
 
     eval Eval::advance
@@ -31,22 +31,22 @@ enum Prec {
 }
 
 struct Eval {
-    scanner Scanner,
-    current Token,
-    previous Token,
-    sum s64,
+    scanner: Scanner,
+    current: Token,
+    previous: Token,
+    sum: s64,
 
     struct Rule {
-        prefix proc[Eval&] to [],
-        infix proc[Eval&] to [],
-        prec Prec
+        prefix: proc[Eval&] to [],
+        infix: proc[Eval&] to [],
+        prec: Prec
     }
 
     proc new [Scanner] to [Eval] {
         TokenKind::Eof 0 "" Token dup 0 Eval
     }
 
-    proc advance [var this Eval&] to [] {
+    proc advance [var this: Eval&] to [] {
         this@.current@ this@.previous!
 
         while true {
@@ -89,7 +89,7 @@ struct Eval {
         Prec::Term Eval::parse_precedence
     }
 
-    proc parse_precedence [var this Eval&, var prec Prec] to [] {
+    proc parse_precedence [var this: Eval&, var prec: Prec] to [] {
         this@ advance
 
         // Parse our prefix.
@@ -104,7 +104,7 @@ struct Eval {
     }
 
     // Rule parsers
-    proc grouping [var this Eval&] to [] {
+    proc grouping [var this: Eval&] to [] {
         this@ parse_expression
         cond {
             this@.current.kind@ TokenKind::RightParen = {
@@ -117,10 +117,10 @@ struct Eval {
         }
     }
 
-    proc binary [var this Eval&] to [] {
-        var lhs s64
+    proc binary [var this: Eval&] to [] {
+        var lhs: s64
         this@.sum@ lhs!
-        var op_type TokenKind
+        var op_type: TokenKind
         this@.previous.kind@ op_type!
 
         op_type@ get_rule xtrd(prec) next_precedence this@ swap parse_precedence
@@ -140,7 +140,7 @@ struct Eval {
         drop
     }
 
-    proc number [var this Eval&] to [] {
+    proc number [var this: Eval&] to [] {
         cond {
             this@.previous.kind@ TokenKind::Number != {
                 "Expected Number, found " term::write this@.previous@ Token::print
@@ -152,7 +152,7 @@ struct Eval {
         }
     }
 
-    proc unary [var this Eval&] to [] {
+    proc unary [var this: Eval&] to [] {
         this@ Prec::Unary parse_precedence
         this@.sum dup@ 0 swap - swap!
     }
@@ -171,9 +171,9 @@ enum TokenKind {
 }
 
 struct Token {
-    kind TokenKind,
-    number s64,
-    lexeme String,
+    kind: TokenKind,
+    number: s64,
+    lexeme: String,
 
     proc print [Token] to [] {
         xtr(kind) cond {
@@ -193,8 +193,8 @@ struct Token {
 }
 
 struct Scanner {
-    start String,
-    current String,
+    start: String,
+    current: String,
 
     proc new [String] to [Scanner] {
         dup Scanner
@@ -214,7 +214,7 @@ struct Scanner {
         swap '9'<= and
     }
 
-    proc lexeme [var this Scanner&] to [String] {
+    proc lexeme [var this: Scanner&] to [String] {
         this@.start.length@ this@.current.length@ -
         this@.start@ ins(length)
     }
@@ -223,7 +223,7 @@ struct Scanner {
         lexeme 0 swap Token
     }
 
-    proc number [var sum s64, var this Scanner&] to [Token] {
+    proc number [var sum: s64, var this: Scanner&] to [Token] {
         sum@ '0'- sum! // Started as ASCII
 
         while this@ peek is_digit {
@@ -240,7 +240,7 @@ struct Scanner {
         }
     }
 
-    proc scan [var this Scanner&] to [Token] {
+    proc scan [var this: Scanner&] to [Token] {
         this@ skip_whitespace
         this@.current@ this@.start!
 
@@ -263,7 +263,7 @@ struct Scanner {
         return
     }
     
-    proc skip_whitespace [var this Scanner&] to [] {
+    proc skip_whitespace [var this: Scanner&] to [] {
         while this@ peek 0 != {
             cond {
                 this@ peek std::string::is_whitespace {

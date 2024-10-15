@@ -6,18 +6,18 @@
 // END
 
 struct Foo {
-    foo Foo,
-    bar s32,
+    foo: Foo,
+    bar: s32,
 }
 
 struct Bar {
-    baz Baz,
+    baz: Baz,
 }
 
 struct Baz {
-    bar Bar,
+    bar: Bar,
 }
 
 struct Quux {
-    k Quux[5],
+    k: Quux[5],
 }

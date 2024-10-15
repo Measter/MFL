@@ -5,11 +5,11 @@
 // END
 
 struct Foo {
-    bar Bar,
+    bar: Bar,
 }
 
 struct Bar {
-    a s32,
+    a: s32,
 }
 
 proc multi_pointer [Foo] to [s32&] {

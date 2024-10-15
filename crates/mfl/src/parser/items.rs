@@ -367,11 +367,15 @@ pub fn parse_variable(
         )
         .recover(&mut had_error, attributes.last_token);
 
+    let colon = token_iter
+        .expect_single(stores, parent_id, TokenKind::Colon, name_token.location)
+        .recover(&mut had_error, name_token);
+
     let Ok((variable_type, _)) = parse_unresolved_type(
         token_iter,
         stores,
         parent_id,
-        name_token.location,
+        colon.location,
         &mut had_error,
     ) else {
         had_error.forget();
@@ -456,7 +460,6 @@ pub fn parse_struct_or_union(
                 IsMatch::No(t.inner.kind_str(), t.location)
             }
         })) {
-            //
             let keyword = field_iter.next().unwrap_single();
             if parse_struct_or_union(stores, &mut field_iter, item_id, keyword).is_err() {
                 had_error.set();
@@ -479,11 +482,15 @@ pub fn parse_struct_or_union(
                 .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
                 .recover(&mut had_error, prev_token);
 
+            let colon = field_iter
+                .expect_single(stores, item_id, TokenKind::Colon, name_token.location)
+                .recover(&mut had_error, name_token);
+
             let Ok((unresolved_store_type, last_token)) = parse_unresolved_type(
                 &mut field_iter,
                 stores,
                 item_id,
-                name_token.location,
+                colon.location,
                 &mut had_error,
             ) else {
                 break;

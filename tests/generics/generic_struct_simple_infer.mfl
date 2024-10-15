@@ -5,7 +5,7 @@
 // END
 
 struct A(T) {
-    a T,
+    a: T,
 }
 
 proc a [u8] to [A(u8)] {
@@ -13,7 +13,7 @@ proc a [u8] to [A(u8)] {
 }
 
 struct B(T) {
-    a T&,
+    a: T&,
 }
 
 proc b [u8&] to [B(u8)] {
@@ -21,7 +21,7 @@ proc b [u8&] to [B(u8)] {
 }
 
 struct C(T) {
-    a T&&,
+    a: T&&,
 }
 
 proc c [u8&&] to [C(u8)] {
@@ -29,7 +29,7 @@ proc c [u8&&] to [C(u8)] {
 }
 
 struct D(T) {
-    a T[5],
+    a: T[5],
 }
 
 proc d [u8[5]] to [D(u8)] {
@@ -37,7 +37,7 @@ proc d [u8[5]] to [D(u8)] {
 }
 
 struct E(T) {
-    a T[5][3],
+    a: T[5][3],
 }
 
 proc e [u8[5][3]] to [E(u8)] {
@@ -45,7 +45,7 @@ proc e [u8[5][3]] to [E(u8)] {
 }
 
 struct F(T) {
-    b T[5]&,
+    b: T[5]&,
 }
 
 proc f [u8[5]&] to [F(u8)] {
@@ -53,7 +53,7 @@ proc f [u8[5]&] to [F(u8)] {
 }
 
 struct G(T) {
-    b T&[5],
+    b: T&[5],
 }
 
 proc g [u8&[5]] to [G(u8)] {

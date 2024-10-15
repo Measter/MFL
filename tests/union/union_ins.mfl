@@ -8,17 +8,17 @@
 // END
 
 struct Foo {
-    a u16,
-    b u16,
+    a: u16,
+    b: u16,
 }
 
 union Bar {
-    foo Foo,
-    int u32,
+    foo: Foo,
+    int: u32,
 }
 
 proc entry [] to [] {
-    var BAR Bar
+    var BAR: Bar
 
     0xDEADBEEF(u32) BAR insd(int)
     

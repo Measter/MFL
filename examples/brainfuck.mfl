@@ -2,18 +2,18 @@ import core::String
 import std::term::write_char
 
 struct State {
-    ptr u64,
-    tape u8[512],
-    counter u64,
+    ptr: u64,
+    tape: u8[512],
+    counter: u64,
 }
 
 proc entry [] to [] {
-    var input String
+    var input: String
 
     "+[>[<-[]>+[>+++>[+++++++++++>][>]-[<]>-]]++++++++++<]>>>>>>----.<<+++.<-..+++.<-.>>>.<<.+++.------.>-.<<+.<."
     input!
 
-    var memory State
+    var memory: State
     0 memory.ptr!
     0(u8) array(512) memory.tape!
     1 memory.counter!

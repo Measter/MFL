@@ -719,7 +719,11 @@ pub fn parse_proc_entry_stack_def(
                     .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
                     .recover(had_error, prev_token);
 
-                (Some(name_token.map(|t| t.lexeme)), name_token)
+                let colon = token_iter
+                    .expect_single(stores, item_id, TokenKind::Colon, name_token.location)
+                    .recover(had_error, name_token);
+
+                (Some(name_token.map(|t| t.lexeme)), colon)
             } else {
                 (None, prev_token)
             };

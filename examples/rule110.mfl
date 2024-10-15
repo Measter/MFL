@@ -6,7 +6,7 @@ assert UpdateArrayLengths { N 50 = }
 
 proc render [u8[50]&] to [] {
     // var render_buf u8[N]
-    var render_buf u8[50]
+    var render_buf: u8[50]
 
     0 while dup N< {
         if swap over xtr 1= { '*' } else { ' ' }
@@ -40,7 +40,7 @@ proc step [u8[50]&] to [] {
 
 proc entry [] to [] {
     // var buf u8[N]
-    var buf u8[50]
+    var buf: u8[50]
 
     1 N 2- buf#!
 

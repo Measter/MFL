@@ -3,12 +3,12 @@ import core::String
 const WRITE [u64] { 0x01 }
 
 struct FD { 
-    fd u64,
+    fd: u64,
 }
 
 struct WriteResult {
-    written u64,
-    errno u64,
+    written: u64,
+    errno: u64,
 }
 
 proc write [FD, String] to [WriteResult] {
@@ -37,7 +37,7 @@ proc writeln [FD, String] to [WriteResult] {
 }
 
 proc write_ui [FD, u64] to [WriteResult] {
-    var buf u8[30]
+    var buf: u8[30]
 
     // [num]
     cond {

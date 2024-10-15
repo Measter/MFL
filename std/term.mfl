@@ -15,11 +15,11 @@ proc writeln [String] to [] {
     STDOUT "\n" io::write drop
 }
 
-proc write_char[var char u8] to [] {
+proc write_char[var char: u8] to [] {
     1 char cast(u8*) String write
 }
 
-proc write_char_ln[var char u8] to [] {
+proc write_char_ln[var char: u8] to [] {
     1 char cast(u8*) String writeln
 }
 

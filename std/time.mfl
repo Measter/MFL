@@ -4,8 +4,8 @@ module c {
 }
 
 struct Timespec {
-    tv_sec u64,
-    tv_nsec u64,
+    tv_sec: u64,
+    tv_nsec: u64,
 }
 
 const NS_PER_S [u64] {1_000_000_000}
@@ -13,10 +13,10 @@ const US_PER_S [u64] {1_000_000}
 const NS_PER_US [u64] {1_000}
 
 struct Instant {
-    t Timespec,
+    t: Timespec,
 
     proc now [] to [Instant] {
-        var time Timespec
+        var time: Timespec
         c::CLOCK_REALTIME time cast(Timespec*) c::clock_gettime
         cond {
             0= {
@@ -30,8 +30,8 @@ struct Instant {
         }
     }
 
-    proc elapsed_us [var earlier Instant] to [u64] {
-        var now Instant
+    proc elapsed_us [var earlier: Instant] to [u64] {
+        var now: Instant
         Instant::now now!
 
         cond {

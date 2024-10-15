@@ -17,8 +17,8 @@ module c {
 }
 
 struct MMap(T) {
-    pointer T*,
-    length u64,
+    pointer: T*,
+    length: u64,
 }
 
 proc(lang(alloc)) alloc(T) [
@@ -42,8 +42,8 @@ proc(lang(free)) free(T) [MMap(T)] to [] {
 }
 
 proc fill(T) [
-    var store MMap(T),
-    var val T
+    var store: MMap(T),
+    var val: T
 ] to [] {
     0 while dup store.length@ < {
         val@ store over(2) insd
@@ -52,8 +52,8 @@ proc fill(T) [
 }
 
 proc(track_caller) copy(T) [
-    var src MMap(T),
-    var dst MMap(T),
+    var src: MMap(T),
+    var dst: MMap(T),
 ] to [] {
     cond {
         src.length@ dst.length@ != {

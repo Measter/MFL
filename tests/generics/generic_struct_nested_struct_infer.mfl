@@ -5,15 +5,15 @@
 // END
 
 struct A1(T) {
-    a A2(A3(T)),
+    a: A2(A3(T)),
 }
 
 struct A2(T) {
-    a T,
+    a: T,
 }
 
 struct A3(U) {
-    t U,
+    t: U,
 }
 
 proc foo [] to [A1(u8)] {
@@ -21,11 +21,11 @@ proc foo [] to [A1(u8)] {
 }
 
 struct B1(T) {
-    b B2(T),
+    b: B2(T),
 }
 
 struct B2(T) {
-    b T,
+    b: T,
 }
 
 proc bar [] to [B1(u8)] {

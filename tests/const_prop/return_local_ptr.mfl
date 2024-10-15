@@ -5,16 +5,16 @@
 // END
 
 proc a [] to [u8&] {
-    var A u8
+    var A: u8
     A
 }
 
 proc b [] to [u8*] {
-    var A u8
+    var A: u8
     A cast(u8*)
 }
 
 proc c [] to [u8&] {
-    var A u8
+    var A: u8
     A cast(u8*) cast (u8&)
 }

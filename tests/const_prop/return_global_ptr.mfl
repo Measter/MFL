@@ -4,7 +4,7 @@
 // args = ["--lib"]
 // END
 
-var A u8
+var A: u8
 
 proc a [] to [u8&] {
     A

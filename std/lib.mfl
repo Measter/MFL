@@ -6,12 +6,12 @@ module term
 module time
 
 struct SimpleResult {
-    errno u64,
+    errno: u64,
 }
 
 struct Result(T, E) {
-    tag Tag,
-    data Payload(T, E),
+    tag: Tag,
+    data: Payload(T, E),
 
     enum Tag {
         Ok,
@@ -19,8 +19,8 @@ struct Result(T, E) {
     }
 
     union Payload(T, E) {
-        t T,
-        e E,
+        t: T,
+        e: E,
     }
 
     proc Ok(T, E) [T] to [Result(T, E)] {

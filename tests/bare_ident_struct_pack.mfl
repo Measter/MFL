@@ -7,8 +7,8 @@
 import core::String
 
 struct Foo {
-    a s32,
-    b String,
+    a: s32,
+    b: String,
 }
 
 proc make_foo [] to [Foo] {

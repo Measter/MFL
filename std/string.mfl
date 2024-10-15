@@ -2,16 +2,16 @@ import lib::term
 
 
 struct SplitResult {
-    split bool,
-    remainder String,
-    prefix String,
+    split: bool,
+    remainder: String,
+    prefix: String,
 }
 
 struct(lang(string)) String {
-    length u64,
-    pointer u8*,
+    length: u64,
+    pointer: u8*,
 
-    proc from_cstr [var str u8*] to [String] {
+    proc from_cstr [var str: u8*] to [String] {
         0 while dup str@+@ '\0'!= {
             1+
         }
@@ -22,8 +22,8 @@ struct(lang(string)) String {
     // Splits the given string at the first instance of the given
     // character. Remaining string does not include the split char.
     proc split_front [
-        var str String,
-        var char u8  // Char to split on
+        var str: String,
+        var char: u8  // Char to split on
     ] to [
         SplitResult
     ] {
@@ -70,7 +70,7 @@ struct(lang(string)) String {
         }
     }
 
-    proc trim_start [var str String] to [String] {
+    proc trim_start [var str: String] to [String] {
         0 while dup str.length@ < {
             cond {
                 0 str#@ is_whitespace {
@@ -91,7 +91,7 @@ struct(lang(string)) String {
     }
 
 
-    proc trim_end [var str String] to [String] {
+    proc trim_end [var str: String] to [String] {
         cond {
             str.length@ 0= { str@ return }
         }

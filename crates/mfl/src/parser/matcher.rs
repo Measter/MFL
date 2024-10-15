@@ -197,6 +197,7 @@ pub(super) fn stack_def_tokens(tt: &TokenTree) -> IsMatch {
                 TokenKind::Ident
                     | TokenKind::Integer { .. }
                     | TokenKind::ColonColon
+                    | TokenKind::Colon
                     | TokenKind::Ampersand
                     | TokenKind::Star
                     | TokenKind::Comma

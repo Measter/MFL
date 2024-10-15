@@ -7,5 +7,5 @@
 proc foo(T, U, T) [] to [] {}
 
 struct Bar(T, U, T) {
-    a s32
+    a: s32
 }
