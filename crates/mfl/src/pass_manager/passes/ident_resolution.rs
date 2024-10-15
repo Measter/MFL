@@ -20,9 +20,69 @@ use crate::{
             ImportStrength, NameResolvedItemSignature, StackDefItemNameResolved,
             StackDefItemUnresolved,
         },
+        types::{TypeId, TypeKind},
     },
     Stores,
 };
+
+pub enum ResolveMethodResult {
+    Ok(ItemId),
+    UnsupportedType,
+    NotFound(ItemId, TypeId),
+    ManagerFailed,
+}
+
+pub fn resolve_method_name(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    reciever_type_id: TypeId,
+    method_name: Spanned<Spur>,
+) -> ResolveMethodResult {
+    let receiver_type_info = stores.types.get_type_info(reciever_type_id);
+    let (lookup_scope_item_id, lookup_scope_type_id) = match receiver_type_info.kind {
+        TypeKind::MultiPointer(type_id) | TypeKind::SinglePointer(type_id) => {
+            let ptee_type_info = stores.types.get_type_info(type_id);
+            match ptee_type_info.kind {
+                TypeKind::Enum(item_id)
+                | TypeKind::Struct(item_id)
+                | TypeKind::GenericStructInstance(item_id) => (item_id, type_id),
+
+                TypeKind::Array { .. }
+                | TypeKind::Integer(_)
+                | TypeKind::Float(_)
+                | TypeKind::FunctionPointer
+                | TypeKind::MultiPointer(_)
+                | TypeKind::SinglePointer(_)
+                | TypeKind::Bool
+                | TypeKind::GenericStructBase(_) => return ResolveMethodResult::UnsupportedType,
+            }
+        }
+        TypeKind::Enum(item_id)
+        | TypeKind::Struct(item_id)
+        | TypeKind::GenericStructInstance(item_id) => (item_id, receiver_type_info.id),
+
+        TypeKind::Array { .. }
+        | TypeKind::Integer(_)
+        | TypeKind::Float(_)
+        | TypeKind::FunctionPointer
+        | TypeKind::Bool
+        | TypeKind::GenericStructBase(_) => return ResolveMethodResult::UnsupportedType,
+    };
+
+    if pass_manager
+        .ensure_ident_resolved_scope(stores, lookup_scope_item_id)
+        .is_err()
+    {
+        return ResolveMethodResult::ManagerFailed;
+    }
+
+    let lookup_scope = stores.sigs.nrir.get_scope(lookup_scope_item_id);
+    let Some(callee_id) = lookup_scope.get_symbol(method_name.inner) else {
+        return ResolveMethodResult::NotFound(lookup_scope_item_id, lookup_scope_type_id);
+    };
+
+    ResolveMethodResult::Ok(callee_id)
+}
 
 fn invalid_generic_count_diag(
     stores: &mut Stores,

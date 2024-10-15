@@ -128,6 +128,18 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
+    pub(super) fn build_method_call(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        item_id: ItemId,
+        function: FunctionValue<'ctx>,
+    ) -> InkwellResult {
+        let callee_id = ds.ops.get_method_callee(op_id);
+        self.build_function_call(ds, value_store, op_id, item_id, function, callee_id)
+    }
+
     pub(super) fn build_epilogue_return(
         &mut self,
         ds: &mut Stores,

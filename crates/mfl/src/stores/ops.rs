@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use intcast::IntCast;
 use lasso::Spur;
 use smallvec::SmallVec;
-use stores::source::Spanned;
+use stores::{items::ItemId, source::Spanned};
 
 use crate::{
     ir::{NameResolvedOp, OpCode, PartiallyResolvedOp, TypeResolvedOp, UnresolvedOp},
@@ -47,6 +47,7 @@ pub struct OpStore {
     partial_type_resolved: HashMap<OpId, OpCode<PartiallyResolvedOp>>,
     type_resolved: HashMap<OpId, OpCode<TypeResolvedOp>>,
     op_io: HashMap<OpId, OpIoValues>,
+    method_callee_ids: HashMap<OpId, ItemId>,
 }
 
 impl OpStore {
@@ -58,6 +59,7 @@ impl OpStore {
             partial_type_resolved: HashMap::new(),
             type_resolved: HashMap::new(),
             op_io: HashMap::new(),
+            method_callee_ids: HashMap::new(),
         }
     }
 
@@ -158,5 +160,19 @@ impl OpStore {
 
         existing.inputs.clear();
         existing.inputs.extend_from_slice(inputs);
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn get_method_callee(&self, id: OpId) -> ItemId {
+        self.method_callee_ids[&id]
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn set_method_callee(&mut self, id: OpId, callee: ItemId) {
+        self.method_callee_ids
+            .insert(id, callee)
+            .expect_none("ICE: Set method callee twice");
     }
 }

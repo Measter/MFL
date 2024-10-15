@@ -213,6 +213,17 @@ pub(crate) fn call_function_const(
     }
 }
 
+pub(crate) fn method_call(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+) {
+    let callee_id = stores.ops.get_method_callee(op_id);
+    call_function_const(stores, pass_manager, had_error, item_id, op_id, callee_id);
+}
+
 fn call_generic_function_infer_params(
     stores: &mut Stores,
     pass_manager: &mut PassManager,

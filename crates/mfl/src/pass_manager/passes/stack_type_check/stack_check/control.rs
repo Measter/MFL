@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use intcast::IntCast;
+use lasso::Spur;
 use smallvec::SmallVec;
 use stores::{items::ItemId, source::Spanned};
 use tracing::trace;
@@ -9,7 +10,11 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Basic, Cond, Control, OpCode, While},
     n_ops::SliceNOps,
-    pass_manager::{static_analysis::generate_stack_length_mismatch_diag, PassManager},
+    pass_manager::{
+        passes::ident_resolution::{resolve_method_name, ResolveMethodResult},
+        static_analysis::generate_stack_length_mismatch_diag,
+        PassManager,
+    },
     stores::{
         block::BlockId,
         diagnostics::Diagnostic,
@@ -173,6 +178,74 @@ pub(crate) fn call_function_const(
     }
 
     stores.ops.set_op_io(op_id, &inputs, &outputs);
+}
+
+pub(crate) fn method_call(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    had_error: &mut ErrorSignal,
+    stack: &mut Vec<ValueId>,
+    item_id: ItemId,
+    op_id: OpId,
+    method_name: Spanned<Spur>,
+) {
+    let op_loc = stores.ops.get_token(op_id);
+    ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
+    let &receiver_value_id = stack.last().unwrap();
+
+    let Some([receiver_type_id]) = stores.values.value_types([receiver_value_id]) else {
+        // Can't do anything.
+        stores.ops.set_op_io(op_id, &[receiver_value_id], &[]);
+        return;
+    };
+
+    let callee_id = match resolve_method_name(stores, pass_manager, receiver_type_id, method_name) {
+        ResolveMethodResult::Ok(item_id) => item_id,
+        ResolveMethodResult::ManagerFailed => {
+            stores.ops.set_op_io(op_id, &[receiver_value_id], &[]);
+            return; // Nothing we can do here.
+        }
+        ResolveMethodResult::UnsupportedType => {
+            let receiver_type_info = stores.types.get_type_info(receiver_type_id);
+            let receiver_type_name = stores.strings.resolve(receiver_type_info.friendly_name);
+
+            Diagnostic::error(
+                op_loc.location,
+                format!("method calls not supported on `{receiver_type_name}`"),
+            )
+            .with_label_chain(receiver_value_id, 0, receiver_type_name)
+            .attached(stores.diags, item_id);
+
+            had_error.set();
+            return;
+        }
+        ResolveMethodResult::NotFound(lookup_scope_item_id, lookup_scope_type_id) => {
+            let lookup_type_info = stores.types.get_type_info(lookup_scope_type_id);
+            let lookup_type_name = stores.strings.resolve(lookup_type_info.friendly_name);
+            let lookup_item_header = stores.items.get_item_header(lookup_scope_item_id);
+            let receiver_type_info = stores.types.get_type_info(receiver_type_id);
+            let receiver_type_name = stores.strings.resolve(receiver_type_info.friendly_name);
+            let method_name_str = stores.strings.resolve(method_name.inner);
+
+            Diagnostic::error(
+                method_name.location,
+                format!("method `{method_name_str}` not found on type `{lookup_type_name}`"),
+            )
+            .with_label_chain(receiver_value_id, 0, receiver_type_name)
+            .with_help_label(
+                lookup_item_header.name.location,
+                format!("`{lookup_type_name}` defined here"),
+            )
+            .attached(stores.diags, item_id);
+
+            had_error.set();
+            return;
+        }
+    };
+
+    stores.ops.set_method_callee(op_id, callee_id);
+
+    call_function_const(stores, had_error, stack, item_id, op_id, callee_id);
 }
 
 pub(crate) fn analyze_cond(

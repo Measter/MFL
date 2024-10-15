@@ -181,7 +181,28 @@ fn analyze_block(
                         stores.ops.set_op_io(op_id, &[], &[]);
                         break;
                     }
-                    Control::MethodCall { .. } => todo!(),
+                    Control::MethodCall { method_name } => {
+                        let mut local_had_error = ErrorSignal::new();
+                        stack_check::control::method_call(
+                            stores,
+                            pass_manager,
+                            &mut local_had_error,
+                            stack,
+                            item_id,
+                            op_id,
+                            method_name,
+                        );
+                        if local_had_error.is_ok() {
+                            type_check::control::method_call(
+                                stores,
+                                pass_manager,
+                                &mut local_had_error,
+                                item_id,
+                                op_id,
+                            )
+                        }
+                        had_error.merge_with(local_had_error);
+                    }
                     Control::Prologue => {
                         stack_check::control::prologue(stores, stack, op_id, item_id);
                         type_check::control::prologue(stores, op_id, item_id);

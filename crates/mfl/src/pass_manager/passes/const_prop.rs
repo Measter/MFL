@@ -161,7 +161,13 @@ fn analyze_block(
                         // We're terminating the current block, so don't process any remaning ops.
                         break;
                     }
-                    Control::MethodCall { .. } => todo!(),
+                    Control::MethodCall { .. } => control::call_function(
+                        stores,
+                        pass_manager,
+                        variable_state,
+                        had_error,
+                        op_id,
+                    ),
 
                     // Nothing to do here.
                     Control::SysCall { .. } => {}
