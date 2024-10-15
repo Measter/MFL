@@ -22,8 +22,8 @@ struct(lang(string)) String {
     // Splits the given string at the first instance of the given
     // character. Remaining string does not include the split char.
     proc split_front [
+        var char: u8,  // Char to split on
         var str: String,
-        var char: u8  // Char to split on
     ] to [
         SplitResult
     ] {
@@ -116,7 +116,8 @@ struct(lang(string)) String {
         trim_start trim_end
     }
 
-    proc(track_caller) remove_start[String, u64] to [String] {
+    proc(track_caller) remove_start[u64, String] to [String] {
+        swap
         cond {
             over xtrd(length) over< {
                 "Cannot trim " lib::term::ewrite

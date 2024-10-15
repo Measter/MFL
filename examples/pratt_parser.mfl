@@ -17,8 +17,8 @@ proc entry [var argc: u64, var argv: u8**] to [] {
     var eval: Eval
     eval!
 
-    eval Eval::advance
-    eval Eval::parse_expression
+    eval :advance
+    eval :parse_expression
     eval.sum@ term::write_si_ln
 }
 
@@ -50,7 +50,7 @@ struct Eval {
         this@.current@ this@.previous!
 
         while true {
-            this@.scanner Scanner::scan
+            this@.scanner :scan
             this@.current!
 
             cond {
@@ -86,10 +86,10 @@ struct Eval {
     }
 
     proc parse_expression [Eval&] to [] {
-        Prec::Term Eval::parse_precedence
+        Prec::Term swap Eval::parse_precedence
     }
 
-    proc parse_precedence [var this: Eval&, var prec: Prec] to [] {
+    proc parse_precedence [var prec: Prec, var this: Eval&] to [] {
         this@ advance
 
         // Parse our prefix.
@@ -123,7 +123,7 @@ struct Eval {
         var op_type: TokenKind
         this@.previous.kind@ op_type!
 
-        op_type@ get_rule xtrd(prec) next_precedence this@ swap parse_precedence
+        op_type@ get_rule xtrd(prec) next_precedence this@ parse_precedence
  
         this@.sum dup @ lhs@
         cond {
@@ -153,7 +153,7 @@ struct Eval {
     }
 
     proc unary [var this: Eval&] to [] {
-        this@ Prec::Unary parse_precedence
+        Prec::Unary this@ parse_precedence
         this@.sum dup@ 0 swap - swap!
     }
 }
@@ -202,7 +202,7 @@ struct Scanner {
 
     proc advance [Scanner&] to [u8] {
         0 over .current#@
-        swap .current dup @ 1 String::remove_start swap !
+        swap .current dup @ 1 swap String::remove_start swap !
     }
 
     proc is_at_end [Scanner&] to [bool] {

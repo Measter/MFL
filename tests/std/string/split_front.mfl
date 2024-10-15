@@ -10,7 +10,7 @@
 import core::String
 
 proc entry [] to [] {
-    "fooxbar" 'x' String::split_front
+    'x' "fooxbar" :split_front
 
     xtr(split) std::term::write_bool_ln
     "'" std::term::write
@@ -22,7 +22,7 @@ proc entry [] to [] {
     "'" std::term::writeln
 
 
-    "fooxbar" 'y' String::split_front
+    'y' "fooxbar" :split_front
 
     xtr(split) std::term::write_bool_ln
     "'" std::term::write

@@ -80,12 +80,12 @@ proc mmap_file [
     cond {
         xtr(tag) Result::Tag::Err = {
             rot(3>1) drop(2)
-            Result::unwrap_err
+            :unwrap_err
             Result::Err(MMap(u8), u64)
             return
         }
     }
-    Result::unwrap_ok
+    :unwrap_ok
 
     xtrd(st_size) 0
     // [FD PROT length addr]

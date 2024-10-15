@@ -11,6 +11,6 @@ import core::String
 
 proc entry [] to [] {
     "'" std::term::write
-    "foobar" 3 String::remove_start std::term::write
+    3 "foobar" :remove_start std::term::write
     "'" std::term::writeln
 }
