@@ -105,6 +105,14 @@ fn parse_item_body_contents(
                         };
                         op
                     }
+                    TokenKind::Colon => {
+                        let Ok(op) = ops::parse_method_call(stores, token_iter, parent_id, *token)
+                        else {
+                            had_error.set();
+                            continue;
+                        };
+                        op
+                    }
                     TokenKind::Carat => {
                         let Ok(op) =
                             ops::parse_function_pointer(stores, token_iter, parent_id, *token)

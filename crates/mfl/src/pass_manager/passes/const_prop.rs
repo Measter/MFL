@@ -161,6 +161,8 @@ fn analyze_block(
                         // We're terminating the current block, so don't process any remaning ops.
                         break;
                     }
+                    Control::MethodCall { .. } => todo!(),
+
                     // Nothing to do here.
                     Control::SysCall { .. } => {}
                     Control::Cond(cond_op) => {

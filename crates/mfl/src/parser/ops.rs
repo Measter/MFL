@@ -1004,6 +1004,22 @@ pub fn parse_while(
     ))
 }
 
+pub fn parse_method_call(
+    stores: &mut Stores,
+    token_iter: &mut TokenIter,
+    item_id: ItemId,
+    token: Spanned<Token>,
+) -> ParseOpResult {
+    let ident = token_iter.expect_single(stores, item_id, TokenKind::Ident, token.location)?;
+
+    Ok((
+        OpCode::Basic(Basic::Control(Control::MethodCall {
+            method_name: ident.map(|t| t.lexeme),
+        })),
+        ident.location,
+    ))
+}
+
 pub fn parse_field_access(
     stores: &mut Stores,
     token_iter: &mut TokenIter,

@@ -171,7 +171,7 @@ fn simulate_execute_program_block(
                 // These are no-ops here.
                 Control::Epilogue | Control::Prologue => {}
                 Control::Return => break,
-                Control::Exit(_) | Control::SysCall { .. } => {
+                Control::Exit(_) | Control::SysCall { .. } | Control::MethodCall { .. } => {
                     Diagnostic::unsupported_sim_op(stores, item_id, op_id);
                     return Err(SimulationError::UnsupportedOp);
                 }

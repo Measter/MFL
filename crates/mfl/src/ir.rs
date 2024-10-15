@@ -484,6 +484,7 @@ pub enum Control {
     Cond(Cond),
     Epilogue,
     Exit(u8),
+    MethodCall { method_name: Spanned<Spur> },
     Prologue,
     Return,
     SysCall { arg_count: Spanned<u8> },

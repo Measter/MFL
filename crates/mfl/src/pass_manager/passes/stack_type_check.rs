@@ -181,6 +181,7 @@ fn analyze_block(
                         stores.ops.set_op_io(op_id, &[], &[]);
                         break;
                     }
+                    Control::MethodCall { .. } => todo!(),
                     Control::Prologue => {
                         stack_check::control::prologue(stores, stack, op_id, item_id);
                         type_check::control::prologue(stores, op_id, item_id);
