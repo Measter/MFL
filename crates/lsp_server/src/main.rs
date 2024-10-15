@@ -296,6 +296,7 @@ impl Backend {
                         TokenKind::Ampersand
                         | TokenKind::BracketClose(_)
                         | TokenKind::BracketOpen(_)
+                        | TokenKind::Colon
                         | TokenKind::ColonColon
                         | TokenKind::Comma
                         | TokenKind::Dot

@@ -100,6 +100,9 @@ pub enum TokenKind {
     #[regex(r#"'([^'\\]|\\['\\rnt0])+'"#, |_| '0')]
     Char(char),
 
+    #[token(":")]
+    Colon,
+
     #[token("::")]
     ColonColon,
 
@@ -305,7 +308,8 @@ impl TokenKind {
             TokenKind::Carat => "^",
             TokenKind::Cast => "cast",
             TokenKind::Char(_) => "character literal",
-            TokenKind::ColonColon => "::'",
+            TokenKind::Colon => ":",
+            TokenKind::ColonColon => "::",
             TokenKind::Cond => "cond",
             TokenKind::Const => "const",
             TokenKind::Comment => "comment",
