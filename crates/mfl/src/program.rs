@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, ffi::OsStr, path::Path};
 
-use color_eyre::eyre::{eyre, Context as _, Result};
+use color_eyre::eyre::{eyre, Report, Result};
 use hashbrown::HashSet;
 use lasso::Spur;
 use stores::{
@@ -113,8 +113,10 @@ fn load_library(
                 let contents = match std::fs::read_to_string(&root) {
                     Ok(c) => c,
                     Err(e) => {
-                        return Err(e)
-                            .with_context(|| eyre!("failed to load `{}`", root.display()));
+                        let err =
+                            Report::new(e).wrap_err(eyre!("failed to read `{}`", root.display()));
+                        eprintln!("{err:?}");
+                        return Err(err);
                     }
                 };
                 (
