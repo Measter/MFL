@@ -24,6 +24,7 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangItem {
     String,
+    OutOfBoundsHandler,
     Alloc,
     Free,
 }
@@ -32,6 +33,7 @@ impl LangItem {
     pub fn kind_str(self) -> &'static str {
         match self {
             LangItem::String => "String",
+            LangItem::OutOfBoundsHandler => "OobHandler",
             LangItem::Alloc => "Alloc",
             LangItem::Free => "Free",
         }
@@ -40,6 +42,7 @@ impl LangItem {
     pub fn from_str(s: &str) -> Result<Self, ()> {
         let li = match s {
             "string" => LangItem::String,
+            "oob_handler" => LangItem::OutOfBoundsHandler,
             "alloc" => LangItem::Alloc,
             "free" => LangItem::Free,
             _ => return Err(()),

@@ -29,7 +29,7 @@ use crate::{
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     stores::{
         block::BlockId,
-        item::{ItemAttribute, ItemKind},
+        item::{ItemAttribute, ItemKind, LangItem},
         types::{
             BuiltinTypes, FloatWidth, IntSignedness, IntWidth, Integer, TypeId, TypeKind, TypeStore,
         },
@@ -375,12 +375,6 @@ impl<'ctx> CodeGen<'ctx> {
             };
             let function = self.module.add_function(name, function_type, Some(linkage));
             function.add_attribute(AttributeLoc::Function, self.attrib_align_stack);
-            if name == "builtins$oob_handler" {
-                self.oob_handler = function;
-                // Because the OoB handle isn't called like a regular function, we'll enqueue it here.
-                self.enqueue_function(item.id);
-                function.set_call_conventions(CALL_CONV_COLD);
-            }
             self.item_function_map.insert(item.id, function);
         }
         proto_span.exit();
@@ -1017,6 +1011,19 @@ pub(crate) fn compile(
         .iter()
         .for_each(|&id| codegen.enqueue_function(id));
     codegen.build_function_prototypes(stores);
+
+    if let Some(oob_handler_item_id) = stores
+        .items
+        .get_lang_items()
+        .get(&LangItem::OutOfBoundsHandler)
+    {
+        let function = codegen.item_function_map[oob_handler_item_id];
+        codegen.oob_handler = function;
+        function.set_call_conventions(CALL_CONV_COLD);
+        // Because the OoB handle isn't called like a regular function, we'll enqueue it here.
+        codegen.enqueue_function(*oob_handler_item_id);
+    }
+
     codegen.build_global_variables(stores);
     if !args.is_library {
         codegen.build_entry(stores, top_level_items[0])?;
