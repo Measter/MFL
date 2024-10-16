@@ -5,7 +5,6 @@ use stores::{
 };
 
 use crate::{
-    diagnostics::{self, NameCollision},
     error_signal::ErrorSignal,
     ir::{
         Basic, Control, IdentPathRoot, NameResolvedOp, NameResolvedType, OpCode, StructDef,
@@ -24,6 +23,33 @@ use crate::{
     },
     Stores,
 };
+
+pub struct NameCollision {
+    pub prev: SourceLocation,
+    pub new: SourceLocation,
+}
+
+fn handle_symbol_redef_error(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: impl Into<Option<ItemId>>,
+    prev_def: Option<NameCollision>,
+) {
+    let Some(coll) = prev_def else {
+        return;
+    };
+
+    had_error.set();
+
+    let diag = Diagnostic::error(coll.new, "item of that name already exists")
+        .with_help_label(coll.prev, "previously defined here");
+
+    if let Some(item) = item_id.into() {
+        diag.attached(stores.diags, item);
+    } else {
+        diag.detached(stores.diags);
+    }
+}
 
 pub enum ResolveMethodResult {
     Ok(ItemId),
@@ -560,7 +586,7 @@ pub fn resolve_idents_in_scope(
             Ok(_) => {}
             Err(prev_loc) => {
                 had_error.set();
-                diagnostics::handle_symbol_redef_error(
+                handle_symbol_redef_error(
                     stores,
                     had_error,
                     cur_id,
@@ -591,7 +617,7 @@ pub fn resolve_idents_in_scope(
             resolved_scope.add_visible_symbol(child_header.name, child_id, ImportStrength::Strong)
         {
             had_error.set();
-            diagnostics::handle_symbol_redef_error(
+            handle_symbol_redef_error(
                 stores,
                 had_error,
                 cur_id,

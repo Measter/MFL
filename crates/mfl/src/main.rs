@@ -32,7 +32,6 @@ use stores::{
 };
 
 mod backend_llvm;
-mod diagnostics;
 mod error_signal;
 mod ir;
 mod lexer;
