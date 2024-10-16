@@ -1,19 +1,6 @@
-use once_cell::sync::Lazy;
-use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{error_signal::ErrorSignal, stores::diagnostics::Diagnostic, Stores};
-
-pub static TABLE_FORMAT: Lazy<TableFormat> = Lazy::new(|| {
-    let mut format = TableFormat::new();
-    format.padding(1, 1);
-    format.column_separator('│');
-    format.separators(
-        &[LinePosition::Title],
-        LineSeparator::new('─', '┼', '├', '┤'),
-    );
-    format
-});
 
 pub struct NameCollision {
     pub prev: SourceLocation,

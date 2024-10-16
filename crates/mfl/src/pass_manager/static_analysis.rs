@@ -6,11 +6,10 @@ use prettytable::{row, Table};
 use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
-    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     ir::NameResolvedType,
     stores::{
-        diagnostics::Diagnostic,
+        diagnostics::{Diagnostic, TABLE_FORMAT},
         item::ItemKind,
         ops::OpId,
         types::{FloatWidth, IntKind, IntSignedness, TypeId},

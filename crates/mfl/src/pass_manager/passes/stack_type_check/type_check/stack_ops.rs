@@ -4,12 +4,11 @@ use smallvec::SmallVec;
 use stores::items::ItemId;
 
 use crate::{
-    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     ir::{OpCode, TypeResolvedOp},
     pass_manager::{static_analysis::generate_type_mismatch_diag, PassManager},
     stores::{
-        diagnostics::Diagnostic,
+        diagnostics::{Diagnostic, TABLE_FORMAT},
         item::ItemKind,
         ops::OpId,
         types::{BuiltinTypes, FloatWidth, IntKind, TypeId, TypeKind},

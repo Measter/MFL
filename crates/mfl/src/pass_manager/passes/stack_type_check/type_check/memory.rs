@@ -7,7 +7,6 @@ use smallvec::SmallVec;
 use stores::{items::ItemId, source::Spanned};
 
 use crate::{
-    diagnostics::TABLE_FORMAT,
     error_signal::ErrorSignal,
     ir::PartiallyResolvedType,
     n_ops::SliceNOps,
@@ -16,7 +15,7 @@ use crate::{
         PassManager,
     },
     stores::{
-        diagnostics::Diagnostic,
+        diagnostics::{Diagnostic, TABLE_FORMAT},
         ops::OpId,
         types::{IntKind, IntSignedness, IntWidth, TypeId, TypeInfo, TypeKind},
     },

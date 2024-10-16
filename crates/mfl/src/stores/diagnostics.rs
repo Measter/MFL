@@ -5,6 +5,8 @@ use hashbrown::HashSet;
 use intcast::IntCast;
 use lasso::Spur;
 use lexer::TokenKind;
+use once_cell::sync::Lazy;
+use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 use stores::{
     items::ItemId,
     source::{SourceLocation, SourceStore, Spanned},
@@ -19,6 +21,17 @@ use super::{
     values::{ValueId, ValueStore},
     Stores,
 };
+
+pub static TABLE_FORMAT: Lazy<TableFormat> = Lazy::new(|| {
+    let mut format = TableFormat::new();
+    format.padding(1, 1);
+    format.column_separator('│');
+    format.separators(
+        &[LinePosition::Title],
+        LineSeparator::new('─', '┼', '├', '┤'),
+    );
+    format
+});
 
 pub struct DiagnosticStore {
     detatched: Vec<Diagnostic>,
