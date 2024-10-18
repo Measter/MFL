@@ -163,9 +163,8 @@ impl OpStore {
     }
 
     #[inline]
-    #[track_caller]
-    pub fn get_method_callee(&self, id: OpId) -> ItemId {
-        self.method_callee_ids[&id]
+    pub fn get_method_callee(&self, id: OpId) -> Option<ItemId> {
+        self.method_callee_ids.get(&id).copied()
     }
 
     #[inline]

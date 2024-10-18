@@ -136,7 +136,7 @@ impl<'ctx> CodeGen<'ctx> {
         item_id: ItemId,
         function: FunctionValue<'ctx>,
     ) -> InkwellResult {
-        let callee_id = ds.ops.get_method_callee(op_id);
+        let callee_id = ds.ops.get_method_callee(op_id).unwrap();
         self.build_function_call(ds, value_store, op_id, item_id, function, callee_id)
     }
 

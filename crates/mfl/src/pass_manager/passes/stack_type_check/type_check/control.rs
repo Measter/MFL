@@ -220,7 +220,10 @@ pub(crate) fn method_call(
     item_id: ItemId,
     op_id: OpId,
 ) {
-    let callee_id = stores.ops.get_method_callee(op_id);
+    let Some(callee_id) = stores.ops.get_method_callee(op_id) else {
+        // This means that stack check failed to find the callee.
+        return;
+    };
     call_function_const(stores, pass_manager, had_error, item_id, op_id, callee_id);
 }
 
