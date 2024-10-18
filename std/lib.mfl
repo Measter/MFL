@@ -6,6 +6,12 @@ module string
 module term
 module time
 
+proc(track_caller) todo [] to [] {
+    here term::ewrite
+    ": not yet implemented" term::ewriteln
+    1 exit
+}
+
 struct SimpleResult {
     errno: u64,
 }
