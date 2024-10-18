@@ -5,6 +5,28 @@ proc(extern) free [u8*] to []
 proc(extern) mmap [u8*, u64, s32, s32, s32, s64] to [u8*]
 proc(extern) munmap [u8*, u64] to [s32]
 
+
+const CLOCK_REALTIME [s32] {0}
+struct Timespec {
+    tv_sec: u64,
+    tv_nsec: u64,
+}
+proc(extern) clock_gettime [s32, Timespec*] to [s32]
+
+
+const O_APPEND [u32] { 0x400 }        // O_APPEND
+const O_CREATE [u32] { 0x040 }        // O_CREAT
+const O_CREATE_NEW [u32] { 0x080 }    // O_EXCL
+const O_TRUNC [u32] { 0x200 }         // O_TRUNC
+const O_READONLY [u32] { 0x0 }         // O_RDONLY
+const O_WRITEONLY [u32] { 0x1 }        // O_WRONLY
+const O_READWRITE [u32] { 0x2 }        // O_RDWR
+
+struct FD { 
+    fd: u32,
+}
+proc(extern) open64 [u8*, u32, u32] to [s32]
+proc(extern) close [u32] to [s32]
 struct Stat {
     st_dev: u64,
     st_ino: u64,
@@ -22,10 +44,4 @@ struct Stat {
     st_ctim: Timespec,
     __reserved: s64[3],
 }
-
-const CLOCK_REALTIME [s32] {0}
-struct Timespec {
-    tv_sec: u64,
-    tv_nsec: u64,
-}
-proc(extern) clock_gettime [s32, Timespec*] to [s32]
+proc(extern) fstat [u32, Stat&] to [s32]

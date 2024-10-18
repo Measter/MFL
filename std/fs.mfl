@@ -1,112 +1,114 @@
-import lib::clib::Stat
-import lib::io::FD
+import lib::clib
+import lib::ErrNo
 import lib::Result
 import lib::SimpleResult
-import lib::time::Timespec
 
-const SYS_OPEN [u64] { 0x02 }
-const SYS_CLOSE [u64] { 0x03 }
-const SYS_FSTAT [u64] { 0x05 }
-
-const FLAG_APPEND [u64] { 0x400 }        // O_APPEND
-const FLAG_CREATE [u64] { 0x040 }        // O_CREAT
-const FLAG_CREATE_NEW [u64] { 0x080 }    // O_EXCL
-const FLAG_TEMP [u64] { 0x40_0000 0x1_0000 or }       // O_TMPFILE | O_DIRECTORY
-const FLAG_TRUNC [u64] { 0x200 }         // O_TRUNC
-
-const FLAG_READONLY [u64] { 0x0 }         // Q_RDONLY
-const FLAG_WRITEONLY [u64] { 0x1 }        // O_WRONLY
-const FLAG_READWRITE [u64] { 0x2 }        // O_RDWR
-
-module c {
-    proc(extern) open64 [u8*, u32, u32] to [s32]
-}
 
 struct File {
-    fd: u8*,
+    fd: clib::FD,
 
-    proc open [String] to [Result(File, lib::ErrNo)] {
-        1 exit
-    }
-}
-
-proc open [
-    String,  // Null-terminated path to the file
-    u64     // Flags for opening
-] to [Result(FD, u64)] {
-    // The syscall requires a null-terminated string.
-    // Check for null termination
-    cond {
-        over xtr(length) 1- xtrd 0 != {
-            drop(2)
-
-            0 1- Result::Err(FD, u64)
-            return
+    // Opens a file in read-only mode.
+    proc open_read [var filename: String] to [Result(File, ErrNo)] {
+        cond {
+            filename.length@ 1- filename#@ 0 !={
+                "Filename `" lib::term::ewrite
+                filename@ lib::term::ewrite
+                "` must be null-terminated" lib::term::ewriteln
+                1 exit
+            }
+        }
+        filename.pointer@
+        clib::O_READONLY
+        0o666
+        clib::open64
+        cond {
+            -1 = {
+                clib::get_errno ErrNo::from_int
+                Result::Err(File, ErrNo)
+            }
+            else {
+                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+            }
         }
     }
 
-    SYS_OPEN rot(3>1) 0o666
-    // [sysid, path, flags, mode]
-
-    rot(3<1) xtrd(pointer) rot(3>1)
-    syscall(4)
-
-    cond {
-        // An error ocurred
-        cast(s64) dup 0< {
-            0 swap - cast(u64) Result::Err(FD, u64)
+    // Opens a file in read-write mode, creating the file if it doesn't exist.
+    proc open_write [var filename: String] to [Result(File, ErrNo)] {
+        cond {
+            filename.length@ 1- filename#@ 0 !={
+                "Filename `" lib::term::ewrite
+                filename@ lib::term::ewrite
+                "` must be null-terminated" lib::term::ewriteln
+                1 exit
+            }
         }
-        else {
-            FD Result::Ok(FD, u64)
+        filename.pointer@
+        clib::O_READWRITE clib::O_CREATE or
+        0o666
+        clib::open64
+        cond {
+            -1 = {
+                clib::get_errno ErrNo::from_int
+                Result::Err(File, ErrNo)
+            }
+            else {
+                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+            }
         }
     }
-}
 
-// Opens a file in read-only mode.
-proc open_read [
-    String // Null-terminated path
-] to [Result(FD, u64)] {
-    FLAG_READONLY open
-}
-
-// Opens a file in read-write mode, creating the file if it doesn't exist.
-proc open_write [
-    String,  // Null-terminated path
-    bool    // Append if it already exists
-] to [Result(FD, u64)] {
-    FLAG_READWRITE FLAG_CREATE or swap
-    cond {{ FLAG_APPEND or } else { drop }}
-    open
-}
-
-// Opens a file in read-write mode, creating the file if it doesn't exist,
-// and truncating the file.
-proc create [
-    String, // Null-terminated path
-    bool // Force new file.
-] to [Result(FD, u64)] {
-    FLAG_READWRITE FLAG_TRUNC or FLAG_CREATE or swap
-    cond {{ FLAG_CREATE_NEW or } else { drop }}
-
-    open
-}
-
-proc close [FD] to [SimpleResult] {
-    xtrd(fd) SYS_CLOSE swap syscall(2)
-    cast(s64) 0 swap - cast(u64) SimpleResult
-}
-
-proc fstat [FD] to [Result(Stat, u64)] {
-    var buf: Stat
-    xtrd(fd)
-    SYS_FSTAT swap buf syscall(3) cast(s64)
-    cond {
-        dup 0< {
-            0 swap - cast(u64) Result::Err(Stat, u64)
+    // Opens a file in read-write mode, creating the file if it doesn't exist,
+    // and truncating the file.
+    proc create_new [var filename: String] to [Result(File, ErrNo)] {
+        cond {
+            filename.length@ 1- filename#@ 0 !={
+                "Filename `" lib::term::ewrite
+                filename@ lib::term::ewrite
+                "` must be null-terminated" lib::term::ewriteln
+                1 exit
+            }
         }
-        else {
-            assumeinit(buf)
-            drop buf@ Result::Ok(Stat, u64)
+        filename.pointer@
+        clib::O_READWRITE clib::O_CREATE clib::O_TRUNC or or
+        0o666
+        clib::open64
+        cond {
+            -1 = {
+                clib::get_errno ErrNo::from_int
+                Result::Err(File, ErrNo)
+            }
+            else {
+                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+            }
+        }
+    }
+
+    proc close [File] to [Result(bool, ErrNo)] {
+        unpack unpack clib::close
+        cond {
+            -1 = {
+                clib::get_errno ErrNo::from_int
+                Result::Err(bool, ErrNo)
+            }
+            else {
+                drop
+                true Result::Ok(bool, ErrNo)
+            }
+        }
+    }
+    
+    proc stat [File] to [Result(clib::Stat, ErrNo)] {
+        var buf: clib::Stat
+        unpack unpack buf clib::fstat
+        cond {
+            -1 = {
+                clib::get_errno ErrNo::from_int
+                Result::Err(clib::Stat, ErrNo)
+            }
+            else {
+                drop
+                buf@ Result::Ok(clib::Stat, ErrNo)
+            }
         }
     }
 }
