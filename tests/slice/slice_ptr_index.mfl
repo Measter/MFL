@@ -13,7 +13,7 @@
 // END
 
 proc entry [u64, u8**] to [] {
-    var slice: std::mem::MMap(u8)
+    var slice: std::mem::OwnedSlice(u8)
 
     // We'll just assume we're being called correctly.
     swap drop 

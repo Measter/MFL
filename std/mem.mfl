@@ -16,33 +16,35 @@ module c {
     proc(extern) get_errno [] to [s32]
 }
 
-struct MMap(T) {
+struct OwnedSlice(T) {
     pointer: T*,
     length: u64,
 }
 
 proc(lang(alloc)) alloc(T) [
     u64 // Number of Ts to allocate for
-] to [Result(MMap(T), ErrNo)] {
+] to [Result(OwnedSlice(T), ErrNo)] {
     dup sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
     c::malloc
 
     cond {
         isnull {
             drop c::get_errno ErrNo::from_int
-            Result::Err(MMap(T), ErrNo)
-            return
+            Result::Err(OwnedSlice(T), ErrNo)
         }
-        else { cast(T*) swap MMap Result::Ok(MMap(T), ErrNo) return }
+        else {
+            cast(T*) swap OwnedSlice
+            Result::Ok(OwnedSlice(T), ErrNo)
+        }
     }
 }
 
-proc(lang(free)) free(T) [MMap(T)] to [] {
+proc(lang(free)) free(T) [OwnedSlice(T)] to [] {
     xtrd(pointer) cast(u8*) c::free
 }
 
 proc fill(T) [
-    var store: MMap(T),
+    var store: OwnedSlice(T),
     var val: T
 ] to [] {
     0 while dup store.length@ < {
@@ -52,8 +54,8 @@ proc fill(T) [
 }
 
 proc(track_caller) copy(T) [
-    var src: MMap(T),
-    var dst: MMap(T),
+    var src: OwnedSlice(T),
+    var dst: OwnedSlice(T),
 ] to [] {
     cond {
         src.length@ dst.length@ != {
