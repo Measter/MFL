@@ -89,28 +89,6 @@ pub(crate) fn index(
     let op_data = stores.ops.get_op_io(op_id);
     let [idx_value_id, array_value_id] = *op_data.inputs.as_arr();
     let output_value_id = op_data.outputs[0];
-    let [ConstVal::Int(Integer::Unsigned(idx))] = stores.values.value_consts([idx_value_id]) else {
-        // If we don't know the index, we should make sure that the pointer gets its offsets cleared,
-        // as we no longer know where it's pointing.
-
-        if let [ConstVal::Pointer {
-            source_variable,
-            offsets: Some(offsets),
-        }] = stores.values.value_consts([array_value_id])
-        {
-            let mut new_offsets = offsets.clone();
-            new_offsets.push(Offset::Unknown);
-
-            stores.values.set_value_const(
-                output_value_id,
-                ConstVal::Pointer {
-                    source_variable: *source_variable,
-                    offsets: Some(new_offsets),
-                },
-            );
-        }
-        return;
-    };
 
     let [array_type_id] = stores.values.value_types([array_value_id]).unwrap();
     let array_type_info = stores.types.get_type_info(array_type_id);
@@ -141,6 +119,29 @@ pub(crate) fn index(
         | TypeKind::GenericStructBase(_)
         | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => unreachable!(),
+    };
+
+    let [ConstVal::Int(Integer::Unsigned(idx))] = stores.values.value_consts([idx_value_id]) else {
+        // If we don't know the index, we should make sure that the pointer gets its offsets cleared,
+        // as we no longer know where it's pointing.
+
+        if let [ConstVal::Pointer {
+            source_variable,
+            offsets: Some(offsets),
+        }] = stores.values.value_consts([array_value_id])
+        {
+            let mut new_offsets = offsets.clone();
+            new_offsets.push(Offset::Unknown);
+
+            stores.values.set_value_const(
+                output_value_id,
+                ConstVal::Pointer {
+                    source_variable: *source_variable,
+                    offsets: Some(new_offsets),
+                },
+            );
+        }
+        return;
     };
 
     if idx.to_usize() >= array_length {
