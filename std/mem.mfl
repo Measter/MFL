@@ -16,9 +16,49 @@ module c {
     proc(extern) get_errno [] to [s32]
 }
 
+struct Slice(T) {
+    pointer: T*,
+    length: u64,
+
+    proc fill(T) [
+        var val: T,
+        var this: Slice(T),
+    ] to [] {
+        0 while dup this.length@ < {
+            val@ over this#!
+            1+
+        } drop
+    }
+
+    proc(track_caller) copy_from(T) [
+        var src: Slice(T),
+        var this: Slice(T),
+    ] to [] {
+        cond {
+            src.length@ this.length@ != {
+                "Mismatched length in copy_from - src: " lib::term::ewrite
+                src.length@ lib::term::ewrite_ui
+                " dst: " lib::term::ewrite
+                this.length@ lib::term::ewrite_ui_ln
+                exit(1)
+            }
+        }
+
+        0 while dup this.length@ < {
+            dup src#@
+            over this#!
+            1+
+        } drop
+    }
+}
+
 struct OwnedSlice(T) {
     pointer: T*,
     length: u64,
+
+    proc to_slice(T) [OwnedSlice(T)] to [Slice(T)] {
+        unpack Slice
+    }
 }
 
 proc(lang(alloc)) alloc(T) [
@@ -41,37 +81,6 @@ proc(lang(alloc)) alloc(T) [
 
 proc(lang(free)) free(T) [OwnedSlice(T)] to [] {
     xtrd(pointer) cast(u8*) c::free
-}
-
-proc fill(T) [
-    var store: OwnedSlice(T),
-    var val: T
-] to [] {
-    0 while dup store.length@ < {
-        val@ store over(2) insd
-        1+
-    } drop
-}
-
-proc(track_caller) copy(T) [
-    var src: OwnedSlice(T),
-    var dst: OwnedSlice(T),
-] to [] {
-    cond {
-        src.length@ dst.length@ != {
-            "Mismatched length in copy - src: " lib::term::ewrite
-            src.length@ lib::term::ewrite_ui
-            " dst: " lib::term::ewrite
-            dst.length@ lib::term::ewrite_ui_ln
-            exit(1)
-        }
-    }
-
-    0 while dup dst.length@ < {
-        dup src swap xtrd
-        over dst swap insd
-        1+
-    } drop
 }
 
 proc mmap_file [

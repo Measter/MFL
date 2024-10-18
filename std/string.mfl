@@ -11,6 +11,10 @@ struct(lang(string)) String {
     length: u64,
     pointer: u8*,
 
+    proc to_slice [String] to [lib::mem::Slice(u8)] {
+        unpack swap lib::mem::Slice
+    }
+
     proc from_cstr [var str: u8*] to [String] {
         0 while dup str@+@ '\0'!= {
             1+

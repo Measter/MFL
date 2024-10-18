@@ -13,8 +13,6 @@
 // END
 
 import std::mem::alloc
-import std::mem::copy
-import std::mem::fill
 import std::term::write_ui_ln
 
 proc entry[u64, u8**] to [] {
@@ -23,11 +21,11 @@ proc entry[u64, u8**] to [] {
 
     1+@@ '0'- // This is our destination length
 
-    3 alloc(u32) std::Result::unwrap_ok
-    dup 2 fill(u32)
+    3 alloc(u32):unwrap_ok
+    2(u32) over:to_slice:fill
     
-    swap alloc(u32) std::Result::unwrap_ok
-    swap over copy(u32)
+    swap alloc(u32):unwrap_ok
+    swap:to_slice over:to_slice:copy_from
 
     0 xtr write_ui_ln
     1 xtr write_ui_ln
