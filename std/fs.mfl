@@ -1,4 +1,4 @@
-import core::String
+import lib::clib::Stat
 import lib::io::FD
 import lib::Result
 import lib::SimpleResult
@@ -17,6 +17,18 @@ const FLAG_TRUNC [u64] { 0x200 }         // O_TRUNC
 const FLAG_READONLY [u64] { 0x0 }         // Q_RDONLY
 const FLAG_WRITEONLY [u64] { 0x1 }        // O_WRONLY
 const FLAG_READWRITE [u64] { 0x2 }        // O_RDWR
+
+module c {
+    proc(extern) open64 [u8*, u32, u32] to [s32]
+}
+
+struct File {
+    fd: u8*,
+
+    proc open [String] to [Result(File, lib::ErrNo)] {
+        1 exit
+    }
+}
 
 proc open [
     String,  // Null-terminated path to the file
@@ -82,24 +94,6 @@ proc create [
 proc close [FD] to [SimpleResult] {
     xtrd(fd) SYS_CLOSE swap syscall(2)
     cast(s64) 0 swap - cast(u64) SimpleResult
-}
-
-struct Stat {
-    st_dev: u64,
-    st_ino: u64,
-    st_nlink: u64,
-    st_mode: u32,
-    st_uid: u32,
-    st_gid: u32,
-    __pad0: u32,
-    st_rdev: u64,
-    st_size: u64,
-    st_blksize: u64,
-    st_blocks: u64,
-    st_atim: Timespec,
-    st_mtim: Timespec,
-    st_ctim: Timespec,
-    __reserved: s64[3],
 }
 
 proc fstat [FD] to [Result(Stat, u64)] {

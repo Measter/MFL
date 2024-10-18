@@ -1,12 +1,4 @@
-module c {
-    const CLOCK_REALTIME [s32] {0}
-    proc(extern) clock_gettime [s32, lib::time::Timespec*] to [s32]
-}
-
-struct Timespec {
-    tv_sec: u64,
-    tv_nsec: u64,
-}
+import lib::clib::Timespec
 
 const NS_PER_S [u64] {1_000_000_000}
 const US_PER_S [u64] {1_000_000}
@@ -17,7 +9,7 @@ struct Instant {
 
     proc now [] to [Instant] {
         var time: Timespec
-        c::CLOCK_REALTIME time cast(Timespec*) c::clock_gettime
+        lib::clib::CLOCK_REALTIME time cast(Timespec*) lib::clib::clock_gettime
         cond {
             0= {
                 assumeinit(time)

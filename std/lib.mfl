@@ -1,3 +1,4 @@
+module clib
 module fs
 module io
 module mem

@@ -2,20 +2,6 @@ import lib::Result
 import lib::ErrNo
 import lib::SimpleResult
 
-const PROT_READ [u64] { 0x01 }
-const PROT_WRITE [u64] { 0x02 }
-const MAP_ANONYMOUS [u64] { 0x20 }
-const MAP_PRIVATE [u64] { 0x02 }
-
-const SYS_MMAP [u64] { 0x09 }
-const SYS_MUNMAP [u64] { 0x0B }
-
-module c {
-    proc(extern) malloc [u64] to [u8*]
-    proc(extern) free [u8*] to []
-    proc(extern) get_errno [] to [s32]
-}
-
 struct Slice(T) {
     pointer: T*,
     length: u64,
@@ -65,11 +51,11 @@ proc(lang(alloc)) alloc(T) [
     u64 // Number of Ts to allocate for
 ] to [Result(OwnedSlice(T), ErrNo)] {
     dup sizeof(T) * // We need the number of bytes to allocate, not the number of Ts.
-    c::malloc
+    lib::clib::malloc
 
     cond {
         isnull {
-            drop c::get_errno ErrNo::from_int
+            drop lib::clib::get_errno ErrNo::from_int
             Result::Err(OwnedSlice(T), ErrNo)
         }
         else {
@@ -80,7 +66,7 @@ proc(lang(alloc)) alloc(T) [
 }
 
 proc(lang(free)) free(T) [OwnedSlice(T)] to [] {
-    xtrd(pointer) cast(u8*) c::free
+    xtrd(pointer) cast(u8*) lib::clib::free
 }
 
 proc mmap_file [

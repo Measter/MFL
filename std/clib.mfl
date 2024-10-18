@@ -1,0 +1,31 @@
+proc(extern) get_errno [] to [s32]
+
+proc(extern) malloc [u64] to [u8*]
+proc(extern) free [u8*] to []
+proc(extern) mmap [u8*, u64, s32, s32, s32, s64] to [u8*]
+proc(extern) munmap [u8*, u64] to [s32]
+
+struct Stat {
+    st_dev: u64,
+    st_ino: u64,
+    st_nlink: u64,
+    st_mode: u32,
+    st_uid: u32,
+    st_gid: u32,
+    __pad0: u32,
+    st_rdev: u64,
+    st_size: u64,
+    st_blksize: u64,
+    st_blocks: u64,
+    st_atim: Timespec,
+    st_mtim: Timespec,
+    st_ctim: Timespec,
+    __reserved: s64[3],
+}
+
+const CLOCK_REALTIME [s32] {0}
+struct Timespec {
+    tv_sec: u64,
+    tv_nsec: u64,
+}
+proc(extern) clock_gettime [s32, Timespec*] to [s32]
