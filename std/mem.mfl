@@ -28,6 +28,7 @@ struct Slice(T) {
                 this.length@ lib::term::ewrite_ui_ln
                 exit(1)
             }
+            src.length@ 0= { return }
         }
 
         0 while dup this.length@ < {
@@ -67,4 +68,74 @@ proc(lang(alloc)) alloc(T) [
 
 proc(lang(free)) free(T) [OwnedSlice(T)] to [] {
     xtrd(pointer) cast(u8*) lib::clib::free
+}
+
+struct GrowableSlice(T) {
+    pointer: T*,
+    length: u64,
+    capacity: u64,
+
+    proc new(T) [] to [GrowableSlice(T)] {
+        0(u64) cast(T*) 0 0 GrowableSlice
+    }
+
+    proc free(T) [var this: GrowableSlice(T)] to [] {
+        cond {
+            this.pointer@ isnull not {
+                this.pointer@ 0 OwnedSlice self::free
+            }
+        }
+    }
+
+    proc to_slice(T) [var this: GrowableSlice(T)&] to [Slice(T)] {
+        this@.pointer@ this@.length@ Slice
+    }
+
+    proc grow_amortized(T) [var this: GrowableSlice(T)&] to [] {
+        cond {
+            this@.capacity@ 0= { 4 }
+            else { this@.capacity@ 2* }
+        }
+
+        // Figure out a way to check for overflow
+        var new_buf: OwnedSlice(T)
+        alloc(T) :unwrap_ok // Do this better
+        new_buf!
+
+        this@:to_slice
+        new_buf@:to_slice this@.length@ swap ins(length) :copy_from
+
+        this@@ free // This only frees the allocation, so we can just forward to that.
+        
+        new_buf.pointer@ this@.pointer!
+        new_buf.length@ this@.capacity!
+    }
+
+    struct Empty {
+        a: u8 // Literally only exists because I don't have zero-sized types yet.
+    }
+
+    proc pop(T) [var this: GrowableSlice(T)&] to [Result(T, Empty)] {
+        cond {
+            this@.length@ 0= {
+                0 Empty Result::Err(T, Empty)
+            }
+            else {
+                this@.length@ 1-
+                dup this@#@ Result::Ok(T, Empty)
+                swap this@.length!
+            }
+        }
+    }
+
+    proc push(T) [T, var this: GrowableSlice(T)&] to [] {
+        cond {
+            this@.length@ this@.capacity@ = {
+                this@ :grow_amortized
+            }
+        }
+
+        this@.length@ dup 1+ this@.length!
+        this@#!
+    }
 }
