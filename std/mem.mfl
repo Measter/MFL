@@ -1,5 +1,5 @@
+import lib::clib::ErrNo
 import lib::Result
-import lib::ErrNo
 import lib::SimpleResult
 
 struct Slice(T) {

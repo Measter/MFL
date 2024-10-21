@@ -1,5 +1,4 @@
 import lib::clib
-import lib::ErrNo
 import lib::Result
 import lib::SimpleResult
 
@@ -8,7 +7,7 @@ struct File {
     fd: clib::FD,
 
     // Opens a file in read-only mode.
-    proc open_read [var filename: String] to [Result(File, ErrNo)] {
+    proc open_read [var filename: String] to [Result(File, clib::ErrNo)] {
         cond {
             filename.length@ 1- filename#@ 0 !={
                 "Filename `" lib::term::ewrite
@@ -23,17 +22,17 @@ struct File {
         clib::open64
         cond {
             -1 = {
-                clib::get_errno ErrNo::from_int
-                Result::Err(File, ErrNo)
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
             }
         }
     }
 
     // Opens a file in read-write mode, creating the file if it doesn't exist.
-    proc open_write [var filename: String] to [Result(File, ErrNo)] {
+    proc open_write [var filename: String] to [Result(File, clib::ErrNo)] {
         cond {
             filename.length@ 1- filename#@ 0 !={
                 "Filename `" lib::term::ewrite
@@ -48,18 +47,18 @@ struct File {
         clib::open64
         cond {
             -1 = {
-                clib::get_errno ErrNo::from_int
-                Result::Err(File, ErrNo)
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
             }
         }
     }
 
     // Opens a file in read-write mode, creating the file if it doesn't exist,
     // and truncating the file.
-    proc create_new [var filename: String] to [Result(File, ErrNo)] {
+    proc create_new [var filename: String] to [Result(File, clib::ErrNo)] {
         cond {
             filename.length@ 1- filename#@ 0 !={
                 "Filename `" lib::term::ewrite
@@ -74,40 +73,40 @@ struct File {
         clib::open64
         cond {
             -1 = {
-                clib::get_errno ErrNo::from_int
-                Result::Err(File, ErrNo)
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, ErrNo)
+                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
             }
         }
     }
 
-    proc close [File] to [Result(bool, ErrNo)] {
+    proc close [File] to [Result(bool, clib::ErrNo)] {
         unpack unpack clib::close
         cond {
             -1 = {
-                clib::get_errno ErrNo::from_int
-                Result::Err(bool, ErrNo)
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(bool, clib::ErrNo)
             }
             else {
                 drop
-                true Result::Ok(bool, ErrNo)
+                true Result::Ok(bool, clib::ErrNo)
             }
         }
     }
     
-    proc stat [File] to [Result(clib::Stat, ErrNo)] {
+    proc stat [File] to [Result(clib::Stat, clib::ErrNo)] {
         var buf: clib::Stat
         unpack unpack buf clib::fstat
         cond {
             -1 = {
-                clib::get_errno ErrNo::from_int
-                Result::Err(clib::Stat, ErrNo)
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(clib::Stat, clib::ErrNo)
             }
             else {
                 drop
-                buf@ Result::Ok(clib::Stat, ErrNo)
+                buf@ Result::Ok(clib::Stat, clib::ErrNo)
             }
         }
     }
