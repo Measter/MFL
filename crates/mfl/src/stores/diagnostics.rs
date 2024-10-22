@@ -383,7 +383,7 @@ impl Diagnostic {
     }
 }
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
     pub fn display_diags(&mut self) {
         for diag in self.diags.detatched.drain(..) {
             display_single_diag(self.values, self.source, diag);

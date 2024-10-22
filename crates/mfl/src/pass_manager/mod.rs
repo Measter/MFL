@@ -23,6 +23,7 @@ mod passes;
 pub mod static_analysis;
 
 flags! {
+    #[derive(PartialOrd, Ord)]
     pub(crate) enum PassState: u32 {
         BuildNames,
         CheckAsserts,
@@ -201,6 +202,7 @@ impl PassManager {
 
     pub fn ensure_build_names(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::BuildNames;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -219,6 +221,7 @@ impl PassManager {
 
     fn ensure_check_asserts(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::CheckAsserts;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -250,6 +253,7 @@ impl PassManager {
 
     fn ensure_const_prop_body(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::ConstPropBody;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -274,6 +278,7 @@ impl PassManager {
 
     fn ensure_declare_enums(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::DeclareEnums;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -295,6 +300,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::DeclareStructs;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -318,6 +324,7 @@ impl PassManager {
 
     fn ensure_define_structs(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::DefineStructs;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -364,6 +371,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::EvaluatedConstsAsserts;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -417,6 +425,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedBody;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -444,6 +453,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedScope;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -471,6 +481,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::IdentResolvedSignature;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -498,6 +509,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::PartiallyTypeResolved;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -526,6 +538,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::StackAndTypeCheckedBody;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -559,6 +572,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TerminalBlockCheckBody;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -580,6 +594,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedBody;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -607,6 +622,7 @@ impl PassManager {
         cur_item: ItemId,
     ) -> Result<(), ()> {
         const STATE: PassState = PassState::TypeResolvedSignature;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };
@@ -630,6 +646,7 @@ impl PassManager {
 
     fn ensure_validity_check(&mut self, stores: &mut Stores, cur_item: ItemId) -> Result<(), ()> {
         const STATE: PassState = PassState::ValidityCheck;
+        let _start = stores.timer.start_pass(STATE);
         if self.ensure_state_deps(stores, cur_item, STATE)?.done() {
             return Ok(());
         };

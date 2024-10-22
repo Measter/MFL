@@ -8,7 +8,7 @@ use stores::{items::ItemId, source::SourceStore, strings::StringStore};
 use types::TypeStore;
 use values::ValueStore;
 
-use crate::pass_manager::PassManager;
+use crate::{pass_manager::PassManager, timer::Timer};
 
 pub mod block;
 pub mod diagnostics;
@@ -37,7 +37,8 @@ pub const FRENDLY_ARRAY_CLOSE: &str = "]";
 pub const FRENDLY_PTR_MULTI: &str = "*";
 pub const FRENDLY_PTR_SINGLE: &str = "&";
 
-pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'sigs, 'diags> {
+pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'sigs, 'diags, 'timer>
+{
     pub source: &'source mut SourceStore,
     pub strings: &'strings mut StringStore,
     pub types: &'types mut TypeStore,
@@ -47,9 +48,10 @@ pub struct Stores<'source, 'strings, 'types, 'ops, 'blocks, 'values, 'items, 'si
     pub items: &'items mut ItemStore,
     pub sigs: &'sigs mut SigStore,
     pub diags: &'diags mut DiagnosticStore,
+    pub timer: &'timer Timer,
 }
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
     pub fn build_mangled_name(&mut self, pass_manager: &mut PassManager, item_id: ItemId) -> Spur {
         let item_header = self.items.get_item_header(item_id);
 

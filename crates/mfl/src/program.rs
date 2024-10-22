@@ -190,12 +190,16 @@ fn load_module(
 
     let file_id = stores.source.add(file, file_contents);
 
-    let tokens = lexer::lex_file(stores, file_contents, file_id)
-        .map_err(|_| eyre!("error lexing file: {}", file.display()))?;
+    let tokens = {
+        let _start = stores.timer.start_lex();
+        lexer::lex_file(stores, file_contents, file_id)
+            .map_err(|_| eyre!("error lexing file: {}", file.display()))?
+    };
 
     let file_stem = Path::new(file).file_stem().and_then(OsStr::to_str).unwrap();
     stores.strings.intern(file_stem);
 
+    let _start = stores.timer.start_parse();
     crate::parser::parse_module(stores, module_id, &tokens, include_queue)
         .map_err(|_| eyre!("error parsing file: {}", file.display()))?;
 

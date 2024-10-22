@@ -289,7 +289,7 @@ impl From<FloatWidth> for BuiltinTypes {
     }
 }
 
-impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_> {
+impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
     pub fn define_fixed_struct(
         &mut self,
         struct_id: ItemId,

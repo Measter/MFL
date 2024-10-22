@@ -42,6 +42,7 @@ mod pass_manager;
 mod program;
 mod simulate;
 mod stores;
+mod timer;
 
 #[derive(Debug, Parser)]
 pub struct Args {
@@ -86,6 +87,9 @@ pub struct Args {
     /// Emit LLIR
     #[arg(long = "emit-llir")]
     emit_llir: bool,
+
+    #[arg(long = "time-passes")]
+    time_passes: bool,
 }
 
 fn is_valid_entry_sig(stores: &mut Stores, item_id: ItemId) -> bool {
@@ -183,6 +187,7 @@ fn run_compile(args: &Args) -> Result<()> {
     let mut sig_store = SigStore::new();
     let mut item_store = ItemStore::new(&mut string_store, &mut sig_store, &mut type_store);
     let mut diag_store = DiagnosticStore::new();
+    let timer = timer::Timer::new(args.time_passes);
 
     let mut stores = Stores {
         source: &mut source_storage,
@@ -194,6 +199,7 @@ fn run_compile(args: &Args) -> Result<()> {
         items: &mut item_store,
         sigs: &mut sig_store,
         diags: &mut diag_store,
+        timer: &timer,
     };
 
     print!("   Compiling...");
@@ -210,7 +216,10 @@ fn run_compile(args: &Args) -> Result<()> {
         }
     };
 
-    let mut objects = backend_llvm::compile(&mut stores, &top_level_items, args)?;
+    let mut objects = {
+        let _start = stores.timer.start_compile();
+        backend_llvm::compile(&mut stores, &top_level_items, args)?
+    };
     objects.extend(args.addition_obj_paths.iter().cloned());
 
     if args.is_library {
@@ -220,12 +229,19 @@ fn run_compile(args: &Args) -> Result<()> {
 
     let output_path = args.output.clone().unwrap();
 
-    let ld = Command::new("gcc")
-        .arg("-o")
-        .arg(&output_path)
-        .args(&objects)
-        .status()
-        .with_context(|| eyre!("Failed to link"))?;
+    let ld = {
+        let _start = stores.timer.start_link();
+        Command::new("gcc")
+            .arg("-o")
+            .arg(&output_path)
+            .args(&objects)
+            .status()
+            .with_context(|| eyre!("Failed to link"))?
+    };
+
+    if args.time_passes {
+        stores.timer.print();
+    }
 
     if !ld.success() {
         std::process::exit(-3);
