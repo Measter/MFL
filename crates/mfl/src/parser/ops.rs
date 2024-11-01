@@ -616,6 +616,8 @@ fn parse_integer_op(
             _ => {
                 Diagnostic::error(ident_token.location, "invalid integer type")
                     .attached(stores.diags, item_id);
+
+                had_error.forget();
                 return Err(());
             }
         };
@@ -627,6 +629,8 @@ fn parse_integer_op(
                 "signed integer literal with unsigned type kind",
             )
             .attached(stores.diags, item_id);
+
+            had_error.forget();
             return Err(());
         }
 
@@ -644,6 +648,8 @@ fn parse_integer_op(
                             width.bounds_signed(),
                         ))
                         .attached(stores.diags, item_id);
+
+                    had_error.forget();
                     return Err(());
                 }
                 Integer::Signed(value)
@@ -657,6 +663,8 @@ fn parse_integer_op(
                             width.bounds_unsigned(),
                         ))
                         .attached(stores.diags, item_id);
+
+                    had_error.forget();
                     return Err(());
                 }
                 Integer::Unsigned(literal_value)
