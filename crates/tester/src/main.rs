@@ -129,6 +129,13 @@ impl ResultCounts {
         self.total += 1;
         self.skipped += 1;
     }
+
+    fn merge(&mut self, rhs: Self) {
+        self.total += rhs.total;
+        self.passed += rhs.passed;
+        self.skipped += rhs.skipped;
+        self.failed += rhs.failed;
+    }
 }
 
 enum TestRunResult<'a> {
@@ -438,92 +445,116 @@ fn run_single_test(
     build_path: &Path,
     args: &Args,
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
-    counts: &mut ResultCounts,
-) -> Result<(), color_eyre::Report> {
-    if test_group.skip {
-        counts.skip();
-        for _ in &test_group.run_tests {
+) -> ResultCounts {
+    fn run_impl(
+        stdout: &mut StdoutLock,
+        test_group: &TestGroup,
+        build_path: &Path,
+        args: &Args,
+        post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
+        counts: &mut ResultCounts,
+    ) -> Result<(), color_eyre::Report> {
+        if test_group.skip {
             counts.skip();
+            for _ in &test_group.run_tests {
+                counts.skip();
+            }
+
+            return Ok(());
         }
 
-        return Ok(());
-    }
-
-    if args.output_style > 0 {
-        let newline = if args.output_style > 1 { "\n" } else { "" };
-        write!(stdout, "{} {}", test_group.name, newline)?;
-    }
-    let mut test_results = Vec::new();
-
-    let test_dir = build_path.join(&test_group.path);
-    let objdir = test_dir.join("obj");
-    let output_binary = test_dir.join("program");
-    let mut mfl_file = args.tests_root.join(&test_group.path);
-
-    mfl_file.set_extension("mfl");
-    let objdir = objdir.as_os_str();
-    let output_binary = output_binary.as_os_str();
-    let mfl_file = mfl_file.as_os_str();
-
-    let compiler_args = [
-        OsStr::new("--obj"),
-        objdir,
-        OsStr::new("-o"),
-        output_binary,
-        mfl_file,
-    ];
-
-    let test_command = run_command(&args.mfl, &compiler_args, &test_group.compile)?;
-    let post_fn_result = post_test_fn(args, &test_group.path, "compile", &test_command);
-    let command_result: RunStatus = test_command.status.into();
-
-    counts.add_result(
-        command_result,
-        test_group.compile.cfg.expected_result,
-        &post_fn_result,
-    );
-
-    let skip_run = command_result == RunStatus::Error
-        || test_group.compile.cfg.expected_result == RunStatus::Error
-        || !matches!(post_fn_result, PostFnResult::Ok | PostFnResult::Missing);
-
-    test_results.push(TestRunResult::Run {
-        command: test_command,
-        command_result,
-        test: &test_group.compile,
-        post_fn_result,
-    });
-
-    for run in &test_group.run_tests {
-        if skip_run {
-            counts.skip();
-            test_results.push(TestRunResult::Skipped { test: run });
-            continue;
+        if args.output_style > 0 {
+            let newline = if args.output_style > 1 { "\n" } else { "" };
+            write!(stdout, "{} {}", test_group.name, newline)?;
         }
+        let mut test_results = Vec::new();
 
-        let test_command = run_command(output_binary, &[], run)?;
+        let test_dir = build_path.join(&test_group.path);
+        let objdir = test_dir.join("obj");
+        let output_binary = test_dir.join("program");
+        let mut mfl_file = args.tests_root.join(&test_group.path);
+
+        mfl_file.set_extension("mfl");
+        let objdir = objdir.as_os_str();
+        let output_binary = output_binary.as_os_str();
+        let mfl_file = mfl_file.as_os_str();
+
+        let compiler_args = [
+            OsStr::new("--obj"),
+            objdir,
+            OsStr::new("-o"),
+            output_binary,
+            mfl_file,
+        ];
+
+        let test_command = run_command(&args.mfl, &compiler_args, &test_group.compile)?;
+        let post_fn_result = post_test_fn(args, &test_group.path, "compile", &test_command);
         let command_result: RunStatus = test_command.status.into();
-        let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
 
-        counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
+        counts.add_result(
+            command_result,
+            test_group.compile.cfg.expected_result,
+            &post_fn_result,
+        );
+
+        let skip_run = command_result == RunStatus::Error
+            || test_group.compile.cfg.expected_result == RunStatus::Error
+            || !matches!(post_fn_result, PostFnResult::Ok | PostFnResult::Missing);
 
         test_results.push(TestRunResult::Run {
             command: test_command,
             command_result,
-            test: run,
+            test: &test_group.compile,
             post_fn_result,
         });
+
+        for run in &test_group.run_tests {
+            if skip_run {
+                counts.skip();
+                test_results.push(TestRunResult::Skipped { test: run });
+                continue;
+            }
+
+            let test_command = run_command(output_binary, &[], run)?;
+            let command_result: RunStatus = test_command.status.into();
+            let post_fn_result = post_test_fn(args, &test_group.path, &run.name, &test_command);
+
+            counts.add_result(command_result, run.cfg.expected_result, &post_fn_result);
+
+            test_results.push(TestRunResult::Run {
+                command: test_command,
+                command_result,
+                test: run,
+                post_fn_result,
+            });
+        }
+
+        for result in test_results {
+            print_result(stdout, &result, args.output_style)?;
+        }
+
+        if args.output_style > 0 {
+            writeln!(stdout)?;
+        }
+
+        Ok(())
     }
 
-    for result in test_results {
-        print_result(stdout, &result, args.output_style)?;
+    let mut counts = ResultCounts::default();
+
+    if let Err(e) = run_impl(
+        stdout,
+        test_group,
+        build_path,
+        args,
+        post_test_fn,
+        &mut counts,
+    ) {
+        eprintln!();
+        eprintln!("{e}");
     }
 
-    if args.output_style > 0 {
-        writeln!(stdout)?;
-    }
-
-    Ok(())
+    counts
 }
 
 fn run_all_tests(
@@ -536,14 +567,8 @@ fn run_all_tests(
     let mut stdout = std::io::stdout().lock();
 
     for test in tests {
-        run_single_test(
-            &mut stdout,
-            test,
-            temp_dir.path(),
-            args,
-            post_test_fn,
-            &mut counts,
-        )?;
+        let test_count = run_single_test(&mut stdout, test, temp_dir.path(), args, post_test_fn);
+        counts.merge(test_count);
     }
 
     Ok(counts)
