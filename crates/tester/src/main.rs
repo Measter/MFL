@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{BinaryHeap, HashMap},
     ffi::OsStr,
     io::{Error as IoError, ErrorKind, StdoutLock, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output},
+    sync::mpsc::{Receiver, Sender},
 };
 
 use clap::Parser;
@@ -12,6 +13,7 @@ use color_eyre::{
     owo_colors::OwoColorize,
     Result,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
@@ -94,6 +96,7 @@ struct Test {
 
 #[derive(Debug)]
 struct TestGroup {
+    id: usize,
     path: PathBuf,
     name: String,
     compile: Test,
@@ -130,11 +133,13 @@ impl ResultCounts {
         self.skipped += 1;
     }
 
-    fn merge(&mut self, rhs: Self) {
-        self.total += rhs.total;
-        self.passed += rhs.passed;
-        self.skipped += rhs.skipped;
-        self.failed += rhs.failed;
+    fn merge(self, rhs: Self) -> Self {
+        Self {
+            total: self.total + rhs.total,
+            passed: self.passed + rhs.passed,
+            skipped: self.skipped + rhs.skipped,
+            failed: self.failed + rhs.failed,
+        }
     }
 }
 
@@ -148,6 +153,32 @@ enum TestRunResult<'a> {
     Skipped {
         test: &'a Test,
     },
+}
+
+struct TestGroupResult<'a> {
+    id: usize,
+    group_name: &'a str,
+    results: Vec<TestRunResult<'a>>,
+}
+
+impl Ord for TestGroupResult<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.id.cmp(&self.id)
+    }
+}
+
+impl PartialOrd for TestGroupResult<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for TestGroupResult<'_> {}
+
+impl PartialEq for TestGroupResult<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 fn read_test(args: &Args, path: &Path) -> Result<Option<TestGroup>> {
@@ -190,6 +221,7 @@ fn read_test(args: &Args, path: &Path) -> Result<Option<TestGroup>> {
     }
 
     Ok(Some(TestGroup {
+        id: 0,
         compile: compile_test,
         name: test_name.display().to_string(),
         path: test_name,
@@ -208,12 +240,13 @@ fn get_tests(args: &Args) -> Result<Vec<TestGroup>> {
         }
 
         if entry.path().extension() == Some(OsStr::new("mfl")) {
-            let Some(test_case) = read_test(args, entry.path())
+            let Some(mut test_case) = read_test(args, entry.path())
                 .with_context(|| format!("error reading test `{}`", entry.path().display()))?
             else {
                 continue;
             };
 
+            test_case.id = tests.len();
             tests.push(test_case);
         }
     }
@@ -306,149 +339,170 @@ fn build_diff(prev_stream: &[u8], new_stream: &[u8]) -> Vec<diff::Result<String>
         .collect()
 }
 
-fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u8) -> Result<()> {
+fn print_result_group(
+    stdout: &mut StdoutLock,
+    result_group: &TestGroupResult,
+    output_style: u8,
+) -> Result<()> {
+    let print_group_name = output_style > 0;
+    let post_group_new_line = output_style > 0;
     let print_subtest_name = output_style > 1;
     let post_subtest_new_line = output_style > 1;
     let verbose_result_mark = output_style > 1;
     let print_diff_streams = output_style > 1;
     let print_streams = output_style > 2;
 
-    match result {
-        TestRunResult::Skipped { test } => {
-            if print_subtest_name {
-                write!(stdout, "  {} ", test.name)?;
-            }
-            let mark = if verbose_result_mark { "SKIPPED" } else { "o" };
-            write!(stdout, "{}", mark.yellow())?;
-            if post_subtest_new_line {
-                writeln!(stdout)?;
-            }
-        }
-        TestRunResult::Run {
-            command,
-            command_result,
-            test,
-            post_fn_result,
-        } => {
-            if print_subtest_name {
-                write!(stdout, "  {} ", test.name)?;
-            }
+    if print_group_name {
+        let newline = if print_subtest_name { "\n" } else { "" };
+        write!(stdout, "{} {}", result_group.group_name, newline)?;
+    }
 
-            let mut diffs = Vec::new();
-
-            let mark = if *command_result != test.cfg.expected_result {
-                if verbose_result_mark {
-                    format!(
-                        "{}: Expected {:?} got {:?}",
-                        "FAIL".red(),
-                        test.cfg.expected_result,
-                        command_result
-                    )
-                } else {
-                    "x".red().to_string()
+    for sub_test in &result_group.results {
+        match sub_test {
+            TestRunResult::Skipped { test } => {
+                if print_subtest_name {
+                    write!(stdout, "  {} ", test.name)?;
                 }
-            } else {
-                match post_fn_result {
-                    PostFnResult::Ok => {
-                        if verbose_result_mark {
-                            "PASS".green().to_string()
-                        } else {
-                            "✓".green().to_string()
-                        }
-                    }
-                    PostFnResult::NotEqual { stdout, stderr } => {
-                        for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
-                            if !stream.is_empty() {
-                                diffs.push(format!("    -- {name} --"));
-                                for d in stream {
-                                    match d {
-                                        diff::Result::Left(l) => {
-                                            diffs.push(format!("    {} {}", "-".bright_black(), l));
-                                        }
-                                        diff::Result::Right(l) => {
-                                            diffs.push(format!("    {} {}", "+".bright_white(), l));
-                                        }
-                                        diff::Result::Both(_, _) => {}
-                                    }
-                                }
-                            }
-                            diffs.push(String::new());
-                        }
-                        if verbose_result_mark {
-                            format!("{}: Test output changed", "FAIL".red())
-                        } else {
-                            "x".red().to_string()
-                        }
-                    }
-
-                    PostFnResult::Missing => {
-                        if verbose_result_mark {
-                            format!("{}: Previous output not found", "Missing".magenta())
-                        } else {
-                            "m".magenta().to_string()
-                        }
-                    }
-                    PostFnResult::Other(e) => {
-                        if verbose_result_mark {
-                            format!("{}: Output error - {}", "Error".red(), e)
-                        } else {
-                            "x".red().to_string()
-                        }
-                    }
-                }
-            };
-
-            write!(stdout, "{mark}",)?;
-
-            if print_diff_streams {
-                if !diffs.is_empty() {
+                let mark = if verbose_result_mark { "SKIPPED" } else { "o" };
+                write!(stdout, "{}", mark.yellow())?;
+                if post_subtest_new_line {
                     writeln!(stdout)?;
                 }
-                for line in diffs {
-                    writeln!(stdout, "{line}")?;
-                }
             }
+            TestRunResult::Run {
+                command,
+                command_result,
+                test,
+                post_fn_result,
+            } => {
+                if print_subtest_name {
+                    write!(stdout, "  {} ", test.name)?;
+                }
 
-            if print_streams {
-                for (name, stream) in [("STDOUT", &command.stdout), ("STDERR", &command.stderr)] {
-                    if !stream.is_empty() {
+                let mut diffs = Vec::new();
+
+                let mark = if *command_result != test.cfg.expected_result {
+                    if verbose_result_mark {
+                        format!(
+                            "{}: Expected {:?} got {:?}",
+                            "FAIL".red(),
+                            test.cfg.expected_result,
+                            command_result
+                        )
+                    } else {
+                        "x".red().to_string()
+                    }
+                } else {
+                    match post_fn_result {
+                        PostFnResult::Ok => {
+                            if verbose_result_mark {
+                                "PASS".green().to_string()
+                            } else {
+                                "✓".green().to_string()
+                            }
+                        }
+                        PostFnResult::NotEqual { stdout, stderr } => {
+                            for (name, stream) in [("STDOUT", stdout), ("STDERR", stderr)] {
+                                if !stream.is_empty() {
+                                    diffs.push(format!("    -- {name} --"));
+                                    for d in stream {
+                                        match d {
+                                            diff::Result::Left(l) => {
+                                                diffs.push(format!(
+                                                    "    {} {}",
+                                                    "-".bright_black(),
+                                                    l
+                                                ));
+                                            }
+                                            diff::Result::Right(l) => {
+                                                diffs.push(format!(
+                                                    "    {} {}",
+                                                    "+".bright_white(),
+                                                    l
+                                                ));
+                                            }
+                                            diff::Result::Both(_, _) => {}
+                                        }
+                                    }
+                                }
+                                diffs.push(String::new());
+                            }
+                            if verbose_result_mark {
+                                format!("{}: Test output changed", "FAIL".red())
+                            } else {
+                                "x".red().to_string()
+                            }
+                        }
+
+                        PostFnResult::Missing => {
+                            if verbose_result_mark {
+                                format!("{}: Previous output not found", "Missing".magenta())
+                            } else {
+                                "m".magenta().to_string()
+                            }
+                        }
+                        PostFnResult::Other(e) => {
+                            if verbose_result_mark {
+                                format!("{}: Output error - {}", "Error".red(), e)
+                            } else {
+                                "x".red().to_string()
+                            }
+                        }
+                    }
+                };
+
+                write!(stdout, "{mark}",)?;
+
+                if print_diff_streams {
+                    if !diffs.is_empty() {
                         writeln!(stdout)?;
-                        writeln!(stdout, "    -- {name} --")?;
-                        std::str::from_utf8(stream).unwrap().lines().try_for_each(
-                            |line| -> Result<()> {
-                                writeln!(stdout, "    {line}")?;
-                                Ok(())
-                            },
-                        )?;
+                    }
+                    for line in diffs {
+                        writeln!(stdout, "{line}")?;
                     }
                 }
-            }
 
-            if post_subtest_new_line {
-                writeln!(stdout)?;
+                if print_streams {
+                    for (name, stream) in [("STDOUT", &command.stdout), ("STDERR", &command.stderr)]
+                    {
+                        if !stream.is_empty() {
+                            writeln!(stdout)?;
+                            writeln!(stdout, "    -- {name} --")?;
+                            std::str::from_utf8(stream).unwrap().lines().try_for_each(
+                                |line| -> Result<()> {
+                                    writeln!(stdout, "    {line}")?;
+                                    Ok(())
+                                },
+                            )?;
+                        }
+                    }
+                }
+
+                if post_subtest_new_line {
+                    writeln!(stdout)?;
+                }
             }
         }
     }
 
+    if post_group_new_line {
+        writeln!(stdout)?;
+    }
     stdout.flush()?;
 
     Ok(())
-
-    // if force_print_full_streams {
-    //     print_streams();
-    // }
 }
 
-fn run_single_test(
-    stdout: &mut StdoutLock,
-    test_group: &TestGroup,
+fn run_single_test<'a>(
+    sender: Sender<TestGroupResult<'a>>,
+    test_group: &'a TestGroup,
     build_path: &Path,
     args: &Args,
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
 ) -> ResultCounts {
-    fn run_impl(
-        stdout: &mut StdoutLock,
-        test_group: &TestGroup,
+    fn run_impl<'a>(
+        sender: Sender<TestGroupResult<'a>>,
+        test_group: &'a TestGroup,
         build_path: &Path,
         args: &Args,
         post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
@@ -463,10 +517,6 @@ fn run_single_test(
             return Ok(());
         }
 
-        if args.output_style > 0 {
-            let newline = if args.output_style > 1 { "\n" } else { "" };
-            write!(stdout, "{} {}", test_group.name, newline)?;
-        }
         let mut test_results = Vec::new();
 
         let test_dir = build_path.join(&test_group.path);
@@ -529,13 +579,13 @@ fn run_single_test(
             });
         }
 
-        for result in test_results {
-            print_result(stdout, &result, args.output_style)?;
-        }
-
-        if args.output_style > 0 {
-            writeln!(stdout)?;
-        }
+        sender
+            .send(TestGroupResult {
+                id: test_group.id,
+                group_name: &test_group.name,
+                results: test_results,
+            })
+            .unwrap();
 
         Ok(())
     }
@@ -543,7 +593,7 @@ fn run_single_test(
     let mut counts = ResultCounts::default();
 
     if let Err(e) = run_impl(
-        stdout,
+        sender,
         test_group,
         build_path,
         args,
@@ -557,19 +607,44 @@ fn run_single_test(
     counts
 }
 
+fn result_printer_thread(
+    receiver: Receiver<TestGroupResult>,
+    expected_ids: Vec<usize>,
+    output_style: u8,
+) {
+    let mut stdout = std::io::stdout().lock();
+    let mut queue = BinaryHeap::new();
+    let mut expected_ids = expected_ids.into_iter().peekable();
+
+    for result_group in receiver.iter() {
+        queue.push(result_group);
+
+        while queue.peek().is_some() && queue.peek().map(|rg| rg.id) == expected_ids.peek().copied()
+        {
+            expected_ids.next();
+            let result_group = queue.pop().unwrap();
+            print_result_group(&mut stdout, &result_group, output_style).unwrap();
+        }
+    }
+}
+
 fn run_all_tests(
     args: &Args,
+    expected_ids: Vec<usize>,
     tests: &[TestGroup],
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
 ) -> Result<ResultCounts> {
-    let mut counts = ResultCounts::default();
     let temp_dir = tempfile::tempdir()?;
-    let mut stdout = std::io::stdout().lock();
 
-    for test in tests {
-        let test_count = run_single_test(&mut stdout, test, temp_dir.path(), args, post_test_fn);
-        counts.merge(test_count);
-    }
+    let counts = std::thread::scope(|scope| {
+        let (sender, receiver) = std::sync::mpsc::channel::<TestGroupResult>();
+        scope.spawn(|| result_printer_thread(receiver, expected_ids, args.output_style));
+
+        tests
+            .par_iter()
+            .map(|test| run_single_test(sender.clone(), test, temp_dir.path(), args, post_test_fn))
+            .reduce(ResultCounts::default, |a, b| a.merge(b))
+    });
 
     Ok(counts)
 }
@@ -597,11 +672,17 @@ fn main() -> Result<()> {
         .map(|f| Regex::new(f))
         .collect::<Result<_, _>>()?;
 
+    let mut expected_ids = Vec::new();
     if !filters.is_empty() {
         tests.iter_mut().for_each(|test_group| {
-            test_group.skip |= filters
+            let is_skip = filters
                 .iter()
                 .all(|filter| !filter.is_match(&test_group.name));
+
+            test_group.skip |= is_skip;
+            if !is_skip {
+                expected_ids.push(test_group.id);
+            }
         });
     }
 
@@ -612,11 +693,11 @@ fn main() -> Result<()> {
     let counts = if args.generate {
         println!("Generating test output");
         println!();
-        run_all_tests(&args, &tests, store_streams)?
+        run_all_tests(&args, expected_ids, &tests, store_streams)?
     } else {
         println!("Running tests");
         println!();
-        run_all_tests(&args, &tests, compare_streams)?
+        run_all_tests(&args, expected_ids, &tests, compare_streams)?
     };
 
     if !args.generate {

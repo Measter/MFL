@@ -9,6 +9,7 @@ edition = "2021"
 clap = { version = "4.3.4", features = ["derive"] }
 color-eyre = "0.6.2"
 diff = "0.1.13"
+rayon = "1.10.0"
 regex = "1.8.4"
 serde = { version = "1.0.164", features = ["derive"] }
 tempfile = "3.6.0"
