@@ -435,7 +435,7 @@ fn print_result(stdout: &mut StdoutLock, result: &TestRunResult, output_style: u
 fn run_single_test(
     stdout: &mut StdoutLock,
     test_group: &TestGroup,
-    temp_dir: &tempfile::TempDir,
+    build_path: &Path,
     args: &Args,
     post_test_fn: fn(&Args, &Path, &str, &Output) -> PostFnResult,
     counts: &mut ResultCounts,
@@ -455,7 +455,7 @@ fn run_single_test(
     }
     let mut test_results = Vec::new();
 
-    let test_dir = temp_dir.path().join(&test_group.path);
+    let test_dir = build_path.join(&test_group.path);
     let objdir = test_dir.join("obj");
     let output_binary = test_dir.join("program");
     let mut mfl_file = args.tests_root.join(&test_group.path);
@@ -539,7 +539,7 @@ fn run_all_tests(
         run_single_test(
             &mut stdout,
             test,
-            &temp_dir,
+            temp_dir.path(),
             args,
             post_test_fn,
             &mut counts,
