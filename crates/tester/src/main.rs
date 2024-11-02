@@ -680,10 +680,12 @@ fn main() -> Result<()> {
                 .all(|filter| !filter.is_match(&test_group.name));
 
             test_group.skip |= is_skip;
-            if !is_skip {
+            if !test_group.skip {
                 expected_ids.push(test_group.id);
             }
         });
+    } else {
+        expected_ids.extend(0..tests.len());
     }
 
     if tests.is_empty() {
