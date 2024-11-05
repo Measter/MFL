@@ -38,6 +38,14 @@ struct Result(T, E) {
         Tag::Err swap Payload(T, E) Result
     }
 
+    proc is_err(T, E) [Result(T, E)] to [bool] {
+        xtrd(tag) Tag::Err =
+    }
+
+    proc is_ok(T, E) [Result(T, E)] to [bool] {
+        xtrd(tag) Tag::Ok =
+    }
+
     proc(track_caller) unwrap_ok(T, E) [Result(T, E)] to [T] {
         unpack swap
         cond {
