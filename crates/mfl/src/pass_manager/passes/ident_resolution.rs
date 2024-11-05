@@ -767,27 +767,39 @@ pub fn resolve_signature(
                 };
 
             for kind in &unresolved_sig.entry.inner {
-                let new_kind = match kind {
-                    StackDefItemUnresolved::Var { name, kind } => {
-                        let scope = stores.sigs.nrir.get_scope(cur_id);
-                        let Some(var_id) = scope.get_symbol(name.inner) else {
-                            panic!("ICE: Failed to find name of parameter variable")
-                        };
+                let new_kind = if header.kind == ItemKind::FunctionDecl {
+                    // Decls can name their parameters, but we should ignore the name.
 
-                        let Some(new_kind) = process_sig_kind(stores, kind) else {
-                            continue;
-                        };
+                    let (StackDefItemUnresolved::Stack(kind)
+                    | StackDefItemUnresolved::Var { kind, .. }) = kind;
 
-                        StackDefItemNameResolved::Var {
-                            name: var_id,
-                            kind: new_kind,
+                    let Some(new_kind) = process_sig_kind(stores, kind) else {
+                        continue;
+                    };
+                    StackDefItemNameResolved::Stack(new_kind)
+                } else {
+                    match kind {
+                        StackDefItemUnresolved::Var { name, kind } => {
+                            let scope = stores.sigs.nrir.get_scope(cur_id);
+                            let Some(var_id) = scope.get_symbol(name.inner) else {
+                                panic!("ICE: Failed to find name of parameter variable")
+                            };
+
+                            let Some(new_kind) = process_sig_kind(stores, kind) else {
+                                continue;
+                            };
+
+                            StackDefItemNameResolved::Var {
+                                name: var_id,
+                                kind: new_kind,
+                            }
                         }
-                    }
-                    StackDefItemUnresolved::Stack(kind) => {
-                        let Some(new_kind) = process_sig_kind(stores, kind) else {
-                            continue;
-                        };
-                        StackDefItemNameResolved::Stack(new_kind)
+                        StackDefItemUnresolved::Stack(kind) => {
+                            let Some(new_kind) = process_sig_kind(stores, kind) else {
+                                continue;
+                            };
+                            StackDefItemNameResolved::Stack(new_kind)
+                        }
                     }
                 };
 
