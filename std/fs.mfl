@@ -5,6 +5,7 @@ import lib::SimpleResult
 
 struct File {
     fd: clib::FD,
+    flags: u32, // Used to store the flags the file was opened with.
 
     // Opens a file in read-only mode.
     proc open_read [var filename: String] to [Result(File, clib::ErrNo)] {
@@ -16,17 +17,19 @@ struct File {
                 1 exit
             }
         }
-        filename.pointer@
         clib::O_READONLY
+        filename.pointer@
+        over
         0o666
         clib::open64
         cond {
             -1 = {
+                drop // Drop flags
                 clib::get_errno clib::ErrNo::from_int
                 Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
+                cast(u32) clib::FD swap File Result::Ok(File, clib::ErrNo)
             }
         }
     }
@@ -41,17 +44,19 @@ struct File {
                 1 exit
             }
         }
-        filename.pointer@
         clib::O_READWRITE clib::O_CREATE or
+        filename.pointer@
+        over
         0o666
         clib::open64
         cond {
             -1 = {
+                drop // Drop flags
                 clib::get_errno clib::ErrNo::from_int
                 Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
+                cast(u32) clib::FD swap File Result::Ok(File, clib::ErrNo)
             }
         }
     }
@@ -67,23 +72,25 @@ struct File {
                 1 exit
             }
         }
-        filename.pointer@
         clib::O_READWRITE clib::O_CREATE clib::O_TRUNC or or
+        filename.pointer@
+        over
         0o666
         clib::open64
         cond {
             -1 = {
+                drop // Drop flags
                 clib::get_errno clib::ErrNo::from_int
                 Result::Err(File, clib::ErrNo)
             }
             else {
-                cast(u32) clib::FD File Result::Ok(File, clib::ErrNo)
+                cast(u32) clib::FD swap File Result::Ok(File, clib::ErrNo)
             }
         }
     }
 
     proc close [File] to [Result(bool, clib::ErrNo)] {
-        unpack unpack clib::close
+        xtrd(fd) unpack clib::close
         cond {
             -1 = {
                 clib::get_errno clib::ErrNo::from_int
@@ -98,7 +105,7 @@ struct File {
     
     proc stat [File] to [Result(clib::Stat, clib::ErrNo)] {
         var buf: clib::Stat
-        unpack unpack buf clib::fstat
+        xtrd(fd) unpack buf clib::fstat
         cond {
             -1 = {
                 clib::get_errno clib::ErrNo::from_int
