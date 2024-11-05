@@ -6,6 +6,11 @@ struct Slice(T) {
     pointer: T*,
     length: u64,
 
+    proc as_string [Slice(u8)] to [lib::string::String] {
+        unpack swap lib::string::String
+    }
+
+
     proc fill(T) [
         var val: T,
         var this: Slice(T),
