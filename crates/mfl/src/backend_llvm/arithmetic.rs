@@ -402,8 +402,18 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder
                     .build_int_compare(pred, a_val, b_val, &output_name)?
             }
-            [TypeKind::MultiPointer(_), TypeKind::MultiPointer(_)]
-            | [TypeKind::SinglePointer(_), TypeKind::SinglePointer(_)] => todo!(),
+            [TypeKind::MultiPointer(ptee_type), TypeKind::MultiPointer(_)]
+            | [TypeKind::SinglePointer(ptee_type), TypeKind::SinglePointer(_)] => {
+                let target_type = self.get_type(ds.types, ptee_type);
+                let a_val = a_val.into_pointer_value();
+                let b_val = b_val.into_pointer_value();
+
+                let diff = self.builder.build_ptr_diff(target_type, a_val, b_val, "")?;
+
+                let zero = diff.get_type().const_zero();
+                let pred = op_code.get_int_predicate(IntSignedness::Signed);
+                self.builder.build_int_compare(pred, diff, zero, "")?
+            }
             [TypeKind::Bool, TypeKind::Bool] => {
                 let pred = op_code.get_int_predicate(IntSignedness::Unsigned);
                 self.builder.build_int_compare(
