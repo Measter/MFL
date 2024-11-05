@@ -1,4 +1,5 @@
 import lib::clib
+import lib::mem::Slice
 import lib::Result
 import lib::SimpleResult
 
@@ -114,6 +115,70 @@ struct File {
             else {
                 drop
                 buf@ Result::Ok(clib::Stat, clib::ErrNo)
+            }
+        }
+    }
+
+}
+
+struct MMap {
+    pointer: u8*,
+    length: u64,
+
+    proc map_file [var file: File] to [Result(MMap, clib::ErrNo)] {
+        file@:stat cond {
+            dup :is_err {
+                :unwrap_err Result::Err(MMap, clib::ErrNo) return
+            }
+            else { :unwrap_ok }
+        }
+
+        xtrd(st_size) // Length.
+        dup
+        0(u64) cast(u8*) swap // Address. We don't care where it goes.
+        // Prot flags, based on how file was opened.
+        cond {
+            file.flags@ clib::O_READONLY = { clib::PROT_READ }
+            file.flags@ clib::O_READWRITE and 0 != { clib::PROT_READ clib::PROT_WRITE or }
+            else {
+                // We only create files with readonly or read-write permission.
+                "Error: Invalid file flags: " lib::term::ewrite
+                file.flags@ lib::term::ewrite_ui_ln
+                exit(1)
+            }
+        }
+
+        // I think we can assume shared?
+        clib::MAP_SHARED
+        file.fd@ unpack // FD
+        0 // Offset
+        clib::mmap64
+
+        cond {
+            -1(s64) cast(u64) cast(u8*) = {
+                drop // Length
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(MMap, clib::ErrNo)
+            }
+            else {
+                swap MMap Result::Ok(MMap, clib::ErrNo)
+            }
+        }
+    }
+
+    proc as_slice [MMap] to [Slice(u8)] {
+        unpack Slice
+    }
+
+    proc unmap [MMap] to [Result(u8, clib::ErrNo)] {
+        unpack clib::munmap cond {
+            -1 = {
+                clib::get_errno clib::ErrNo::from_int
+                Result::Err(u8, clib::ErrNo)
+            }
+            else {
+                drop
+                0 Result::Ok(u8, clib::ErrNo)
             }
         }
     }

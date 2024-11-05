@@ -2,7 +2,13 @@ proc(extern) get_errno [] to [s32]
 
 proc(extern) malloc [var bytes_size: u64] to [u8*]
 proc(extern) free [var address: u8*] to []
-proc(extern) mmap64 [var address: u8*, var length: u64, var protect: s32, var flags: s32, var fd: s32, var offset: s64] to [u8*]
+
+const PROT_READ [s32] { 0x1 }
+const PROT_WRITE [s32] { 0x2 }
+const MAP_SHARED  [s32] { 0x01 }
+const MAP_PRIVATE [s32] { 0x02 }
+
+proc(extern) mmap64 [var address: u8*, var length: u64, var protect: s32, var flags: s32, var fd: u32, var offset: s64] to [u8*]
 proc(extern) munmap [var address: u8*, var length: u64] to [s32]
 
 
