@@ -2,7 +2,7 @@ use std::fmt::{Display, Write};
 
 use intcast::IntCast;
 use lasso::Spur;
-use logos::Logos;
+use logos::{Lexer, Logos};
 use stores::{
     source::{FileId, SourceLocation, Spanned, WithSpan},
     strings::StringStore,
@@ -256,7 +256,7 @@ pub enum TokenKind {
     Star,
 
     // We do a fixup later, in the consume loop
-    #[regex(r#""([^"\\]|\\["\\rnt0])*""#, |_| StringToken{id: Spur::default() })]
+    #[token("\"", |l| str_literal(l))]
     String(StringToken),
 
     #[token("!")]
@@ -396,6 +396,29 @@ pub enum LexerError {
     InvalidCharLiteral(SourceLocation),
 }
 
+fn consume_char_str_lit(s: &str, end_char: u8) -> usize {
+    let mut chars = s.bytes();
+    while let Some(ch) = chars.next() {
+        if ch == end_char {
+            break;
+        }
+        if ch == b'\\' {
+            chars.next(); // This is an escape sequence, so just consume the next character.
+        }
+    }
+
+    s.len() - chars.len()
+}
+
+fn str_literal(lex: &mut Lexer<TokenKind>) -> StringToken {
+    let consumed_len = consume_char_str_lit(lex.remainder(), b'"');
+    lex.bump(consumed_len);
+
+    StringToken {
+        id: Spur::default(),
+    }
+}
+
 fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
     let mut escaped = String::with_capacity(string.len());
     let mut chars = string.chars().peekable();
@@ -421,16 +444,6 @@ fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
     escaped
 }
 
-fn process_string(interner: &mut StringStore, string: &str) -> Spur {
-    let string = &string[1..string.len() - 1];
-
-    let mut new_string = escape_string_or_char_literal(string, true);
-    // All strings are null terminated, as it makes supporting C-strings easier.
-    new_string.push('\0');
-
-    interner.intern(&new_string)
-}
-
 pub fn lex<'a>(
     interner: &'a mut StringStore,
     contents: &'a str,
@@ -452,7 +465,8 @@ pub fn lex<'a>(
 
         match &mut kind {
             TokenKind::String(string_token) => {
-                string_token.id = process_string(interner, lexer.slice());
+                let slice = lexer.slice();
+                string_token.id = interner.intern(&slice[1..slice.len() - 1]);
             }
             TokenKind::Char(ch) => {
                 let literal = lexer.slice();
