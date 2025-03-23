@@ -460,7 +460,7 @@ pub fn lex<'a>(
                 let escaped = escape_string_or_char_literal(literal, false);
 
                 if escaped.chars().count() != 1 {
-                    tokens.push(Err(LexerError::UnexpectedChar(location)));
+                    tokens.push(Err(LexerError::InvalidCharLiteral(location)));
                     continue;
                 }
                 *ch = escaped.chars().next().unwrap();
