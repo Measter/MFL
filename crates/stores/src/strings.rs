@@ -6,6 +6,7 @@ use crate::items::ItemId;
 
 pub struct StringStore {
     lexemes: Rodeo,
+    escaped_strings: HashMap<Spur, String>,
     friendly_names: HashMap<ItemId, Spur>,
     mangled_names: HashMap<ItemId, Spur>,
     // Only used in the log traces, if the friendly name doesn't exist.
@@ -16,6 +17,7 @@ impl StringStore {
     pub fn new() -> Self {
         StringStore {
             lexemes: Rodeo::default(),
+            escaped_strings: HashMap::new(),
             friendly_names: HashMap::new(),
             mangled_names: HashMap::new(),
             fallback_symbol_names: HashMap::new(),
@@ -35,6 +37,24 @@ impl StringStore {
     #[inline]
     pub fn resolve(&self, id: Spur) -> &str {
         self.lexemes.resolve(&id)
+    }
+
+    #[inline]
+    pub fn is_escaped(&self, id: Spur) -> bool {
+        self.escaped_strings.contains_key(&id)
+    }
+
+    #[inline]
+    pub fn set_escaped_string(&mut self, id: Spur, string: String) {
+        let prev = self.escaped_strings.insert(id, string);
+        if prev.is_some() {
+            panic!("ICE: Tried to set escaped string twice");
+        }
+    }
+
+    #[inline]
+    pub fn get_escaped_string(&self, id: Spur) -> &str {
+        self.escaped_strings.get(&id).unwrap()
     }
 
     #[inline]
@@ -116,4 +136,29 @@ impl Default for StringStore {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
+    let mut escaped = String::with_capacity(string.len());
+    let mut chars = string.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            escaped.push(ch);
+            continue;
+        }
+        let next_ch = chars.next().unwrap();
+        let real = match next_ch {
+            '\'' if !is_string => '\'',
+            '\"' if is_string => '\"',
+            '\\' => '\\',
+            'r' => '\r',
+            'n' => '\n',
+            't' => '\t',
+            '0' => '\0',
+            _ => unreachable!(),
+        };
+        escaped.push(real);
+    }
+
+    escaped
 }

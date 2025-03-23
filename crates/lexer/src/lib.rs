@@ -5,7 +5,7 @@ use lasso::Spur;
 use logos::{Lexer, Logos};
 use stores::{
     source::{FileId, SourceLocation, Spanned, WithSpan},
-    strings::StringStore,
+    strings::{escape_string_or_char_literal, StringStore},
 };
 use tracing::debug_span;
 
@@ -417,31 +417,6 @@ fn str_literal(lex: &mut Lexer<TokenKind>) -> StringToken {
     StringToken {
         id: Spur::default(),
     }
-}
-
-fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
-    let mut escaped = String::with_capacity(string.len());
-    let mut chars = string.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            escaped.push(ch);
-            continue;
-        }
-        let next_ch = chars.next().unwrap();
-        let real = match next_ch {
-            '\'' if !is_string => '\'',
-            '\"' if is_string => '\"',
-            '\\' => '\\',
-            'r' => '\r',
-            'n' => '\n',
-            't' => '\t',
-            '0' => '\0',
-            _ => unreachable!(),
-        };
-        escaped.push(real);
-    }
-
-    escaped
 }
 
 pub fn lex<'a>(
