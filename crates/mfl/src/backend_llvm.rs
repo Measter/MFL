@@ -210,7 +210,12 @@ impl<'ctx> SsaMap<'ctx> {
         match self.string_map.get(&id) {
             Some(&ptr) => Ok(ptr),
             None => {
-                let string = string_store.resolve(id);
+                let string = if let Some(escaped) = string_store.get_escaped_string(id) {
+                    escaped.string.as_str()
+                } else {
+                    string_store.resolve(id)
+                };
+
                 let name = format!("SId{}", id.into_inner());
                 let global = cg.builder.build_global_string_ptr(string, &name)?;
 

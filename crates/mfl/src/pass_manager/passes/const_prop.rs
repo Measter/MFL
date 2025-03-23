@@ -255,7 +255,7 @@ fn analyze_block(
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
                 Basic::PushFloat { value, .. } => stack_ops::push_float(stores, op_id, value),
                 Basic::PushStr { .. } | Basic::Here => {
-                    stack_ops::push_str(stores, pass_manager, had_error, op_id)
+                    stack_ops::push_str(stores, pass_manager, had_error, item_id, op_id)
                 }
             },
             OpCode::Complex(co) => match co {

@@ -1,9 +1,12 @@
 use intcast::IntCast;
+use stores::items::ItemId;
 
 use crate::{
     error_signal::ErrorSignal,
+    ir::{Basic, OpCode},
     pass_manager::PassManager,
     stores::{
+        diagnostics::Diagnostic,
         ops::OpId,
         types::{Float, FloatWidth, IntKind, Integer, TypeId, TypeKind},
         values::ConstVal,
@@ -50,6 +53,7 @@ pub(crate) fn push_str(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
     had_error: &mut ErrorSignal,
+    item_id: ItemId,
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
@@ -67,6 +71,42 @@ pub(crate) fn push_str(
     stores
         .values
         .set_value_const(output_value_id, new_const_value);
+
+    let spur = match stores.ops.get_unresolved(op_id) {
+        OpCode::Basic(Basic::PushStr { id: spur }) => spur,
+        OpCode::Basic(Basic::Here) => return,
+        _ => {
+            unreachable!()
+        }
+    };
+
+    let errors = match stores.strings.get_escaped_string(*spur) {
+        Some(escaped) => &escaped.invalid_escapes,
+        None => {
+            let raw_lit = stores.strings.resolve(*spur);
+            let mut escaped = ::stores::strings::escape_string_or_char_literal(raw_lit, true);
+            // All string literals are null-terminated.
+            escaped.string.push('\0');
+            stores.strings.set_escaped_string(*spur, escaped);
+
+            &stores
+                .strings
+                .get_escaped_string(*spur)
+                .unwrap()
+                .invalid_escapes
+        }
+    };
+
+    for error in errors {
+        had_error.set();
+        let mut location = stores.ops.get_token(op_id).location;
+        location.source_start += error.start.to_u32().unwrap() + 1;
+        location.len = error.len().to_u16().unwrap();
+
+        Diagnostic::error(location, "invalid escape sequence in string literal")
+            .primary_label_message("invalid escape sequence")
+            .attached(stores.diags, item_id);
+    }
 }
 
 pub(crate) fn cast(stores: &mut Stores, op_id: OpId, target_type_id: TypeId) {

@@ -1,12 +1,18 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use lasso::{Rodeo, Spur};
 
 use crate::items::ItemId;
 
+pub struct EscapedString {
+    pub string: String,
+    /// Note that ranges are in bytes, and do not include the open quote.
+    pub invalid_escapes: Vec<Range<usize>>,
+}
+
 pub struct StringStore {
     lexemes: Rodeo,
-    escaped_strings: HashMap<Spur, String>,
+    escaped_strings: HashMap<Spur, EscapedString>,
     friendly_names: HashMap<ItemId, Spur>,
     mangled_names: HashMap<ItemId, Spur>,
     // Only used in the log traces, if the friendly name doesn't exist.
@@ -40,12 +46,7 @@ impl StringStore {
     }
 
     #[inline]
-    pub fn is_escaped(&self, id: Spur) -> bool {
-        self.escaped_strings.contains_key(&id)
-    }
-
-    #[inline]
-    pub fn set_escaped_string(&mut self, id: Spur, string: String) {
+    pub fn set_escaped_string(&mut self, id: Spur, string: EscapedString) {
         let prev = self.escaped_strings.insert(id, string);
         if prev.is_some() {
             panic!("ICE: Tried to set escaped string twice");
@@ -53,8 +54,8 @@ impl StringStore {
     }
 
     #[inline]
-    pub fn get_escaped_string(&self, id: Spur) -> &str {
-        self.escaped_strings.get(&id).unwrap()
+    pub fn get_escaped_string(&self, id: Spur) -> Option<&EscapedString> {
+        self.escaped_strings.get(&id)
     }
 
     #[inline]
@@ -138,15 +139,17 @@ impl Default for StringStore {
     }
 }
 
-pub fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
+pub fn escape_string_or_char_literal(string: &str, is_string: bool) -> EscapedString {
     let mut escaped = String::with_capacity(string.len());
-    let mut chars = string.chars().peekable();
-    while let Some(ch) = chars.next() {
+    let mut errors = Vec::new();
+
+    let mut chars = string.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
         if ch != '\\' {
             escaped.push(ch);
             continue;
         }
-        let next_ch = chars.next().unwrap();
+        let (_, next_ch) = chars.next().unwrap();
         let real = match next_ch {
             '\'' if !is_string => '\'',
             '\"' if is_string => '\"',
@@ -155,10 +158,18 @@ pub fn escape_string_or_char_literal(string: &str, is_string: bool) -> String {
             'n' => '\n',
             't' => '\t',
             '0' => '\0',
-            _ => unreachable!(),
+            _ => {
+                errors.push(idx..idx + ch.len_utf8() + next_ch.len_utf8());
+
+                escaped.push('\\');
+                next_ch
+            }
         };
         escaped.push(real);
     }
 
-    escaped
+    EscapedString {
+        string: escaped,
+        invalid_escapes: errors,
+    }
 }

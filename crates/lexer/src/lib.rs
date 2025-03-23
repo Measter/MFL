@@ -448,11 +448,11 @@ pub fn lex<'a>(
                 let literal = &literal[1..literal.len() - 1];
                 let escaped = escape_string_or_char_literal(literal, false);
 
-                if escaped.chars().count() != 1 {
+                if escaped.string.chars().count() != 1 {
                     tokens.push(Err(LexerError::InvalidCharLiteral(location)));
                     continue;
                 }
-                *ch = escaped.chars().next().unwrap();
+                *ch = escaped.string.chars().next().unwrap();
             }
             _ => (),
         }
