@@ -96,7 +96,7 @@ pub fn resolve_signature(
                 .set_partial_item_signature(cur_id, resolved_sig);
         }
 
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } | ItemKind::FunctionDecl => {
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::FunctionDecl => {
             let unresolved_sig = stores.sigs.nrir.get_item_signature(cur_id).clone();
             let mut resolved_sig = TypeResolvedItemSignature {
                 exit: Vec::new(),
@@ -580,7 +580,7 @@ pub fn resolve_body(
             partially_resolve_block(stores, pass_manager, had_error, unresolved_body);
         }
 
-        ItemKind::Assert | ItemKind::Const | ItemKind::Function { .. } => {
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function => {
             let unresolved_body = stores.items.get_item_body(cur_id);
             fully_resolve_block(stores, pass_manager, had_error, unresolved_body);
         }

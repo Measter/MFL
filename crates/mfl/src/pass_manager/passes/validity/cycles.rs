@@ -30,7 +30,7 @@ pub fn check_invalid_cycles(
         }
         // Nothing to do here.
         ItemKind::Variable
-        | ItemKind::Function { .. }
+        | ItemKind::Function
         | ItemKind::FunctionDecl
         | ItemKind::GenericFunction
         | ItemKind::Enum

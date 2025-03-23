@@ -14,10 +14,7 @@ pub fn determine_terminal_blocks(stores: &mut Stores, cur_id: ItemId) {
         | ItemKind::Module
         | ItemKind::FunctionDecl
         | ItemKind::Primitive(_) => return,
-        ItemKind::Assert
-        | ItemKind::Const
-        | ItemKind::Function { .. }
-        | ItemKind::GenericFunction => (),
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => (),
     }
 
     let body = stores.items.get_item_body(cur_id);

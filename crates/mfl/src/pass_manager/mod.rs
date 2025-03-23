@@ -697,7 +697,7 @@ impl PassManager {
             }
             ItemKind::Assert => &[PassState::ValidityCheck, PassState::CheckAsserts],
             ItemKind::Const => &[PassState::ValidityCheck, PassState::EvaluatedConstsAsserts],
-            ItemKind::Function { .. } => &[
+            ItemKind::Function => &[
                 PassState::BuildNames,
                 PassState::ValidityCheck,
                 PassState::ConstPropBody,

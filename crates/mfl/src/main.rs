@@ -152,7 +152,7 @@ fn load_program(stores: &mut Stores, args: &Args) -> Result<Vec<ItemId>> {
 
         debug!("checking entry signature");
         let entry_item = stores.items.get_item_header(entry_function_id);
-        if !matches!(entry_item.kind, ItemKind::Function { .. }) {
+        if !matches!(entry_item.kind, ItemKind::Function) {
             let name = entry_item.name;
 
             Diagnostic::error(name.location, "`entry` must be a function")

@@ -105,7 +105,7 @@ impl<'ctx> CodeGen<'ctx> {
                 .build_call(callee_value, &args, &format!("call_{callee_name}"))?;
 
         let callee_header = ds.items.get_item_header(callee_id);
-        if matches!(callee_header.kind, ItemKind::Function { .. }) {
+        if matches!(callee_header.kind, ItemKind::Function) {
             self.enqueue_function(callee_id);
         }
 

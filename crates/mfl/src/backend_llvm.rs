@@ -328,10 +328,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let proto_span = debug_span!("building prototypes").entered();
         for item in ds.items.get_all_items() {
-            if !matches!(
-                item.kind,
-                ItemKind::Function { .. } | ItemKind::FunctionDecl
-            ) {
+            if !matches!(item.kind, ItemKind::Function | ItemKind::FunctionDecl) {
                 continue;
             }
 

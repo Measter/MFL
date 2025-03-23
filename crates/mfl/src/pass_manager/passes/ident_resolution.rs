@@ -718,7 +718,7 @@ pub fn resolve_signature(
         // These are all treated the same.
         ItemKind::Assert
         | ItemKind::Const
-        | ItemKind::Function { .. }
+        | ItemKind::Function
         | ItemKind::FunctionDecl
         | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(stores.items, cur_id);
@@ -988,7 +988,7 @@ fn resolve_idents_in_block(
                     let found_item_header = stores.items.get_item_header(resolved_ident);
                     let new_code = match found_item_header.kind {
                         ItemKind::Const => NameResolvedOp::Const { id: resolved_ident },
-                        ItemKind::Function { .. } | ItemKind::FunctionDecl => {
+                        ItemKind::Function | ItemKind::FunctionDecl => {
                             if !ident.generic_params.is_empty() {
                                 invalid_generic_count_diag(
                                     stores,
@@ -1310,10 +1310,7 @@ pub fn resolve_body(
         | ItemKind::Primitive(_) => {
             // Nothing to do.
         }
-        ItemKind::Assert
-        | ItemKind::Const
-        | ItemKind::Function { .. }
-        | ItemKind::GenericFunction => {
+        ItemKind::Assert | ItemKind::Const | ItemKind::Function | ItemKind::GenericFunction => {
             let parent_module = get_parent_module(stores.items, cur_id);
             // Just give a best-effort if this fails.
             let _ = pass_manager.ensure_ident_resolved_signature(stores, parent_module);

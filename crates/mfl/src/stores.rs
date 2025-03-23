@@ -118,7 +118,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
 
         friendly_name.push_str(self.strings.resolve(item_header.name.inner));
 
-        if matches!(item_header.kind, ItemKind::Function { .. })
+        if matches!(item_header.kind, ItemKind::Function)
             && pass_manager
                 .ensure_type_resolved_signature(self, item_id)
                 .is_ok()
