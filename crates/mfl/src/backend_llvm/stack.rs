@@ -219,6 +219,26 @@ impl<'ctx> CodeGen<'ctx> {
 
         Ok(())
     }
+
+    pub(super) fn build_push_char(
+        &mut self,
+        ds: &mut Stores,
+        value_store: &mut SsaMap<'ctx>,
+        op_id: OpId,
+        ch: char,
+    ) -> InkwellResult {
+        let op_io = ds.ops.get_op_io(op_id);
+
+        let int_type = IntWidth::I8.get_int_type(self.ctx);
+        let value = int_type
+            .const_int(ch as u8 as u64, false)
+            .const_cast(int_type, false)
+            .into();
+        value_store.store_value(self, op_io.outputs()[0], value)?;
+
+        Ok(())
+    }
+
     pub(super) fn build_push_float(
         &self,
         ds: &mut Stores,

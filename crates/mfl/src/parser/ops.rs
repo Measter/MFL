@@ -220,10 +220,7 @@ pub fn parse_simple_op(
         }
 
         TokenKind::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
-        TokenKind::Char(ch) => OpCode::Basic(Basic::PushInt {
-            width: IntWidth::I8,
-            value: Integer::Unsigned((ch as u8).to_u64()),
-        }),
+        TokenKind::Char(ch) => OpCode::Basic(Basic::PushChar(ch)),
 
         TokenKind::Ident | TokenKind::ColonColon | TokenKind::Lib | TokenKind::SelfKw => {
             return parse_ident_op(stores, token_iter, item_id, token)

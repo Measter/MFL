@@ -210,6 +210,12 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(val)),
+            OpCode::Basic(Basic::PushChar(ch)) => {
+                value_stack.push(SimulatorValue::Int {
+                    width: IntWidth::I8,
+                    kind: Integer::Unsigned(ch as u8 as u64),
+                });
+            }
             OpCode::Basic(Basic::PushInt { width, value }) => {
                 value_stack.push(SimulatorValue::Int { width, kind: value })
             }

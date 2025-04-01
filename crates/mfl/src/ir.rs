@@ -534,6 +534,7 @@ pub enum Basic {
 
     Here,
     PushBool(bool),
+    PushChar(char),
     PushInt { width: IntWidth, value: Integer },
     PushFloat { width: FloatWidth, value: Float },
     PushStr { id: Spur },

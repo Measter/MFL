@@ -5,7 +5,13 @@ use crate::{
     error_signal::ErrorSignal,
     ir::{Arithmetic, Basic, Compare, Control, Memory, OpCode, Stack, TypeResolvedOp},
     pass_manager::PassManager,
-    stores::{block::BlockId, diagnostics::Diagnostic, ops::OpId, types::IntKind, values::ValueId},
+    stores::{
+        block::BlockId,
+        diagnostics::Diagnostic,
+        ops::OpId,
+        types::{IntKind, IntSignedness, IntWidth},
+        values::ValueId,
+    },
     Stores,
 };
 
@@ -509,6 +515,17 @@ fn analyze_block(
                 Basic::PushBool(_) => {
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_bool(stores, op_id);
+                }
+                Basic::PushChar(_) => {
+                    make_one(stores, stack, op_id);
+                    type_check::stack_ops::push_int(
+                        stores,
+                        op_id,
+                        IntKind {
+                            width: IntWidth::I8,
+                            signed: IntSignedness::Unsigned,
+                        },
+                    );
                 }
                 Basic::PushInt { width, value } => {
                     make_one(stores, stack, op_id);

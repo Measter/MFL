@@ -35,6 +35,14 @@ pub(crate) fn push_bool(stores: &mut Stores, op_id: OpId, value: bool) {
         .set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
+pub(crate) fn push_char(stores: &mut Stores, op_id: OpId, value: char) {
+    let op_data = stores.ops.get_op_io(op_id);
+    stores.values.set_value_const(
+        op_data.outputs[0],
+        ConstVal::Int(Integer::Unsigned(value as u8 as u64)),
+    );
+}
+
 pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, value: Integer) {
     let op_data = stores.ops.get_op_io(op_id);
     stores

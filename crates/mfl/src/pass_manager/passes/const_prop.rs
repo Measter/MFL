@@ -252,6 +252,7 @@ fn analyze_block(
                     Memory::Unpack => memory::unpack(stores, op_id),
                 },
                 Basic::PushBool(value) => stack_ops::push_bool(stores, op_id, value),
+                Basic::PushChar(value) => stack_ops::push_char(stores, op_id, value),
                 Basic::PushInt { value, .. } => stack_ops::push_int(stores, op_id, value),
                 Basic::PushFloat { value, .. } => stack_ops::push_float(stores, op_id, value),
                 Basic::PushStr { .. } | Basic::Here => {
