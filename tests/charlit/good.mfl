@@ -1,0 +1,9 @@
+// CFG
+// [compile]
+// expected = "Ok"
+// args = ["--lib"]
+// END
+
+proc foo[] to [u8] {
+    'a'
+}

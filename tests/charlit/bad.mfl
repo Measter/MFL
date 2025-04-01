@@ -1,0 +1,21 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+proc empty[] to [u8] {
+    ''
+}
+
+proc multi[] to [u8] {
+    'ab'
+}
+
+proc bad_escape[] to [u8] {
+    '\f'
+}
+
+proc non_ascii[] to [u8] {
+    '汉'
+}
