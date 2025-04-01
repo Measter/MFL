@@ -225,13 +225,17 @@ impl<'ctx> CodeGen<'ctx> {
         ds: &mut Stores,
         value_store: &mut SsaMap<'ctx>,
         op_id: OpId,
-        ch: char,
+        lit: Spur,
     ) -> InkwellResult {
         let op_io = ds.ops.get_op_io(op_id);
 
+        // The ConstProp pass ensures this is a valid ASCII char literal.
+        let literal = ds.strings.get_escaped_string(lit).unwrap();
+        let ch = literal.string.as_bytes()[0];
+
         let int_type = IntWidth::I8.get_int_type(self.ctx);
         let value = int_type
-            .const_int(ch as u8 as u64, false)
+            .const_int(ch as u64, false)
             .const_cast(int_type, false)
             .into();
         value_store.store_value(self, op_io.outputs()[0], value)?;

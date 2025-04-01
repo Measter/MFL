@@ -695,8 +695,8 @@ impl<'ctx> CodeGen<'ctx> {
                 OpCode::Basic(Basic::PushBool(val)) => {
                     self.build_push_bool(ds, value_store, op_id, val)?
                 }
-                OpCode::Basic(Basic::PushChar(val)) => {
-                    self.build_push_char(ds, value_store, op_id, val)?
+                OpCode::Basic(Basic::PushChar { id }) => {
+                    self.build_push_char(ds, value_store, op_id, id)?
                 }
                 OpCode::Basic(Basic::PushInt { width, value }) => {
                     self.build_push_int(ds, value_store, op_id, width, value)?

@@ -1,5 +1,5 @@
 use intcast::IntCast;
-use lexer::{BracketKind, Extract, Insert, StringToken, Token, TokenKind};
+use lexer::{BracketKind, CharToken, Extract, Insert, StringToken, Token, TokenKind};
 use smallvec::SmallVec;
 use stores::{
     items::ItemId,
@@ -220,7 +220,7 @@ pub fn parse_simple_op(
         }
 
         TokenKind::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
-        TokenKind::Char(ch) => OpCode::Basic(Basic::PushChar(ch)),
+        TokenKind::Char(CharToken { id }) => OpCode::Basic(Basic::PushChar { id }),
 
         TokenKind::Ident | TokenKind::ColonColon | TokenKind::Lib | TokenKind::SelfKw => {
             return parse_ident_op(stores, token_iter, item_id, token)

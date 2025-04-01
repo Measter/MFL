@@ -5,7 +5,7 @@ use lasso::Spur;
 use logos::{Lexer, Logos};
 use stores::{
     source::{FileId, SourceLocation, Spanned, WithSpan},
-    strings::{escape_string_or_char_literal, StringStore},
+    strings::StringStore,
 };
 use tracing::debug_span;
 
@@ -29,6 +29,11 @@ pub enum IntegerBase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringToken {
+    pub id: Spur,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharToken {
     pub id: Spur,
 }
 
@@ -97,8 +102,8 @@ pub enum TokenKind {
     Cast,
 
     // We fixup afterwards like we do with strings.
-    #[regex(r#"'([^'\\]|\\['\\rnt0])+'"#, |_| '0')]
-    Char(char),
+    #[token("\'", |l| char_literal(l))]
+    Char(CharToken),
 
     #[token(":")]
     Colon,
@@ -419,6 +424,15 @@ fn str_literal(lex: &mut Lexer<TokenKind>) -> StringToken {
     }
 }
 
+fn char_literal(lex: &mut Lexer<TokenKind>) -> CharToken {
+    let consumed_len = consume_char_str_lit(lex.remainder(), b'\'');
+    lex.bump(consumed_len);
+
+    CharToken {
+        id: Spur::default(),
+    }
+}
+
 pub fn lex<'a>(
     interner: &'a mut StringStore,
     contents: &'a str,
@@ -443,16 +457,9 @@ pub fn lex<'a>(
                 let slice = lexer.slice();
                 string_token.id = interner.intern(&slice[1..slice.len() - 1]);
             }
-            TokenKind::Char(ch) => {
-                let literal = lexer.slice();
-                let literal = &literal[1..literal.len() - 1];
-                let escaped = escape_string_or_char_literal(literal, false);
-
-                if escaped.string.chars().count() != 1 {
-                    tokens.push(Err(LexerError::InvalidCharLiteral(location)));
-                    continue;
-                }
-                *ch = escaped.string.chars().next().unwrap();
+            TokenKind::Char(char_token) => {
+                let slice = lexer.slice();
+                char_token.id = interner.intern(&slice[1..slice.len() - 1]);
             }
             _ => (),
         }

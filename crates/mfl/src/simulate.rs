@@ -210,10 +210,15 @@ fn simulate_execute_program_block(
                 return Err(SimulationError::UnsupportedOp);
             }
             OpCode::Basic(Basic::PushBool(val)) => value_stack.push(SimulatorValue::Bool(val)),
-            OpCode::Basic(Basic::PushChar(ch)) => {
+            OpCode::Basic(Basic::PushChar { id }) => {
+                // If we got here, then we are sure that the char literal is a single ASCII character.
+                // We can safely unwrap the string.
+                let char_lit = stores.strings.get_escaped_string(id).unwrap();
+                let ch = char_lit.string.as_bytes()[0];
+
                 value_stack.push(SimulatorValue::Int {
                     width: IntWidth::I8,
-                    kind: Integer::Unsigned(ch as u8 as u64),
+                    kind: Integer::Unsigned(ch as u64),
                 });
             }
             OpCode::Basic(Basic::PushInt { width, value }) => {

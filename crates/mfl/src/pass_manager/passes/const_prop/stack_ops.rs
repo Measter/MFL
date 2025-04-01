@@ -1,4 +1,5 @@
 use intcast::IntCast;
+use lasso::Spur;
 use stores::items::ItemId;
 
 use crate::{
@@ -35,12 +36,78 @@ pub(crate) fn push_bool(stores: &mut Stores, op_id: OpId, value: bool) {
         .set_value_const(op_data.outputs[0], ConstVal::Bool(value));
 }
 
-pub(crate) fn push_char(stores: &mut Stores, op_id: OpId, value: char) {
+pub(crate) fn push_char(
+    stores: &mut Stores,
+    had_error: &mut ErrorSignal,
+    item_id: ItemId,
+    op_id: OpId,
+    spur: Spur,
+) {
     let op_data = stores.ops.get_op_io(op_id);
-    stores.values.set_value_const(
-        op_data.outputs[0],
-        ConstVal::Int(Integer::Unsigned(value as u8 as u64)),
-    );
+
+    let mut const_val = ConstVal::Unknown;
+    let errors = match stores.strings.get_escaped_string(spur) {
+        Some(escaped) => &escaped.invalid_escapes,
+        None => {
+            let raw_lit = stores.strings.resolve(spur);
+            let escaped = ::stores::strings::escape_string_or_char_literal(raw_lit, true);
+
+            let mut chars = escaped.string.chars();
+            let (actual, next) = (chars.next(), chars.next());
+
+            match actual {
+                Some(c) if c.is_ascii() => {
+                    const_val = ConstVal::Int(Integer::Unsigned(c as u8 as u64));
+                }
+                Some(_) => {
+                    had_error.set();
+                    let location = stores.ops.get_token(op_id).location;
+
+                    Diagnostic::error(location, "invalid char literal")
+                        .primary_label_message("char literal must be ASCII")
+                        .attached(stores.diags, item_id);
+                }
+                None => {
+                    had_error.set();
+                    let location = stores.ops.get_token(op_id).location;
+
+                    Diagnostic::error(location, "invalid char literal")
+                        .primary_label_message("char literal cannot be empty")
+                        .attached(stores.diags, item_id);
+                }
+            }
+
+            if next.is_some() {
+                had_error.set();
+                let location = stores.ops.get_token(op_id).location;
+
+                Diagnostic::error(location, "invalid char literal")
+                    .primary_label_message("char literal must be a single character")
+                    .attached(stores.diags, item_id);
+            }
+
+            stores.strings.set_escaped_string(spur, escaped);
+
+            &stores
+                .strings
+                .get_escaped_string(spur)
+                .unwrap()
+                .invalid_escapes
+        }
+    };
+
+    for error in errors {
+        had_error.set();
+        let mut location = stores.ops.get_token(op_id).location;
+        location.source_start += error.start.to_u32().unwrap() + 1;
+        location.len = error.len().to_u16().unwrap();
+
+        Diagnostic::error(location, "invalid escape sequence in char literal")
+            .primary_label_message("invalid escape sequence")
+            .attached(stores.diags, item_id);
+    }
+
+    stores.values.set_value_const(op_data.outputs[0], const_val);
 }
 
 pub(crate) fn push_int(stores: &mut Stores, op_id: OpId, value: Integer) {

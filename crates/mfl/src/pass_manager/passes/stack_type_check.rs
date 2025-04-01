@@ -516,7 +516,7 @@ fn analyze_block(
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_bool(stores, op_id);
                 }
-                Basic::PushChar(_) => {
+                Basic::PushChar { .. } => {
                     make_one(stores, stack, op_id);
                     type_check::stack_ops::push_int(
                         stores,
