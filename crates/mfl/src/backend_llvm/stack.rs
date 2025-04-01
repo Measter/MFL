@@ -264,8 +264,8 @@ impl<'ctx> CodeGen<'ctx> {
         let op_io = ds.ops.get_op_io(op_id);
         let str_ptr = value_store.get_string_literal(self, ds.strings, str_id)?;
 
-        let string = ds.strings.resolve(str_id);
-        let len = string.len() - 1; // It's null-terminated.
+        let string = ds.strings.get_escaped_string(str_id).unwrap();
+        let len = string.string.len() - 1; // It's null-terminated.
         let len_value = self.ctx.i64_type().const_int(len.to_u64(), false);
 
         let type_id = ds.types.get_builtin(BuiltinTypes::String).id;
