@@ -160,8 +160,6 @@ pub fn escape_string_or_char_literal(string: &str, is_string: bool) -> EscapedSt
             '0' => '\0',
             _ => {
                 errors.push(idx..idx + ch.len_utf8() + next_ch.len_utf8());
-
-                escaped.push('\\');
                 next_ch
             }
         };
