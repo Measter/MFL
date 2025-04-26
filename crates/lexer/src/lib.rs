@@ -1,3 +1,4 @@
+use core::panic;
 use std::fmt::{Display, Write};
 
 use intcast::IntCast;
@@ -54,8 +55,17 @@ impl Display for BracketKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InternalError {
+    UnclosedString,
+    UnclosedChar,
+    #[default]
+    Other,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
 #[logos(skip "[\t\n\r ]+")]
+#[logos(error = InternalError)]
 pub enum TokenKind {
     #[token("&")]
     Ampersand,
@@ -398,13 +408,16 @@ impl Token {
 #[derive(Debug, Clone, Copy)]
 pub enum LexerError {
     UnexpectedChar(SourceLocation),
-    InvalidCharLiteral(SourceLocation),
+    UnclosedString(SourceLocation),
+    UnclosedChar(SourceLocation),
 }
 
-fn consume_char_str_lit(s: &str, end_char: u8) -> usize {
+fn consume_char_str_lit(s: &str, end_char: u8) -> (usize, bool) {
     let mut chars = s.bytes();
+    let mut found_close = false;
     while let Some(ch) = chars.next() {
         if ch == end_char {
+            found_close = true;
             break;
         }
         if ch == b'\\' {
@@ -412,24 +425,32 @@ fn consume_char_str_lit(s: &str, end_char: u8) -> usize {
         }
     }
 
-    s.len() - chars.len()
+    (s.len() - chars.len(), found_close)
 }
 
-fn str_literal(lex: &mut Lexer<TokenKind>) -> StringToken {
-    let consumed_len = consume_char_str_lit(lex.remainder(), b'"');
+fn str_literal(lex: &mut Lexer<TokenKind>) -> Result<StringToken, InternalError> {
+    let (consumed_len, found_close) = consume_char_str_lit(lex.remainder(), b'"');
     lex.bump(consumed_len);
 
-    StringToken {
-        id: Spur::default(),
+    if found_close {
+        Ok(StringToken {
+            id: Spur::default(),
+        })
+    } else {
+        Err(InternalError::UnclosedString)
     }
 }
 
-fn char_literal(lex: &mut Lexer<TokenKind>) -> CharToken {
-    let consumed_len = consume_char_str_lit(lex.remainder(), b'\'');
+fn char_literal(lex: &mut Lexer<TokenKind>) -> Result<CharToken, InternalError> {
+    let (consumed_len, found_close) = consume_char_str_lit(lex.remainder(), b'\'');
     lex.bump(consumed_len);
 
-    CharToken {
-        id: Spur::default(),
+    if found_close {
+        Ok(CharToken {
+            id: Spur::default(),
+        })
+    } else {
+        Err(InternalError::UnclosedChar)
     }
 }
 
@@ -447,9 +468,19 @@ pub fn lex<'a>(
         let span = span.start.to_u32().unwrap()..span.end.to_u32().unwrap();
         let location = SourceLocation::new(file_id, span.clone());
 
-        let Ok(mut kind) = kind else {
-            tokens.push(Err(LexerError::UnexpectedChar(location)));
-            continue;
+        let mut kind = match kind {
+            Ok(k) => k,
+            Err(InternalError::UnclosedString) => {
+                tokens.push(Err(LexerError::UnclosedString(location)));
+                continue;
+            }
+            Err(InternalError::UnclosedChar) => {
+                tokens.push(Err(LexerError::UnclosedChar(location)));
+                continue;
+            }
+            Err(InternalError::Other) => {
+                panic!("Unexpected error in lexer: {:?}", kind);
+            }
         };
 
         match &mut kind {

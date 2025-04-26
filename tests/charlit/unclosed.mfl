@@ -1,0 +1,9 @@
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+proc unclosed[] to [u8] {
+    'a
+}

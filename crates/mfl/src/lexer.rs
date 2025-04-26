@@ -113,8 +113,13 @@ pub(crate) fn lex_file(
                 had_error.set();
                 continue;
             }
-            Err(LexerError::InvalidCharLiteral(location)) => {
-                Diagnostic::error(location, "invalid char literal").detached(stores.diags);
+            Err(LexerError::UnclosedString(location)) => {
+                Diagnostic::error(location, "unterminated string literal").detached(stores.diags);
+                had_error.set();
+                continue;
+            }
+            Err(LexerError::UnclosedChar(location)) => {
+                Diagnostic::error(location, "unterminated char literal").detached(stores.diags);
                 had_error.set();
                 continue;
             }
