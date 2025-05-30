@@ -52,6 +52,50 @@ fn is_slice_like_struct(stores: &mut Stores, struct_info: TypeInfo) -> Option<Ty
     }
 }
 
+fn get_array_or_slice_store_type(
+    stores: &mut Stores,
+    pass_manager: &mut PassManager,
+    mut emit_diag: impl FnMut(&mut Stores, Option<&str>),
+    cur_type_info: TypeInfo,
+    remaining_depth: usize,
+) -> Option<TypeId> {
+    match cur_type_info.kind {
+        TypeKind::Array { type_id, .. } => Some(type_id),
+        TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
+            if pass_manager.ensure_define_structs(stores, item_id).is_err() {
+                return None;
+            }
+            let Some(store_type) = is_slice_like_struct(stores, cur_type_info) else {
+                emit_diag(
+                    stores,
+                    Some("Struct must be slice-like (must have a pointer and length field)"),
+                );
+                return None;
+            };
+            Some(store_type)
+        }
+        TypeKind::MultiPointer(ptee_type_id) | TypeKind::SinglePointer(ptee_type_id) => {
+            if remaining_depth > 0 {
+                let ptee_type_info = stores.types.get_type_info(ptee_type_id);
+                get_array_or_slice_store_type(
+                    stores,
+                    pass_manager,
+                    emit_diag,
+                    ptee_type_info,
+                    remaining_depth - 1,
+                )
+            } else {
+                emit_diag(stores, Some("Only one level of indirection is supported"));
+                None
+            }
+        }
+        _ => {
+            emit_diag(stores, None);
+            None
+        }
+    }
+}
+
 pub(crate) fn extract_array(
     stores: &mut Stores,
     pass_manager: &mut PassManager,
@@ -78,7 +122,7 @@ pub(crate) fn extract_array(
         op_data.outputs[0]
     };
 
-    let mut make_error_for_aggr = |stores: &mut Stores, note: Option<String>| {
+    let make_error_for_aggr = |stores: &mut Stores, note: Option<&str>| {
         let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
 
         let mut diag = Diagnostic::error(op_loc, format!("cannot extract a `{value_type_name}`"))
@@ -89,66 +133,17 @@ pub(crate) fn extract_array(
         }
 
         diag.attached(stores.diags, item_id);
-
-        had_error.set();
     };
 
-    let store_type = match array_type_info.kind {
-        TypeKind::Array { type_id, .. } => type_id,
-        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
-            let ptr_type_info = stores.types.get_type_info(sub_type);
-            match ptr_type_info.kind {
-                TypeKind::Array { type_id, .. } => type_id,
-                TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-                    if pass_manager.ensure_define_structs(stores, item_id).is_err() {
-                        had_error.set();
-                        return;
-                    };
-                    let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
-                        make_error_for_aggr(
-                            stores,
-                            Some(
-                                "Struct must be slice-like (must have a pointer and length field)"
-                                    .to_owned(),
-                            ),
-                        );
-                        return;
-                    };
-                    store_type
-                }
-                _ => {
-                    make_error_for_aggr(stores, None);
-                    return;
-                }
-            }
-        }
-
-        TypeKind::Struct(item_id) | TypeKind::GenericStructInstance(item_id) => {
-            if pass_manager.ensure_define_structs(stores, item_id).is_err() {
-                had_error.set();
-                return;
-            }
-            let Some(store_type) = is_slice_like_struct(stores, array_type_info) else {
-                make_error_for_aggr(
-                    stores,
-                    Some(
-                        "Struct must be slice-like (must have a pointer and length field)"
-                            .to_owned(),
-                    ),
-                );
-                return;
-            };
-            store_type
-        }
-        TypeKind::Integer(_)
-        | TypeKind::Float(_)
-        | TypeKind::Bool
-        | TypeKind::GenericStructBase(_)
-        | TypeKind::Enum(_)
-        | TypeKind::FunctionPointer => {
-            make_error_for_aggr(stores, None);
-            return;
-        }
+    let Some(store_type) = get_array_or_slice_store_type(
+        stores,
+        pass_manager,
+        make_error_for_aggr,
+        array_type_info,
+        1,
+    ) else {
+        had_error.set();
+        return;
     };
 
     if !idx_type_info.kind.is_unsigned_int() {
@@ -495,7 +490,7 @@ pub(crate) fn insert_array(
         stores.values.set_value_type(output_id, array_type_id);
     }
 
-    let mut make_error_for_aggr = |stores: &mut Stores, note| {
+    let make_error_for_aggr = |stores: &mut Stores, note: Option<&str>| {
         let value_type_name = stores.strings.resolve(array_type_info.friendly_name);
 
         let mut diag =
@@ -507,73 +502,17 @@ pub(crate) fn insert_array(
         }
 
         diag.attached(stores.diags, item_id);
-
-        had_error.set();
     };
 
-    let store_type_id = match array_type_info.kind {
-        TypeKind::Array { type_id, .. } => type_id,
-        TypeKind::MultiPointer(sub_type) | TypeKind::SinglePointer(sub_type) => {
-            let ptr_type_info = stores.types.get_type_info(sub_type);
-            match ptr_type_info.kind {
-                TypeKind::Array { type_id, .. } => type_id,
-                TypeKind::Struct(struct_item_id)
-                | TypeKind::GenericStructInstance(struct_item_id) => {
-                    if pass_manager
-                        .ensure_define_structs(stores, struct_item_id)
-                        .is_err()
-                    {
-                        had_error.set();
-                        return;
-                    };
-                    let Some(store_type) = is_slice_like_struct(stores, ptr_type_info) else {
-                        make_error_for_aggr(
-                            stores,
-                            Some(
-                                "Struct must be slice-like (must have a pointer and length field)"
-                                    .to_owned(),
-                            ),
-                        );
-                        return;
-                    };
-                    store_type
-                }
-                _ => {
-                    make_error_for_aggr(stores, None);
-                    return;
-                }
-            }
-        }
-        TypeKind::Struct(struct_item_id) | TypeKind::GenericStructInstance(struct_item_id) => {
-            if pass_manager
-                .ensure_define_structs(stores, struct_item_id)
-                .is_err()
-            {
-                had_error.set();
-                return;
-            };
-
-            let Some(store_type) = is_slice_like_struct(stores, array_type_info) else {
-                make_error_for_aggr(
-                    stores,
-                    Some(
-                        "Struct must be slice-like (must have a pointer and length field)"
-                            .to_owned(),
-                    ),
-                );
-                return;
-            };
-            store_type
-        }
-        TypeKind::Integer(_)
-        | TypeKind::Float(_)
-        | TypeKind::Bool
-        | TypeKind::GenericStructBase(_)
-        | TypeKind::Enum(_)
-        | TypeKind::FunctionPointer => {
-            make_error_for_aggr(stores, None);
-            return;
-        }
+    let Some(store_type_id) = get_array_or_slice_store_type(
+        stores,
+        pass_manager,
+        make_error_for_aggr,
+        array_type_info,
+        1,
+    ) else {
+        had_error.set();
+        return;
     };
 
     let store_type_info = stores.types.get_type_info(store_type_id);

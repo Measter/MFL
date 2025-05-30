@@ -1,0 +1,18 @@
+
+// CFG
+// [compile]
+// expected = "Error"
+// args = ["--lib"]
+// END
+
+struct Foo {
+    foo: u32,
+}
+
+proc index_foo [Foo] to [] {
+    0 xtr drop(2)
+}
+
+proc index_foo_ptr [Foo&] to [] {
+    0 xtr drop(2)
+}
