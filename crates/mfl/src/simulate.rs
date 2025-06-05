@@ -128,7 +128,7 @@ fn simulate_execute_program_block(
                 | Arithmetic::ShiftLeft
                 | Arithmetic::ShiftRight
                 | Arithmetic::Subtract => {
-                    let [a, b] = value_stack.popn().unwrap();
+                    let [a, b] = value_stack.popn();
                     value_stack.push(apply_int_op(
                         a,
                         b,
@@ -158,7 +158,7 @@ fn simulate_execute_program_block(
                     return Err(SimulationError::UnsupportedOp);
                 }
 
-                let [a, b] = value_stack.popn().unwrap();
+                let [a, b] = value_stack.popn();
                 value_stack.push(apply_bool_op(
                     a,
                     b,

@@ -3,14 +3,17 @@ use std::{hash::Hash, mem::MaybeUninit};
 use hashbrown::HashMap;
 
 pub trait VecNOps<T> {
-    fn popn<const N: usize>(&mut self) -> Option<[T; N]>;
+    fn popn<const N: usize>(&mut self) -> [T; N];
 }
 
 impl<T> VecNOps<T> for Vec<T> {
-    fn popn<const N: usize>(&mut self) -> Option<[T; N]> {
+    fn popn<const N: usize>(&mut self) -> [T; N] {
         assert!(N > 0);
         if self.len() < N {
-            return None;
+            panic!(
+                "ICE: Cannot pop {N} elements off a vector of {} length",
+                self.len()
+            );
         }
 
         // SAFETY: We know the Vec has enough elements, so we won't be accessing uninitialized data.
@@ -23,7 +26,7 @@ impl<T> VecNOps<T> for Vec<T> {
 
             self.set_len(self.len() - N);
 
-            Some(dest.assume_init())
+            dest.assume_init()
         }
     }
 }

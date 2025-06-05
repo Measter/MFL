@@ -28,7 +28,7 @@ pub(crate) fn extract_array(
     let op_loc = stores.ops.get_token(op_id).location;
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
-    let [array_id, idx] = stack.popn().unwrap();
+    let [array_id, idx] = stack.popn();
     let mut outputs = SmallVec::<[_; 2]>::new();
 
     if emit_array {
@@ -82,7 +82,7 @@ pub(crate) fn insert_array(
     let op_loc = stores.ops.get_token(op_id).location;
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
-    let inputs = stack.popn::<3>().unwrap();
+    let inputs = stack.popn::<3>();
     let mut output = None;
 
     if emit_array {
@@ -106,7 +106,7 @@ pub(crate) fn insert_struct(
     let op_loc = stores.ops.get_token(op_id).location;
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
-    let inputs = stack.popn::<2>().unwrap();
+    let inputs = stack.popn::<2>();
     let mut output = None;
 
     if emit_struct {
@@ -206,7 +206,7 @@ pub(crate) fn store(
 ) {
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
-    let inputs = stack.popn::<2>().unwrap();
+    let inputs = stack.popn::<2>();
     stores.ops.set_op_io(op_id, &inputs, &[]);
 }
 
