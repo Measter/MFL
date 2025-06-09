@@ -479,7 +479,7 @@ pub fn lex<'a>(
                 continue;
             }
             Err(InternalError::Other) => {
-                panic!("Unexpected error in lexer: {:?}", kind);
+                panic!("Unexpected error in lexer: {:?}, {:?}", kind, lexer.slice());
             }
         };
 
