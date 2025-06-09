@@ -223,6 +223,10 @@ fn run_compile(args: &Args) -> Result<()> {
     objects.extend(args.addition_obj_paths.iter().cloned());
 
     if args.is_library {
+        if args.time_passes {
+            stores.timer.print();
+        }
+
         println!(" {}", "Finished".green());
         return Ok(());
     }
