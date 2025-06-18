@@ -53,7 +53,7 @@ pub(crate) fn epilogue_return(
                     &op_data.inputs,
                     &item_trir_sig.exit,
                     item_urir_sig.exit.location,
-                    stores.ops.get_token(op_id).location,
+                    stores.ops.get_token_location(op_id),
                     "item return stack mismatch",
                 );
                 had_error.set();
@@ -98,7 +98,7 @@ pub(crate) fn syscall(
         }
 
         let type_name = stores.strings.resolve(input_type_info.friendly_name);
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         Diagnostic::error(op_loc, "invalid syscall parameter")
             .with_label_chain(input_value_id, idx.to_u64(), type_name)
@@ -195,7 +195,7 @@ pub(crate) fn call_function_const(
                     &op_data.inputs,
                     &callee_sig_trir.entry,
                     callee_sig_urir.entry.location,
-                    stores.ops.get_token(op_id).location,
+                    stores.ops.get_token_location(op_id),
                     "procedure call signature mismatch",
                 );
                 had_error.set();
@@ -273,7 +273,7 @@ fn call_generic_function_infer_params(
         match inferred_types.len() {
             1 => param_types.push(inferred_types[0].1),
             0 => {
-                let op_loc = stores.ops.get_token(op_id).location;
+                let op_loc = stores.ops.get_token_location(op_id);
                 Diagnostic::error(op_loc, "unable to infer type parameter")
                     .primary_label_message("this call")
                     .with_help_label(param.location, "this parameter")
@@ -282,7 +282,7 @@ fn call_generic_function_infer_params(
                 local_had_error.set();
             }
             _ => {
-                let op_loc = stores.ops.get_token(op_id).location;
+                let op_loc = stores.ops.get_token_location(op_id);
                 let param_name = stores.strings.resolve(param.inner);
                 let mut diag = Diagnostic::error(
                     op_loc,

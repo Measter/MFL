@@ -66,7 +66,7 @@ pub enum InternalError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
 #[logos(skip "[\t\n\r ]+")]
 #[logos(error = InternalError)]
-pub enum TokenKind {
+pub enum Token {
     #[token("&")]
     Ampersand,
 
@@ -302,106 +302,94 @@ pub enum TokenKind {
     While,
 }
 
-impl TokenKind {
+impl Token {
     pub fn kind_str(self) -> &'static str {
         match self {
-            TokenKind::Ampersand => "&",
-            TokenKind::Array => "array",
-            TokenKind::Assert => "assert",
-            TokenKind::AssumeInit => "init",
-            TokenKind::BitAnd => "and",
-            TokenKind::BitNot => "not",
-            TokenKind::BitOr => "or",
-            TokenKind::BitXor => "xor",
-            TokenKind::Boolean(_) => "boolean literal",
-            TokenKind::BracketClose(BracketKind::Brace) => "}",
-            TokenKind::BracketClose(BracketKind::Paren) => ")",
-            TokenKind::BracketClose(BracketKind::Square) => "]",
-            TokenKind::BracketOpen(BracketKind::Brace) => "{",
-            TokenKind::BracketOpen(BracketKind::Paren) => "(",
-            TokenKind::BracketOpen(BracketKind::Square) => "[",
-            TokenKind::Carat => "^",
-            TokenKind::Cast => "cast",
-            TokenKind::Char(_) => "character literal",
-            TokenKind::Colon => ":",
-            TokenKind::ColonColon => "::",
-            TokenKind::Cond => "cond",
-            TokenKind::Const => "const",
-            TokenKind::Comment => "comment",
-            TokenKind::Comma => ",",
-            TokenKind::Div => "/",
-            TokenKind::Dot => ".",
-            TokenKind::Drop => "drop",
-            TokenKind::Dup => "dup",
-            TokenKind::Else => "else",
-            TokenKind::Enum => "enum",
-            TokenKind::Equal => "=",
-            TokenKind::EmitStack => "emit",
-            TokenKind::Exit => "exit",
-            TokenKind::Extern => "extern",
-            TokenKind::Extract(Extract { emit_struct: true }) => "xtr",
-            TokenKind::Extract(Extract { emit_struct: false }) => "xtrd",
-            TokenKind::Float => "float literal",
-            TokenKind::GoesTo => "to",
-            TokenKind::Greater => ">",
-            TokenKind::GreaterEqual => ">=",
-            TokenKind::Hash => "#",
-            TokenKind::Here => "here",
-            TokenKind::Ident => "Ident",
-            TokenKind::Insert(Insert { emit_struct: true }) => "ins",
-            TokenKind::Insert(Insert { emit_struct: false }) => "insd",
-            TokenKind::Integer(_) => "integer literal",
-            TokenKind::Import => "import",
-            TokenKind::IsNull => "isnull",
-            TokenKind::LangItem => "lang",
-            TokenKind::Less => "<",
-            TokenKind::LessEqual => "<=",
-            TokenKind::Lib => "lib",
-            TokenKind::Load => "@",
-            TokenKind::Minus => "-",
-            TokenKind::Module => "module",
-            TokenKind::NotEqual => "!=",
-            TokenKind::Over => "over",
-            TokenKind::Pack => "pack",
-            TokenKind::Pipe => "|",
-            TokenKind::Plus => "+",
-            TokenKind::Proc => "proc",
-            TokenKind::Rem => "%",
-            TokenKind::Return => "return",
-            TokenKind::Reverse => "rev",
-            TokenKind::Rot => "rot",
-            TokenKind::SelfKw => "self",
-            TokenKind::ShiftLeft => "shl",
-            TokenKind::ShiftRight => "shr",
-            TokenKind::SizeOf => "sizeof",
-            TokenKind::Star => "*",
-            TokenKind::String(_) => "string literal",
-            TokenKind::Store => "!",
-            TokenKind::Struct => "struct",
-            TokenKind::Super => "super",
-            TokenKind::Swap => "swap",
-            TokenKind::SysCall => "syscall",
-            TokenKind::Union => "union",
-            TokenKind::Unpack => "unpack",
-            TokenKind::Variable => "var",
-            TokenKind::While => "while",
+            Token::Ampersand => "&",
+            Token::Array => "array",
+            Token::Assert => "assert",
+            Token::AssumeInit => "init",
+            Token::BitAnd => "and",
+            Token::BitNot => "not",
+            Token::BitOr => "or",
+            Token::BitXor => "xor",
+            Token::Boolean(_) => "boolean literal",
+            Token::BracketClose(BracketKind::Brace) => "}",
+            Token::BracketClose(BracketKind::Paren) => ")",
+            Token::BracketClose(BracketKind::Square) => "]",
+            Token::BracketOpen(BracketKind::Brace) => "{",
+            Token::BracketOpen(BracketKind::Paren) => "(",
+            Token::BracketOpen(BracketKind::Square) => "[",
+            Token::Carat => "^",
+            Token::Cast => "cast",
+            Token::Char(_) => "character literal",
+            Token::Colon => ":",
+            Token::ColonColon => "::",
+            Token::Cond => "cond",
+            Token::Const => "const",
+            Token::Comment => "comment",
+            Token::Comma => ",",
+            Token::Div => "/",
+            Token::Dot => ".",
+            Token::Drop => "drop",
+            Token::Dup => "dup",
+            Token::Else => "else",
+            Token::Enum => "enum",
+            Token::Equal => "=",
+            Token::EmitStack => "emit",
+            Token::Exit => "exit",
+            Token::Extern => "extern",
+            Token::Extract(Extract { emit_struct: true }) => "xtr",
+            Token::Extract(Extract { emit_struct: false }) => "xtrd",
+            Token::Float => "float literal",
+            Token::GoesTo => "to",
+            Token::Greater => ">",
+            Token::GreaterEqual => ">=",
+            Token::Hash => "#",
+            Token::Here => "here",
+            Token::Ident => "Ident",
+            Token::Insert(Insert { emit_struct: true }) => "ins",
+            Token::Insert(Insert { emit_struct: false }) => "insd",
+            Token::Integer(_) => "integer literal",
+            Token::Import => "import",
+            Token::IsNull => "isnull",
+            Token::LangItem => "lang",
+            Token::Less => "<",
+            Token::LessEqual => "<=",
+            Token::Lib => "lib",
+            Token::Load => "@",
+            Token::Minus => "-",
+            Token::Module => "module",
+            Token::NotEqual => "!=",
+            Token::Over => "over",
+            Token::Pack => "pack",
+            Token::Pipe => "|",
+            Token::Plus => "+",
+            Token::Proc => "proc",
+            Token::Rem => "%",
+            Token::Return => "return",
+            Token::Reverse => "rev",
+            Token::Rot => "rot",
+            Token::SelfKw => "self",
+            Token::ShiftLeft => "shl",
+            Token::ShiftRight => "shr",
+            Token::SizeOf => "sizeof",
+            Token::Star => "*",
+            Token::String(_) => "string literal",
+            Token::Store => "!",
+            Token::Struct => "struct",
+            Token::Super => "super",
+            Token::Swap => "swap",
+            Token::SysCall => "syscall",
+            Token::Union => "union",
+            Token::Unpack => "unpack",
+            Token::Variable => "var",
+            Token::While => "while",
         }
     }
 
     pub fn expects_brace_group(self) -> bool {
-        matches!(self, TokenKind::Cond | TokenKind::While)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub lexeme: Spur,
-}
-
-impl Token {
-    fn new(kind: TokenKind, lexeme: Spur) -> Self {
-        Self { kind, lexeme }
+        matches!(self, Token::Cond | Token::While)
     }
 }
 
@@ -428,7 +416,7 @@ fn consume_char_str_lit(s: &str, end_char: u8) -> (usize, bool) {
     (s.len() - chars.len(), found_close)
 }
 
-fn str_literal(lex: &mut Lexer<TokenKind>) -> Result<StringToken, InternalError> {
+fn str_literal(lex: &mut Lexer<Token>) -> Result<StringToken, InternalError> {
     let (consumed_len, found_close) = consume_char_str_lit(lex.remainder(), b'"');
     lex.bump(consumed_len);
 
@@ -441,7 +429,7 @@ fn str_literal(lex: &mut Lexer<TokenKind>) -> Result<StringToken, InternalError>
     }
 }
 
-fn char_literal(lex: &mut Lexer<TokenKind>) -> Result<CharToken, InternalError> {
+fn char_literal(lex: &mut Lexer<Token>) -> Result<CharToken, InternalError> {
     let (consumed_len, found_close) = consume_char_str_lit(lex.remainder(), b'\'');
     lex.bump(consumed_len);
 
@@ -462,7 +450,7 @@ pub fn lex<'a>(
     let _span = debug_span!("lex").entered();
 
     let mut tokens = Vec::new();
-    let mut lexer = TokenKind::lexer(contents).spanned();
+    let mut lexer = Token::lexer(contents).spanned();
 
     while let Some((kind, span)) = lexer.next() {
         let span = span.start.to_u32().unwrap()..span.end.to_u32().unwrap();
@@ -484,19 +472,18 @@ pub fn lex<'a>(
         };
 
         match &mut kind {
-            TokenKind::String(string_token) => {
+            Token::String(string_token) => {
                 let slice = lexer.slice();
                 string_token.id = interner.intern(&slice[1..slice.len() - 1]);
             }
-            TokenKind::Char(char_token) => {
+            Token::Char(char_token) => {
                 let slice = lexer.slice();
                 char_token.id = interner.intern(&slice[1..slice.len() - 1]);
             }
             _ => (),
         }
 
-        let lexeme = interner.intern(lexer.slice());
-        let token = Token::new(kind, lexeme).with_span(location);
+        let token = kind.with_span(location);
 
         tokens.push(Ok(token));
     }

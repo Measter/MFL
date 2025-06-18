@@ -1,9 +1,8 @@
 use std::{collections::HashMap, fmt::Display};
 
 use intcast::IntCast;
-use lasso::Spur;
 use smallvec::SmallVec;
-use stores::{items::ItemId, source::Spanned};
+use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
     ir::{NameResolvedOp, OpCode, PartiallyResolvedOp, TypeResolvedOp, UnresolvedOp},
@@ -41,7 +40,7 @@ impl OpIoValues {
 }
 
 pub struct OpStore {
-    tokens: Vec<Spanned<Spur>>,
+    tokens: Vec<SourceLocation>,
     unresolved: Vec<OpCode<UnresolvedOp>>,
     name_resolved: HashMap<OpId, OpCode<NameResolvedOp>>,
     partial_type_resolved: HashMap<OpId, OpCode<PartiallyResolvedOp>>,
@@ -63,7 +62,7 @@ impl OpStore {
         }
     }
 
-    pub fn new_op(&mut self, code: OpCode<UnresolvedOp>, token: Spanned<Spur>) -> OpId {
+    pub fn new_op(&mut self, code: OpCode<UnresolvedOp>, token: SourceLocation) -> OpId {
         let new_id = OpId(self.unresolved.len().to_u32().expect("ICE: OpID overflow"));
 
         self.unresolved.push(code);
@@ -74,7 +73,7 @@ impl OpStore {
 
     #[inline]
     #[track_caller]
-    pub fn get_token(&self, id: OpId) -> Spanned<Spur> {
+    pub fn get_token_location(&self, id: OpId) -> SourceLocation {
         self.tokens[id.0.to_usize()]
     }
 

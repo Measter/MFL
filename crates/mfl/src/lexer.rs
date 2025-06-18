@@ -1,4 +1,4 @@
-use lexer::{BracketKind, LexerError, Token, TokenKind};
+use lexer::{BracketKind, LexerError, Token};
 use stores::source::{FileId, SourceLocation, Spanned};
 use tracing::debug_span;
 
@@ -72,7 +72,7 @@ impl TokenTree {
     }
 
     pub fn expects_brace_group(&self) -> bool {
-        matches!(self, TokenTree::Single(tk) if tk.inner.kind.expects_brace_group())
+        matches!(self, TokenTree::Single(tk) if tk.inner.expects_brace_group())
     }
 
     pub fn is_brace_group(&self) -> bool {
@@ -81,7 +81,7 @@ impl TokenTree {
 
     pub fn kind_str(&self) -> &'static str {
         match self {
-            TokenTree::Single(tk) => tk.inner.kind.kind_str(),
+            TokenTree::Single(tk) => tk.inner.kind_str(),
             TokenTree::Group(_) => "bracket group",
         }
     }
@@ -125,14 +125,14 @@ pub(crate) fn lex_file(
             }
         };
 
-        match token.inner.kind {
-            TokenKind::BracketOpen(bk) => token_tree_group_stack.push(TreeGroup {
+        match token.inner {
+            Token::BracketOpen(bk) => token_tree_group_stack.push(TreeGroup {
                 bracket_kind: bk,
                 open: token,
                 close: None,
                 tokens: Vec::new(),
             }),
-            TokenKind::BracketClose(tk) if !token_tree_group_stack.is_empty() => {
+            Token::BracketClose(tk) if !token_tree_group_stack.is_empty() => {
                 let last = token_tree_group_stack.last().unwrap();
                 let tt_val = if last.bracket_kind == tk {
                     let mut cur_group = token_tree_group_stack.pop().unwrap();
@@ -151,7 +151,7 @@ pub(crate) fn lex_file(
                     .unwrap_or(&mut token_tree_stream);
                 stream.push(tt_val);
             }
-            TokenKind::Comment => continue,
+            Token::Comment => continue,
             _ => {
                 let stream = token_tree_group_stack
                     .last_mut()
@@ -185,13 +185,13 @@ fn pretty_print_tree(tree: &Vec<TokenTree>, depth: usize) {
     for tt in tree {
         match tt {
             TokenTree::Single(tk) => {
-                eprintln!("{:width$}{:?}", " ", tk.inner.kind, width = depth * 4);
+                eprintln!("{:width$}{:?}", " ", tk.inner, width = depth * 4);
             }
             TokenTree::Group(tg) => {
                 eprintln!(
                     "{:width$}{:?}",
                     " ",
-                    TokenKind::BracketOpen(tg.bracket_kind),
+                    Token::BracketOpen(tg.bracket_kind),
                     width = depth * 4
                 );
                 pretty_print_tree(&tg.tokens, depth + 1);
@@ -199,7 +199,7 @@ fn pretty_print_tree(tree: &Vec<TokenTree>, depth: usize) {
                     eprintln!(
                         "{:width$}{:?}",
                         " ",
-                        TokenKind::BracketClose(tg.bracket_kind),
+                        Token::BracketClose(tg.bracket_kind),
                         width = depth * 4
                     );
                 }

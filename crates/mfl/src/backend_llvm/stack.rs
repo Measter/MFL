@@ -316,7 +316,7 @@ impl<'ctx> CodeGen<'ctx> {
         function: FunctionValue<'ctx>,
         op_id: OpId,
     ) -> InkwellResult {
-        let op_loc = ds.ops.get_token(op_id).location;
+        let op_loc = ds.ops.get_token_location(op_id);
         let this_header = ds.items.get_item_header(item_id);
 
         let store_value = if this_header.attributes.contains(ItemAttribute::TrackCaller) {

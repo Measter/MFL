@@ -105,7 +105,7 @@ pub(crate) fn extract_array(
     emit_array: bool,
 ) {
     let op_data = stores.ops.get_op_io(op_id).clone();
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs @ [array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids) = stores.values.value_types(inputs) else {
         return;
@@ -300,10 +300,10 @@ pub(crate) fn field_access(
         }
 
         TypeKind::Struct(_) | TypeKind::GenericStructInstance(_) => {
-            let op_loc = stores.ops.get_token(op_id);
+            let op_loc = stores.ops.get_token_location(op_id);
             let struct_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
 
-            Diagnostic::error(op_loc.location, "field access not support on struct value")
+            Diagnostic::error(op_loc, "field access not support on struct value")
                 .with_note("Struct must be behind a pointer")
                 .with_label_chain(input_struct_value_id, 1, struct_type_name)
                 .attached(stores.diags, item_id);
@@ -376,7 +376,7 @@ pub(crate) fn index(
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs @ [idx_value_id, array_value_id] = *op_data.inputs.as_arr();
     let output_value_id = op_data.outputs[0];
     let Some(type_ids) = stores.values.value_types(inputs) else {
@@ -476,7 +476,7 @@ pub(crate) fn insert_array(
     emit_array: bool,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs @ [data_value_id, array_value_id, idx_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, array_type_id, _]) = stores.values.value_types(inputs)
     else {
@@ -568,7 +568,7 @@ pub(crate) fn insert_struct(
     emit_struct: bool,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs @ [data_value_id, input_struct_value_id] = *op_data.inputs.as_arr();
     let Some(type_ids @ [data_type_id, input_struct_type_id]) = stores.values.value_types(inputs)
     else {
@@ -732,7 +732,7 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
                         let function_type_name = stores.strings.resolve(ptr_info.friendly_name);
 
                         let mut diag = Diagnostic::error(
-                            stores.ops.get_token(op_id).location,
+                            stores.ops.get_token_location(op_id),
                             "procedure call signature mismatch",
                         )
                         .primary_label_message("called here")
@@ -792,7 +792,7 @@ pub(crate) fn load(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: It
         | TypeKind::Enum(_)
         | TypeKind::GenericStructInstance(_) => {
             let ptr_type_name = stores.strings.resolve(ptr_info.friendly_name);
-            let op_loc = stores.ops.get_token(op_id).location;
+            let op_loc = stores.ops.get_token_location(op_id);
 
             Diagnostic::error(op_loc, "value must be a pointer")
                 .with_label_chain(*ptr_id, 0, ptr_type_name)
@@ -810,7 +810,7 @@ pub(crate) fn init_array(
     op_id: OpId,
     count: u32,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
 
     if count == 0 {
         Diagnostic::error(op_loc, "cannot init an array of length 0")
@@ -839,7 +839,7 @@ pub(crate) fn pack_array(
     op_id: OpId,
     count: u8,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
 
     if count == 0 {
         Diagnostic::error(op_loc, "cannot pack an array of length 0")
@@ -903,7 +903,7 @@ pub(crate) fn store(
     op_id: OpId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let [data_value_id, ptr_value_id] = *op_data.inputs.as_arr();
     let Some([data_type_id, ptr_type_id]) =
         stores.values.value_types([data_value_id, ptr_value_id])
@@ -988,7 +988,7 @@ pub(crate) fn unpack(
         | TypeKind::Enum(_)
         | TypeKind::GenericStructBase(_) => {
             let aggr_type_name = stores.strings.resolve(aggr_type_info.friendly_name);
-            let op_loc = stores.ops.get_token(op_id).location;
+            let op_loc = stores.ops.get_token_location(op_id);
 
             Diagnostic::error(
                 op_loc,
@@ -1012,7 +1012,7 @@ pub(crate) fn pack_enum(
     let op_data = stores.ops.get_op_io(op_id);
     stores.values.set_value_type(op_data.outputs[0], enum_id);
 
-    let op_loc = stores.ops.get_token(op_id);
+    let op_loc = stores.ops.get_token_location(op_id);
     let discrim_value_id = op_data.inputs[0];
     let Some([discrim_type_id]) = stores.values.value_types([discrim_value_id]) else {
         return;
@@ -1024,7 +1024,7 @@ pub(crate) fn pack_enum(
         let discrim_type_name = stores.strings.resolve(discrim_type_info.friendly_name);
 
         Diagnostic::error(
-            op_loc.location,
+            op_loc,
             format!("found `{discrim_type_name}` expected a u16"),
         )
         .with_label_chain(discrim_value_id, 1, discrim_type_name)
@@ -1043,7 +1043,7 @@ pub(crate) fn pack_enum(
     ) {
         let discrim_type_name = stores.strings.resolve(discrim_type_info.friendly_name);
 
-        Diagnostic::error(op_loc.location, "value must be a `u16`")
+        Diagnostic::error(op_loc, "value must be a `u16`")
             .with_label_chain(discrim_value_id, 0, discrim_type_name)
             .attached(stores.diags, item_id);
 
@@ -1079,7 +1079,7 @@ pub(crate) fn pack_struct(
     };
 
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs = &op_data.inputs;
     let struct_type_info = stores.types.get_struct_def(struct_type_id);
 
@@ -1160,7 +1160,7 @@ fn pack_struct_infer_generic(
 ) -> ControlFlow<(), TypeId> {
     let generic_def = stores.types.get_generic_base_def(struct_type_id);
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let inputs = &op_data.inputs;
 
     // We can't infer generic parameters for a union, as there may be multiple parameters, but we only

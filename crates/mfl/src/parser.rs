@@ -1,7 +1,6 @@
 use std::{collections::VecDeque, ops::Not};
 
-use lexer::{BracketKind, TokenKind};
-use stores::source::WithSpan;
+use lexer::{BracketKind, Token};
 use tracing::debug_span;
 use utils::{TokenIter, TokenTreeOptionExt};
 
@@ -34,8 +33,8 @@ fn parse_item_body_contents(
     while let Some(tree_item) = token_iter.next() {
         match tree_item {
             TokenTree::Single(token) => {
-                let (kind, op_end) = match token.inner.kind {
-                    TokenKind::Extract { .. } | TokenKind::Insert { .. } => {
+                let (kind, op_end) = match token.inner {
+                    Token::Extract { .. } | Token::Insert { .. } => {
                         if token_iter.next_is_group(BracketKind::Paren) {
                             let Ok(new_ops) =
                                 parse_extract_insert_struct(stores, token_iter, parent_id, *token)
@@ -48,7 +47,7 @@ fn parse_item_body_contents(
                         }
                         parse_extract_insert_array(*token)
                     }
-                    TokenKind::While => {
+                    Token::While => {
                         let Ok(code) =
                             ops::parse_while(stores, token_iter, parent_id, *token, parent_id)
                         else {
@@ -57,7 +56,7 @@ fn parse_item_body_contents(
                         };
                         code
                     }
-                    TokenKind::Cond => {
+                    Token::Cond => {
                         let Ok(code) =
                             ops::parse_cond(stores, token_iter, parent_id, *token, parent_id)
                         else {
@@ -67,29 +66,29 @@ fn parse_item_body_contents(
                         code
                     }
 
-                    TokenKind::Assert => {
+                    Token::Assert => {
                         if items::parse_assert(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
 
                         continue;
                     }
-                    TokenKind::Const => {
+                    Token::Const => {
                         if items::parse_const(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
                         continue;
                     }
-                    TokenKind::Variable => {
+                    Token::Variable => {
                         if items::parse_variable(stores, token_iter, *token, parent_id).is_err() {
                             had_error.set();
                         }
                         continue;
                     }
-                    TokenKind::Module | TokenKind::Proc | TokenKind::Struct | TokenKind::Union => {
+                    Token::Module | Token::Proc | Token::Struct | Token::Union => {
                         Diagnostic::error(
                             token.location,
-                            format!("cannot use `{:?}` inside a procedure", token.inner.kind),
+                            format!("cannot use `{:?}` inside a procedure", token.inner),
                         )
                         .primary_label_message("here")
                         .attached(stores.diags, parent_id);
@@ -97,7 +96,7 @@ fn parse_item_body_contents(
                         had_error.set();
                         continue;
                     }
-                    TokenKind::Dot => {
+                    Token::Dot => {
                         let Ok(op) = ops::parse_field_access(stores, token_iter, parent_id, *token)
                         else {
                             had_error.set();
@@ -105,7 +104,7 @@ fn parse_item_body_contents(
                         };
                         op
                     }
-                    TokenKind::Colon => {
+                    Token::Colon => {
                         let Ok(op) = ops::parse_method_call(stores, token_iter, parent_id, *token)
                         else {
                             had_error.set();
@@ -113,7 +112,7 @@ fn parse_item_body_contents(
                         };
                         op
                     }
-                    TokenKind::Carat => {
+                    Token::Carat => {
                         let Ok(op) =
                             ops::parse_function_pointer(stores, token_iter, parent_id, *token)
                         else {
@@ -124,17 +123,14 @@ fn parse_item_body_contents(
                     }
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
-                    TokenKind::GoesTo
-                    | TokenKind::Import
-                    | TokenKind::Else
-                    | TokenKind::BracketClose(_)
-                    | TokenKind::BracketOpen(_) => {
+                    Token::GoesTo
+                    | Token::Import
+                    | Token::Else
+                    | Token::BracketClose(_)
+                    | Token::BracketOpen(_) => {
                         Diagnostic::error(
                             token.location,
-                            format!(
-                                "unexpected token `{}` in input",
-                                token.inner.kind.kind_str()
-                            ),
+                            format!("unexpected token `{}` in input", token.inner.kind_str()),
                         )
                         .attached(stores.diags, parent_id);
                         had_error.set();
@@ -150,8 +146,7 @@ fn parse_item_body_contents(
                     }
                 };
 
-                let token = token.inner.lexeme.with_span(token.location.merge(op_end));
-                ops.push(stores.ops.new_op(kind, token));
+                ops.push(stores.ops.new_op(kind, token.location.merge(op_end)));
             }
             TokenTree::Group(tg) => {
                 Diagnostic::error(tg.span(), "unexpected bracket group in input")
@@ -181,21 +176,21 @@ pub(super) fn parse_module(
     while let Some(tree_item) = token_iter.next() {
         match tree_item {
             TokenTree::Single(token) => {
-                match token.inner.kind {
-                    TokenKind::Assert => {
+                match token.inner {
+                    Token::Assert => {
                         if items::parse_assert(stores, &mut token_iter, *token, module_id).is_err()
                         {
                             had_error.set();
                         }
                     }
 
-                    TokenKind::Const => {
+                    Token::Const => {
                         if items::parse_const(stores, &mut token_iter, *token, module_id).is_err() {
                             had_error.set();
                         }
                     }
 
-                    TokenKind::Proc => {
+                    Token::Proc => {
                         if items::parse_function(stores, &mut token_iter, *token, module_id)
                             .is_err()
                         {
@@ -203,7 +198,7 @@ pub(super) fn parse_module(
                         }
                     }
 
-                    TokenKind::Variable => {
+                    Token::Variable => {
                         if items::parse_variable(stores, &mut token_iter, *token, module_id)
                             .is_err()
                         {
@@ -211,7 +206,7 @@ pub(super) fn parse_module(
                         }
                     }
 
-                    TokenKind::Import => {
+                    Token::Import => {
                         let res = items::parse_import(
                             stores,
                             &mut had_error,
@@ -226,18 +221,20 @@ pub(super) fn parse_module(
                         }
                     }
 
-                    TokenKind::Module => {
+                    Token::Module => {
                         let module_ident = token_iter.expect_single(
                             stores,
                             module_id,
-                            TokenKind::Ident,
+                            Token::Ident,
                             token.location,
                         )?;
+
+                        let module_lexeme = stores.get_lexeme(module_ident.location);
 
                         if token_iter.next_is_group(BracketKind::Brace) {
                             let new_module_id = stores.items.new_module(
                                 stores.sigs,
-                                module_ident.map(|t| t.lexeme),
+                                module_lexeme,
                                 Some(module_id),
                                 false,
                             );
@@ -256,13 +253,13 @@ pub(super) fn parse_module(
                             }
                         } else {
                             include_queue.push_back((
-                                ModuleQueueType::Include(module_ident.map(|t| t.lexeme)),
+                                ModuleQueueType::Include(module_lexeme),
                                 Some(module_id),
                             ));
                         }
                     }
 
-                    TokenKind::Struct | TokenKind::Union => {
+                    Token::Struct | Token::Union => {
                         if items::parse_struct_or_union(stores, &mut token_iter, module_id, *token)
                             .is_err()
                         {
@@ -270,27 +267,24 @@ pub(super) fn parse_module(
                         }
                     }
 
-                    TokenKind::Enum => {
+                    Token::Enum => {
                         if items::parse_enum(stores, &mut token_iter, module_id, *token).is_err() {
                             had_error.set();
                         }
                     }
 
-                    TokenKind::Extract { .. }
-                    | TokenKind::Insert { .. }
-                    | TokenKind::Cond
-                    | TokenKind::While => {
+                    Token::Extract { .. } | Token::Insert { .. } | Token::Cond | Token::While => {
                         Diagnostic::bad_top_level_op(
                             stores.diags,
                             module_id,
                             token.location,
-                            token.inner.kind,
+                            token.inner,
                         );
                         had_error.set();
                         continue;
                     }
 
-                    TokenKind::Dot => {
+                    Token::Dot => {
                         if ops::parse_field_access(stores, &mut token_iter, module_id, *token)
                             .is_err()
                         {
@@ -300,16 +294,13 @@ pub(super) fn parse_module(
 
                     // These are only used as sub-part of some syntax, not standalone. If they're found anywhere else,
                     // it's an error.
-                    TokenKind::GoesTo
-                    | TokenKind::Else
-                    | TokenKind::BracketOpen(_)
-                    | TokenKind::BracketClose(_) => {
+                    Token::GoesTo
+                    | Token::Else
+                    | Token::BracketOpen(_)
+                    | Token::BracketClose(_) => {
                         Diagnostic::error(
                             token.location,
-                            format!(
-                                "unexpected token `{}` in input",
-                                token.inner.kind.kind_str()
-                            ),
+                            format!("unexpected token `{}` in input", token.inner.kind_str()),
                         )
                         .attached(stores.diags, module_id);
 
@@ -330,7 +321,7 @@ pub(super) fn parse_module(
                             stores.diags,
                             module_id,
                             location,
-                            token.inner.kind,
+                            token.inner,
                         );
 
                         had_error.set();

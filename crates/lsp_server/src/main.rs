@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use ariadne::Span;
-use lexer::{Token, TokenKind};
+use lexer::Token;
 use stores::{
     source::{SourceLocation, SourceStore, Spanned},
     strings::StringStore,
@@ -53,9 +53,9 @@ struct Stores {
     string_store: StringStore,
 }
 
-fn is_primitive(string_store: &StringStore, token: Spanned<Token>) -> bool {
+fn is_primitive(string_store: &SourceStore, token: Spanned<Token>) -> bool {
     matches!(
-        string_store.resolve(token.inner.lexeme),
+        string_store.get_str(token.location),
         "u8" | "s8" | "u16" | "s16" | "u32" | "s32" | "u64" | "s64" | "f32" | "f64" | "bool"
     )
 }
@@ -210,97 +210,93 @@ impl Backend {
                     // Do nothing for now, add diagnostics later.
                 }
                 Ok(token) => {
-                    let legend = match token.inner.kind {
+                    let legend = match token.inner {
                         // Comment
-                        TokenKind::Comment => Legend::Comment,
+                        Token::Comment => Legend::Comment,
 
                         // String
-                        TokenKind::Char(_) | TokenKind::String(_) | TokenKind::Here => {
-                            Legend::String
-                        }
+                        Token::Char(_) | Token::String(_) | Token::Here => Legend::String,
 
                         // Keyword
-                        TokenKind::Assert
-                        | TokenKind::Cast
-                        | TokenKind::Cond
-                        | TokenKind::Const
-                        | TokenKind::Else
-                        | TokenKind::EmitStack
-                        | TokenKind::Enum
-                        | TokenKind::Exit
-                        | TokenKind::Extern
-                        | TokenKind::GoesTo
-                        | TokenKind::AssumeInit
-                        | TokenKind::Import
-                        | TokenKind::LangItem
-                        | TokenKind::Lib
-                        | TokenKind::Module
-                        | TokenKind::Proc
-                        | TokenKind::Return
-                        | TokenKind::SelfKw
-                        | TokenKind::Struct
-                        | TokenKind::Super
-                        | TokenKind::Union
-                        | TokenKind::Variable
-                        | TokenKind::While => Legend::Keyword,
+                        Token::Assert
+                        | Token::Cast
+                        | Token::Cond
+                        | Token::Const
+                        | Token::Else
+                        | Token::EmitStack
+                        | Token::Enum
+                        | Token::Exit
+                        | Token::Extern
+                        | Token::GoesTo
+                        | Token::AssumeInit
+                        | Token::Import
+                        | Token::LangItem
+                        | Token::Lib
+                        | Token::Module
+                        | Token::Proc
+                        | Token::Return
+                        | Token::SelfKw
+                        | Token::Struct
+                        | Token::Super
+                        | Token::Union
+                        | Token::Variable
+                        | Token::While => Legend::Keyword,
 
                         // Number
-                        TokenKind::Boolean(_) | TokenKind::Float | TokenKind::Integer(_) => {
-                            Legend::Number
-                        }
+                        Token::Boolean(_) | Token::Float | Token::Integer(_) => Legend::Number,
 
                         // Operator
-                        TokenKind::BitAnd
-                        | TokenKind::BitNot
-                        | TokenKind::BitOr
-                        | TokenKind::BitXor
-                        | TokenKind::Carat
-                        | TokenKind::Div
-                        | TokenKind::Equal
-                        | TokenKind::Greater
-                        | TokenKind::GreaterEqual
-                        | TokenKind::IsNull
-                        | TokenKind::Less
-                        | TokenKind::LessEqual
-                        | TokenKind::Minus
-                        | TokenKind::NotEqual
-                        | TokenKind::Pipe
-                        | TokenKind::Plus
-                        | TokenKind::Rem
-                        | TokenKind::ShiftLeft
-                        | TokenKind::ShiftRight
-                        | TokenKind::Star => Legend::Operator,
+                        Token::BitAnd
+                        | Token::BitNot
+                        | Token::BitOr
+                        | Token::BitXor
+                        | Token::Carat
+                        | Token::Div
+                        | Token::Equal
+                        | Token::Greater
+                        | Token::GreaterEqual
+                        | Token::IsNull
+                        | Token::Less
+                        | Token::LessEqual
+                        | Token::Minus
+                        | Token::NotEqual
+                        | Token::Pipe
+                        | Token::Plus
+                        | Token::Rem
+                        | Token::ShiftLeft
+                        | Token::ShiftRight
+                        | Token::Star => Legend::Operator,
 
                         // Type
-                        TokenKind::Ident if is_primitive(string_store, token) => Legend::Type,
+                        Token::Ident if is_primitive(source_store, token) => Legend::Type,
 
                         // Function
-                        TokenKind::Array
-                        | TokenKind::Drop
-                        | TokenKind::Dup
-                        | TokenKind::Extract(_)
-                        | TokenKind::Hash
-                        | TokenKind::Insert(_)
-                        | TokenKind::Load
-                        | TokenKind::Over
-                        | TokenKind::Pack
-                        | TokenKind::Reverse
-                        | TokenKind::Rot
-                        | TokenKind::SizeOf
-                        | TokenKind::Store
-                        | TokenKind::Swap
-                        | TokenKind::SysCall
-                        | TokenKind::Unpack => Legend::Function,
+                        Token::Array
+                        | Token::Drop
+                        | Token::Dup
+                        | Token::Extract(_)
+                        | Token::Hash
+                        | Token::Insert(_)
+                        | Token::Load
+                        | Token::Over
+                        | Token::Pack
+                        | Token::Reverse
+                        | Token::Rot
+                        | Token::SizeOf
+                        | Token::Store
+                        | Token::Swap
+                        | Token::SysCall
+                        | Token::Unpack => Legend::Function,
 
                         // Nothing
-                        TokenKind::Ampersand
-                        | TokenKind::BracketClose(_)
-                        | TokenKind::BracketOpen(_)
-                        | TokenKind::Colon
-                        | TokenKind::ColonColon
-                        | TokenKind::Comma
-                        | TokenKind::Dot
-                        | TokenKind::Ident => continue,
+                        Token::Ampersand
+                        | Token::BracketClose(_)
+                        | Token::BracketOpen(_)
+                        | Token::Colon
+                        | Token::ColonColon
+                        | Token::Comma
+                        | Token::Dot
+                        | Token::Ident => continue,
                     };
 
                     sem_toks.push(IncompleteSemanticToken {

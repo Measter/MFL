@@ -41,7 +41,7 @@ pub(crate) fn emit_stack(
     note.set_format(*TABLE_FORMAT);
     note.set_titles(row!["ID", "Type"]);
 
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let mut diag = Diagnostic::advice(op_loc, "stack trace");
 
     for (idx, value_id) in stack.iter().enumerate().rev() {
@@ -178,7 +178,7 @@ pub(crate) fn cast(
         | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
             let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
-            let op_loc = stores.ops.get_token(op_id).location;
+            let op_loc = stores.ops.get_token_location(op_id);
             Diagnostic::error(op_loc, format!("cannot cast to `{output_type_name}`"))
                 .attached(stores.diags, item_id);
             had_error.set();
@@ -194,7 +194,7 @@ fn cast_to_ptr(
     to_id: TypeId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_token = stores.ops.get_token(op_id);
+    let op_token_loc = stores.ops.get_token_location(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
         return;
@@ -212,7 +212,7 @@ fn cast_to_ptr(
             let ptr_type_name = stores.strings.resolve(ptr_type_info.friendly_name);
 
             Diagnostic::error(
-                op_token.location,
+                op_token_loc,
                 format!("cannot cast `{input_type_name}` to `{ptr_type_name}`"),
             )
             .with_note("Can only cast u64 to pointers")
@@ -230,7 +230,7 @@ fn cast_to_ptr(
         | TypeKind::GenericStructInstance(_)
         | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &[input_value_id]);
             had_error.set();
             return;
         }
@@ -248,7 +248,7 @@ fn cast_to_int(
     to_int: IntKind,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_token = stores.ops.get_token(op_id);
+    let op_token_loc = stores.ops.get_token_location(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
         return;
@@ -264,7 +264,7 @@ fn cast_to_int(
                 let output_type_name = stores.strings.resolve(output_type_info.friendly_name);
 
                 Diagnostic::error(
-                    op_token.location,
+                    op_token_loc,
                     format!("cannot cast `{input_type_name}` to `{output_type_name}`"),
                 )
                 .with_label_chain(input_value_id, 0, input_type_name)
@@ -279,7 +279,7 @@ fn cast_to_int(
         | TypeKind::GenericStructBase(_)
         | TypeKind::GenericStructInstance(_)
         | TypeKind::FunctionPointer => {
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &[input_value_id]);
             had_error.set();
             return;
         }
@@ -296,7 +296,7 @@ fn cast_to_float(
     to_id: TypeId,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_token = stores.ops.get_token(op_id);
+    let op_token_loc = stores.ops.get_token_location(op_id);
     let input_value_id = op_data.inputs[0];
     let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
         return;
@@ -315,7 +315,7 @@ fn cast_to_float(
         | TypeKind::GenericStructInstance(_)
         | TypeKind::Enum(_)
         | TypeKind::FunctionPointer => {
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_value_id]);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &[input_value_id]);
             had_error.set();
             return;
         }

@@ -19,7 +19,7 @@ pub(crate) fn dup(
     op_id: OpId,
     count: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
 
     if count.inner == 0 {
         Diagnostic::error(op_loc, "invalid duplicate count")
@@ -56,7 +56,7 @@ pub(crate) fn drop(
     op_id: OpId,
     count: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     if count.inner == 0 {
         Diagnostic::error(op_loc, "invalid drop count")
             .primary_label_message("cannot drop 0 items")
@@ -81,7 +81,7 @@ pub(crate) fn over(
     op_id: OpId,
     depth: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     if depth.inner == 0 {
         Diagnostic::warning(op_loc, "unclear stack op")
             .primary_label_message("using `dup` would make intent clearer")
@@ -106,7 +106,7 @@ pub(crate) fn reverse(
     op_id: OpId,
     count: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     match count.inner {
         0 | 1 => {
             Diagnostic::warning(
@@ -150,7 +150,7 @@ pub(crate) fn rotate(
     direction: Direction,
     mut shift_count: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     if item_count.inner == 0 {
         Diagnostic::warning(op_loc, "rotating 0 items is a no-op").attached(stores.diags, item_id);
         return;
@@ -200,7 +200,7 @@ pub(crate) fn swap(
     op_id: OpId,
     count: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
 
     if count.inner == 0 {
         Diagnostic::warning(op_loc, "swapping 0 items is a no-op").attached(stores.diags, item_id);

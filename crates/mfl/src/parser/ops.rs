@@ -1,5 +1,5 @@
 use intcast::IntCast;
-use lexer::{BracketKind, CharToken, Extract, Insert, StringToken, Token, TokenKind};
+use lexer::{BracketKind, CharToken, Extract, Insert, StringToken, Token};
 use smallvec::SmallVec;
 use stores::{
     items::ItemId,
@@ -36,14 +36,14 @@ use super::{
 };
 
 pub fn parse_extract_insert_array(token: Spanned<Token>) -> (OpCode<UnresolvedOp>, SourceLocation) {
-    let (kind, loc) = match token.inner.kind {
-        TokenKind::Extract(Extract { emit_struct }) => (
+    let (kind, loc) = match token.inner {
+        Token::Extract(Extract { emit_struct }) => (
             Memory::ExtractArray {
                 emit_array: emit_struct,
             },
             token.location,
         ),
-        TokenKind::Insert(Insert { emit_struct }) => (
+        Token::Insert(Insert { emit_struct }) => (
             Memory::InsertArray {
                 emit_array: emit_struct,
             },
@@ -68,8 +68,8 @@ pub fn parse_extract_insert_struct(
         .with_kinds(
             stores,
             item_id,
-            Matcher("ident", |t: Spanned<TokenKind>| {
-                if matches!(t.inner, TokenKind::Ident | TokenKind::Dot) {
+            Matcher("ident", |t: Spanned<Token>| {
+                if matches!(t.inner, Token::Ident | Token::Dot) {
                     IsMatch::Yes
                 } else {
                     IsMatch::No(t.inner.kind_str(), t.location)
@@ -85,15 +85,14 @@ pub fn parse_extract_insert_struct(
     let mut local_had_error = ErrorSignal::new();
     let mut prev_token = delim.open;
     loop {
-        let Ok(next) =
-            delim_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+        let Ok(next) = delim_iter.expect_single(stores, item_id, Token::Ident, prev_token.location)
         else {
             local_had_error.set();
             break;
         };
         idents.push(next);
 
-        if delim_iter.next_is_single(TokenKind::Dot) {
+        if delim_iter.next_is_single(Token::Dot) {
             prev_token = delim_iter.next().unwrap().last_token();
             continue;
         }
@@ -104,32 +103,35 @@ pub fn parse_extract_insert_struct(
         return Err(());
     }
 
-    match token.inner.kind {
-        TokenKind::Extract(Extract { emit_struct }) => {
+    match token.inner {
+        Token::Extract(Extract { emit_struct }) => {
             // As we're generating multiple ops, we need a bit of manual handling.
             let mut emit_struct = emit_struct;
             for field_name in idents {
+                let field_name = stores.get_lexeme(field_name.location);
+
                 let first = OpCode::Basic(Basic::Memory(Memory::ExtractStruct {
                     emit_struct,
-                    field_name: field_name.map(|t| t.lexeme),
+                    field_name,
                 }));
 
-                ops.push(stores.ops.new_op(first, token.map(|t| t.lexeme)));
+                ops.push(stores.ops.new_op(first, token.location));
                 emit_struct = false;
             }
         }
-        TokenKind::Insert(Insert { emit_struct }) if idents.len() > 1 => {
+        Token::Insert(Insert { emit_struct }) if idents.len() > 1 => {
             // Hang on to your seat, this'll be a good one!
             let [prev @ .., _] = idents.as_slice() else {
                 unreachable!()
             };
 
             for &ident in prev {
+                let field_name = stores.get_lexeme(ident.location);
                 let xtr = OpCode::Basic(Basic::Memory(Memory::ExtractStruct {
                     emit_struct: true,
-                    field_name: ident.map(|t| t.lexeme),
+                    field_name,
                 }));
-                ops.push(stores.ops.new_op(xtr, token.map(|t| t.lexeme)));
+                ops.push(stores.ops.new_op(xtr, token.location));
             }
 
             let rot_len = (idents.len() + 1).to_u8().unwrap();
@@ -138,7 +140,7 @@ pub fn parse_extract_insert_struct(
                 direction: Direction::Left,
                 shift_count: 1.with_span(token.location),
             }));
-            ops.push(stores.ops.new_op(rot, token.map(|t| t.lexeme)));
+            ops.push(stores.ops.new_op(rot, token.location));
 
             let [first, prev @ ..] = idents.as_slice() else {
                 unreachable!()
@@ -147,30 +149,33 @@ pub fn parse_extract_insert_struct(
                 let swap = OpCode::Basic(Basic::Stack(Stack::Swap {
                     count: 1.with_span(token.location),
                 }));
-                ops.push(stores.ops.new_op(swap, token.map(|t| t.lexeme)));
+                ops.push(stores.ops.new_op(swap, token.location));
+                let field_name = stores.get_lexeme(ident.location);
                 let ins = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                     emit_struct: true,
-                    field_name: ident.map(|t| t.lexeme),
+                    field_name,
                 }));
-                ops.push(stores.ops.new_op(ins, token.map(|t| t.lexeme)));
+                ops.push(stores.ops.new_op(ins, token.location));
             }
 
             let swap = OpCode::Basic(Basic::Stack(Stack::Swap {
                 count: 1.with_span(token.location),
             }));
-            ops.push(stores.ops.new_op(swap, token.map(|t| t.lexeme)));
+            ops.push(stores.ops.new_op(swap, token.location));
+            let field_name = stores.get_lexeme(first.location);
             let kind = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                 emit_struct,
-                field_name: first.map(|t| t.lexeme),
+                field_name,
             }));
-            ops.push(stores.ops.new_op(kind, token.map(|t| t.lexeme)));
+            ops.push(stores.ops.new_op(kind, token.location));
         }
-        TokenKind::Insert(Insert { emit_struct }) => {
+        Token::Insert(Insert { emit_struct }) => {
+            let field_name = stores.get_lexeme(idents[0].location);
             let code = OpCode::Basic(Basic::Memory(Memory::InsertStruct {
                 emit_struct,
-                field_name: idents[0].map(|t| t.lexeme),
+                field_name,
             }));
-            ops.push(stores.ops.new_op(code, token.map(|t| t.lexeme)));
+            ops.push(stores.ops.new_op(code, token.location));
         }
         _ => unreachable!(),
     }
@@ -184,75 +189,70 @@ pub fn parse_simple_op(
     item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let code = match token.inner.kind {
-        TokenKind::Drop
-        | TokenKind::Dup
-        | TokenKind::Over
-        | TokenKind::Reverse
-        | TokenKind::Swap
-        | TokenKind::SysCall => {
+    let code = match token.inner {
+        Token::Drop | Token::Dup | Token::Over | Token::Reverse | Token::Swap | Token::SysCall => {
             return parse_drop_dup_over_reverse_swap_syscall(stores, token_iter, item_id, token);
         }
 
-        TokenKind::Array => return parse_init_array(stores, token_iter, item_id, token),
-        TokenKind::Pack => return parse_pack(stores, token_iter, item_id, token),
-        TokenKind::Unpack => OpCode::Basic(Basic::Memory(Memory::Unpack)),
-        TokenKind::Rot => return parse_rot(stores, token_iter, item_id, token),
+        Token::Array => return parse_init_array(stores, token_iter, item_id, token),
+        Token::Pack => return parse_pack(stores, token_iter, item_id, token),
+        Token::Unpack => OpCode::Basic(Basic::Memory(Memory::Unpack)),
+        Token::Rot => return parse_rot(stores, token_iter, item_id, token),
 
-        TokenKind::Cast | TokenKind::SizeOf => {
+        Token::Cast | Token::SizeOf => {
             return parse_cast_sizeof(stores, token_iter, item_id, token)
         }
 
-        TokenKind::Hash => OpCode::Basic(Basic::Memory(Memory::Index)),
-        TokenKind::Load => OpCode::Basic(Basic::Memory(Memory::Load)),
-        TokenKind::Store => OpCode::Basic(Basic::Memory(Memory::Store)),
-        TokenKind::AssumeInit => return parse_assumeinit(stores, token_iter, item_id, token),
+        Token::Hash => OpCode::Basic(Basic::Memory(Memory::Index)),
+        Token::Load => OpCode::Basic(Basic::Memory(Memory::Load)),
+        Token::Store => OpCode::Basic(Basic::Memory(Memory::Store)),
+        Token::AssumeInit => return parse_assumeinit(stores, token_iter, item_id, token),
 
-        TokenKind::IsNull => OpCode::Basic(Basic::Compare(Compare::IsNull)),
-        TokenKind::Equal => OpCode::Basic(Basic::Compare(Compare::Equal)),
-        TokenKind::Greater => OpCode::Basic(Basic::Compare(Compare::Greater)),
-        TokenKind::GreaterEqual => OpCode::Basic(Basic::Compare(Compare::GreaterEqual)),
-        TokenKind::Less => OpCode::Basic(Basic::Compare(Compare::Less)),
-        TokenKind::LessEqual => OpCode::Basic(Basic::Compare(Compare::LessEqual)),
-        TokenKind::NotEqual => OpCode::Basic(Basic::Compare(Compare::NotEq)),
-        TokenKind::Ampersand | TokenKind::Pipe => {
+        Token::IsNull => OpCode::Basic(Basic::Compare(Compare::IsNull)),
+        Token::Equal => OpCode::Basic(Basic::Compare(Compare::Equal)),
+        Token::Greater => OpCode::Basic(Basic::Compare(Compare::Greater)),
+        Token::GreaterEqual => OpCode::Basic(Basic::Compare(Compare::GreaterEqual)),
+        Token::Less => OpCode::Basic(Basic::Compare(Compare::Less)),
+        Token::LessEqual => OpCode::Basic(Basic::Compare(Compare::LessEqual)),
+        Token::NotEqual => OpCode::Basic(Basic::Compare(Compare::NotEq)),
+        Token::Ampersand | Token::Pipe => {
             return parse_logical_and_or(stores, token_iter, item_id, token)
         }
 
-        TokenKind::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
-        TokenKind::Char(CharToken { id }) => OpCode::Basic(Basic::PushChar { id }),
+        Token::Boolean(b) => OpCode::Basic(Basic::PushBool(b)),
+        Token::Char(CharToken { id }) => OpCode::Basic(Basic::PushChar { id }),
 
-        TokenKind::Ident | TokenKind::ColonColon | TokenKind::Lib | TokenKind::SelfKw => {
+        Token::Ident | Token::ColonColon | Token::Lib | Token::SelfKw => {
             return parse_ident_op(stores, token_iter, item_id, token)
         }
-        TokenKind::Integer { .. } => {
-            return parse_integer_op(stores, token_iter, item_id, token, false)
+        Token::Integer { .. } => {
+            return parse_integer_op(stores, token_iter, item_id, token, token.location, false)
         }
-        TokenKind::Float => return parse_float_op(stores, token_iter, item_id, token, false),
-        TokenKind::String(StringToken { id }) => OpCode::Basic(Basic::PushStr { id }),
-        TokenKind::Here => OpCode::Basic(Basic::Here),
-        TokenKind::EmitStack => return parse_emit_stack(stores, token_iter, item_id, token),
+        Token::Float => return parse_float_op(stores, token_iter, item_id, token, false),
+        Token::String(StringToken { id }) => OpCode::Basic(Basic::PushStr { id }),
+        Token::Here => OpCode::Basic(Basic::Here),
+        Token::EmitStack => return parse_emit_stack(stores, token_iter, item_id, token),
 
-        TokenKind::Minus => return parse_minus(stores, token_iter, item_id, token),
-        TokenKind::Plus => OpCode::Basic(Basic::Arithmetic(Arithmetic::Add)),
-        TokenKind::Star => OpCode::Basic(Basic::Arithmetic(Arithmetic::Multiply)),
-        TokenKind::Div => OpCode::Basic(Basic::Arithmetic(Arithmetic::Div)),
-        TokenKind::Rem => OpCode::Basic(Basic::Arithmetic(Arithmetic::Rem)),
+        Token::Minus => return parse_minus(stores, token_iter, item_id, token),
+        Token::Plus => OpCode::Basic(Basic::Arithmetic(Arithmetic::Add)),
+        Token::Star => OpCode::Basic(Basic::Arithmetic(Arithmetic::Multiply)),
+        Token::Div => OpCode::Basic(Basic::Arithmetic(Arithmetic::Div)),
+        Token::Rem => OpCode::Basic(Basic::Arithmetic(Arithmetic::Rem)),
 
-        TokenKind::BitAnd => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitAnd)),
-        TokenKind::BitNot => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot)),
-        TokenKind::BitOr => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitOr)),
-        TokenKind::BitXor => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitXor)),
-        TokenKind::ShiftLeft => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftLeft)),
-        TokenKind::ShiftRight => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftRight)),
+        Token::BitAnd => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitAnd)),
+        Token::BitNot => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot)),
+        Token::BitOr => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitOr)),
+        Token::BitXor => OpCode::Basic(Basic::Arithmetic(Arithmetic::BitXor)),
+        Token::ShiftLeft => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftLeft)),
+        Token::ShiftRight => OpCode::Basic(Basic::Arithmetic(Arithmetic::ShiftRight)),
 
-        TokenKind::Return => OpCode::Basic(Basic::Control(Control::Return)),
-        TokenKind::Exit => return parse_exit(stores, token_iter, item_id, token),
+        Token::Return => OpCode::Basic(Basic::Control(Control::Return)),
+        Token::Exit => return parse_exit(stores, token_iter, item_id, token),
 
         _ => {
             panic!(
                 "ICE: parse_item was given an op it can't handle: {:?}",
-                token.inner.kind
+                token.inner
             );
         }
     };
@@ -272,8 +272,8 @@ fn parse_exit(
             .with_kinds(
                 stores,
                 item_id,
-                Matcher("integer", |tk: Spanned<TokenKind>| {
-                    if let TokenKind::Integer(_) = tk.inner {
+                Matcher("integer", |tk: Spanned<Token>| {
+                    if let Token::Integer(_) = tk.inner {
                         IsMatch::Yes
                     } else {
                         IsMatch::No(tk.inner.kind_str(), tk.location)
@@ -302,14 +302,15 @@ fn parse_assumeinit(
 ) -> Result<(OpCode<UnresolvedOp>, SourceLocation), ()> {
     let group = token_iter
         .expect_group(stores, item_id, BracketKind::Paren, keyword)
-        .with_kinds(stores, item_id, TokenKind::Ident)
+        .with_kinds(stores, item_id, Token::Ident)
         .with_length(stores, item_id, 1)?;
 
     let ident_token = group.tokens[0].unwrap_single();
+    let ident_lexeme = stores.get_lexeme(ident_token.location);
     let ident = UnresolvedIdent {
         span: ident_token.location,
         path_root: IdentPathRoot::CurrentScope,
-        path: vec![ident_token.map(|t| t.lexeme)],
+        path: vec![ident_lexeme],
         generic_params: Vec::new(),
     };
     Ok((
@@ -352,9 +353,9 @@ fn parse_minus(
     if token_iter.next_is_single_and(Matcher("integer literal", integer_tokens), |t| {
         t.location.neighbour_of(token.location)
     }) {
-        let mut int_token = token_iter.next().unwrap_single();
-        int_token.location = int_token.location.merge(token.location);
-        parse_integer_op(stores, token_iter, item_id, int_token, true)
+        let int_token = token_iter.next().unwrap_single();
+        let full_span = int_token.location.merge(token.location);
+        parse_integer_op(stores, token_iter, item_id, int_token, full_span, true)
     } else {
         Ok((
             OpCode::Basic(Basic::Arithmetic(Arithmetic::Subtract)),
@@ -369,11 +370,11 @@ fn parse_logical_and_or(
     item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let next = token_iter.expect_single(stores, item_id, token.inner.kind, token.location)?;
+    let next = token_iter.expect_single(stores, item_id, token.inner, token.location)?;
     let location = token.location.merge(next.location);
 
     if !next.location.neighbour_of(token.location) {
-        let msg = if token.inner.kind == TokenKind::Ampersand {
+        let msg = if token.inner == Token::Ampersand {
             "expected `logical and`, found `& &`"
         } else {
             "expected `logical or`, found `| |`"
@@ -382,13 +383,11 @@ fn parse_logical_and_or(
         return Err(());
     }
 
-    let condition_block = if token.inner.kind == TokenKind::Ampersand {
+    let condition_block = if token.inner == Token::Ampersand {
         Vec::new()
     } else {
         let op = OpCode::Basic(Basic::Arithmetic(Arithmetic::BitNot));
-        let op_id = stores
-            .ops
-            .new_op(op, token.inner.lexeme.with_span(location));
+        let op_id = stores.ops.new_op(op, location);
         vec![op_id]
     };
 
@@ -421,8 +420,8 @@ fn parse_emit_stack(
             .with_kinds(
                 stores,
                 item_id,
-                Matcher("bool literal", |t: Spanned<TokenKind>| {
-                    if let TokenKind::Boolean(_) = t.inner {
+                Matcher("bool literal", |t: Spanned<Token>| {
+                    if let Token::Boolean(_) = t.inner {
                         IsMatch::Yes
                     } else {
                         IsMatch::No(t.inner.kind_str(), t.location)
@@ -432,7 +431,7 @@ fn parse_emit_stack(
             .with_length(stores, item_id, 1)?;
 
         let emit_token = delim.tokens[0].unwrap_single();
-        let TokenKind::Boolean(emit_labels) = emit_token.inner.kind else {
+        let Token::Boolean(emit_labels) = emit_token.inner else {
             unreachable!()
         };
 
@@ -474,11 +473,11 @@ fn parse_cast_sizeof(
 
     let unresolved_type = unresolved_types.pop().unwrap().inner;
 
-    let code = match token.inner.kind {
-        TokenKind::Cast => UnresolvedOp::Cast {
+    let code = match token.inner {
+        Token::Cast => UnresolvedOp::Cast {
             id: unresolved_type,
         },
-        TokenKind::SizeOf => UnresolvedOp::SizeOf {
+        Token::SizeOf => UnresolvedOp::SizeOf {
             id: unresolved_type,
         },
         _ => unreachable!(),
@@ -533,12 +532,12 @@ fn parse_rot(
         parse_integer_lexeme(stores, item_id, shift_count_token.unwrap_single())?
     };
 
-    let direction = if TokenKind::Less.is_match(direction_token).yes()
-        | TokenKind::Greater.is_match(direction_token).yes()
+    let direction = if Token::Less.is_match(direction_token).yes()
+        | Token::Greater.is_match(direction_token).yes()
     {
-        match direction_token.unwrap_single().inner.kind {
-            TokenKind::Less => Direction::Left,
-            TokenKind::Greater => Direction::Right,
+        match direction_token.unwrap_single().inner {
+            Token::Less => Direction::Left,
+            Token::Greater => Direction::Right,
             _ => unreachable!(),
         }
     } else {
@@ -573,10 +572,10 @@ fn parse_integer_op(
     token_iter: &mut TokenIter,
     item_id: ItemId,
     token: Spanned<Token>,
+    mut overall_location: SourceLocation,
     is_known_negative: bool,
 ) -> ParseOpResult {
     let mut had_error = ErrorSignal::new();
-    let mut overall_location = token.location;
     let literal_value: u64 = match parse_integer_lexeme(stores, item_id, token) {
         Ok(lit) => lit,
         Err(_) => {
@@ -594,13 +593,13 @@ fn parse_integer_op(
     let (width, value) = if token_iter.next_is_group(BracketKind::Paren) {
         let delim = token_iter
             .expect_group(stores, item_id, BracketKind::Paren, token)
-            .with_kinds(stores, item_id, TokenKind::Ident)
+            .with_kinds(stores, item_id, Token::Ident)
             .with_length(stores, item_id, 1)?;
 
         let ident_token = delim.tokens[0].unwrap_single();
         overall_location = overall_location.merge(delim.last_token().location);
 
-        let (width, is_signed_kind) = match stores.strings.resolve(ident_token.inner.lexeme) {
+        let (width, is_signed_kind) = match stores.source.get_str(ident_token.location) {
             "u8" => (IntWidth::I8, IntSignedness::Unsigned),
             "s8" => (IntWidth::I8, IntSignedness::Signed),
             "u16" => (IntWidth::I16, IntSignedness::Unsigned),
@@ -733,13 +732,14 @@ fn parse_float_op(
     let width = if token_iter.next_is_group(BracketKind::Paren) {
         let delim = token_iter
             .expect_group(stores, item_id, BracketKind::Paren, token)
-            .with_kinds(stores, item_id, TokenKind::Ident)
+            .with_kinds(stores, item_id, Token::Ident)
             .with_length(stores, item_id, 1)?;
 
         let ident_token = delim.tokens[0].unwrap_single();
         overall_location = overall_location.merge(delim.last_token().location);
 
-        match stores.strings.resolve(ident_token.inner.lexeme) {
+        let ident_lexeme = stores.source.get_str(ident_token.location);
+        match ident_lexeme {
             "f32" => FloatWidth::F32,
             "f64" => FloatWidth::F64,
 
@@ -789,11 +789,7 @@ pub fn parse_init_array(
     let (count, op_end) = if token_iter.next_is_group(BracketKind::Paren) {
         parse_integer_param(stores, token_iter, item_id, token)?
     } else {
-        let default_amount = if token.inner.kind == TokenKind::Reverse {
-            2
-        } else {
-            1
-        };
+        let default_amount = if token.inner == Token::Reverse { 2 } else { 1 };
         (default_amount.with_span(token.location), token.location)
     };
 
@@ -812,21 +808,17 @@ pub fn parse_drop_dup_over_reverse_swap_syscall(
     let (count, op_end) = if token_iter.next_is_group(BracketKind::Paren) {
         parse_integer_param(stores, token_iter, item_id, token)?
     } else {
-        let default_amount = if token.inner.kind == TokenKind::Reverse {
-            2
-        } else {
-            1
-        };
+        let default_amount = if token.inner == Token::Reverse { 2 } else { 1 };
         (default_amount.with_span(token.location), token.location)
     };
 
-    let opcode = match token.inner.kind {
-        TokenKind::Drop => Basic::Stack(Stack::Drop { count }),
-        TokenKind::Dup => Basic::Stack(Stack::Dup { count }),
-        TokenKind::Over => Basic::Stack(Stack::Over { depth: count }),
-        TokenKind::Reverse => Basic::Stack(Stack::Reverse { count }),
-        TokenKind::Swap => Basic::Stack(Stack::Swap { count }),
-        TokenKind::SysCall => Basic::Control(Control::SysCall { arg_count: count }),
+    let opcode = match token.inner {
+        Token::Drop => Basic::Stack(Stack::Drop { count }),
+        Token::Dup => Basic::Stack(Stack::Dup { count }),
+        Token::Over => Basic::Stack(Stack::Over { depth: count }),
+        Token::Reverse => Basic::Stack(Stack::Reverse { count }),
+        Token::Swap => Basic::Stack(Stack::Swap { count }),
+        Token::SysCall => Basic::Control(Control::SysCall { arg_count: count }),
 
         _ => unreachable!(),
     };
@@ -871,7 +863,7 @@ pub fn parse_cond(
     let mut had_else_block = false;
 
     while arm_token_iter.peek().is_some() {
-        if arm_token_iter.next_is(TokenKind::Else) {
+        if arm_token_iter.next_is(Token::Else) {
             let else_token = arm_token_iter.next().unwrap_single();
             let else_block =
                 arm_token_iter.expect_group(stores, item_id, BracketKind::Brace, else_token)?;
@@ -1015,12 +1007,11 @@ pub fn parse_method_call(
     item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let ident = token_iter.expect_single(stores, item_id, TokenKind::Ident, token.location)?;
+    let ident = token_iter.expect_single(stores, item_id, Token::Ident, token.location)?;
+    let method_name = stores.get_lexeme(ident.location);
 
     Ok((
-        OpCode::Basic(Basic::Control(Control::MethodCall {
-            method_name: ident.map(|t| t.lexeme),
-        })),
+        OpCode::Basic(Basic::Control(Control::MethodCall { method_name })),
         ident.location,
     ))
 }
@@ -1031,12 +1022,11 @@ pub fn parse_field_access(
     item_id: ItemId,
     token: Spanned<Token>,
 ) -> ParseOpResult {
-    let ident = token_iter.expect_single(stores, item_id, TokenKind::Ident, token.location)?;
+    let ident = token_iter.expect_single(stores, item_id, Token::Ident, token.location)?;
+    let field_name = stores.get_lexeme(ident.location);
 
     Ok((
-        OpCode::Basic(Basic::Memory(Memory::FieldAccess {
-            field_name: ident.map(|t| t.lexeme),
-        })),
+        OpCode::Basic(Basic::Memory(Memory::FieldAccess { field_name })),
         ident.location,
     ))
 }

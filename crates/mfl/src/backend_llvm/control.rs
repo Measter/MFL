@@ -90,7 +90,7 @@ impl<'ctx> CodeGen<'ctx> {
             let here_string = if this_header.attributes.contains(ItemAttribute::TrackCaller) {
                 function.get_last_param().unwrap()
             } else {
-                let op_loc = ds.ops.get_token(op_id).location;
+                let op_loc = ds.ops.get_token_location(op_id);
                 self.get_here_string(ds, value_store, op_loc)?
             };
 

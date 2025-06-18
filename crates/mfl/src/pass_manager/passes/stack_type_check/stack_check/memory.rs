@@ -25,7 +25,7 @@ pub(crate) fn extract_array(
     op_id: OpId,
     emit_array: bool,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let [array_id, idx] = stack.popn();
@@ -52,7 +52,7 @@ pub(crate) fn extract_struct(
     op_id: OpId,
     emit_struct: bool,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let struct_id = stack.pop().unwrap();
@@ -79,7 +79,7 @@ pub(crate) fn insert_array(
     op_id: OpId,
     emit_array: bool,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<3>();
@@ -103,7 +103,7 @@ pub(crate) fn insert_struct(
     op_id: OpId,
     emit_struct: bool,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>();
@@ -126,7 +126,7 @@ pub(crate) fn pack_array(
     op_id: OpId,
     count: u8,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, count.to_usize());
 
     let mut inputs = SmallVec::<[_; 8]>::new();
@@ -149,7 +149,7 @@ pub(crate) fn load(
     item_id: ItemId,
     op_id: OpId,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
     let input_value_id = stack.pop().unwrap();
 
@@ -218,7 +218,7 @@ pub(crate) fn unpack(
     item_id: ItemId,
     op_id: OpId,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
     let input_value_id = stack.pop().unwrap();
 
@@ -278,7 +278,7 @@ pub(crate) fn pack_struct(
     op_id: OpId,
     target_type_id: TypeId,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let type_info = stores.types.get_type_info(target_type_id);
     let (TypeKind::Struct(struct_item_id)
     | TypeKind::GenericStructInstance(struct_item_id)

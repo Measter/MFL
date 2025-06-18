@@ -1,7 +1,7 @@
 use intcast::IntCast;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ItemId(u16);
+pub struct ItemId(u32);
 
 impl std::fmt::Debug for ItemId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -10,7 +10,7 @@ impl std::fmt::Debug for ItemId {
 }
 
 impl ItemId {
-    pub fn new(id: u16) -> Self {
+    pub fn new(id: u32) -> Self {
         Self(id)
     }
     pub fn to_usize(self) -> usize {

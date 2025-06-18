@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use intcast::IntCast;
-use lasso::Spur;
 use prettytable::{row, Table};
 use stores::{items::ItemId, source::SourceLocation};
 
@@ -179,11 +178,11 @@ pub(super) fn failed_compare_stack_types(
 pub(super) fn generate_type_mismatch_diag(
     stores: &mut Stores,
     item_id: ItemId,
-    operator_spur: Spur,
+    operator_loc: SourceLocation,
     op_id: OpId,
     types: &[ValueId],
 ) {
-    let lexeme = stores.strings.resolve(operator_spur);
+    let lexeme = stores.source.get_str(operator_loc);
     let mut message = format!("cannot use `{lexeme}` on ");
     match types {
         [] => unreachable!(),
@@ -223,7 +222,7 @@ pub(super) fn generate_type_mismatch_diag(
         }
     }
 
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let mut diag = Diagnostic::error(op_loc, message);
 
     for (value_id, order) in types.iter().rev().zip(1..) {

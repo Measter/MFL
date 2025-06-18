@@ -61,7 +61,7 @@ pub(crate) fn push_char(
                 }
                 Some(_) => {
                     had_error.set();
-                    let location = stores.ops.get_token(op_id).location;
+                    let location = stores.ops.get_token_location(op_id);
 
                     Diagnostic::error(location, "invalid char literal")
                         .primary_label_message("char literal must be ASCII")
@@ -69,7 +69,7 @@ pub(crate) fn push_char(
                 }
                 None => {
                     had_error.set();
-                    let location = stores.ops.get_token(op_id).location;
+                    let location = stores.ops.get_token_location(op_id);
 
                     Diagnostic::error(location, "invalid char literal")
                         .primary_label_message("char literal cannot be empty")
@@ -79,7 +79,7 @@ pub(crate) fn push_char(
 
             if next.is_some() {
                 had_error.set();
-                let location = stores.ops.get_token(op_id).location;
+                let location = stores.ops.get_token_location(op_id);
 
                 Diagnostic::error(location, "invalid char literal")
                     .primary_label_message("char literal must be a single character")
@@ -98,7 +98,7 @@ pub(crate) fn push_char(
 
     for error in errors {
         had_error.set();
-        let mut location = stores.ops.get_token(op_id).location;
+        let mut location = stores.ops.get_token_location(op_id);
         location.source_start += error.start.to_u32().unwrap() + 1;
         location.len = error.len().to_u16().unwrap();
 
@@ -174,7 +174,7 @@ pub(crate) fn push_str(
 
     for error in errors {
         had_error.set();
-        let mut location = stores.ops.get_token(op_id).location;
+        let mut location = stores.ops.get_token_location(op_id);
         location.source_start += error.start.to_u32().unwrap() + 1;
         location.len = error.len().to_u16().unwrap();
 

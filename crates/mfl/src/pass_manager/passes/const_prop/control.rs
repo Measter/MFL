@@ -39,7 +39,7 @@ pub(crate) fn epilogue_return(
             continue;
         }
 
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
         Diagnostic::error(op_loc, "returning pointer to local variable")
             .with_help_label(variable_header.name.location, "points to this variable")
             .with_label_chain(input_value_id, 0, "pointer")

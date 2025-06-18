@@ -169,7 +169,7 @@ pub(crate) fn multiply_div_rem_shift(
     arith_code: Arithmetic,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {
         return;
@@ -293,7 +293,7 @@ pub(crate) fn subtract(
     arith_code: Arithmetic,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_const_vals = stores.values.value_consts(input_value_ids);
     let Some([output_type_id]) = stores.values.value_types([op_data.outputs[0]]) else {

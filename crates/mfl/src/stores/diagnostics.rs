@@ -4,7 +4,7 @@ use ariadne::{Color, Label, Report, ReportBuilder, ReportKind, Span};
 use hashbrown::HashSet;
 use intcast::IntCast;
 use lasso::Spur;
-use lexer::TokenKind;
+use lexer::Token;
 use once_cell::sync::Lazy;
 use prettytable::format::{LinePosition, LineSeparator, TableFormat};
 use stores::{
@@ -314,7 +314,7 @@ impl Diagnostic {
         diags: &mut DiagnosticStore,
         module_id: ItemId,
         location: SourceLocation,
-        kind: TokenKind,
+        kind: Token,
     ) {
         Diagnostic::error(location,
             format!("top-level can only declared `assert` `const` `import` `var` `module` `proc` or `struct`, found `{}`", kind.kind_str()),
@@ -352,7 +352,7 @@ impl Diagnostic {
         error_str: &str,
     ) {
         let value_type_name = stores.strings.resolve(input_struct_type_info.friendly_name);
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         let diag = Diagnostic::error(
             op_loc,
@@ -373,7 +373,7 @@ impl Diagnostic {
     }
 
     pub fn unsupported_sim_op(stores: &mut Stores, item_id: ItemId, op_id: OpId) {
-        let op_location = stores.ops.get_token(op_id).location;
+        let op_location = stores.ops.get_token_location(op_id);
 
         Diagnostic::error(
             op_location,

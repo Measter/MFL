@@ -246,7 +246,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(fail_block);
         // Crash and burn
-        let op_loc = ds.ops.get_token(op_id).location;
+        let op_loc = ds.ops.get_token_location(op_id);
         let file_name = ds.source.name(op_loc.file_id);
         let (_, line, column) = (&*ds.source)
             .fetch(&op_loc.file_id)

@@ -834,7 +834,7 @@ fn resolve_idents_in_block(
     for op_id in block.ops {
         // TODO: Try to avoid this clone.
         let old_code = stores.ops.get_unresolved(op_id).clone();
-        let op_token = stores.ops.get_token(op_id);
+        let op_token_loc = stores.ops.get_token_location(op_id);
         let new_code = match old_code {
             // These don't get resolved, so just copy it onward.
             OpCode::Basic(bo) => {
@@ -911,7 +911,7 @@ fn resolve_idents_in_block(
                         had_error,
                         cur_id,
                         &new_ty,
-                        op_token.location,
+                        op_token_loc,
                         false,
                     );
 
@@ -943,7 +943,7 @@ fn resolve_idents_in_block(
                         had_error,
                         cur_id,
                         &new_ty,
-                        op_token.location,
+                        op_token_loc,
                         false,
                     );
 
@@ -977,7 +977,7 @@ fn resolve_idents_in_block(
                                 had_error,
                                 cur_id,
                                 &new_kind,
-                                op_token.location,
+                                op_token_loc,
                                 true,
                             );
 
@@ -993,7 +993,7 @@ fn resolve_idents_in_block(
                                 invalid_generic_count_diag(
                                     stores,
                                     cur_id,
-                                    op_token.location,
+                                    op_token_loc,
                                     0,
                                     ident.generic_params.len(),
                                     &[(found_item_header.name.location, "function defined here")],
@@ -1017,7 +1017,7 @@ fn resolve_idents_in_block(
                                 invalid_generic_count_diag(
                                     stores,
                                     cur_id,
-                                    op_token.location,
+                                    op_token_loc,
                                     expected_params_len,
                                     ident.generic_params.len(),
                                     &[(found_item_header.name.location, "function defined here")],
@@ -1038,7 +1038,7 @@ fn resolve_idents_in_block(
                                 invalid_generic_count_diag(
                                     stores,
                                     cur_id,
-                                    op_token.location,
+                                    op_token_loc,
                                     0,
                                     ident.generic_params.len(),
                                     &[(found_item_header.name.location, "function defined here")],
@@ -1076,7 +1076,7 @@ fn resolve_idents_in_block(
 
                         ItemKind::Primitive(_) | ItemKind::Enum => {
                             had_error.set();
-                            let op_loc = stores.ops.get_token(op_id).location;
+                            let op_loc = stores.ops.get_token_location(op_id);
                             let name = stores.strings.resolve(found_item_header.name.inner);
                             Diagnostic::error(
                                 op_loc,
@@ -1089,7 +1089,7 @@ fn resolve_idents_in_block(
 
                         ItemKind::Assert | ItemKind::Module => {
                             had_error.set();
-                            let op_loc = stores.ops.get_token(op_id).location;
+                            let op_loc = stores.ops.get_token_location(op_id);
                             let mut diag = Diagnostic::error(
                                 op_loc,
                                 format!(
@@ -1145,7 +1145,7 @@ fn resolve_idents_in_block(
                                 had_error,
                                 cur_id,
                                 &new_kind,
-                                op_token.location,
+                                op_token_loc,
                                 true,
                             );
 
@@ -1161,7 +1161,7 @@ fn resolve_idents_in_block(
                                 invalid_generic_count_diag(
                                     stores,
                                     cur_id,
-                                    op_token.location,
+                                    op_token_loc,
                                     0,
                                     ident.generic_params.len(),
                                     &[(found_item_header.name.location, "function defined here")],
@@ -1179,7 +1179,7 @@ fn resolve_idents_in_block(
                                 invalid_generic_count_diag(
                                     stores,
                                     cur_id,
-                                    op_token.location,
+                                    op_token_loc,
                                     expected_params_len,
                                     ident.generic_params.len(),
                                     &[(found_item_header.name.location, "function defined here")],
@@ -1196,7 +1196,7 @@ fn resolve_idents_in_block(
                         | ItemKind::Module
                         | ItemKind::Primitive(_) => {
                             had_error.set();
-                            let op_loc = stores.ops.get_token(op_id).location;
+                            let op_loc = stores.ops.get_token_location(op_id);
                             Diagnostic::error(
                                 op_loc,
                                 format!(
@@ -1239,7 +1239,7 @@ fn resolve_idents_in_block(
                             had_error,
                             cur_id,
                             &new_kind,
-                            op_token.location,
+                            op_token_loc,
                             true,
                         );
                     });
@@ -1250,7 +1250,7 @@ fn resolve_idents_in_block(
                             let parent_id = found_item_header.parent.unwrap(); // Only top-level modules don't have a parent.
                             if parent_id != cur_id {
                                 Diagnostic::error(
-                                    op_token.location,
+                                    op_token_loc,
                                     "`init` only support local variable",
                                 )
                                 .with_help_label(
@@ -1274,15 +1274,12 @@ fn resolve_idents_in_block(
                         | ItemKind::Enum
                         | ItemKind::Module
                         | ItemKind::Primitive(_) => {
-                            Diagnostic::error(
-                                op_token.location,
-                                "`init` only supports local variables",
-                            )
-                            .with_help_label(
-                                found_item_header.name.location,
-                                format!("item is a {}", found_item_header.kind.kind_str()),
-                            )
-                            .attached(stores.diags, cur_id);
+                            Diagnostic::error(op_token_loc, "`init` only supports local variables")
+                                .with_help_label(
+                                    found_item_header.name.location,
+                                    format!("item is a {}", found_item_header.kind.kind_str()),
+                                )
+                                .attached(stores.diags, cur_id);
                             continue;
                         }
                     }

@@ -23,7 +23,7 @@ pub(crate) fn equal(
     comp_code: Compare,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
     let input_const_vals = stores.values.value_consts(input_value_ids);
@@ -202,7 +202,7 @@ pub(crate) fn compare(
     comp_code: Compare,
 ) {
     let op_data = stores.ops.get_op_io(op_id);
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let input_value_ids = *op_data.inputs.as_arr::<2>();
     let input_type_ids = stores.values.value_types(input_value_ids).unwrap();
     let input_const_vals = stores.values.value_consts(input_value_ids);
@@ -256,7 +256,7 @@ pub(crate) fn compare(
             source_variable: id2,
             ..
         }] if id1 != id2 => {
-            let op_loc = stores.ops.get_token(op_id).location;
+            let op_loc = stores.ops.get_token_location(op_id);
             Diagnostic::error(op_loc, "pointers have different sources")
                 .with_label_chain(input_value_ids[1], 1, "comparing this...")
                 .with_label_chain(input_value_ids[0], 0, "... and this")

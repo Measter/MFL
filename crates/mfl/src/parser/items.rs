@@ -1,6 +1,6 @@
 use flagset::FlagSet;
 use lasso::Spur;
-use lexer::{BracketKind, Token, TokenKind};
+use lexer::{BracketKind, Token};
 use stores::{
     items::ItemId,
     source::{Spanned, WithSpan},
@@ -77,8 +77,8 @@ fn try_get_attributes(
     let mut prev_token = attribute_group.first_token();
     while let Some(token) = token_iter.next() {
         match token {
-            TokenTree::Single(tk) => match tk.inner.kind {
-                TokenKind::Extern => {
+            TokenTree::Single(tk) => match tk.inner {
+                Token::Extern => {
                     if attributes.contains(ItemAttribute::Extern) {
                         Diagnostic::warning(tk.location, "item already extern")
                             .attached(stores.diags, item_id);
@@ -87,8 +87,8 @@ fn try_get_attributes(
                     attributes |= ItemAttribute::Extern;
                     prev_token = *tk;
                 }
-                TokenKind::Ident => {
-                    let lexeme = stores.strings.resolve(tk.inner.lexeme);
+                Token::Ident => {
+                    let lexeme = stores.source.get_str(tk.location);
                     match ItemAttribute::from_str(lexeme) {
                         Some(i) => {
                             if attributes.contains(i) {
@@ -106,10 +106,10 @@ fn try_get_attributes(
 
                     prev_token = *tk;
                 }
-                TokenKind::LangItem => {
+                Token::LangItem => {
                     let Ok(group) = token_iter
                         .expect_group(stores, item_id, BracketKind::Paren, prev_token)
-                        .with_kinds(stores, item_id, TokenKind::Ident)
+                        .with_kinds(stores, item_id, Token::Ident)
                         .with_length(stores, item_id, 1)
                     else {
                         // expect call already handled error.
@@ -118,8 +118,9 @@ fn try_get_attributes(
 
                     let item_token = group.tokens[0].unwrap_single();
                     prev_token = group.last_token();
+                    let item_token_lexeme = stores.get_lexeme(item_token.location);
 
-                    if let Some(prev_lang_item) = lang_item.replace(item_token.map(|t| t.lexeme)) {
+                    if let Some(prev_lang_item) = lang_item.replace(item_token_lexeme) {
                         Diagnostic::error(item_token.location, "multiple lang item attributes")
                             .with_help_label(prev_lang_item.location, "previously set here")
                             .attached(stores.diags, item_id);
@@ -179,12 +180,12 @@ fn parse_item_body(
         0,
         stores.ops.new_op(
             OpCode::Basic(Basic::Control(Control::Prologue)),
-            delim.open.map(|t| t.lexeme),
+            delim.open.location,
         ),
     );
     body.push(stores.ops.new_op(
         OpCode::Basic(Basic::Control(Control::Epilogue)),
-        delim.last_token().map(|t| t.lexeme),
+        delim.last_token().location,
     ));
 
     body
@@ -205,7 +206,7 @@ pub fn parse_function(
         .expect_single(
             stores,
             parent_id,
-            TokenKind::Ident,
+            Token::Ident,
             attributes.last_token.location,
         )
         .recover(&mut had_error, attributes.last_token);
@@ -218,17 +219,18 @@ pub fn parse_function(
         parse_proc_entry_stack_def(stores, &mut had_error, token_iter, parent_id, last_token);
 
     let to_token = token_iter
-        .expect_single(stores, parent_id, TokenKind::GoesTo, name_token.location)
+        .expect_single(stores, parent_id, Token::GoesTo, name_token.location)
         .recover(&mut had_error, name_token);
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, parent_id, to_token);
 
     let has_body = token_iter.next_is_group(BracketKind::Brace);
 
+    let function_name = stores.get_lexeme(name_token.location);
     if attributes.attributes.contains(ItemAttribute::Extern) && !has_body {
         stores.items.new_function_decl(
             stores.sigs,
-            name_token.map(|t| t.lexeme),
+            function_name,
             parent_id,
             attributes.attributes,
             entry_stack,
@@ -238,7 +240,7 @@ pub fn parse_function(
         let item_id = if generic_params.is_empty() {
             stores.items.new_function(
                 stores.sigs,
-                name_token.map(|t| t.lexeme),
+                function_name,
                 parent_id,
                 attributes.attributes,
                 entry_stack.clone(),
@@ -247,7 +249,7 @@ pub fn parse_function(
         } else {
             stores.items.new_generic_function(
                 stores.sigs,
-                name_token.map(|t| t.lexeme),
+                function_name,
                 parent_id,
                 attributes.attributes,
                 entry_stack.clone(),
@@ -297,12 +299,11 @@ pub fn parse_assert(
     let mut had_error = ErrorSignal::new();
 
     let name_token = token_iter
-        .expect_single(stores, parent_id, TokenKind::Ident, keyword.location)
+        .expect_single(stores, parent_id, Token::Ident, keyword.location)
         .recover(&mut had_error, keyword);
+    let assert_name = stores.get_lexeme(name_token.location);
 
-    let item_id = stores
-        .items
-        .new_assert(stores.sigs, name_token.map(|t| t.lexeme), parent_id);
+    let item_id = stores.items.new_assert(stores.sigs, assert_name, parent_id);
 
     let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
     let body_block_id = stores.blocks.new_block(body);
@@ -323,18 +324,16 @@ pub fn parse_const(
 ) -> Result<(), ()> {
     let mut had_error = ErrorSignal::new();
     let name_token = token_iter
-        .expect_single(stores, parent_id, TokenKind::Ident, keyword.location)
+        .expect_single(stores, parent_id, Token::Ident, keyword.location)
         .recover(&mut had_error, keyword);
 
     let exit_stack = parse_stack_def(stores, &mut had_error, token_iter, parent_id, name_token);
     let exit_stack = exit_stack.map(|st| st.into_iter().collect());
+    let const_name = stores.get_lexeme(name_token.location);
 
-    let item_id = stores.items.new_const(
-        stores.sigs,
-        name_token.map(|t| t.lexeme),
-        parent_id,
-        exit_stack,
-    );
+    let item_id = stores
+        .items
+        .new_const(stores.sigs, const_name, parent_id, exit_stack);
 
     let body = parse_item_body(stores, &mut had_error, token_iter, name_token, item_id);
     let body_block_id = stores.blocks.new_block(body);
@@ -362,13 +361,13 @@ pub fn parse_variable(
         .expect_single(
             stores,
             parent_id,
-            TokenKind::Ident,
+            Token::Ident,
             attributes.last_token.location,
         )
         .recover(&mut had_error, attributes.last_token);
 
     let colon = token_iter
-        .expect_single(stores, parent_id, TokenKind::Colon, name_token.location)
+        .expect_single(stores, parent_id, Token::Colon, name_token.location)
         .recover(&mut had_error, name_token);
 
     let Ok((variable_type, _)) = parse_unresolved_type(
@@ -382,9 +381,10 @@ pub fn parse_variable(
         return Err(());
     };
 
+    let variable_name = stores.get_lexeme(name_token.location);
     stores.items.new_variable(
         stores.sigs,
-        name_token.map(|t| t.lexeme),
+        variable_name,
         parent_id,
         attributes.attributes,
         variable_type,
@@ -412,7 +412,7 @@ pub fn parse_struct_or_union(
         .expect_single(
             stores,
             module_id,
-            TokenKind::Ident,
+            Token::Ident,
             attributes.last_token.location,
         )
         .recover(&mut had_error, attributes.last_token);
@@ -422,11 +422,12 @@ pub fn parse_struct_or_union(
             .recover(&mut had_error, (Vec::new(), name_token));
 
     let fallback = TreeGroup::fallback(BracketKind::Brace, last_token);
+    let struct_name = stores.get_lexeme(name_token.location);
 
     let item_id = stores.items.new_struct(
         stores.sigs,
         module_id,
-        name_token.map(|t| t.lexeme),
+        struct_name,
         !generic_params.is_empty(),
         attributes.attributes,
     );
@@ -444,7 +445,7 @@ pub fn parse_struct_or_union(
     let mut prev_token = struct_body.first_token();
 
     loop {
-        if field_iter.next_is(TokenKind::Proc) {
+        if field_iter.next_is(Token::Proc) {
             let keyword = field_iter.next().unwrap_single();
             if parse_function(stores, &mut field_iter, keyword, item_id).is_err() {
                 had_error.set();
@@ -453,8 +454,8 @@ pub fn parse_struct_or_union(
             if field_iter.peek().is_none() {
                 break;
             }
-        } else if field_iter.next_is(Matcher("struct or union", |t: Spanned<TokenKind>| {
-            if matches!(t.inner, TokenKind::Struct | TokenKind::Union) {
+        } else if field_iter.next_is(Matcher("struct or union", |t: Spanned<Token>| {
+            if matches!(t.inner, Token::Struct | Token::Union) {
                 IsMatch::Yes
             } else {
                 IsMatch::No(t.inner.kind_str(), t.location)
@@ -468,7 +469,7 @@ pub fn parse_struct_or_union(
             if field_iter.peek().is_none() {
                 break;
             }
-        } else if field_iter.next_is(TokenKind::Enum) {
+        } else if field_iter.next_is(Token::Enum) {
             let keyword = field_iter.next().unwrap_single();
             if parse_enum(stores, &mut field_iter, item_id, keyword).is_err() {
                 had_error.set();
@@ -479,11 +480,11 @@ pub fn parse_struct_or_union(
             }
         } else {
             let name_token = field_iter
-                .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+                .expect_single(stores, item_id, Token::Ident, prev_token.location)
                 .recover(&mut had_error, prev_token);
 
             let colon = field_iter
-                .expect_single(stores, item_id, TokenKind::Colon, name_token.location)
+                .expect_single(stores, item_id, Token::Colon, name_token.location)
                 .recover(&mut had_error, name_token);
 
             let Ok((unresolved_store_type, last_token)) = parse_unresolved_type(
@@ -496,8 +497,10 @@ pub fn parse_struct_or_union(
                 break;
             };
 
+            let field_name = stores.get_lexeme(name_token.location);
+
             fields.push(StructDefField {
-                name: name_token.map(|t| t.lexeme),
+                name: field_name,
                 kind: unresolved_store_type,
             });
             prev_token = last_token;
@@ -517,10 +520,10 @@ pub fn parse_struct_or_union(
     }
 
     let struct_def = StructDef {
-        name: name_token.map(|t| t.lexeme),
+        name: struct_name,
         fields,
         generic_params,
-        is_union: keyword.inner.kind == TokenKind::Union,
+        is_union: keyword.inner == Token::Union,
     };
 
     stores.sigs.urir.set_struct(item_id, struct_def);
@@ -547,19 +550,17 @@ pub fn parse_enum(
         .expect_single(
             stores,
             module_id,
-            TokenKind::Ident,
+            Token::Ident,
             attributes.last_token.location,
         )
         .recover(&mut had_error, attributes.last_token);
 
     let fallback = TreeGroup::fallback(BracketKind::Brace, name_token);
+    let enum_name = stores.get_lexeme(name_token.location);
 
-    let item_id = stores.items.new_enum(
-        stores.sigs,
-        module_id,
-        name_token.map(|t| t.lexeme),
-        attributes.attributes,
-    );
+    let item_id = stores
+        .items
+        .new_enum(stores.sigs, module_id, enum_name, attributes.attributes);
 
     if let Some(lang_item_id) = attributes.lang_item {
         stores.items.set_lang_item(lang_item_id, item_id);
@@ -578,7 +579,7 @@ pub fn parse_enum(
     let const_exit_stack_type = UnresolvedType::Simple(UnresolvedIdent {
         span: name_token.location,
         path_root: IdentPathRoot::CurrentScope,
-        path: vec![name_token.map(|t| t.lexeme)],
+        path: vec![enum_name],
         generic_params: Vec::new(),
     });
 
@@ -586,13 +587,13 @@ pub fn parse_enum(
         UnresolvedIdent {
             span: name_token.location,
             path_root: IdentPathRoot::CurrentScope,
-            path: vec![name_token.map(|t| t.lexeme)],
+            path: vec![enum_name],
             generic_params: Vec::new(),
         },
     )));
 
     loop {
-        if variant_iter.next_is(TokenKind::Proc) {
+        if variant_iter.next_is(Token::Proc) {
             let keyword = variant_iter.next().unwrap_single();
             if parse_function(stores, &mut variant_iter, keyword, item_id).is_err() {
                 had_error.set();
@@ -604,7 +605,7 @@ pub fn parse_enum(
         } else {
             // Parse a variant.
             let Ok(name_token) =
-                variant_iter.expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+                variant_iter.expect_single(stores, item_id, Token::Ident, prev_token.location)
             else {
                 // Invalid token.
                 // Consume token so we can progress.
@@ -620,12 +621,12 @@ pub fn parse_enum(
             let exit_stack = vec![const_exit_stack_type.clone().with_span(name_token.location)]
                 .with_span(name_token.location);
 
-            let variant_const_id = stores.items.new_const(
-                stores.sigs,
-                name_token.map(|t| t.lexeme),
-                item_id,
-                exit_stack,
-            );
+            let variant_name = stores.get_lexeme(name_token.location);
+
+            let variant_const_id =
+                stores
+                    .items
+                    .new_const(stores.sigs, variant_name, item_id, exit_stack);
 
             let const_body_id = if variant_iter.next_is_group(BracketKind::Brace) {
                 let body_block = variant_iter.next().unwrap_group();
@@ -636,11 +637,7 @@ pub fn parse_enum(
                 )
                 .recover(&mut had_error, Vec::new());
 
-                body.push(
-                    stores
-                        .ops
-                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
-                );
+                body.push(stores.ops.new_op(pack_enum_op.clone(), name_token.location));
 
                 stores.blocks.new_block(body)
             } else if let Some(prev_ident) = prev_variant_ident {
@@ -670,13 +667,11 @@ pub fn parse_enum(
                 let plus_op = OpCode::Basic(Basic::Arithmetic(Arithmetic::Add));
 
                 let body = vec![
-                    stores.ops.new_op(prev_op, name_token.map(|t| t.lexeme)),
-                    stores.ops.new_op(cast_op, name_token.map(|t| t.lexeme)),
-                    stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
-                    stores.ops.new_op(plus_op, name_token.map(|t| t.lexeme)),
-                    stores
-                        .ops
-                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
+                    stores.ops.new_op(prev_op, name_token.location),
+                    stores.ops.new_op(cast_op, name_token.location),
+                    stores.ops.new_op(int_op, name_token.location),
+                    stores.ops.new_op(plus_op, name_token.location),
+                    stores.ops.new_op(pack_enum_op.clone(), name_token.location),
                 ];
                 stores.blocks.new_block(body)
             } else {
@@ -687,18 +682,16 @@ pub fn parse_enum(
                 });
 
                 let body = vec![
-                    stores.ops.new_op(int_op, name_token.map(|t| t.lexeme)),
-                    stores
-                        .ops
-                        .new_op(pack_enum_op.clone(), name_token.map(|t| t.lexeme)),
+                    stores.ops.new_op(int_op, name_token.location),
+                    stores.ops.new_op(pack_enum_op.clone(), name_token.location),
                 ];
                 stores.blocks.new_block(body)
             };
 
             stores.items.set_item_body(variant_const_id, const_body_id);
 
-            prev_variant_ident = Some(name_token.map(|t| t.lexeme));
-            variants.push((name_token.map(|t| t.lexeme), variant_const_id));
+            prev_variant_ident = Some(variant_name);
+            variants.push((variant_name, variant_const_id));
 
             if TrailingCommaResult::Break
                 == validate_trailing_comma(
@@ -715,7 +708,7 @@ pub fn parse_enum(
     }
 
     let enum_def = EnumDef {
-        name: name_token.map(|t| t.lexeme),
+        name: enum_name,
         variants,
     };
 

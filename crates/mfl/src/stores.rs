@@ -4,7 +4,11 @@ use item::{ItemAttribute, ItemKind, ItemStore};
 use lasso::Spur;
 use ops::OpStore;
 use signatures::SigStore;
-use stores::{items::ItemId, source::SourceStore, strings::StringStore};
+use stores::{
+    items::ItemId,
+    source::{SourceLocation, SourceStore, Spanned, WithSpan},
+    strings::StringStore,
+};
 use types::TypeStore;
 use values::ValueStore;
 
@@ -177,5 +181,10 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
         self.strings.set_fallback_name(item_id, spur);
 
         self.strings.resolve(spur)
+    }
+
+    pub fn get_lexeme(&mut self, location: SourceLocation) -> Spanned<Spur> {
+        let lexeme = self.source.get_str(location);
+        self.strings.intern(lexeme).with_span(location)
     }
 }

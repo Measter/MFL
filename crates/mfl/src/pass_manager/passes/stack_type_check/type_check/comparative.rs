@@ -40,8 +40,8 @@ pub(crate) fn equal(
         _ => {
             // Type mismatch.
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
         }
     }
 }
@@ -72,8 +72,8 @@ pub(crate) fn compare(
         _ => {
             // Type mismatch.
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
         }
     }
 }
@@ -101,7 +101,7 @@ pub(crate) fn is_null(
     ) {
         // Type mismatch.
         had_error.set();
-        let op_token = stores.ops.get_token(op_id);
-        generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_id]);
+        let op_token_loc = stores.ops.get_token_location(op_id);
+        generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &[input_id]);
     }
 }

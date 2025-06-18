@@ -172,7 +172,7 @@ impl Stores<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_> {
                 },
             };
 
-            let old_token = self.ops.get_token(op_id);
+            let old_token = self.ops.get_token_location(op_id);
             let mut old_unresolved = self.ops.get_unresolved(op_id).clone();
             // Need to patch up the old unresolved opcode so that the If and While codes point to the new blocks.
             match (&mut old_unresolved, &new_code) {

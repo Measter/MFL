@@ -47,8 +47,8 @@ pub(crate) fn add(stores: &mut Stores, had_error: &mut ErrorSignal, item_id: Ite
         // Type mismatch
         _ => {
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
             return;
         }
     };
@@ -92,8 +92,8 @@ pub(crate) fn multiply_div_rem_shift(
         _ => {
             // Type mismatch
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
             return;
         }
     };
@@ -134,8 +134,8 @@ pub(crate) fn subtract(
         _ => {
             // Type mismatch
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
             return;
         }
     };
@@ -162,8 +162,8 @@ pub(crate) fn bitnot(
         _ => {
             // Type mismatch
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &[input_id]);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &[input_id]);
             return;
         }
     };
@@ -197,8 +197,8 @@ pub(crate) fn bitand_bitor_bitxor(
         _ => {
             // Type mismatch
             had_error.set();
-            let op_token = stores.ops.get_token(op_id);
-            generate_type_mismatch_diag(stores, item_id, op_token.inner, op_id, &input_ids);
+            let op_token_loc = stores.ops.get_token_location(op_id);
+            generate_type_mismatch_diag(stores, item_id, op_token_loc, op_id, &input_ids);
             return;
         }
     };

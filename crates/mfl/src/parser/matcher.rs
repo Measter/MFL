@@ -1,4 +1,4 @@
-use lexer::{BracketKind, TokenKind};
+use lexer::{BracketKind, Token};
 use stores::source::{SourceLocation, Spanned};
 
 use crate::lexer::TokenTree;
@@ -33,12 +33,12 @@ pub(super) trait ExpectedTokenMatcher<T> {
     }
 }
 
-impl ExpectedTokenMatcher<Spanned<TokenKind>> for TokenKind {
+impl ExpectedTokenMatcher<Spanned<Token>> for Token {
     fn kind_str(&self) -> &'static str {
-        TokenKind::kind_str(*self)
+        Token::kind_str(*self)
     }
 
-    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
+    fn is_match(&self, tk: Spanned<Token>) -> IsMatch {
         if tk.inner == *self {
             IsMatch::Yes
         } else {
@@ -47,14 +47,14 @@ impl ExpectedTokenMatcher<Spanned<TokenKind>> for TokenKind {
     }
 }
 
-impl ExpectedTokenMatcher<&TokenTree> for TokenKind {
+impl ExpectedTokenMatcher<&TokenTree> for Token {
     fn kind_str(&self) -> &'static str {
-        TokenKind::kind_str(*self)
+        Token::kind_str(*self)
     }
 
     fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
-            TokenTree::Single(tk) if tk.inner.kind == *self => IsMatch::Yes,
+            TokenTree::Single(tk) if tk.inner == *self => IsMatch::Yes,
             _ => IsMatch::No(tk.kind_str(), tk.span()),
         }
     }
@@ -63,24 +63,24 @@ impl ExpectedTokenMatcher<&TokenTree> for TokenKind {
 // Wrapper because Rust's inference is dumb.
 pub(super) struct Matcher<T>(pub &'static str, pub fn(T) -> IsMatch);
 
-impl ExpectedTokenMatcher<Spanned<TokenKind>> for Matcher<Spanned<TokenKind>> {
+impl ExpectedTokenMatcher<Spanned<Token>> for Matcher<Spanned<Token>> {
     fn kind_str(&self) -> &'static str {
         self.0
     }
 
-    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
+    fn is_match(&self, tk: Spanned<Token>) -> IsMatch {
         self.1(tk)
     }
 }
 
-impl ExpectedTokenMatcher<&TokenTree> for Matcher<Spanned<TokenKind>> {
+impl ExpectedTokenMatcher<&TokenTree> for Matcher<Spanned<Token>> {
     fn kind_str(&self) -> &'static str {
         self.0
     }
 
     fn is_match(&self, tk: &TokenTree) -> IsMatch {
         match tk {
-            TokenTree::Single(tk) => self.1(tk.map(|t| t.kind)),
+            TokenTree::Single(tk) => self.1(*tk),
             TokenTree::Group(_) => IsMatch::No(tk.kind_str(), tk.span()),
         }
     }
@@ -116,25 +116,23 @@ impl ExpectedTokenMatcher<&TokenTree> for ConditionMatch {
 }
 
 pub(super) struct IdentPathMatch;
-impl ExpectedTokenMatcher<Spanned<TokenKind>> for IdentPathMatch {
+impl ExpectedTokenMatcher<Spanned<Token>> for IdentPathMatch {
     fn kind_str(&self) -> &'static str {
         "ident"
     }
 
-    fn is_match(&self, tk: Spanned<TokenKind>) -> IsMatch {
+    fn is_match(&self, tk: Spanned<Token>) -> IsMatch {
         match tk.inner {
-            TokenKind::ColonColon
-            | TokenKind::Lib
-            | TokenKind::SelfKw
-            | TokenKind::Super
-            | TokenKind::Ident => IsMatch::Yes,
+            Token::ColonColon | Token::Lib | Token::SelfKw | Token::Super | Token::Ident => {
+                IsMatch::Yes
+            }
             _ => IsMatch::No(tk.inner.kind_str(), tk.location),
         }
     }
 }
 
-pub(super) fn integer_tokens(t: Spanned<TokenKind>) -> IsMatch {
-    if let TokenKind::Integer(_) = t.inner {
+pub(super) fn integer_tokens(t: Spanned<Token>) -> IsMatch {
+    if let Token::Integer(_) = t.inner {
         IsMatch::Yes
     } else {
         IsMatch::No(t.inner.kind_str(), t.location)
@@ -145,17 +143,17 @@ pub(super) fn valid_type_token(tt: &TokenTree) -> IsMatch {
     match tt {
         TokenTree::Single(tk)
             if matches!(
-                tk.inner.kind,
-                TokenKind::Ident
-                    | TokenKind::Integer { .. }
-                    | TokenKind::ColonColon
-                    | TokenKind::Ampersand
-                    | TokenKind::Star
-                    | TokenKind::Comma
-                    | TokenKind::Proc
-                    | TokenKind::GoesTo
-                    | TokenKind::Lib
-                    | TokenKind::SelfKw
+                tk.inner,
+                Token::Ident
+                    | Token::Integer { .. }
+                    | Token::ColonColon
+                    | Token::Ampersand
+                    | Token::Star
+                    | Token::Comma
+                    | Token::Proc
+                    | Token::GoesTo
+                    | Token::Lib
+                    | Token::SelfKw
             ) =>
         {
             IsMatch::Yes
@@ -177,10 +175,7 @@ pub(super) fn valid_type_token(tt: &TokenTree) -> IsMatch {
 pub(super) fn attribute_tokens(tt: &TokenTree) -> IsMatch {
     match tt {
         TokenTree::Single(tk)
-            if matches!(
-                tk.inner.kind,
-                TokenKind::Extern | TokenKind::Ident | TokenKind::LangItem
-            ) =>
+            if matches!(tk.inner, Token::Extern | Token::Ident | Token::LangItem) =>
         {
             IsMatch::Yes
         }
@@ -193,19 +188,19 @@ pub(super) fn stack_def_tokens(tt: &TokenTree) -> IsMatch {
     match tt {
         TokenTree::Single(tk)
             if matches!(
-                tk.inner.kind,
-                TokenKind::Ident
-                    | TokenKind::Integer { .. }
-                    | TokenKind::ColonColon
-                    | TokenKind::Colon
-                    | TokenKind::Ampersand
-                    | TokenKind::Star
-                    | TokenKind::Comma
-                    | TokenKind::Variable
-                    | TokenKind::Proc
-                    | TokenKind::GoesTo
-                    | TokenKind::Lib
-                    | TokenKind::SelfKw
+                tk.inner,
+                Token::Ident
+                    | Token::Integer { .. }
+                    | Token::ColonColon
+                    | Token::Colon
+                    | Token::Ampersand
+                    | Token::Star
+                    | Token::Comma
+                    | Token::Variable
+                    | Token::Proc
+                    | Token::GoesTo
+                    | Token::Lib
+                    | Token::SelfKw
             ) =>
         {
             IsMatch::Yes

@@ -249,7 +249,7 @@ fn check_invalid_cyclic_refs_in_block(
 
                 if id == root_header.id {
                     had_error.set();
-                    let op_loc = stores.ops.get_token(op_id).location;
+                    let op_loc = stores.ops.get_token_location(op_id);
                     Diagnostic::error(
                         cur_header.name.location,
                         format!("cyclic {kind_str} detected"),

@@ -292,7 +292,7 @@ impl ItemStore {
         attributes: FlagSet<ItemAttribute>,
     ) -> ItemHeader {
         let new_id = self.headers.len();
-        let new_id = ItemId::new(new_id.to_u16().unwrap());
+        let new_id = ItemId::new(new_id.to_u32().unwrap());
 
         let item_header = ItemHeader {
             name,

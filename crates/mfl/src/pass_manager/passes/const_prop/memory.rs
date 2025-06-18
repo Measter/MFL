@@ -147,7 +147,7 @@ pub(crate) fn index(
     if idx.to_usize() >= array_length {
         let array_type_name = stores.strings.resolve(array_type_info.friendly_name);
         let idx_value = idx.to_string();
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         Diagnostic::error(op_loc, "index out of bounds")
             .with_label_chain(array_value_id, 0, array_type_name)
@@ -341,7 +341,7 @@ pub(crate) fn insert_array(
     if idx.to_usize() >= array_length {
         let array_type_name = stores.strings.resolve(input_array_type_info.friendly_name);
         let idx_value = idx.to_string();
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         Diagnostic::error(op_loc, "index out of bounds")
             .with_label_chain(array_value_id, 0, array_type_name)
@@ -532,7 +532,7 @@ pub(crate) fn extract_array(
     let extracted_const_value = if idx.to_usize() >= array_length {
         let array_type_name = stores.strings.resolve(input_array_type_info.friendly_name);
         let idx_value = idx.to_string();
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         Diagnostic::error(op_loc, "index out of bounds")
             .with_label_chain(input_array_value_id, 0, array_type_name)
@@ -933,7 +933,7 @@ pub(crate) fn load(
     let init_state = cur_state.get_init_state();
     if init_state != InitState::Full {
         let var_header = stores.items.get_item_header(source_variable);
-        let op_loc = stores.ops.get_token(op_id);
+        let op_loc = stores.ops.get_token_location(op_id);
 
         let (primary_msg_chunk, note_msg_chunk) = match init_state {
             InitState::Full => unreachable!(),
@@ -942,7 +942,7 @@ pub(crate) fn load(
         };
 
         let mut diag = Diagnostic::error(
-            op_loc.location,
+            op_loc,
             format!("read from {primary_msg_chunk}initialized memory"),
         )
         .primary_label_message("read occurred here")

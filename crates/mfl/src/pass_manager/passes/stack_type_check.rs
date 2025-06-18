@@ -656,7 +656,7 @@ fn analyze_block(
             continue;
         }
 
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
         Diagnostic::warning(op_loc, "unreachable op").attached(stores.diags, item_id);
     }
 }

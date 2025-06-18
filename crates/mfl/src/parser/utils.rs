@@ -1,7 +1,7 @@
 use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use lasso::Spur;
-use lexer::{BracketKind, IntegerBase, Token, TokenKind};
+use lexer::{BracketKind, IntegerBase, Token};
 use num_traits::{Float, PrimInt, Unsigned};
 use stores::{
     items::ItemId,
@@ -38,11 +38,11 @@ impl<'a> TokenIter<'a> {
         &mut self,
         stores: &mut Stores,
         item_id: ItemId,
-        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
+        filter: impl ExpectedTokenMatcher<Spanned<Token>>,
         prev: SourceLocation,
     ) -> Result<Spanned<Token>, ()> {
         match self.peek() {
-            Some(TokenTree::Single(tk)) => match filter.is_match(tk.map(|t| t.kind)) {
+            Some(TokenTree::Single(tk)) => match filter.is_match(*tk) {
                 IsMatch::Yes => Ok(self.next().unwrap_single()),
                 IsMatch::No(kind_str, location) => {
                     Diagnostic::error(
@@ -91,11 +91,7 @@ impl<'a> TokenIter<'a> {
             Some(TokenTree::Single(tk)) => {
                 Diagnostic::error(
                     tk.location,
-                    format!(
-                        "expected `{}`, found `{}`",
-                        expected,
-                        tk.inner.kind.kind_str()
-                    ),
+                    format!("expected `{}`, found `{}`", expected, tk.inner.kind_str()),
                 )
                 .attached(stores.diags, item_id);
                 Err(())
@@ -116,20 +112,17 @@ impl<'a> TokenIter<'a> {
         matches!(self.peek(), Some(TokenTree::Group(tg)) if tg.bracket_kind == kind)
     }
 
-    pub(super) fn next_is_single(
-        &self,
-        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
-    ) -> bool {
+    pub(super) fn next_is_single(&self, filter: impl ExpectedTokenMatcher<Spanned<Token>>) -> bool {
         let Some(TokenTree::Single(next)) = self.peek() else {
             return false;
         };
 
-        filter.is_match(next.map(|t| t.kind)).yes()
+        filter.is_match(*next).yes()
     }
 
     pub(super) fn next_is_single_and(
         &self,
-        filter: impl ExpectedTokenMatcher<Spanned<TokenKind>>,
+        filter: impl ExpectedTokenMatcher<Spanned<Token>>,
         and: impl Fn(Spanned<Token>) -> bool,
     ) -> bool {
         // matches!(self.peek(), Some(TokenTree::Single(tk)) if filter.is_match(tk.inner.kind) && and(*tk))
@@ -137,7 +130,7 @@ impl<'a> TokenIter<'a> {
             return false;
         };
 
-        if filter.is_match(next.map(|t| t.kind)).no() {
+        if filter.is_match(*next).no() {
             return false;
         }
 
@@ -433,11 +426,11 @@ pub fn parse_unresolved_type(
     prev: SourceLocation,
     had_error: &mut ErrorSignal,
 ) -> Result<(Spanned<UnresolvedType>, Spanned<Token>), Option<SourceLocation>> {
-    let (mut type_span, mut parsed_type, mut last_token) = if token_iter.next_is(TokenKind::Proc) {
+    let (mut type_span, mut parsed_type, mut last_token) = if token_iter.next_is(Token::Proc) {
         let keyword = token_iter.next().unwrap_single();
         let inputs = parse_stack_def(stores, had_error, token_iter, item_id, keyword);
         let to_token = token_iter
-            .expect_single(stores, item_id, TokenKind::GoesTo, keyword.location)
+            .expect_single(stores, item_id, Token::GoesTo, keyword.location)
             .recover(had_error, keyword);
         let outputs = parse_stack_def(stores, had_error, token_iter, item_id, to_token);
 
@@ -466,9 +459,7 @@ pub fn parse_unresolved_type(
 
     fn pointer_or_array(tt: &TokenTree) -> IsMatch {
         match tt {
-            TokenTree::Single(tk)
-                if matches!(tk.inner.kind, TokenKind::Ampersand | TokenKind::Star) =>
-            {
+            TokenTree::Single(tk) if matches!(tk.inner, Token::Ampersand | Token::Star) => {
                 IsMatch::Yes
             }
             TokenTree::Group(tg) if tg.bracket_kind == BracketKind::Square => IsMatch::Yes,
@@ -504,9 +495,9 @@ pub fn parse_unresolved_type(
                 let next = token_iter.next().unwrap_single();
 
                 type_span = type_span.merge(next.location);
-                parsed_type = match next.inner.kind {
-                    TokenKind::Ampersand => UnresolvedType::SinglePointer(Box::new(parsed_type)),
-                    TokenKind::Star => UnresolvedType::MultiPointer(Box::new(parsed_type)),
+                parsed_type = match next.inner {
+                    Token::Ampersand => UnresolvedType::SinglePointer(Box::new(parsed_type)),
+                    Token::Star => UnresolvedType::MultiPointer(Box::new(parsed_type)),
                     _ => unreachable!(),
                 }
             }
@@ -527,11 +518,11 @@ pub fn parse_ident(
     let mut import_span = token.location;
     let mut last_token = token;
 
-    let (path_root, mut path) = match token.inner.kind {
-        TokenKind::ColonColon => {
-            let ident = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
-                t.location.neighbour_of(token.location)
-            }) {
+    let (path_root, mut path) = match token.inner {
+        Token::ColonColon => {
+            let ident = if token_iter
+                .next_is_single_and(Token::Ident, |t| t.location.neighbour_of(token.location))
+            {
                 token_iter.next().unwrap_single()
             } else {
                 Diagnostic::error(token.location, "unexpected end of ident")
@@ -542,22 +533,26 @@ pub fn parse_ident(
 
             last_token = ident;
             import_span = import_span.merge(ident.location);
+            let ident_lexeme = stores.get_lexeme(ident.location);
 
-            (IdentPathRoot::Root, vec![ident.map(|t| t.lexeme)])
+            (IdentPathRoot::Root, vec![ident_lexeme])
         }
-        TokenKind::Lib => (IdentPathRoot::CurrentLib, Vec::new()),
-        TokenKind::Ident => (IdentPathRoot::CurrentScope, vec![token.map(|t| t.lexeme)]),
-        TokenKind::SelfKw => (IdentPathRoot::CurrentModule, Vec::new()),
+        Token::Lib => (IdentPathRoot::CurrentLib, Vec::new()),
+        Token::Ident => {
+            let token_lexeme = stores.get_lexeme(token.location);
+            (IdentPathRoot::CurrentScope, vec![token_lexeme])
+        }
+        Token::SelfKw => (IdentPathRoot::CurrentModule, Vec::new()),
         _ => unreachable!(),
     };
 
-    while token_iter.next_is_single_and(TokenKind::ColonColon, |t| {
+    while token_iter.next_is_single_and(Token::ColonColon, |t| {
         t.location.neighbour_of(last_token.location)
     }) {
         let colons = token_iter.next().unwrap_single(); // Consume the ColonColon.
-        let item_id = if token_iter.next_is_single_and(TokenKind::Ident, |t| {
-            t.location.neighbour_of(colons.location)
-        }) {
+        let item_id = if token_iter
+            .next_is_single_and(Token::Ident, |t| t.location.neighbour_of(colons.location))
+        {
             token_iter.next().unwrap_single()
         } else {
             Diagnostic::error(colons.location, "unexpected end of ident")
@@ -568,8 +563,9 @@ pub fn parse_ident(
 
         last_token = item_id;
         import_span = import_span.merge(item_id.location);
+        let item_id_lexeme = stores.get_lexeme(item_id.location);
 
-        path.push(item_id.map(|t| t.lexeme));
+        path.push(item_id_lexeme);
     }
 
     let generic_params = if token_iter.next_is_group(BracketKind::Paren) {
@@ -617,10 +613,10 @@ pub fn parse_integer_lexeme<T>(
 where
     T: PrimInt + Unsigned + FromStr + Display,
 {
-    let TokenKind::Integer(literal_base) = int_token.inner.kind else {
+    let Token::Integer(literal_base) = int_token.inner else {
         panic!("ICE: called parse_integer_lexeme with a non-integer token")
     };
-    let string = stores.strings.resolve(int_token.inner.lexeme);
+    let string = stores.source.get_str(int_token.location);
     // Need to skip the non-decimal prefix
     let string = if literal_base != IntegerBase::Decimal {
         &string[2..]
@@ -653,10 +649,10 @@ pub fn parse_float_lexeme<T>(
 where
     T: Float + FromStr + Display,
 {
-    let TokenKind::Float = float_token.inner.kind else {
+    let Token::Float = float_token.inner else {
         panic!("ICE: called parse_float_lexeme with a non-float token")
     };
-    let string = stores.strings.resolve(float_token.inner.lexeme);
+    let string = stores.source.get_str(float_token.location);
     let string: String = string.chars().filter(|&c| c != '_').collect();
 
     let res = T::from_str(&string);
@@ -712,18 +708,20 @@ pub fn parse_proc_entry_stack_def(
 
     if !stack.tokens.is_empty() {
         while token_iter.peek().is_some() {
-            let (name, prev) = if token_iter.next_is_single(TokenKind::Variable) {
+            let (name, prev) = if token_iter.next_is_single(Token::Variable) {
                 token_iter.next(); // Consume the var token.
 
                 let name_token = token_iter
-                    .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+                    .expect_single(stores, item_id, Token::Ident, prev_token.location)
                     .recover(had_error, prev_token);
 
                 let colon = token_iter
-                    .expect_single(stores, item_id, TokenKind::Colon, name_token.location)
+                    .expect_single(stores, item_id, Token::Colon, name_token.location)
                     .recover(had_error, name_token);
 
-                (Some(name_token.map(|t| t.lexeme)), colon)
+                let name_lexeme = stores.get_lexeme(name_token.location);
+
+                (Some(name_lexeme), colon)
             } else {
                 (None, prev_token)
             };
@@ -795,8 +793,8 @@ pub fn try_parse_generic_pramas(
             .with_kinds(
                 stores,
                 item_id,
-                Matcher("generic params", |tk: Spanned<TokenKind>| {
-                    if let TokenKind::Ident | TokenKind::Comma = tk.inner {
+                Matcher("generic params", |tk: Spanned<Token>| {
+                    if let Token::Ident | Token::Comma = tk.inner {
                         IsMatch::Yes
                     } else {
                         IsMatch::No(tk.inner.kind_str(), tk.location)
@@ -810,10 +808,11 @@ pub fn try_parse_generic_pramas(
 
         while token_iter.peek().is_some() {
             let next = token_iter
-                .expect_single(stores, item_id, TokenKind::Ident, prev_token.location)
+                .expect_single(stores, item_id, Token::Ident, prev_token.location)
                 .recover(had_error, prev_token);
+            let next_lexeme = stores.get_lexeme(next.location);
 
-            params.push(next.map(|t| t.lexeme));
+            params.push(next_lexeme);
             prev_token = next;
 
             if TrailingCommaResult::Break
@@ -848,7 +847,7 @@ pub fn validate_trailing_comma(
     item_id: ItemId,
     kind_str: &str,
 ) -> TrailingCommaResult {
-    let requires_end = if token_iter.next_is_single(TokenKind::Comma) {
+    let requires_end = if token_iter.next_is_single(Token::Comma) {
         token_iter.next();
         false
     } else {

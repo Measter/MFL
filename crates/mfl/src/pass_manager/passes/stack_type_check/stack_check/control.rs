@@ -39,7 +39,7 @@ pub(crate) fn epilogue_return(
 
     let exit_sig = &item_sig.exit.inner;
     if stack.len() != exit_sig.len() {
-        let op_loc = stores.ops.get_token(op_id).location;
+        let op_loc = stores.ops.get_token_location(op_id);
 
         let mut diag = Diagnostic::error(
             op_loc,
@@ -117,7 +117,7 @@ pub(crate) fn syscall(
     op_id: OpId,
     num_args: Spanned<u8>,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     if !matches!(num_args.inner, 1..=7) {
         Diagnostic::error(op_loc, "invalid syscall size")
             .primary_label_message("valid syscall sizes are 1..=7")
@@ -144,7 +144,7 @@ pub(crate) fn call_function_const(
     op_id: OpId,
     callee_id: ItemId,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let callee_sig = stores.sigs.urir.get_item_signature(callee_id);
     let entry_arg_count = callee_sig.entry.inner.len();
 
@@ -189,7 +189,7 @@ pub(crate) fn method_call(
     op_id: OpId,
     method_name: Spanned<Spur>,
 ) {
-    let op_loc = stores.ops.get_token(op_id);
+    let op_loc = stores.ops.get_token_location(op_id);
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
     let &receiver_value_id = stack.last().unwrap();
 
@@ -210,7 +210,7 @@ pub(crate) fn method_call(
             let receiver_type_name = stores.strings.resolve(receiver_type_info.friendly_name);
 
             Diagnostic::error(
-                op_loc.location,
+                op_loc,
                 format!("method calls not supported on `{receiver_type_name}`"),
             )
             .with_label_chain(receiver_value_id, 0, receiver_type_name)
@@ -258,7 +258,7 @@ pub(crate) fn analyze_cond(
     op_id: OpId,
     cond_op: &Cond,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let pre_cond_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
     let mut condition_values = SmallVec::<[_; 8]>::new();
 
@@ -442,7 +442,7 @@ pub(crate) fn analyze_while(
     op_id: OpId,
     while_op: &While,
 ) {
-    let op_loc = stores.ops.get_token(op_id).location;
+    let op_loc = stores.ops.get_token_location(op_id);
     let pre_condition_stack: SmallVec<[_; 20]> = stack.iter().copied().collect();
 
     // Evaluate the condition.
