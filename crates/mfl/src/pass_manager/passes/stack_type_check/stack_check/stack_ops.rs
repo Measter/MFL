@@ -5,6 +5,7 @@ use stores::{items::ItemId, source::Spanned};
 use crate::{
     error_signal::ErrorSignal,
     ir::Direction,
+    n_ops::SplitOffSmallVec,
     stores::{diagnostics::Diagnostic, ops::OpId, values::ValueId},
     Stores,
 };
@@ -69,8 +70,8 @@ pub(crate) fn drop(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, count);
 
     let split_point = stack.len() - count;
-    let inputs = stack.split_off(split_point);
-    stores.ops.set_op_io(op_id, &inputs, &[]);
+    let inputs = stack.split_off_smallvec(split_point);
+    stores.ops.set_op_io(op_id, inputs, None);
 }
 
 pub(crate) fn over(
@@ -95,7 +96,7 @@ pub(crate) fn over(
     let new_id = stores.values.new_value(op_loc, Some(src_id));
     stack.push(new_id);
 
-    stores.ops.set_op_io(op_id, &[src_id], &[new_id]);
+    stores.ops.set_op_io(op_id, src_id, new_id);
 }
 
 pub(crate) fn reverse(
@@ -137,7 +138,7 @@ pub(crate) fn reverse(
         stack.push(new_value);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, inputs, outputs);
 }
 
 pub(crate) fn rotate(
@@ -189,7 +190,7 @@ pub(crate) fn rotate(
         stack.push(new_value);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, inputs, outputs);
 }
 
 pub(crate) fn swap(
@@ -221,5 +222,5 @@ pub(crate) fn swap(
         stack.push(new_value);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, inputs, outputs);
 }

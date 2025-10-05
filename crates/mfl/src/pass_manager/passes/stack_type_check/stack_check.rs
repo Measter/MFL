@@ -54,7 +54,7 @@ pub(super) fn eat_one_make_one(
     let op_loc = stores.ops.get_token_location(op_id);
     let new_id = stores.values.new_value(op_loc, None);
 
-    stores.ops.set_op_io(op_id, &[value_id], &[new_id]);
+    stores.ops.set_op_io(op_id, value_id, new_id);
     stack.push(new_id);
 }
 
@@ -71,7 +71,7 @@ pub(super) fn eat_two_make_one(
     let op_loc = stores.ops.get_token_location(op_id);
     let new_id = stores.values.new_value(op_loc, None);
 
-    stores.ops.set_op_io(op_id, &inputs, &[new_id]);
+    stores.ops.set_op_io(op_id, inputs, new_id);
     stack.push(new_id);
 }
 
@@ -79,5 +79,5 @@ pub(super) fn make_one(stores: &mut Stores, stack: &mut Vec<ValueId>, op_id: OpI
     let op_loc = stores.ops.get_token_location(op_id);
     let new_id = stores.values.new_value(op_loc, None);
     stack.push(new_id);
-    stores.ops.set_op_io(op_id, &[], &[new_id]);
+    stores.ops.set_op_io(op_id, None, new_id);
 }

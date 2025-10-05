@@ -9,7 +9,7 @@ use tracing::trace;
 use crate::{
     error_signal::ErrorSignal,
     ir::{Basic, Cond, Control, OpCode, While},
-    n_ops::SliceNOps,
+    n_ops::{SliceNOps, SplitOffSmallVec},
     pass_manager::{
         passes::ident_resolution::{resolve_method_name, ResolveMethodResult},
         static_analysis::generate_stack_length_mismatch_diag,
@@ -79,7 +79,7 @@ pub(crate) fn epilogue_return(
     }
 
     let inputs = stack.lastn(exit_sig.len()).unwrap();
-    stores.ops.set_op_io(op_id, inputs, &[]);
+    stores.ops.set_op_io(op_id, inputs, None);
 
     let len = inputs.len();
     stack.truncate(stack.len() - len);
@@ -106,7 +106,7 @@ pub(crate) fn prologue(
         }
     }
 
-    stores.ops.set_op_io(op_id, &[], &outputs);
+    stores.ops.set_op_io(op_id, None, outputs);
 }
 
 pub(crate) fn syscall(
@@ -129,10 +129,10 @@ pub(crate) fn syscall(
     let num_args = num_args.inner.to_usize();
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, num_args);
 
-    let inputs = stack.split_off(stack.len() - num_args);
+    let inputs = stack.split_off_smallvec(stack.len() - num_args);
     let new_id = stores.values.new_value(op_loc, None);
 
-    stores.ops.set_op_io(op_id, &inputs, &[new_id]);
+    stores.ops.set_op_io(op_id, inputs, new_id);
     stack.push(new_id);
 }
 
@@ -177,7 +177,7 @@ pub(crate) fn call_function_const(
         stack.push(new_id);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, inputs, outputs);
 }
 
 pub(crate) fn method_call(
@@ -195,14 +195,14 @@ pub(crate) fn method_call(
 
     let Some([receiver_type_id]) = stores.values.value_types([receiver_value_id]) else {
         // Can't do anything.
-        stores.ops.set_op_io(op_id, &[receiver_value_id], &[]);
+        stores.ops.set_op_io(op_id, receiver_value_id, None);
         return;
     };
 
     let callee_id = match resolve_method_name(stores, pass_manager, receiver_type_id, method_name) {
         ResolveMethodResult::Ok(item_id) => item_id,
         ResolveMethodResult::ManagerFailed => {
-            stores.ops.set_op_io(op_id, &[receiver_value_id], &[]);
+            stores.ops.set_op_io(op_id, receiver_value_id, None);
             return; // Nothing we can do here.
         }
         ResolveMethodResult::UnsupportedType => {
@@ -427,7 +427,7 @@ pub(crate) fn analyze_cond(
         }
     }
 
-    stores.ops.set_op_io(op_id, &condition_values, &[]);
+    stores.ops.set_op_io(op_id, condition_values, None);
     stores.values.set_merge_values(op_id, merge_values);
 }
 
@@ -563,7 +563,7 @@ pub(crate) fn analyze_while(
     }
 
     stores.values.set_merge_values(op_id, while_merges);
-    stores.ops.set_op_io(op_id, &[condition_value], &[]);
+    stores.ops.set_op_io(op_id, condition_value, None);
 }
 
 fn fixup_op_input_values(

@@ -29,7 +29,7 @@ pub(crate) fn extract_array(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let [array_id, idx] = stack.popn();
-    let mut outputs = SmallVec::<[_; 2]>::new();
+    let mut outputs = SmallVec::<[_; 8]>::new();
 
     if emit_array {
         let output_array = stores.values.new_value(op_loc, Some(array_id));
@@ -41,7 +41,7 @@ pub(crate) fn extract_array(
     outputs.push(output_value);
     stack.push(output_value);
 
-    stores.ops.set_op_io(op_id, &[array_id, idx], &outputs);
+    stores.ops.set_op_io(op_id, [array_id, idx], outputs);
 }
 
 pub(crate) fn extract_struct(
@@ -56,7 +56,7 @@ pub(crate) fn extract_struct(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 1);
 
     let struct_id = stack.pop().unwrap();
-    let mut outputs = SmallVec::<[_; 2]>::new();
+    let mut outputs = SmallVec::<[_; 8]>::new();
 
     if emit_struct {
         let output_struct = stores.values.new_value(op_loc, Some(struct_id));
@@ -68,7 +68,7 @@ pub(crate) fn extract_struct(
     outputs.push(output_value);
     stack.push(output_value);
 
-    stores.ops.set_op_io(op_id, &[struct_id], &outputs);
+    stores.ops.set_op_io(op_id, struct_id, outputs);
 }
 
 pub(crate) fn insert_array(
@@ -92,7 +92,7 @@ pub(crate) fn insert_array(
         stack.push(output_id);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, output.as_slice());
+    stores.ops.set_op_io(op_id, inputs, output);
 }
 
 pub(crate) fn insert_struct(
@@ -115,7 +115,7 @@ pub(crate) fn insert_struct(
         stack.push(output_id);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, output.as_slice());
+    stores.ops.set_op_io(op_id, inputs, output);
 }
 
 pub(crate) fn pack_array(
@@ -139,7 +139,7 @@ pub(crate) fn pack_array(
 
     let output = stores.values.new_value(op_loc, None);
     stack.push(output);
-    stores.ops.set_op_io(op_id, &inputs, &[output]);
+    stores.ops.set_op_io(op_id, inputs, output);
 }
 
 pub(crate) fn load(
@@ -157,7 +157,7 @@ pub(crate) fn load(
     // If it's a normal pointer, then it's one, if it's a function pointer then it's
     // however many values that function returns.
     let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
-        stores.ops.set_op_io(op_id, &[input_value_id], &[]);
+        stores.ops.set_op_io(op_id, input_value_id, None);
         return;
     };
 
@@ -184,17 +184,17 @@ pub(crate) fn load(
 
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, input_count);
 
-    let mut inputs: SmallVec<[ValueId; 20]> = stack.drain(stack.len() - input_count..).collect();
+    let mut inputs: SmallVec<[ValueId; 8]> = stack.drain(stack.len() - input_count..).collect();
     inputs.push(input_value_id);
 
-    let mut outputs = SmallVec::<[_; 20]>::new();
+    let mut outputs = SmallVec::<[_; 8]>::new();
     for _ in 0..output_count {
         let id = stores.values.new_value(op_loc, None);
         stack.push(id);
         outputs.push(id);
     }
 
-    stores.ops.set_op_io(op_id, &inputs, &outputs);
+    stores.ops.set_op_io(op_id, inputs, outputs);
 }
 
 pub(crate) fn store(
@@ -207,7 +207,7 @@ pub(crate) fn store(
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, 2);
 
     let inputs = stack.popn::<2>();
-    stores.ops.set_op_io(op_id, &inputs, &[]);
+    stores.ops.set_op_io(op_id, inputs, None);
 }
 
 pub(crate) fn unpack(
@@ -224,7 +224,7 @@ pub(crate) fn unpack(
 
     // To find out how any values we create, we need to look up the type of our input.
     let Some([input_type_id]) = stores.values.value_types([input_value_id]) else {
-        stores.ops.set_op_io(op_id, &[input_value_id], &[]);
+        stores.ops.set_op_io(op_id, input_value_id, None);
         return;
     };
 
@@ -236,7 +236,7 @@ pub(crate) fn unpack(
                 .ensure_define_structs(stores, struct_item_id)
                 .is_err()
             {
-                stores.ops.set_op_io(op_id, &[input_value_id], &[]);
+                stores.ops.set_op_io(op_id, input_value_id, None);
                 had_error.set();
 
                 0
@@ -258,7 +258,7 @@ pub(crate) fn unpack(
         }
     };
 
-    let mut outputs = SmallVec::<[_; 20]>::new();
+    let mut outputs = SmallVec::<[_; 8]>::new();
 
     for _ in 0..length {
         let id = stores.values.new_value(op_loc, None);
@@ -266,7 +266,7 @@ pub(crate) fn unpack(
         outputs.push(id);
     }
 
-    stores.ops.set_op_io(op_id, &[input_value_id], &outputs);
+    stores.ops.set_op_io(op_id, input_value_id, outputs);
 }
 
 pub(crate) fn pack_struct(
@@ -293,7 +293,7 @@ pub(crate) fn pack_struct(
         .ensure_define_structs(stores, struct_item_id)
         .is_err()
     {
-        stores.ops.set_op_io(op_id, &[], &[]);
+        stores.ops.set_op_io(op_id, None, None);
         had_error.set();
     }
 
@@ -328,7 +328,7 @@ pub(crate) fn pack_struct(
 
     ensure_stack_depth(stores, had_error, stack, item_id, op_id, num_fields);
 
-    let mut inputs = SmallVec::<[_; 20]>::new();
+    let mut inputs = SmallVec::<[_; 8]>::new();
     let input_value_ids = stack.lastn(num_fields).unwrap();
     for &input_value_id in input_value_ids {
         inputs.push(input_value_id);
@@ -338,5 +338,5 @@ pub(crate) fn pack_struct(
 
     let output = stores.values.new_value(op_loc, None);
     stack.push(output);
-    stores.ops.set_op_io(op_id, &inputs, &[output]);
+    stores.ops.set_op_io(op_id, inputs, output);
 }

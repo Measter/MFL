@@ -6,6 +6,7 @@ use stores::{items::ItemId, source::SourceLocation};
 
 use crate::{
     ir::{NameResolvedOp, OpCode, PartiallyResolvedOp, TypeResolvedOp, UnresolvedOp},
+    n_ops::ToSmallVec,
     option::OptionExt,
 };
 
@@ -142,10 +143,10 @@ impl OpStore {
     }
 
     #[track_caller]
-    pub fn set_op_io(&mut self, op_id: OpId, inputs: &[ValueId], outputs: &[ValueId]) {
+    pub fn set_op_io(&mut self, op_id: OpId, inputs: impl ToSmallVec, outputs: impl ToSmallVec) {
         let new_data = OpIoValues {
-            inputs: inputs.into(),
-            outputs: outputs.into(),
+            inputs: inputs.into_smallvec(),
+            outputs: outputs.into_smallvec(),
         };
         let prev = &mut self.op_io[op_id.0.to_usize()];
         if let Some(prev) = prev {

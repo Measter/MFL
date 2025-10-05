@@ -105,7 +105,7 @@ fn analyze_block(
                         );
                     }
                     Stack::Emit { show_labels } => {
-                        stores.ops.set_op_io(op_id, &[], &[]);
+                        stores.ops.set_op_io(op_id, None, None);
                         type_check::stack_ops::emit_stack(
                             stores,
                             stack,
@@ -184,7 +184,7 @@ fn analyze_block(
                         break;
                     }
                     Control::Exit(_) => {
-                        stores.ops.set_op_io(op_id, &[], &[]);
+                        stores.ops.set_op_io(op_id, None, None);
                         break;
                     }
                     Control::MethodCall { method_name } => {

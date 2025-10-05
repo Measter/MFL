@@ -1,6 +1,67 @@
 use std::{hash::Hash, mem::MaybeUninit};
 
 use hashbrown::HashMap;
+use smallvec::SmallVec;
+
+use crate::stores::values::ValueId;
+
+pub trait SplitOffSmallVec {
+    fn split_off_smallvec(&mut self, split_idx: usize) -> SmallVec<[ValueId; 8]>;
+}
+
+impl SplitOffSmallVec for Vec<ValueId> {
+    fn split_off_smallvec(&mut self, split_idx: usize) -> SmallVec<[ValueId; 8]> {
+        let split_len = self.len() - split_idx;
+        let mut v = SmallVec::with_capacity(split_len);
+        self[split_idx..].iter().copied().for_each(|i| v.push(i));
+        self.truncate(split_idx);
+        v
+    }
+}
+
+pub trait ToSmallVec {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]>;
+}
+
+impl<const N: usize> ToSmallVec for [ValueId; N] {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]> {
+        let mut v = SmallVec::with_capacity(N);
+        self.into_iter().for_each(|i| v.push(i));
+        v
+    }
+}
+
+impl ToSmallVec for ValueId {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]> {
+        let mut v = SmallVec::new();
+        v.push(self);
+        v
+    }
+}
+
+impl ToSmallVec for Option<ValueId> {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]> {
+        let mut v = SmallVec::new();
+        if let Some(i) = self {
+            v.push(i);
+        }
+        v
+    }
+}
+
+impl ToSmallVec for SmallVec<[ValueId; 8]> {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]> {
+        self
+    }
+}
+
+impl ToSmallVec for &[ValueId] {
+    fn into_smallvec(self) -> SmallVec<[ValueId; 8]> {
+        let mut v = SmallVec::with_capacity(self.len());
+        self.into_iter().copied().for_each(|i| v.push(i));
+        v
+    }
+}
 
 pub trait VecNOps<T> {
     fn popn<const N: usize>(&mut self) -> [T; N];
