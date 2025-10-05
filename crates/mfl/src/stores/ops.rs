@@ -42,9 +42,9 @@ impl OpIoValues {
 pub struct OpStore {
     tokens: Vec<SourceLocation>,
     unresolved: Vec<OpCode<UnresolvedOp>>,
-    name_resolved: HashMap<OpId, OpCode<NameResolvedOp>>,
-    partial_type_resolved: HashMap<OpId, OpCode<PartiallyResolvedOp>>,
-    type_resolved: HashMap<OpId, OpCode<TypeResolvedOp>>,
+    name_resolved: Vec<Option<OpCode<NameResolvedOp>>>,
+    partial_type_resolved: Vec<Option<OpCode<PartiallyResolvedOp>>>,
+    type_resolved: Vec<Option<OpCode<TypeResolvedOp>>>,
     op_io: HashMap<OpId, OpIoValues>,
     method_callee_ids: HashMap<OpId, ItemId>,
 }
@@ -54,9 +54,9 @@ impl OpStore {
         Self {
             tokens: Vec::new(),
             unresolved: Vec::new(),
-            name_resolved: HashMap::new(),
-            partial_type_resolved: HashMap::new(),
-            type_resolved: HashMap::new(),
+            name_resolved: Vec::new(),
+            partial_type_resolved: Vec::new(),
+            type_resolved: Vec::new(),
             op_io: HashMap::new(),
             method_callee_ids: HashMap::new(),
         }
@@ -66,6 +66,9 @@ impl OpStore {
         let new_id = OpId(self.unresolved.len().to_u32().expect("ICE: OpID overflow"));
 
         self.unresolved.push(code);
+        self.name_resolved.push(None);
+        self.partial_type_resolved.push(None);
+        self.type_resolved.push(None);
         self.tokens.push(token);
 
         new_id
@@ -86,49 +89,55 @@ impl OpStore {
     #[inline]
     #[track_caller]
     pub fn get_name_resolved(&self, id: OpId) -> &OpCode<NameResolvedOp> {
-        &self.name_resolved[&id]
+        self.name_resolved[id.0.to_usize()]
+            .as_ref()
+            .expect("ICE: Tried to get name resolved on an un-resolved item")
     }
 
     #[inline]
     #[track_caller]
     pub fn set_name_resolved(&mut self, id: OpId, op: OpCode<NameResolvedOp>) {
-        self.name_resolved
-            .insert(id, op)
+        self.name_resolved[id.0.to_usize()]
+            .replace(op)
             .expect_none("ICE: Inserted multiple ops at id");
     }
 
     #[inline]
     #[track_caller]
     pub fn get_partially_type_resolved(&self, id: OpId) -> &OpCode<PartiallyResolvedOp> {
-        &self.partial_type_resolved[&id]
+        self.partial_type_resolved[id.0.to_usize()]
+            .as_ref()
+            .expect("ICE: Tried to get partially-type resolved on an un-resolved item")
     }
 
     #[inline]
     #[track_caller]
     pub fn set_partially_type_resolved(&mut self, id: OpId, op: OpCode<PartiallyResolvedOp>) {
-        self.partial_type_resolved
-            .insert(id, op)
+        self.partial_type_resolved[id.0.to_usize()]
+            .replace(op)
             .expect_none("ICE: Inserted multiple ops at id");
     }
 
     #[inline]
     #[track_caller]
     pub fn get_type_resolved(&self, id: OpId) -> &OpCode<TypeResolvedOp> {
-        &self.type_resolved[&id]
+        self.type_resolved[id.0.to_usize()]
+            .as_ref()
+            .expect("ICE: Tried to get type resolved on an un-resolved item")
     }
 
     #[inline]
     #[track_caller]
     pub fn set_type_resolved(&mut self, id: OpId, op: OpCode<TypeResolvedOp>) {
-        self.type_resolved
-            .insert(id, op)
+        self.type_resolved[id.0.to_usize()]
+            .replace(op)
             .expect_none("ICE: Inserted multiple ops at id");
     }
 
     #[inline]
     #[track_caller]
     pub fn overwrite_type_resolved(&mut self, id: OpId, op: OpCode<TypeResolvedOp>) {
-        self.type_resolved.insert(id, op);
+        self.type_resolved[id.0.to_usize()] = Some(op);
     }
 
     #[track_caller]
