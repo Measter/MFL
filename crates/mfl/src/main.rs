@@ -68,6 +68,9 @@ pub struct Args {
     #[arg(long = "lib")]
     is_library: bool,
 
+    #[arg(long = "check")]
+    check: bool,
+
     /// Directory storing the intermediate .o files.
     #[arg(long = "obj", default_value = "./obj")]
     obj_dir: PathBuf,
@@ -216,40 +219,47 @@ fn run_compile(args: &Args) -> Result<()> {
         }
     };
 
-    let mut objects = {
-        let _start = stores.timer.start_compile();
-        backend_llvm::compile(&mut stores, &top_level_items, args)?
-    };
-    objects.extend(args.addition_obj_paths.iter().cloned());
+    if !args.check {
+        let mut objects = {
+            let _start = stores.timer.start_compile();
+            backend_llvm::compile(&mut stores, &top_level_items, args)?
+        };
+        objects.extend(args.addition_obj_paths.iter().cloned());
 
-    if args.is_library {
+        if args.is_library {
+            if args.time_passes {
+                stores.timer.print();
+            }
+
+            println!(" {}", "Finished".green());
+            return Ok(());
+        }
+
+        let output_path = args.output.clone().unwrap();
+
+        let ld = {
+            let _start = stores.timer.start_link();
+            Command::new("gcc")
+                .arg("-o")
+                .arg(&output_path)
+                .args(&objects)
+                .status()
+                .with_context(|| eyre!("Failed to link"))?
+        };
+
         if args.time_passes {
             stores.timer.print();
         }
 
-        println!(" {}", "Finished".green());
-        return Ok(());
+        if !ld.success() {
+            std::process::exit(-3);
+        }
+    } else {
+        if args.time_passes {
+            stores.timer.print();
+        }
     }
 
-    let output_path = args.output.clone().unwrap();
-
-    let ld = {
-        let _start = stores.timer.start_link();
-        Command::new("gcc")
-            .arg("-o")
-            .arg(&output_path)
-            .args(&objects)
-            .status()
-            .with_context(|| eyre!("Failed to link"))?
-    };
-
-    if args.time_passes {
-        stores.timer.print();
-    }
-
-    if !ld.success() {
-        std::process::exit(-3);
-    }
     println!(" {}", "Finished".green());
 
     Ok(())
