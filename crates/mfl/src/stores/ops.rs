@@ -45,7 +45,7 @@ pub struct OpStore {
     name_resolved: Vec<Option<OpCode<NameResolvedOp>>>,
     partial_type_resolved: Vec<Option<OpCode<PartiallyResolvedOp>>>,
     type_resolved: Vec<Option<OpCode<TypeResolvedOp>>>,
-    op_io: HashMap<OpId, OpIoValues>,
+    op_io: Vec<Option<OpIoValues>>,
     method_callee_ids: HashMap<OpId, ItemId>,
 }
 
@@ -57,7 +57,7 @@ impl OpStore {
             name_resolved: Vec::new(),
             partial_type_resolved: Vec::new(),
             type_resolved: Vec::new(),
-            op_io: HashMap::new(),
+            op_io: Vec::new(),
             method_callee_ids: HashMap::new(),
         }
     }
@@ -69,6 +69,7 @@ impl OpStore {
         self.name_resolved.push(None);
         self.partial_type_resolved.push(None);
         self.type_resolved.push(None);
+        self.op_io.push(None);
         self.tokens.push(token);
 
         new_id
@@ -146,24 +147,26 @@ impl OpStore {
             inputs: inputs.into(),
             outputs: outputs.into(),
         };
-        if let Some(prev) = self.op_io.get(&op_id) {
+        let prev = &mut self.op_io[op_id.0.to_usize()];
+        if let Some(prev) = prev {
             panic!("Set operands twice - cur_token: {op_id}, new_data: {new_data:#?}, prev_data: {prev:#?}");
         }
-        self.op_io.insert(op_id, new_data);
+        *prev = Some(new_data);
     }
 
     #[inline]
     #[track_caller]
     pub fn get_op_io(&self, op_idx: OpId) -> &OpIoValues {
-        &self.op_io[&op_idx]
+        self.op_io[op_idx.0.to_usize()]
+            .as_ref()
+            .expect("ICE: Tried to get unset op-io")
     }
 
     #[inline]
     #[track_caller]
     pub fn update_op_inputs(&mut self, op_idx: OpId, inputs: &[ValueId]) {
-        let existing = self
-            .op_io
-            .get_mut(&op_idx)
+        let existing = self.op_io[op_idx.0.to_usize()]
+            .as_mut()
             .expect("ICE: Updated non-existant OP IO");
 
         existing.inputs.clear();
